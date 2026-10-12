@@ -40,7 +40,7 @@ const check = (ok, what) => { checks++; if (!ok) failures.push(what); console.lo
 
 /** Open a page and record errors. Google Fonts may be unreachable in CI, so failed requests to it are ignored. */
 async function open(path, opts = {}) {
-  const ctx = await browser.newContext(opts);
+  const ctx = await browser.newContext({ serviceWorkers: 'block', ...opts }); // the offline section below turns it back on
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
@@ -128,6 +128,68 @@ console.log('\nScore table');
   check(t2.length === 2 && t2[0].s === 900 && t2[1].s === 500, 'a higher score goes to the top and the table stays sorted');
   check(!errors.length, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
   await close();
+}
+
+/* ---------- daily challenge: TODAY tab ---------- */
+console.log('\nDaily boards');
+{
+  const { page, errors, close } = await open('/games/stackdown/');
+  const tabs = await page.$$eval('#ov .hs-tabs button', bs => bs.map(b => b.textContent));
+  check(JSON.stringify(tabs) === '["WORLD","TODAY","THIS DEVICE"]', `daily game's title screen has WORLD, TODAY and THIS DEVICE tabs (${tabs.join(', ')})`);
+  await page.click('#ov .go2'); // Daily
+  await page.evaluate(() => { Arcade.submit(321, true); Arcade.overlay({ title: 'TOPPED OUT', btn: 'Retry daily', daily: true, onGo: () => {} }); });
+  check(await page.isVisible('#ov .ini'), 'a daily best asks for initials');
+  await page.keyboard.type('DAY'); await page.keyboard.press('Enter');
+  check((await page.textContent('#ov .hs-tabs .on')) === 'TODAY', 'after a daily run the TODAY tab is selected');
+  const q = await page.evaluate(() => JSON.parse(localStorage.getItem('arcade:outbox') || '[]'));
+  check(q.length === 1 && q[0].d === await page.evaluate(() => Arcade.today()) && q[0].all === true, 'the run is queued for both the all-time and today\'s board');
+  await page.evaluate(() => { Arcade.submit(100, true); Arcade.overlay({ title: 'TOPPED OUT', btn: 'Retry daily', daily: true, onGo: () => {} }); });
+  await page.keyboard.press('Enter'); // still makes this device's top 10, so it's saved for the all-time board
+  const q2 = await page.evaluate(() => JSON.parse(localStorage.getItem('arcade:outbox') || '[]'));
+  check(q2.length === 2 && !q2[1].d, 'a lower daily score isn\'t sent to today\'s board again');
+  check(!errors.length, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
+  await close();
+  const plain = await open('/games/neon-noodle/');
+  const t2 = await plain.page.$$eval('#ov .hs-tabs button', bs => bs.map(b => b.textContent));
+  check(!t2.includes('TODAY'), 'games without a daily challenge have no TODAY tab');
+  await plain.close();
+}
+
+/* ---------- install + offline ---------- */
+console.log('\nInstall and offline');
+{
+  const manifest = JSON.parse(await readFile(join(ROOT, 'manifest.json'), 'utf8'));
+  for (const icon of manifest.icons) {
+    const buf = await readFile(join(ROOT, icon.src)), [w, h] = [buf.readUInt32BE(16), buf.readUInt32BE(20)];
+    check(buf.toString('ascii', 1, 4) === 'PNG' && icon.sizes === `${w}x${h}`, `manifest icon ${icon.src} is a ${icon.sizes} PNG`);
+  }
+  check(manifest.icons.some(i => i.purpose === 'maskable') && manifest.display === 'standalone', 'manifest has a maskable icon and opens standalone');
+  const sw = await readFile(join(ROOT, 'sw.js'), 'utf8');
+  const swGames = JSON.parse(sw.match(/const GAMES = (\[[\s\S]*?\]);/)[1].replace(/'/g, '"'));
+  check(JSON.stringify([...swGames].sort()) === JSON.stringify(dirs), 'sw.js caches every game folder');
+  const pages = ['index.html', ...dirs.map(d => `games/${d}/index.html`)], unlinked = [];
+  for (const p of pages) if (!/rel="manifest"/.test(await readFile(join(ROOT, p), 'utf8'))) unlinked.push(p);
+  check(!unlinked.length, `every page links the manifest${unlinked.length ? ' (missing: ' + unlinked.join(', ') + ')' : ''}`);
+
+  const ctx = await browser.newContext();
+  await ctx.route(/fonts\.(googleapis|gstatic)\.com|gstatic\.com\/firebasejs|googleapis\.com/, r => r.abort());
+  const page = await ctx.newPage(), errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto(BASE + '/');
+  await page.evaluate(() => navigator.serviceWorker.ready);
+  const cached = await page.waitForFunction(n => caches.open('bitcade-v1').then(c => c.keys()).then(k => k.length >= n && k.length), swGames.length + 3, { timeout: 20000 }).then(h => h.jsonValue(), () => 0);
+  check(cached >= swGames.length + 3, `service worker cached the lobby and all ${swGames.length} games (${cached} files)`);
+  await ctx.setOffline(true);
+  await page.reload();
+  check((await page.$$('.cab')).length === dirs.length, 'offline: the lobby still loads with every cabinet');
+  await page.goto(BASE + '/games/hedge-hop/');
+  await page.click('#ov .go');
+  await page.keyboard.press('ArrowUp'); await wait(500);
+  check(await page.isHidden('#ov'), 'offline: a game loads and starts');
+  await page.goto(BASE + '/games/blip-sports/');
+  check(await page.isVisible('#ticker'), 'offline: Blip Sports loads');
+  check(!errors.length, `offline: no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
+  await ctx.close();
 }
 
 /* ---------- phones: pause button and touch pad ---------- */

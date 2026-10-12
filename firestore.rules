@@ -13,19 +13,36 @@ service cloud.firestore {
       };
     }
 
-    // Scores: anyone can read; a signed-in player can add a well-formed score, never edit or delete one.
+    // A well-formed score from the signed-in player, written together with their cooldown stamp (below).
+    function validScore(game) {
+      let d = request.resource.data;
+      return request.auth != null
+        && game in maxScore()
+        && d.keys().hasOnly(['n', 's', 'uid', 't']) && d.keys().hasAll(['n', 's', 'uid', 't'])
+        && d.n is string && d.n.matches('^[A-Z]{3}$')
+        && d.s is int && d.s > 0 && d.s <= maxScore()[game]
+        && d.uid == request.auth.uid
+        && d.t == request.time
+        && getAfter(/databases/$(database)/documents/players/$(request.auth.uid)).data.last == request.time;
+    }
+
+    // All-time boards: anyone can read; a signed-in player can add a well-formed score, never edit or delete one.
     match /boards/{game}/scores/{id} {
       allow read: if true;
-      allow create: if request.auth != null
-        && game in maxScore()
-        && request.resource.data.keys().hasOnly(['n', 's', 'uid', 't'])
-        && request.resource.data.keys().hasAll(['n', 's', 'uid', 't'])
-        && request.resource.data.n is string && request.resource.data.n.matches('^[A-Z]{3}$')
-        && request.resource.data.s is int && request.resource.data.s > 0 && request.resource.data.s <= maxScore()[game]
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.t == request.time
-        // must be written together with this player's cooldown stamp (below)
-        && getAfter(/databases/$(database)/documents/players/$(request.auth.uid)).data.last == request.time;
+      allow create: if validScore(game);
+      allow update, delete: if false;
+    }
+
+    // Daily-challenge boards, one per game per local date. A score is only accepted while that date is "today"
+    // somewhere in the world (UTC-12 to UTC+14), so nobody can post to an old or future day.
+    function dayStart(day) { return timestamp.date(int(day[0:4]), int(day[5:7]), int(day[8:10])); }
+    match /daily/{game}/days/{day}/scores/{id} {
+      allow read: if true;
+      allow create: if game in ['stackdown', 'wallbuster']
+        && day.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && request.time > dayStart(day) - duration.value(14, 'h')
+        && request.time < dayStart(day) + duration.value(36, 'h')
+        && validScore(game);
       allow update, delete: if false;
     }
 

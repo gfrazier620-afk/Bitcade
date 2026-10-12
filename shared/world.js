@@ -2,7 +2,9 @@
  * World leaderboard on Firebase: Firestore Lite for reads and writes, plus anonymous auth for posting.
  * Loaded on demand by arcade.js and the lobby, so every page still works without it (offline, blocked, or down).
  *
- * Data: boards/{game}/scores/{id} = { n: 'ABC', s: 1234, uid, t }   and   players/{uid} = { last }  (post cooldown)
+ * Data: boards/{game}/scores/{id} = { n: 'ABC', s: 1234, uid, t }        all-time board
+ *       daily/{game}/days/{YYYY-MM-DD}/scores/{id} = same shape          daily-challenge board
+ *       players/{uid} = { last }                                          post cooldown
  * The config below only identifies the project. firestore.rules (published in the Firebase console) protects the data.
  */
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
@@ -27,17 +29,24 @@ async function signIn() {
   return user;
 }
 
-/** Top n scores for a game, best first: [{ n, s }]. */
-export async function top(game, n = 10) {
-  const snap = await getDocs(query(collection(db, 'boards', game, 'scores'), orderBy('s', 'desc'), limit(n)));
+const board = (game, day) => day ? collection(db, 'daily', game, 'days', day, 'scores') : collection(db, 'boards', game, 'scores');
+
+/** Top n scores for a game, best first: [{ n, s }]. Pass day ('YYYY-MM-DD') for that day's daily-challenge board. */
+export async function top(game, n = 10, day = null) {
+  const snap = await getDocs(query(board(game, day), orderBy('s', 'desc'), limit(n)));
   return snap.docs.map(d => ({ n: d.get('n'), s: d.get('s') }));
 }
 
-/** Post a score. The rules allow one post every 10 seconds per player, so callers queue and retry. */
-export async function post(game, name, score) {
+/**
+ * Post a score to the all-time board (all) and/or a daily board (day), in one write.
+ * The rules allow one post every 10 seconds per player, so callers queue and retry.
+ */
+export async function post(game, name, score, { all = true, day = null } = {}) {
   const u = await signIn();
   const b = writeBatch(db);
   b.set(doc(db, 'players', u.uid), { last: serverTimestamp() });
-  b.set(doc(collection(db, 'boards', game, 'scores')), { n: name, s: score, uid: u.uid, t: serverTimestamp() });
+  const entry = () => ({ n: name, s: score, uid: u.uid, t: serverTimestamp() });
+  if (all) b.set(doc(board(game)), entry());
+  if (day) b.set(doc(board(game, day)), entry());
   await b.commit();
 }

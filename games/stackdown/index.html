@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Stackdown</title>
+<link rel="manifest" href="../../manifest.json">
+<meta name="theme-color" content="#0f0c1f">
+<link rel="icon" type="image/png" href="../../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../../icons/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Rubik:wght@400;500;700&family=Silkscreen&display=swap">
 <link rel="stylesheet" href="../../shared/arcade.css">
@@ -88,7 +92,7 @@ function finishClear() {
   const nl = Math.floor(lines / 10) + 1; if (nl > level) { level = nl; A.jingle([392, 523, 659, 784, 1047], 0.07); popText = 'LEVEL ' + level; }
   clearing = null; A.setScore(score); spawn(nextKey()); holdUsed = false;
 }
-function gameOver() { state = 'over'; cur = null; A.noise(0.7, 0.08); const rec = A.submit(score, daily); A.overlay({ title: 'TOPPED OUT', big: `SCORE ${score} · LINES ${lines}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, btn: daily ? 'Retry daily' : 'Play again', onGo: () => newGame(daily), alt: { btn: daily ? 'Normal game' : 'Daily', onGo: () => newGame(!daily) } }); }
+function gameOver() { state = 'over'; cur = null; A.noise(0.7, 0.08); const rec = A.submit(score, daily); A.overlay({ title: 'TOPPED OUT', big: `SCORE ${score} · LINES ${lines}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, daily: true, btn: daily ? 'Retry daily' : 'Play again', onGo: () => newGame(daily), alt: { btn: daily ? 'Normal game' : 'Daily', onGo: () => newGame(!daily) } }); }
 function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
 A.onPress(c => {
   if (c === 'KeyP' || c === 'Escape') return pause();
@@ -160,7 +164,7 @@ function mini(k, x, y, a) {
 }
 function label(t, x, y) { ctx.fillStyle = '#a39bc4'; ctx.font = '12px Silkscreen, monospace'; ctx.textAlign = 'left'; ctx.fillText(t, x, y); }
 function big(t, x, y) { ctx.fillStyle = '#f4effd'; ctx.font = '24px Silkscreen, monospace'; ctx.textAlign = 'left'; ctx.fillText(t, x, y); }
-A.overlay({ title: 'STACKDOWN', sub: 'Fit the falling blocks together. Fill a whole row to clear it. Clear four rows at once for the big bonus. <b>Daily</b> gives everyone the same pieces today.', btn: 'Start', scores: true, onGo: () => newGame(false), alt: { btn: 'Daily', onGo: () => newGame(true) } });
+A.overlay({ title: 'STACKDOWN', sub: 'Fit the falling blocks together. Fill a whole row to clear it. Clear four rows at once for the big bonus. <b>Daily</b> gives everyone the same pieces today.', btn: 'Start', scores: true, daily: true, onGo: () => newGame(false), alt: { btn: 'Daily', onGo: () => newGame(true) } });
 })();
 </script>
 </body>

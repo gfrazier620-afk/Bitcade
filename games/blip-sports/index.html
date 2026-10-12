@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Blip Sports 2-in-1</title>
+<link rel="manifest" href="../../manifest.json">
+<meta name="theme-color" content="#0f0c1f">
+<link rel="icon" type="image/png" href="../../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../../icons/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Russo+One&family=Chakra+Petch:wght@400;500;600;700&family=VT323&family=Silkscreen&display=swap">
 <style>
@@ -803,6 +807,8 @@ function frame(now){
 }
 renderShell();
 requestAnimationFrame(frame);
+// offline play (sw.js at the site root caches every game)
+if('serviceWorker' in navigator)navigator.serviceWorker.register('../../sw.js').catch(()=>{});
 })();
 </script>
 

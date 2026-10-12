@@ -36,13 +36,14 @@
   A.world = () => worldMod || (worldMod = import(new URL('world.js', KIT_URL).href).catch(e => { worldMod = null; throw e; }));
   // Scores waiting to post. Kept in localStorage so games played offline post later. The server allows
   // one post per player every 10 s, so the queue sends one at a time and retries a few times.
+  // Entry: { id, g: game, n: initials, s: score, all: post to the all-time board, d: daily date or null }.
   const outbox = () => { try { const q = JSON.parse(store.get('arcade:outbox')); return Array.isArray(q) ? q : []; } catch (e) { return []; } };
   const saveOutbox = q => store.set('arcade:outbox', JSON.stringify(q));
   let flushing = false;
   function flush() {
     const q = outbox(); if (flushing || !q.length) return;
     flushing = true; const e = q[0];
-    A.world().then(w => w.post(e.g, e.n, e.s)).then(() => {
+    A.world().then(w => w.post(e.g, e.n, e.s, { all: e.all !== false, day: e.d || null })).then(() => {
       saveOutbox(outbox().filter(x => x.id !== e.id)); flushing = false;
       if (e.g === A.id && shown && overlayOpen()) loadWorld();
       if (outbox().length) setTimeout(flush, 11000);
@@ -51,12 +52,21 @@
       flushing = false; if (outbox().length) setTimeout(flush, 15000);
     });
   }
-  const queuePost = (n, s) => { if (A.id === 'game') return; saveOutbox([...outbox(), { id: Date.now() + '-' + Math.random().toString(36).slice(2, 7), g: A.id, n, s }]); flush(); };
-  let hsTab = 'world', worldTop = [], worldState = 'idle', lastSaved = null; // worldState: idle | loading | ok | off
+  addEventListener('online', flush);
+  const queuePost = (n, s, all, d) => {
+    if (A.id === 'game' || (!all && !d)) return;
+    saveOutbox([...outbox(), { id: Date.now() + '-' + Math.random().toString(36).slice(2, 7), g: A.id, n, s, all, d }]); flush();
+  };
+  // Online boards shown in score tables: all-time ('world') and, for daily challenges, today's ('today').
+  const boards = { world: { state: 'idle', list: [] }, today: { state: 'idle', list: [] } }; // state: idle | loading | ok | off
+  let hsTab = 'world', lastSaved = null, dailyDay = null; // dailyDay: date of the TODAY tab, or null when it isn't shown
   function loadWorld() {
-    if (worldState !== 'ok') worldState = 'loading';
+    const want = dailyDay ? ['world', 'today'] : ['world'];
+    want.forEach(k => { if (boards[k].state !== 'ok' || k === 'today') boards[k].state = 'loading'; });
     renderHS();
-    A.world().then(w => w.top(A.id)).then(t => { worldTop = t; worldState = 'ok'; renderHS(); }, () => { worldState = 'off'; renderHS(); });
+    A.world().then(w => want.forEach(k => w.top(A.id, 10, k === 'today' ? dailyDay : null)
+      .then(t => { boards[k] = { state: 'ok', list: t }; renderHS(); }, () => { boards[k].state = 'off'; renderHS(); })),
+    () => { want.forEach(k => boards[k].state = 'off'); renderHS(); });
   }
 
   let lastResult = null; // read by the next A.overlay call, which shows initials entry and the table
@@ -72,8 +82,9 @@
     let day = null;
     if (daily) {
       const d = A.today(); let db = null; try { db = JSON.parse(store.get('arcade:daily:' + A.id)); } catch (e) {}
-      if (!db || db.d !== d || s > db.s) { db = { d, s }; store.set('arcade:daily:' + A.id, JSON.stringify(db)); }
-      day = db;
+      const improved = s > 0 && (!db || db.d !== d || s > db.s);
+      if (improved) { db = { d, s }; store.set('arcade:daily:' + A.id, JSON.stringify(db)); }
+      day = { ...(db && db.d === d ? db : { d, s }), improved }; // improved: today's best on this device, so it goes to the daily board
     }
     lastResult = { s, rank, top, day };
     return rec;
@@ -114,7 +125,9 @@
     if (A.down.has(code)) return;
     A.down.add(code);
     if (entry) entryKey(code);
-    else if (shown && overlayOpen() && (code === 'ArrowLeft' || code === 'ArrowRight')) { hsTab = hsTab === 'world' ? 'local' : 'world'; renderHS(); }
+    else if (shown && overlayOpen() && (code === 'ArrowLeft' || code === 'ArrowRight')) {
+      const t = tabs(), i = t.indexOf(hsTab); hsTab = t[(i + (code === 'ArrowRight' ? 1 : t.length - 1)) % t.length]; renderHS();
+    }
     else pressFns.forEach(f => f(code));
   };
   const ku = code => A.down.delete(code);
@@ -227,10 +240,11 @@
   const overlayGo = () => { if (entry) return saveEntry(); const f = goFn; if (!f) return; A.hideOverlay(); f(); };
   const overlayAlt = () => { const f = altFn; if (!f) return; A.hideOverlay(); f(); };
   /**
-   * Show the overlay. alt: { btn, onGo } adds a second button (gamepad Y). scores: true lists the top 10 (title screens).
-   * Called right after A.submit, it also asks for initials when the score made the top 10.
+   * Show the overlay. alt: { btn, onGo } adds a second button (gamepad Y). scores: true lists the top 10 (title screens),
+   * and daily: true adds today's daily-challenge board to it. Called right after A.submit, it also asks for initials
+   * when the score made the top 10 or is the player's best daily run today.
    */
-  A.overlay = ({ title, sub = '', big = '', btn = 'Play', onGo, alt, scores }) => {
+  A.overlay = ({ title, sub = '', big = '', btn = 'Play', onGo, alt, scores, daily }) => {
     const o = $('ov'), res = lastResult; lastResult = null;
     o.innerHTML = `<h2></h2>${big ? '<div class="big"></div>' : ''}${sub ? '<p></p>' : ''}<div class="hs"></div>` +
       `<div class="btns"><button class="go"></button>${alt ? '<button class="go2"></button>' : ''}</div>`;
@@ -247,10 +261,12 @@
       entry.pos = +b.dataset.slot; if (b.dataset.dir) entryKey(b.dataset.dir); else renderHS();
     });
     goFn = onGo; altFn = alt ? alt.onGo : null; goLabel = btn; entry = null; shown = null; lastSaved = null;
+    dailyDay = res && res.day ? res.day.d : daily ? A.today() : null;
     if (res) {
       shown = { top: res.top, hi: -1, day: res.day };
-      if (res.rank >= 0) entry = { res, pos: 0, letters: [...(/^[A-Z]{3}$/.test(store.get('arcade:initials')) ? store.get('arcade:initials') : 'AAA')] };
+      if (res.rank >= 0 || (res.day && res.day.improved)) entry = { res, pos: 0, letters: [...(/^[A-Z]{3}$/.test(store.get('arcade:initials')) ? store.get('arcade:initials') : 'AAA')] };
     } else if (scores) shown = { top: A.top(), hi: -1, day: null };
+    if (res && res.day) hsTab = 'today'; else if (!tabs().includes(hsTab)) hsTab = 'world';
     renderHS(); o.hidden = false;
     if (shown) loadWorld();
   };
@@ -269,12 +285,12 @@
     A.tone(660, 0.03); renderHS();
   }
   function saveEntry() {
-    const { res } = entry, n = entry.letters.join('');
-    const top = res.top.slice(); top.splice(res.rank, 0, { n, s: res.s }); top.length = Math.min(top.length, 10);
-    store.set(topKey, JSON.stringify(top)); store.set('arcade:initials', n);
+    const { res } = entry, n = entry.letters.join(''), placed = res.rank >= 0;
+    const top = res.top.slice(); if (placed) { top.splice(res.rank, 0, { n, s: res.s }); top.length = Math.min(top.length, 10); store.set(topKey, JSON.stringify(top)); }
+    store.set('arcade:initials', n);
     shown = { top, hi: res.rank, day: shown && shown.day }; entry = null; lastSaved = { n, s: res.s };
     A.jingle([784, 988, 1175], 0.06); renderHS();
-    queuePost(n, res.s);
+    queuePost(n, res.s, placed, res.day && res.day.improved ? res.day.d : null);
     const go = $('ov').querySelector('.go'); if (go) go.focus();
   }
   function renderHS() {
@@ -286,21 +302,27 @@
         `<button tabindex="-1" data-slot="${i}" data-dir="ArrowUp" aria-label="Next letter">▲</button>` +
         `<button tabindex="-1" data-slot="${i}" class="ch">${ch}</button>` +
         `<button tabindex="-1" data-slot="${i}" data-dir="ArrowDown" aria-label="Previous letter">▼</button></div>`).join('');
-      hs.innerHTML = `<div class="hs-head">RANK ${entry.res.rank + 1} · ENTER YOUR INITIALS</div><div class="ini">${slots}</div>` +
+      const head = entry.res.rank >= 0 ? `RANK ${entry.res.rank + 1}` : `TODAY'S BEST`;
+      hs.innerHTML = `<div class="hs-head">${head} · ENTER YOUR INITIALS</div><div class="ini">${slots}</div>` +
         `<div class="hs-hint">Type, or ↑↓ to change and ←→ to move</div>`;
       return;
     }
     if (!shown) { hs.innerHTML = ''; return; }
-    const tab = (id, label) => `<button tabindex="-1" data-tab="${id}"${hsTab === id ? ' class="on"' : ''}>${label}</button>`;
+    const LABEL = { world: 'WORLD', today: 'TODAY', local: 'THIS DEVICE' };
+    const tab = id => `<button tabindex="-1" data-tab="${id}"${hsTab === id ? ' class="on"' : ''}>${LABEL[id]}</button>`;
     const note = t => `<div class="hs-note">${t}</div>`;
     const local = shown.top.length ? table(shown.top, shown.hi) : note('No scores on this device yet');
     let body;
     if (hsTab === 'local') body = local;
-    else if (worldState === 'ok') body = worldTop.length ? table(worldTop, lastSaved ? worldTop.findIndex(e => e.n === lastSaved.n && e.s === lastSaved.s) : -1) : note('No world scores yet. Be the first!');
-    else if (worldState === 'off') body = note('World scores are offline · showing this device') + local;
-    else body = note('Loading world scores…');
-    hs.innerHTML = `<div class="hs-tabs">${tab('world', 'WORLD')}${tab('local', 'THIS DEVICE')}</div>${body}${shown.day ? dayLine(shown.day) : ''}`;
+    else {
+      const b = boards[hsTab], what = hsTab === 'today' ? `today's daily scores` : 'world scores';
+      if (b.state === 'ok') body = b.list.length ? table(b.list, lastSaved ? b.list.findIndex(e => e.n === lastSaved.n && e.s === lastSaved.s) : -1) : note(`No ${what} yet. Be the first!`);
+      else if (b.state === 'off') body = note(`${what[0].toUpperCase() + what.slice(1)} are offline · showing this device`) + local;
+      else body = note(`Loading ${what}…`);
+    }
+    hs.innerHTML = `<div class="hs-tabs">${tabs().map(tab).join('')}</div>${body}${shown.day ? dayLine(shown.day) : ''}`;
   }
+  const tabs = () => dailyDay ? ['world', 'today', 'local'] : ['world', 'local'];
   // Names are checked against 3 capital letters before display: world scores come from other players.
   const table = (list, hi) => `<div class="hs-table">${list.map((e, i) => `<div class="row${i === hi ? ' me' : ''}"><span>${i + 1}</span>` +
     `<span>${/^[A-Z?]{3}$/.test(e.n) ? e.n : '???'}</span><span>${(+e.s || 0).toLocaleString()}</span></div>`).join('')}</div>`;
@@ -321,6 +343,8 @@
     }
     bindPads();
     if (outbox().length) flush(); // scores saved while offline
+    // Offline play: the service worker (sw.js, at the site root) caches the lobby and every game.
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register(new URL('../sw.js', KIT_URL).href).catch(() => {});
     if (m) {
       const label = () => { m.textContent = A.muted ? 'SOUND OFF' : 'SOUND ON'; m.setAttribute('aria-pressed', String(!A.muted)); };
       label(); m.addEventListener('click', () => { A.muted = !A.muted; store.set('arcade:muted', A.muted ? '1' : '0'); A.unlock(); label(); });
