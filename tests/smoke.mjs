@@ -46,6 +46,8 @@ async function open(path, opts = {}) {
   page.on('pageerror', e => errors.push(e.message));
   page.on('console', m => { if (m.type() === 'error' && !/fonts\.(googleapis|gstatic)/.test(m.text()) && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
   await page.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  // The world leaderboard is never contacted from tests: pages must work with Firebase unreachable.
+  await page.route(/gstatic\.com\/firebasejs|googleapis\.com/, r => r.abort());
   await page.goto(BASE + path);
   return { page, errors, close: () => ctx.close() };
 }
@@ -78,15 +80,13 @@ for (const slug of dirs) {
     check((await page.getAttribute('body', 'data-game')) === slug, 'body data-game matches the folder name');
     await page.click('#ov .go');
     check(await page.isHidden('#ov'), 'start button starts the game');
+    // Pause right away: after random input the player may be mid-death, when pausing is (correctly) ignored.
+    await page.keyboard.press('KeyP');
+    check((await page.textContent('#ov h2')) === 'PAUSED', 'P pauses');
+    await page.keyboard.press('Enter');
+    check(await page.isHidden('#ov'), 'Enter resumes');
     for (const k of KEYS) { await page.keyboard.down(k); await wait(120); await page.keyboard.up(k); }
     await wait(800);
-    const running = await page.evaluate(() => !document.getElementById('ov').hidden ? document.querySelector('#ov h2').textContent : '');
-    if (!running) {
-      await page.keyboard.press('KeyP');
-      check((await page.textContent('#ov h2')) === 'PAUSED', 'P pauses');
-      await page.keyboard.press('Enter');
-      check(await page.isHidden('#ov'), 'Enter resumes');
-    } else console.log(`  ..  game showed "${running}" during random input, pause check skipped`);
   } else {
     // Blip Sports: its own handheld shell
     await page.keyboard.press('Enter');
@@ -116,6 +116,12 @@ console.log('\nScore table');
   const table = await page.evaluate(() => JSON.parse(localStorage.getItem('arcade:top:neon-noodle')));
   check(table && table[0].n === 'ABC' && table[0].s === 500, 'typed initials are saved with the score');
   check((await page.textContent('#ov .go')) === 'Play again', 'after saving, the button goes back to Play again');
+  await page.waitForFunction(() => /offline/.test(document.querySelector('#ov .hs').textContent));
+  check(await page.isVisible('#ov .hs-table'), 'with the world board offline, the table falls back to this device');
+  const queued = await page.evaluate(() => JSON.parse(localStorage.getItem('arcade:outbox') || '[]'));
+  check(queued.length === 1 && queued[0].n === 'ABC' && queued[0].g === 'neon-noodle', 'the score is queued to post to the world board later');
+  await page.keyboard.press('ArrowRight');
+  check((await page.textContent('#ov .hs-tabs .on')) === 'THIS DEVICE', '→ switches to the This device tab');
   await page.evaluate(() => { Arcade.submit(900); Arcade.overlay({ title: 'GAME OVER', btn: 'Play again', onGo: () => {} }); });
   await page.keyboard.press('Enter');
   const t2 = await page.evaluate(() => JSON.parse(localStorage.getItem('arcade:top:neon-noodle')));

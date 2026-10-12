@@ -1,0 +1,48 @@
+// Firestore security rules for the Bitcade world leaderboard.
+// Publish them in the Firebase console: Firestore Database → Rules → paste → Publish.
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Highest score each game will accept. Generous, just to stop absurd fakes.
+    function maxScore() {
+      return {
+        'neon-noodle': 100000, 'wallbuster': 500000, 'star-siege': 500000, 'rock-rift': 1000000,
+        'stackdown': 2000000, 'back-alley-brawl': 100000, 'circuit-chase': 1000000, 'highrise-handyman': 1000000,
+        'nitro-lane': 500000, 'volley-duel': 200000, 'crater-lander': 500000, 'sky-shield': 2000000, 'hedge-hop': 500000
+      };
+    }
+
+    // Scores: anyone can read; a signed-in player can add a well-formed score, never edit or delete one.
+    match /boards/{game}/scores/{id} {
+      allow read: if true;
+      allow create: if request.auth != null
+        && game in maxScore()
+        && request.resource.data.keys().hasOnly(['n', 's', 'uid', 't'])
+        && request.resource.data.keys().hasAll(['n', 's', 'uid', 't'])
+        && request.resource.data.n is string && request.resource.data.n.matches('^[A-Z]{3}$')
+        && request.resource.data.s is int && request.resource.data.s > 0 && request.resource.data.s <= maxScore()[game]
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.t == request.time
+        // must be written together with this player's cooldown stamp (below)
+        && getAfter(/databases/$(database)/documents/players/$(request.auth.uid)).data.last == request.time;
+      allow update, delete: if false;
+    }
+
+    // Cooldown stamp: one score post every 10 seconds per player.
+    match /players/{uid} {
+      allow read: if false;
+      allow create: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['last']) && request.resource.data.last == request.time;
+      allow update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['last']) && request.resource.data.last == request.time
+        && request.time > resource.data.last + duration.value(10, 's');
+      allow delete: if false;
+    }
+
+    // Everything else stays locked.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,6 +1,6 @@
 # Bitcade
 
-A GitHub Pages arcade site: a lobby page plus 14 classic-style browser games. Plain HTML, CSS and canvas JavaScript. No build step, no frameworks, no dependencies beyond Google Fonts.
+A GitHub Pages arcade site: a lobby page plus 14 classic-style browser games. Plain HTML, CSS and canvas JavaScript. No build step, no frameworks. The only outside dependencies are Google Fonts and the Firebase SDK, loaded from gstatic only for the world leaderboard.
 
 ## Layout
 
@@ -9,6 +9,7 @@ A GitHub Pages arcade site: a lobby page plus 14 classic-style browser games. Pl
 - `shared/arcade.js`: the shared kit, exposed as `window.Arcade`. It covers:
   - high scores in localStorage: `arcade:best:<slug>` (the record), `arcade:top:<slug>` (top 10 with initials, JSON), `arcade:daily:<slug>` (today's daily-challenge best)
   - `A.submit(score, daily)` on game over. The next `A.overlay` call then asks for initials if the score made the top 10, and shows the table
+  - world leaderboard: saving initials queues the score in `arcade:outbox` and posts it through `shared/world.js` (Firebase project `bitcade-4fa25`, Firestore Lite plus anonymous auth, loaded on demand). Score tables have WORLD and THIS DEVICE tabs. Every page must keep working when Firebase is unreachable
   - daily challenges: `A.seeded(key)` returns a seeded random function, and `A.today()` returns the local date. Stackdown and Wallbuster use them
   - sound (`tone`, `noise`, `jingle`)
   - keyboard, touch and gamepad input (`held`, `onPress`, `swipe`, `[data-k]` pad buttons)
@@ -27,6 +28,8 @@ A GitHub Pages arcade site: a lobby page plus 14 classic-style browser games. Pl
 neon-noodle (snake), wallbuster (brick breaker), star-siege (alien shooter), rock-rift (asteroids), stackdown (falling blocks), back-alley-brawl (1v1 fighter vs CPU ladder), circuit-chase (maze chase), highrise-handyman (fix-it climber), nitro-lane (racing), volley-duel (paddle duel, 1P vs CPU ladder or 2P on one keyboard/tablet), crater-lander (lunar lander), sky-shield (missile defense), hedge-hop (road crossing), blip-sports (LED football + baseball).
 
 All names, characters and art are original. Keep it that way: no trademarked game names, characters or sprites.
+
+- `firestore.rules`: the Firestore security rules. They're published by pasting them into the Firebase console (Firestore Database → Rules), not deployed from the repo. A new game needs its slug and a max score added to `maxScore()` there before world scores for it will save.
 
 ## Conventions
 

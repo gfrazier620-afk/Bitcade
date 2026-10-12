@@ -39,6 +39,8 @@ body{display:block;overflow-x:hidden;
 .cab-body p{margin:0;font-size:14px;color:var(--muted);line-height:1.4}
 .cab-foot{margin-top:auto;display:flex;justify-content:space-between;align-items:center;font-family:var(--f-pixel);font-size:11px;color:var(--muted)}
 .cab-foot b{color:var(--ink);font-weight:400;font-size:13px}
+.cab-world{font-family:var(--f-pixel);font-size:11px;color:var(--muted)}
+.cab-world b{color:var(--c);font-weight:400;font-size:13px}
 .play{background:var(--c);color:#120a1c;border-radius:7px;padding:5px 10px;font-size:11px}
 footer{margin-top:44px;text-align:center;color:var(--muted);font-size:13px}
 footer p{margin:4px 0}
@@ -121,12 +123,18 @@ GAMES.forEach(g => {
   const a = document.createElement('a');
   a.className = 'cab'; a.href = `games/${g.slug}/`; a.style.setProperty('--c', g.c);
   a.innerHTML = `<div class="cab-top"><h2></h2><span></span></div><div class="cab-screen"><canvas width="12" height="8"></canvas></div>
-    <div class="cab-body"><p></p><div class="cab-foot"><span>${g.label || 'BEST'} <b>${who ? who + ' ' : ''}${best ? best.toLocaleString() : '—'}</b></span><span class="play">PLAY ▶</span></div></div>`;
+    <div class="cab-body"><p></p><div class="cab-world" hidden>WORLD #1 <b></b></div><div class="cab-foot"><span>${g.label || 'BEST'} <b>${who ? who + ' ' : ''}${best ? best.toLocaleString() : '—'}</b></span><span class="play">PLAY ▶</span></div></div>`;
   a.querySelector('h2').textContent = g.name; a.querySelector('.cab-top span').textContent = g.kind.toUpperCase(); a.querySelector('p').textContent = g.blurb;
   const cx = a.querySelector('canvas').getContext('2d');
   paint(cx, g.px); screens.push({ cx, g, f: 0 });
   floor.appendChild(a);
+  g.el = a;
 });
+// World #1 for each cabinet from the online leaderboard. The lobby works the same without it.
+import('./shared/world.js').then(w => GAMES.filter(g => !g.label).forEach(g => w.top(g.slug, 1).then(([e]) => {
+  if (!e || !/^[A-Z]{3}$/.test(e.n)) return;
+  const row = g.el.querySelector('.cab-world'); row.querySelector('b').textContent = `${e.n} ${(+e.s || 0).toLocaleString()}`; row.hidden = false;
+}, () => {})), () => {});
 // Attract mode: each cabinet flips between its two frames, out of step with its neighbours.
 if (!matchMedia('(prefers-reduced-motion: reduce)').matches) setInterval(() => {
   if (document.hidden) return;

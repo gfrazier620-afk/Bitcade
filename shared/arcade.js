@@ -29,6 +29,36 @@
     let a = h >>> 0;
     return () => { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
   };
+  /* ---------- world leaderboard (shared/world.js, Firebase, loaded on demand) ---------- */
+  const KIT_URL = document.currentScript ? document.currentScript.src : location.href;
+  let worldMod = null;
+  /** The world module, imported the first time it's needed. Rejects when offline or blocked; callers fall back to local. */
+  A.world = () => worldMod || (worldMod = import(new URL('world.js', KIT_URL).href).catch(e => { worldMod = null; throw e; }));
+  // Scores waiting to post. Kept in localStorage so games played offline post later. The server allows
+  // one post per player every 10 s, so the queue sends one at a time and retries a few times.
+  const outbox = () => { try { const q = JSON.parse(store.get('arcade:outbox')); return Array.isArray(q) ? q : []; } catch (e) { return []; } };
+  const saveOutbox = q => store.set('arcade:outbox', JSON.stringify(q));
+  let flushing = false;
+  function flush() {
+    const q = outbox(); if (flushing || !q.length) return;
+    flushing = true; const e = q[0];
+    A.world().then(w => w.post(e.g, e.n, e.s)).then(() => {
+      saveOutbox(outbox().filter(x => x.id !== e.id)); flushing = false;
+      if (e.g === A.id && shown && overlayOpen()) loadWorld();
+      if (outbox().length) setTimeout(flush, 11000);
+    }, () => {
+      saveOutbox(outbox().map(x => x.id === e.id ? { ...x, tries: (x.tries || 0) + 1 } : x).filter(x => (x.tries || 0) < 6));
+      flushing = false; if (outbox().length) setTimeout(flush, 15000);
+    });
+  }
+  const queuePost = (n, s) => { if (A.id === 'game') return; saveOutbox([...outbox(), { id: Date.now() + '-' + Math.random().toString(36).slice(2, 7), g: A.id, n, s }]); flush(); };
+  let hsTab = 'world', worldTop = [], worldState = 'idle', lastSaved = null; // worldState: idle | loading | ok | off
+  function loadWorld() {
+    if (worldState !== 'ok') worldState = 'loading';
+    renderHS();
+    A.world().then(w => w.top(A.id)).then(t => { worldTop = t; worldState = 'ok'; renderHS(); }, () => { worldState = 'off'; renderHS(); });
+  }
+
   let lastResult = null; // read by the next A.overlay call, which shows initials entry and the table
   /** Save a finished game. Pass daily=true for a daily-challenge run. Returns true on a new record. */
   A.submit = (s, daily) => {
@@ -79,7 +109,14 @@
   A.onPress = fn => pressFns.push(fn);
   A.held = (...codes) => codes.some(c => A.down.has(c));
   // While initials entry is open, presses (keys, pad buttons, gamepad) go to it instead of the game.
-  const kd = code => { if (!A.down.has(code)) { A.down.add(code); if (entry) entryKey(code); else pressFns.forEach(f => f(code)); } };
+  // On a score table, ←/→ switch between the World and This device tabs.
+  const kd = code => {
+    if (A.down.has(code)) return;
+    A.down.add(code);
+    if (entry) entryKey(code);
+    else if (shown && overlayOpen() && (code === 'ArrowLeft' || code === 'ArrowRight')) { hsTab = hsTab === 'world' ? 'local' : 'world'; renderHS(); }
+    else pressFns.forEach(f => f(code));
+  };
   const ku = code => A.down.delete(code);
   A.press = kd; A.release = ku;
   const GAME_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space']);
@@ -205,15 +242,17 @@
     const hs = o.querySelector('.hs');
     hs.addEventListener('mousedown', e => { if (e.target.closest('button')) e.preventDefault(); }); // keep focus off the ▲▼ buttons
     hs.addEventListener('click', e => {
+      const tab = e.target.closest('[data-tab]'); if (tab) { hsTab = tab.dataset.tab; renderHS(); return; }
       const b = e.target.closest('[data-slot]'); if (!b || !entry) return;
       entry.pos = +b.dataset.slot; if (b.dataset.dir) entryKey(b.dataset.dir); else renderHS();
     });
-    goFn = onGo; altFn = alt ? alt.onGo : null; goLabel = btn; entry = null; shown = null;
+    goFn = onGo; altFn = alt ? alt.onGo : null; goLabel = btn; entry = null; shown = null; lastSaved = null;
     if (res) {
       shown = { top: res.top, hi: -1, day: res.day };
       if (res.rank >= 0) entry = { res, pos: 0, letters: [...(/^[A-Z]{3}$/.test(store.get('arcade:initials')) ? store.get('arcade:initials') : 'AAA')] };
     } else if (scores) shown = { top: A.top(), hi: -1, day: null };
     renderHS(); o.hidden = false;
+    if (shown) loadWorld();
   };
   A.hideOverlay = () => { const o = $('ov'); if (o) o.hidden = true; entry = null; };
   A.overlayOpen = overlayOpen;
@@ -233,8 +272,9 @@
     const { res } = entry, n = entry.letters.join('');
     const top = res.top.slice(); top.splice(res.rank, 0, { n, s: res.s }); top.length = Math.min(top.length, 10);
     store.set(topKey, JSON.stringify(top)); store.set('arcade:initials', n);
-    shown = { top, hi: res.rank, day: shown && shown.day }; entry = null;
+    shown = { top, hi: res.rank, day: shown && shown.day }; entry = null; lastSaved = { n, s: res.s };
     A.jingle([784, 988, 1175], 0.06); renderHS();
+    queuePost(n, res.s);
     const go = $('ov').querySelector('.go'); if (go) go.focus();
   }
   function renderHS() {
@@ -250,11 +290,20 @@
         `<div class="hs-hint">Type, or ↑↓ to change and ←→ to move</div>`;
       return;
     }
-    if (!shown || !shown.top.length) { hs.innerHTML = shown && shown.day ? dayLine(shown.day) : ''; return; }
-    const rows = shown.top.map((e, i) => `<div class="row${i === shown.hi ? ' me' : ''}"><span>${i + 1}</span>` +
-      `<span>${/^[A-Z?]{3}$/.test(e.n) ? e.n : '???'}</span><span>${(+e.s || 0).toLocaleString()}</span></div>`).join('');
-    hs.innerHTML = `<div class="hs-head">HIGH SCORES</div><div class="hs-table">${rows}</div>${shown.day ? dayLine(shown.day) : ''}`;
+    if (!shown) { hs.innerHTML = ''; return; }
+    const tab = (id, label) => `<button tabindex="-1" data-tab="${id}"${hsTab === id ? ' class="on"' : ''}>${label}</button>`;
+    const note = t => `<div class="hs-note">${t}</div>`;
+    const local = shown.top.length ? table(shown.top, shown.hi) : note('No scores on this device yet');
+    let body;
+    if (hsTab === 'local') body = local;
+    else if (worldState === 'ok') body = worldTop.length ? table(worldTop, lastSaved ? worldTop.findIndex(e => e.n === lastSaved.n && e.s === lastSaved.s) : -1) : note('No world scores yet. Be the first!');
+    else if (worldState === 'off') body = note('World scores are offline · showing this device') + local;
+    else body = note('Loading world scores…');
+    hs.innerHTML = `<div class="hs-tabs">${tab('world', 'WORLD')}${tab('local', 'THIS DEVICE')}</div>${body}${shown.day ? dayLine(shown.day) : ''}`;
   }
+  // Names are checked against 3 capital letters before display: world scores come from other players.
+  const table = (list, hi) => `<div class="hs-table">${list.map((e, i) => `<div class="row${i === hi ? ' me' : ''}"><span>${i + 1}</span>` +
+    `<span>${/^[A-Z?]{3}$/.test(e.n) ? e.n : '???'}</span><span>${(+e.s || 0).toLocaleString()}</span></div>`).join('')}</div>`;
   const dayLine = d => `<div class="hs-day">DAILY ${d.d} · TODAY'S BEST ${d.s.toLocaleString()}</div>`;
 
   /* ---------- misc ---------- */
@@ -271,6 +320,7 @@
       const p = document.createElement('button'); p.className = 'mute pause'; p.dataset.k = 'KeyP'; p.textContent = 'PAUSE'; m.before(p);
     }
     bindPads();
+    if (outbox().length) flush(); // scores saved while offline
     if (m) {
       const label = () => { m.textContent = A.muted ? 'SOUND OFF' : 'SOUND ON'; m.setAttribute('aria-pressed', String(!A.muted)); };
       label(); m.addEventListener('click', () => { A.muted = !A.muted; store.set('arcade:muted', A.muted ? '1' : '0'); A.unlock(); label(); });

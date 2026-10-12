@@ -54,7 +54,10 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--game);outline-offse
 .hs-table .row{display:grid;grid-template-columns:2.6ch 3.6ch 7ch;gap:6px;text-align:left}
 .hs-table .row span:last-child{text-align:right;color:var(--ink)}
 .hs-table .me,.hs-table .me span:last-child{color:var(--game);text-shadow:0 0 8px color-mix(in srgb,var(--game) 60%,transparent)}
-.hs-day,.hs-hint{font-size:11px;color:var(--muted)}
+.hs-day,.hs-hint,.hs-note{font-size:11px;color:var(--muted)}
+.hs-tabs{display:flex;gap:4px}
+.hs-tabs button{border:1px solid var(--line);background:transparent;border-radius:6px;padding:3px 9px;font-family:var(--f-pixel);font-size:11px;color:var(--muted)}
+.hs-tabs button.on{border-color:var(--game);color:var(--game)}
 .ini{display:flex;gap:10px}
 .slot{display:flex;flex-direction:column;align-items:center;gap:2px}
 .slot button{border:0;background:transparent;color:var(--muted);font-size:14px;padding:2px 10px;font-family:var(--f-pixel)}
