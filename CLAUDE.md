@@ -50,4 +50,4 @@ All names, characters and art are original. Keep it that way: no trademarked gam
 
 ## Deploy
 
-`.github/workflows/site.yml` runs the smoke tests on every push and pull request. On `main`, a passing run publishes `index.html`, `shared/` and `games/` to GitHub Pages, so a broken game never goes live. This needs the repo's Settings → Pages → Source set to "GitHub Actions". The site lives at https://gfrazier620-afk.github.io/Bitcade/
+`.github/workflows/site.yml` runs the smoke tests on every push and pull request. On `main`, a passing run publishes `index.html`, `sw.js`, `manifest.json`, `icons/`, `shared/` and `games/` to GitHub Pages (add any new top-level site file to the copy step in the workflow), so a broken game never goes live. This needs the repo's Settings → Pages → Source set to "GitHub Actions". The site lives at https://gfrazier620-afk.github.io/Bitcade/

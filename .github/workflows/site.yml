@@ -40,7 +40,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # publish only the site, not the test tooling
-      - run: mkdir _site && cp -r index.html shared games _site/
+      - run: mkdir _site && cp -r index.html sw.js manifest.json icons shared games _site/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
