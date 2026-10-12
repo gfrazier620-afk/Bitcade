@@ -43,7 +43,8 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--game);outline-offse
 .go:active{transform:translateY(3px);box-shadow:0 1px 0 color-mix(in srgb,var(--game) 45%,#000)}
 
 .pad{display:none;width:100%;max-width:520px;justify-content:space-between;align-items:center;gap:12px;user-select:none;-webkit-user-select:none}
-@media (pointer:coarse){.pad{display:flex}.help{display:none}}
+.pause{display:none}
+@media (pointer:coarse){.pad{display:flex}.help{display:none}.pause{display:inline-block}}
 .dp{display:grid;grid-template-columns:repeat(3,56px);grid-template-rows:repeat(3,56px);gap:4px}
 .dp button,.ab button{touch-action:none;border:0;background:var(--panel);border:1px solid var(--line);color:var(--ink);font-size:18px;border-radius:12px}
 .dp button.on,.ab button.on{background:color-mix(in srgb,var(--game) 40%,var(--panel));border-color:var(--game)}

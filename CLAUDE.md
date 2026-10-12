@@ -9,13 +9,15 @@ A GitHub Pages arcade site: a lobby page plus 10 classic-style browser games. Pl
 - `shared/arcade.js`: the shared kit, exposed as `window.Arcade`. It covers:
   - high scores in localStorage (`arcade:best:<slug>`)
   - sound (`tone`, `noise`, `jingle`)
-  - keyboard and touch input (`held`, `onPress`, `swipe`, `[data-k]` pad buttons)
+  - keyboard, touch and gamepad input (`held`, `onPress`, `swipe`, `[data-k]` pad buttons)
+  - a header PAUSE button for touch, added automatically unless the pad already has a `KeyP` button
   - canvas sizing
   - the fixed-step `loop`
   - the start/pause/game-over `overlay`
 - `games/<slug>/index.html`: one self-contained page per game, loading the shared kit with `../../shared/`.
   - `body data-game="<slug>"` sets the score key.
   - `style="--game:#hex"` sets the accent colour.
+  - `data-pad="0:KeyK 2:KeyJ"` maps gamepad buttons (standard mapping index) to key codes. The defaults are d-pad and left stick → arrows, A (0) → Space, Start (9) → KeyP. A or Start also presses the overlay button.
 - `games/blip-sports/`: the exception. It's a standalone LED handheld (football and baseball) that doesn't use the shared kit, and it tracks wins in `arcade:best:blip-sports`.
 
 ## Games
@@ -26,7 +28,7 @@ All names, characters and art are original. Keep it that way: no trademarked gam
 
 ## Conventions
 
-- Every game works on keyboard and touch. Touch pads appear only on coarse pointers.
+- Every game works on keyboard and touch. Kit games also work on a gamepad (Blip Sports doesn't yet). Touch pads appear only on coarse pointers.
 - Pages need `[hidden]{display:none!important}` (it's in arcade.css), because the overlay uses `display:flex`.
 - Initialise arrays used by draw/update at declaration. The loop runs on the title screen before a game starts.
 - Test locally by running `python3 -m http.server` in the repo root and opening http://localhost:8000.

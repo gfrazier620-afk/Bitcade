@@ -65,7 +65,7 @@
     kd(e.code);
   });
   addEventListener('keyup', e => ku(e.code));
-  addEventListener('blur', () => A.down.clear());
+  addEventListener('blur', () => { A.down.clear(); gpHeld.clear(); });
   function bindPads() {
     document.querySelectorAll('[data-k]').forEach(b => {
       const code = b.dataset.k;
@@ -90,6 +90,39 @@
     });
   };
 
+  /* ---------- gamepad ---------- */
+  // Standard mapping: d-pad and left stick → arrows, A → Space, Start → pause. A page adds or overrides
+  // buttons with body data-pad="0:KeyK 2:KeyJ" (button index:key code). Buttons feed the same press/held path as keys.
+  const padMap = { 0: 'Space', 9: 'KeyP', 12: 'ArrowUp', 13: 'ArrowDown', 14: 'ArrowLeft', 15: 'ArrowRight' };
+  (document.body.dataset.pad || '').split(/\s+/).forEach(p => { const [i, code] = p.split(':'); if (code) padMap[i] = code; });
+  let gpHeld = new Set(), gpButtons = new Set(), gpPolling = false;
+  const gpSwallow = new Set(); // A/Start presses that went to the overlay; ignored until released
+  const getPads = () => { try { return [...(navigator.getGamepads ? navigator.getGamepads() : [])].filter(Boolean); } catch (e) { return []; } };
+  function pollPads() {
+    const pads = getPads();
+    if (!pads.length) { gpPolling = false; gpHeld.forEach(ku); gpHeld.clear(); gpButtons.clear(); return; }
+    const codes = new Set(), buttons = new Set();
+    pads.forEach(gp => {
+      gp.buttons.forEach((b, i) => { if (b.pressed) buttons.add(i); });
+      const x = gp.axes[0] || 0, y = gp.axes[1] || 0;
+      if (x < -0.5) codes.add('ArrowLeft'); if (x > 0.5) codes.add('ArrowRight');
+      if (y < -0.5) codes.add('ArrowUp'); if (y > 0.5) codes.add('ArrowDown');
+    });
+    buttons.forEach(i => {
+      if (!gpButtons.has(i)) { A.unlock(); if (overlayOpen() && (i === 0 || i === 9)) { gpSwallow.add(i); overlayGo(); } }
+      if (!gpSwallow.has(i) && padMap[i]) codes.add(padMap[i]);
+    });
+    gpSwallow.forEach(i => { if (!buttons.has(i)) gpSwallow.delete(i); });
+    gpButtons = buttons;
+    codes.forEach(c => { if (!gpHeld.has(c)) kd(c); });
+    gpHeld.forEach(c => { if (!codes.has(c)) ku(c); });
+    gpHeld = codes;
+    requestAnimationFrame(pollPads);
+  }
+  const startPads = () => { if (!gpPolling) { gpPolling = true; requestAnimationFrame(pollPads); } };
+  addEventListener('gamepadconnected', startPads);
+  if (getPads().length) startPads();
+
   /* ---------- canvas + loop ---------- */
   A.canvas = (cv, w, h) => {
     const ctx = cv.getContext('2d');
@@ -112,7 +145,7 @@
   };
   const hideFns = [];
   A.onHide = fn => hideFns.push(fn);
-  document.addEventListener('visibilitychange', () => { if (document.hidden) { A.down.clear(); hideFns.forEach(f => f()); } });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { A.down.clear(); gpHeld.clear(); hideFns.forEach(f => f()); } });
 
   /* ---------- overlay ---------- */
   let goFn = null;
@@ -138,8 +171,13 @@
   A.pick = arr => arr[Math.floor(Math.random() * arr.length)];
 
   function init() {
-    A.showBest(); bindPads();
+    A.showBest();
     const m = $('mute');
+    // Touch players need a way to pause; add a header button unless the pad already has one (shown on coarse pointers only).
+    if (m && !document.querySelector('[data-k="KeyP"]')) {
+      const p = document.createElement('button'); p.className = 'mute pause'; p.dataset.k = 'KeyP'; p.textContent = 'PAUSE'; m.before(p);
+    }
+    bindPads();
     if (m) {
       const label = () => { m.textContent = A.muted ? 'SOUND OFF' : 'SOUND ON'; m.setAttribute('aria-pressed', String(!A.muted)); };
       label(); m.addEventListener('click', () => { A.muted = !A.muted; store.set('arcade:muted', A.muted ? '1' : '0'); A.unlock(); label(); });
