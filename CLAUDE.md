@@ -1,6 +1,6 @@
 # Bitcade
 
-A GitHub Pages arcade site: a lobby page plus 10 classic-style browser games. Plain HTML, CSS and canvas JavaScript. No build step, no frameworks, no dependencies beyond Google Fonts.
+A GitHub Pages arcade site: a lobby page plus 14 classic-style browser games. Plain HTML, CSS and canvas JavaScript. No build step, no frameworks, no dependencies beyond Google Fonts.
 
 ## Layout
 
@@ -24,7 +24,7 @@ A GitHub Pages arcade site: a lobby page plus 10 classic-style browser games. Pl
 
 ## Games
 
-neon-noodle (snake), wallbuster (brick breaker), star-siege (alien shooter), rock-rift (asteroids), stackdown (falling blocks), back-alley-brawl (1v1 fighter vs CPU ladder), circuit-chase (maze chase), highrise-handyman (fix-it climber), nitro-lane (racing), blip-sports (LED football + baseball).
+neon-noodle (snake), wallbuster (brick breaker), star-siege (alien shooter), rock-rift (asteroids), stackdown (falling blocks), back-alley-brawl (1v1 fighter vs CPU ladder), circuit-chase (maze chase), highrise-handyman (fix-it climber), nitro-lane (racing), volley-duel (paddle duel, 1P vs CPU ladder or 2P on one keyboard/tablet), crater-lander (lunar lander), sky-shield (missile defense), hedge-hop (road crossing), blip-sports (LED football + baseball).
 
 All names, characters and art are original. Keep it that way: no trademarked game names, characters or sprites.
 

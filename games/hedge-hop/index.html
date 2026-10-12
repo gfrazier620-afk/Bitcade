@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Hedge Hop</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Rubik:wght@400;500;700&family=Silkscreen&display=swap">
+<link rel="stylesheet" href="../../shared/arcade.css">
+</head>
+<body data-game="hedge-hop" style="--game:#ffb27a">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>HEDGE HOP</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <div class="pad">
+    <div class="dp"><button class="u" data-k="ArrowUp" aria-label="Hop up">▲</button><button class="l" data-k="ArrowLeft" aria-label="Hop left">◀</button><button class="r" data-k="ArrowRight" aria-label="Hop right">▶</button><button class="d" data-k="ArrowDown" aria-label="Hop down">▼</button></div>
+    <div class="ab"><button class="sm" data-k="KeyP">PAUSE</button></div>
+  </div>
+  <p class="help"><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> or <kbd>WASD</kbd> hop · <kbd>P</kbd> pause · swipe or tap on phones</p>
+</main>
+<script src="../../shared/arcade.js"></script>
+<script>
+(() => {
+const A = Arcade, cv = document.getElementById('cv');
+const COLS = 13, ROWS = 13, T = 40, HUD = 36, W = COLS * T, H = ROWS * T + HUD, LW = COLS + 6, ctx = A.canvas(cv, W, H);
+const BURROWS = [2, 4, 6, 8, 10], START = { x: 6, y: 12 }, TIME = 30;
+// Rows 1-5 are the stream (ride logs and leaf rafts), row 6 is the verge, rows 7-11 are the road.
+const LANES = [
+  { row: 1, kind: 'log', dir: 1, sp: 1.3, len: 4, n: 3 }, { row: 2, kind: 'leaf', dir: -1, sp: 1.1, len: 3, n: 3 },
+  { row: 3, kind: 'log', dir: 1, sp: 1.6, len: 5, n: 2 }, { row: 4, kind: 'log', dir: 1, sp: 0.9, len: 3, n: 3 },
+  { row: 5, kind: 'leaf', dir: -1, sp: 1.0, len: 2, n: 4 },
+  { row: 7, kind: 'truck', dir: -1, sp: 1.0, len: 3, n: 2 }, { row: 8, kind: 'van', dir: 1, sp: 1.2, len: 2, n: 3 },
+  { row: 9, kind: 'car', dir: -1, sp: 2.2, len: 1, n: 2 }, { row: 10, kind: 'tractor', dir: 1, sp: 0.8, len: 1, n: 3 },
+  { row: 11, kind: 'car', dir: -1, sp: 1.0, len: 1, n: 3 }];
+const CARS = ['#ff4f6d', '#5ee7ff', '#ffd23d', '#b48cff', '#3dff8f'];
+let state = 'title', hog = { ...START, hop: 0, fx: 6, fy: 12, face: 'up' }, objs = [], homes = [], score = 0, lives = 3, level = 1, timeLeft = TIME, best = 12, deadT = 0, berry = null, berryT = 8, msg = '', msgT = 0, nextLife = 10000;
+const isStream = y => y >= 1 && y <= 5, isRoad = y => y >= 7 && y <= 11;
+
+function buildLanes() {
+  objs = [];
+  LANES.forEach(l => { const off = A.rand(0, LW / l.n); for (let i = 0; i < l.n; i++) objs.push({ l, x: i * LW / l.n + off - 3, col: A.pick(CARS), dip: l.kind === 'leaf' && i % 2 === 0, ph: A.rand(0, 6) }); });
+}
+buildLanes(); // scenery for the title screen
+const speed = l => l.sp * (1 + (level - 1) * 0.12);
+function newGame() { score = 0; lives = 3; level = 1; nextLife = 10000; A.setScore(0); homes = BURROWS.map(() => false); buildLanes(); respawn(); state = 'play'; say('GET HOME!'); A.jingle([392, 523, 659, 784], 0.08); }
+function respawn() { hog = { ...START, hop: 0, fx: START.x, fy: START.y, face: 'up' }; timeLeft = TIME; best = START.y; }
+function say(t) { msg = t; msgT = 1.6; }
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+
+const DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
+const KEYS = { ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right' };
+function hop(d) {
+  if (state !== 'play' || hog.hop > 0) return;
+  const [dx, dy] = DIRS[d], ny = A.clamp(hog.y + dy, 0, ROWS - 1);
+  let nx = hog.x + dx;
+  if (!isStream(ny)) nx = Math.round(nx); // land rows sit on the grid
+  nx = A.clamp(nx, 0, COLS - 1);
+  hog.fx = hog.x; hog.fy = hog.y; hog.x = nx; hog.y = ny; hog.hop = 0.12; hog.face = d;
+  A.tone(dy < 0 ? 520 : 420, 0.04, 'square', 0.03, 0, dy < 0 ? 700 : 0);
+  if (ny < best) { score += 10 * (best - ny); best = ny; A.setScore(score); }
+  if (ny === 0) arrive();
+}
+A.onPress(c => { if (c === 'KeyP' || c === 'Escape') return pause(); if (KEYS[c]) hop(KEYS[c]); });
+A.swipe(cv, d => hop(d === 'tap' ? 'up' : d));
+A.onHide(pause);
+
+function arrive() {
+  const i = BURROWS.findIndex(b => Math.abs(hog.x - b) < 0.45);
+  if (i < 0 || homes[i]) return die('SPIKY HEDGE!');
+  homes[i] = true; let pts = 50 + Math.ceil(timeLeft) * 10;
+  if (berry && berry.i === i) { pts += 200; berry = null; }
+  score += pts; A.setScore(score); A.jingle([659, 784, 1047], 0.07); say(`HOME! +${pts}`);
+  if (homes.every(Boolean)) { score += 1000; A.setScore(score); level++; homes = BURROWS.map(() => false); say(`ALL HOME! LEVEL ${level}`); A.jingle([523, 659, 784, 1047, 1319], 0.09); }
+  respawn();
+}
+function die(why) {
+  state = 'dying'; deadT = 1.2; lives--; say(why);
+  A.noise(0.4, 0.07); A.tone(300, 0.5, 'sawtooth', 0.05, 0, 60);
+}
+function gameOver() { state = 'over'; const rec = A.submit(score); A.overlay({ title: 'HOG TIRED', big: `SCORE ${score} · LEVEL ${level}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, btn: 'Hop again', onGo: newGame }); }
+const submerged = (o, t) => o.dip && ((t + o.ph) % 6) > 4.7;
+
+let clock = 0;
+A.loop(dt => {
+  clock += dt;
+  if (msgT > 0) msgT -= dt;
+  for (const o of objs) { o.x += o.l.dir * speed(o.l) * dt; if (o.l.dir > 0 && o.x > COLS + 3) o.x -= LW; if (o.l.dir < 0 && o.x + o.l.len < -3) o.x += LW; }
+  if (state === 'dying') { deadT -= dt; if (deadT <= 0) { if (lives <= 0) return gameOver(); respawn(); state = 'play'; } return; }
+  if (state !== 'play') return;
+  if (hog.hop > 0) hog.hop = Math.max(0, hog.hop - dt);
+  timeLeft -= dt; if (timeLeft <= 0) return die('OUT OF TIME');
+  berryT -= dt;
+  if (!berry && berryT <= 0) { const free = BURROWS.map((_, i) => i).filter(i => !homes[i]); if (free.length) berry = { i: A.pick(free), t: 6 }; berryT = A.rand(10, 16); }
+  if (berry && (berry.t -= dt) <= 0) berry = null;
+  if (hog.hop > 0) return; // mid-hop: judge the landing when it finishes
+  if (isStream(hog.y)) {
+    const ride = objs.find(o => o.l.row === hog.y && !submerged(o, clock) && hog.x + 0.5 >= o.x - 0.15 && hog.x + 0.5 <= o.x + o.l.len + 0.15);
+    if (!ride) return die('SPLASH!');
+    hog.x += ride.l.dir * speed(ride.l) * dt;
+    if (hog.x < -0.4 || hog.x > COLS - 0.6) return die('SWEPT AWAY');
+  } else if (isRoad(hog.y)) {
+    if (objs.some(o => o.l.row === hog.y && hog.x + 0.85 > o.x + 0.05 && hog.x + 0.15 < o.x + o.l.len - 0.05)) return die('SQUISH!');
+  }
+  if (score >= nextLife) { lives++; nextLife += 10000; A.jingle([660, 880, 1320], 0.08); }
+}, t => {
+  // ground
+  for (let r = 0; r < ROWS; r++) {
+    const y = r * T;
+    ctx.fillStyle = r === 0 ? '#1e4a24' : isStream(r) ? '#16365e' : isRoad(r) ? '#22202c' : '#2f6b2c'; ctx.fillRect(0, y, W, T);
+    if (isStream(r)) { ctx.fillStyle = 'rgba(160,210,255,.12)'; for (let i = 0; i < 6; i++) ctx.fillRect(((i * 97 + t / 30 * (r % 2 ? 1 : -1)) % (W + 40) + W + 40) % (W + 40) - 20, y + 10 + (i % 3) * 9, 18, 2); }
+    if (isRoad(r) && r < 11) { ctx.fillStyle = 'rgba(255,255,255,.35)'; for (let x = 8; x < W; x += 52) ctx.fillRect(x, y + T - 2, 26, 3); }
+  }
+  // hedge and burrows
+  ctx.fillStyle = '#16381b'; for (let x = 0; x < W; x += 14) { ctx.beginPath(); ctx.arc(x + 7, 8, 9, 0, Math.PI * 2); ctx.fill(); }
+  BURROWS.forEach((b, i) => {
+    const cx = b * T + T / 2; ctx.fillStyle = '#120a06'; ctx.beginPath(); ctx.ellipse(cx, T / 2 + 4, 16, 13, 0, 0, Math.PI * 2); ctx.fill();
+    if (homes[i]) drawHog(cx, T / 2 + 4, 'down', 0.8);
+    else if (berry && berry.i === i) { ctx.fillStyle = '#ff4f6d'; ctx.beginPath(); ctx.arc(cx, T / 2 + 6, 6, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#3dff8f'; ctx.fillRect(cx - 1, T / 2 - 4, 2, 5); }
+  });
+  // lanes
+  for (const o of objs) {
+    const x = o.x * T, y = o.l.row * T, w = o.l.len * T;
+    if (o.l.kind === 'log') { ctx.fillStyle = '#7a4a24'; ctx.beginPath(); ctx.roundRect(x + 2, y + 7, w - 4, T - 14, 12); ctx.fill(); ctx.fillStyle = '#a8703a'; ctx.fillRect(x + 10, y + 12, w - 20, 3); ctx.fillStyle = '#c8905a'; ctx.beginPath(); ctx.ellipse(x + w - 8, y + T / 2, 5, 12, 0, 0, Math.PI * 2); ctx.fill(); }
+    else if (o.l.kind === 'leaf') {
+      const sub = submerged(o, clock), warn = o.dip && ((clock + o.ph) % 6) > 4.1;
+      ctx.globalAlpha = sub ? 0.18 : warn && Math.floor(t / 120) % 2 ? 0.55 : 1;
+      for (let i = 0; i < o.l.len; i++) { ctx.fillStyle = '#4fbf4a'; ctx.beginPath(); ctx.ellipse(x + i * T + T / 2, y + T / 2, 17, 13, 0.4, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = '#2f7a2c'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x + i * T + 8, y + T / 2 + 6); ctx.lineTo(x + i * T + T - 8, y + T / 2 - 6); ctx.stroke(); }
+      ctx.globalAlpha = 1;
+    } else drawVehicle(o, x, y, w);
+  }
+  // hedgehog
+  if (state !== 'title') {
+    const k = hog.hop > 0 ? 1 - hog.hop / 0.12 : 1, hx = (hog.fx + (hog.x - hog.fx) * k) * T + T / 2, hy = (hog.fy + (hog.y - hog.fy) * k) * T + T / 2 - Math.sin(k * Math.PI) * 8;
+    if (state === 'dying') { ctx.globalAlpha = Math.floor(t / 90) % 2 ? 0.3 : 1; ctx.fillStyle = '#ffb27a'; ctx.font = '22px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('✕', hx, hy + 8); ctx.globalAlpha = 1; }
+    else drawHog(hx, hy, hog.face, 1);
+  } else drawHog(6 * T + T / 2, 12 * T + T / 2 - Math.abs(Math.sin(t / 300)) * 8, 'up', 1);
+  // HUD
+  const hy = ROWS * T; ctx.fillStyle = '#0d0a18'; ctx.fillRect(0, hy, W, HUD);
+  ctx.font = '13px Silkscreen, monospace'; ctx.textAlign = 'left'; ctx.fillStyle = '#f4effd'; ctx.fillText('LEVEL ' + level, 10, hy + 23);
+  for (let i = 0; i < lives - 1; i++) drawHog(110 + i * 24, hy + 18, 'up', 0.55);
+  if (state !== 'title') { ctx.fillStyle = '#2a2148'; ctx.fillRect(W - 170, hy + 12, 120, 12); ctx.fillStyle = timeLeft < 8 ? '#ff4f6d' : '#ffb27a'; ctx.fillRect(W - 170, hy + 12, 120 * Math.max(0, timeLeft) / TIME, 12); ctx.fillStyle = '#a39bc4'; ctx.textAlign = 'right'; ctx.fillText('TIME', W - 10, hy + 23); }
+  if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '24px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.shadowColor = '#000'; ctx.shadowBlur = 8; ctx.fillText(msg, W / 2, 6 * T + 30); ctx.shadowBlur = 0; ctx.globalAlpha = 1; }
+});
+function drawVehicle(o, x, y, w) {
+  const k = o.l.kind, front = o.l.dir > 0 ? x + w - 6 : x + 2;
+  ctx.fillStyle = k === 'tractor' ? '#3dff8f' : k === 'truck' ? '#d8d2e8' : o.col; ctx.beginPath(); ctx.roundRect(x + 3, y + 6, w - 6, T - 12, 6); ctx.fill();
+  if (k === 'truck') { ctx.fillStyle = o.col; ctx.fillRect(o.l.dir > 0 ? x + w - 30 : x + 3, y + 6, 27, T - 12); }
+  if (k === 'tractor') { ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(x + T / 2 - o.l.dir * 6, y + T / 2, 10, 0, Math.PI * 2); ctx.fill(); }
+  ctx.fillStyle = 'rgba(20,20,40,.8)'; ctx.fillRect(o.l.dir > 0 ? front - 10 : front + 4, y + 10, 6, T - 20);
+  ctx.fillStyle = '#fff6c2'; ctx.fillRect(front, y + 9, 4, 5); ctx.fillRect(front, y + T - 14, 4, 5);
+}
+function drawHog(x, y, face, s) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(s, s); ctx.rotate({ up: 0, right: Math.PI / 2, down: Math.PI, left: -Math.PI / 2 }[face]);
+  ctx.fillStyle = '#5a3a22'; ctx.beginPath(); for (let i = 0; i < 14; i++) { const a = Math.PI * 0.15 + i / 13 * Math.PI * 0.7, r = i % 2 ? 11 : 16; ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r - 1); } ctx.lineTo(0, -4); ctx.fill();
+  ctx.fillStyle = '#ffb27a'; ctx.beginPath(); ctx.ellipse(0, -3, 9, 11, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#1a0e08'; ctx.fillRect(-5, -9, 3, 3); ctx.fillRect(2, -9, 3, 3); ctx.beginPath(); ctx.arc(0, -14, 2.5, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+A.overlay({ title: 'HEDGE HOP', sub: 'Guide the hedgehog across the road and the stream into an empty burrow. Ride logs and leaves (some leaves sink!). Fill all five burrows to level up. Grab berries for a bonus.', btn: 'Start', scores: true, onGo: newGame });
+})();
+</script>
+</body>
+</html>

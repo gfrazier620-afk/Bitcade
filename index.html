@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Bitcade</title>
-<meta name="description" content="Ten classic-style arcade games in your browser. Free, no installs, works on phone and keyboard.">
+<meta name="description" content="Fourteen classic-style arcade games in your browser. Free, no installs, works on phone and keyboard.">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Bungee+Shade&family=Rubik:wght@400;500;700&family=Silkscreen&display=swap">
 <link rel="stylesheet" href="shared/arcade.css">
@@ -50,7 +50,7 @@ footer p{margin:4px 0}
 <div class="lobby">
   <header class="marquee">
     <h1 class="logo">BITCADE</h1>
-    <p class="tag">TEN CLASSIC-STYLE GAMES · NO QUARTERS REQUIRED</p>
+    <p class="tag">FOURTEEN CLASSIC-STYLE GAMES · NO QUARTERS REQUIRED</p>
     <div class="coin" aria-hidden="true">▶ PICK A CABINET ◀</div>
     <div class="stats" id="stats"></div>
   </header>
@@ -90,11 +90,23 @@ const GAMES = [
   { slug: 'nitro-lane', name: 'Nitro Lane', kind: 'Racing', c: '#ff3d7f', blurb: 'Weave through night traffic and keep the tank full.',
     px: ['P.W....W..P.', 'P..YY.....P.', 'P..YY..W..P.', 'P.W.....CCP.', 'P.......CCP.', 'P..PP..W..P.', 'P..PP.....P.', 'P.W....W..P.'],
     px2: ['P.W....W..P.', 'P.W....W..P.', 'P..YY.....P.', 'P..YY..W..P.', 'P.W.....CCP.', 'P..PP...CCP.', 'P..PP..W..P.', 'P.........P.'] },
+  { slug: 'volley-duel', name: 'Volley Duel', kind: 'Paddle duel · 2P', c: '#ff7bf0', blurb: 'Bat the ball past a rival: a CPU ladder or a friend.',
+    px: ['M.....A.....', 'M..........C', 'M.....A....C', '...W.......C', '......A.....', '............', '......A.....', '............'],
+    px2: ['......A.....', '...........C', 'M.....A....C', 'M..........C', 'MW....A.....', '............', '......A.....', '............'] },
+  { slug: 'crater-lander', name: 'Crater Lander', kind: 'Lunar lander', c: '#9fb4ff', blurb: 'Feather the thrust and touch down on a narrow pad.',
+    px: ['............', '.....EE.....', '....EEEE....', '....E..E....', '............', '............', 'AA...AA.YYYA', 'AAAAAAAAAAAA'],
+    px2: ['............', '............', '......EE....', '.....EEEE...', '.....E..E...', '......OO....', 'AA...AA.YYYA', 'AAAAAAAAAAAA'] },
+  { slug: 'sky-shield', name: 'Sky Shield', kind: 'Missile defense', c: '#ffe14d', blurb: 'Burst the falling missiles before they reach your cities.',
+    px: ['R.........R.', '.R.......R..', '..R.....R...', '...R...R....', '............', '............', '.BB.BB.BB.B.', 'OOOOOOOOOOOO'],
+    px2: ['R.........R.', '.R.......R..', '..R.....R...', '...R...YY...', '....R.YYYY..', '.......YY...', '.BB.BB.BB.B.', 'OOOOOOOOOOOO'] },
+  { slug: 'hedge-hop', name: 'Hedge Hop', kind: 'Road crossing', c: '#ffb27a', blurb: 'Hop a hedgehog over traffic and logs to its burrow.',
+    px: ['GGGGGGGGGGGG', 'BTTTBBBTTTBB', 'BBTTTBBBBTTT', 'GGGGGGGGGGGG', 'KKRKKKKKKCKK', 'KKKKKYYKKKKK', 'GGGGGHGGGGGG', 'GGGGGGGGGGGG'],
+    px2: ['GGGGGGGGGGGG', 'TTTBBBTTTBBB', 'TBBTTTBBBBTT', 'GGGGGGGGGGGG', 'KRKKKKKKCKKK', 'KKKKKHYYKKKK', 'GGGGGGGGGGGG', 'GGGGGGGGGGGG'] },
   { slug: 'blip-sports', name: 'Blip Sports', kind: 'LED football + baseball', c: '#ff3a22', blurb: 'The 1978 handheld feel. Pick your team, beat the CPU.', label: 'WINS',
     px: ['............', '.RR..RR..RR.', '............', '.RR..WW..RR.', '............', '.RR..RR..RR.', '............', '............'],
     px2: ['............', '.RR..RR..RR.', '............', '.RR..RWW.RR.', '............', '.RR..RR..RR.', '............', '............'] }
 ];
-const PAL = { G: '#3dff8f', W: '#ffffff', P: '#ff4fa3', R: '#ff4f6d', O: '#ff8a3d', Y: '#ffd23d', C: '#5ee7ff', L: '#c6ff3d', V: '#b48cff', B: '#3d7bff', S: '#e2a978', K: '#222', N: '#4f6bff', A: '#8a92a8', y: '#ffa23d' };
+const PAL = { G: '#3dff8f', W: '#ffffff', P: '#ff4fa3', R: '#ff4f6d', O: '#ff8a3d', Y: '#ffd23d', C: '#5ee7ff', L: '#c6ff3d', V: '#b48cff', B: '#3d7bff', S: '#e2a978', K: '#222', N: '#4f6bff', A: '#8a92a8', y: '#ffa23d', M: '#ff7bf0', E: '#9fb4ff', T: '#7a4a24', H: '#ffb27a' };
 const get = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 const floor = document.getElementById('floor');
 const paint = (cx, px) => { cx.clearRect(0, 0, 12, 8); px.forEach((row, y) => [...row].forEach((ch, x) => { if (PAL[ch]) { cx.fillStyle = PAL[ch]; cx.fillRect(x, y, 1, 1); } })); };

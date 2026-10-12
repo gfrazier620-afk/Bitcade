@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Sky Shield</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Rubik:wght@400;500;700&family=Silkscreen&display=swap">
+<link rel="stylesheet" href="../../shared/arcade.css">
+</head>
+<body data-game="sky-shield" data-pad="2:KeyZ 1:KeyC 3:KeyX" style="--game:#ffe14d">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>SKY SHIELD</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <p class="help">Aim with the mouse and click to fire · or <kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> aim, <kbd>Space</kbd> fire from the nearest base, <kbd>Z</kbd><kbd>X</kbd><kbd>C</kbd> pick a base · <kbd>P</kbd> pause · tap to fire on phones</p>
+</main>
+<script src="../../shared/arcade.js"></script>
+<script>
+(() => {
+const A = Arcade, cv = document.getElementById('cv');
+const W = 640, H = 480, GROUND = 440, ctx = A.canvas(cv, W, H);
+const BASE_X = [48, 320, 592], CITY_X = [120, 180, 240, 400, 460, 520];
+let state = 'title', score = 0, wave = 0, bases = [], cities = [], foes = [], shots = [], blasts = [], toSpawn = 0, spawnT = 0, phaseT = 0, msg = '', msgT = 0, nextCity = 10000;
+const cross = { x: W / 2, y: H / 2 };
+const mult = () => Math.min(6, 1 + Math.floor((wave - 1) / 2));
+
+function newGame() {
+  score = 0; wave = 0; nextCity = 10000; A.setScore(0);
+  cities = CITY_X.map(x => ({ x, alive: true })); bases = BASE_X.map(x => ({ x, alive: true, ammo: 10 }));
+  nextWave();
+}
+function nextWave() {
+  wave++; foes = []; shots = []; blasts = [];
+  bases.forEach(b => { b.alive = true; b.ammo = 10; });
+  toSpawn = 10 + wave * 2; spawnT = 1.5; state = 'play'; say(`WAVE ${wave} · ×${mult()} POINTS`);
+  A.jingle([392, 523, 659, 784], 0.08);
+}
+function say(t) { msg = t; msgT = 2; }
+function pause() { if (state !== 'play' && state !== 'tally') return; const prev = state; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = prev }); }
+
+/* firing: from a chosen base, or the nearest one that still has ammo */
+function fire(x, y, which) {
+  if (state !== 'play') return;
+  y = Math.min(y, GROUND - 24);
+  let b = which != null ? bases[which] : null;
+  if (!b || !b.alive || !b.ammo) b = bases.filter(k => k.alive && k.ammo > 0).sort((p, q) => Math.abs(p.x - x) - Math.abs(q.x - x))[0];
+  if (!b) { A.tone(120, 0.05); return; }
+  b.ammo--; const sx = b.x, sy = GROUND - 14, d = Math.hypot(x - sx, y - sy);
+  shots.push({ sx, sy, x: sx, y: sy, tx: x, ty: y, vx: (x - sx) / d * 560, vy: (y - sy) / d * 560 });
+  A.tone(900, 0.08, 'square', 0.03, 0, 1500);
+}
+A.onPress(c => {
+  if (c === 'KeyP' || c === 'Escape') return pause();
+  if (c === 'Space') fire(cross.x, cross.y);
+  if (c === 'KeyZ') fire(cross.x, cross.y, 0);
+  if (c === 'KeyX') fire(cross.x, cross.y, 1);
+  if (c === 'KeyC') fire(cross.x, cross.y, 2);
+});
+A.onHide(pause);
+cv.addEventListener('pointermove', e => { if (e.pointerType === 'mouse') Object.assign(cross, A.pointer(cv, e)); });
+cv.addEventListener('pointerdown', e => { A.unlock(); const p = A.pointer(cv, e); Object.assign(cross, p); fire(p.x, p.y); });
+
+function targets() { return [...cities.filter(c => c.alive), ...bases.filter(b => b.alive)]; }
+/** Fire a missile at a random city or base. Some split into several at splitY (fragments never split again). */
+function launch(x, y, fragment) {
+  const t = A.pick(targets()) || { x: A.rand(40, W - 40) }, sp = 26 + wave * 5 + A.rand(0, 10), d = Math.hypot(t.x - x, GROUND - y);
+  const split = !fragment && wave >= 3 && Math.random() < 0.18 + wave * 0.02;
+  foes.push({ ox: x, oy: y, x, y, vx: (t.x - x) / d * sp, vy: (GROUND - y) / d * sp, split, splitY: 140 + A.rnd(100) });
+}
+function blast(x, y, r, chain) { blasts.push({ x, y, t: 0, r, chain }); A.noise(chain ? 0.2 : 0.35, chain ? 0.04 : 0.06); }
+function hitGround(f) {
+  blast(f.x, GROUND - 4, 26, true);
+  for (const c of cities) if (c.alive && Math.abs(c.x - f.x) < 22) { c.alive = false; A.tone(90, 0.6, 'sawtooth', 0.06, 0, 40); }
+  for (const b of bases) if (b.alive && Math.abs(b.x - f.x) < 24) { b.alive = false; b.ammo = 0; }
+}
+function endWave() {
+  state = 'tally'; phaseT = 2.6;
+  const m = mult(), ammo = bases.reduce((s, b) => s + (b.alive ? b.ammo : 0), 0), alive = cities.filter(c => c.alive).length;
+  const bonus = (ammo * 5 + alive * 100) * m; score += bonus;
+  let rebuilt = '';
+  while (score >= nextCity) { nextCity += 10000; const c = cities.find(k => !k.alive); if (c) { c.alive = true; rebuilt = ' · CITY REBUILT'; } }
+  A.setScore(score); say(`BONUS +${bonus}${rebuilt}`); A.jingle([523, 659, 784, 1047, 1319], 0.09);
+}
+function gameOver() {
+  state = 'over'; const rec = A.submit(score);
+  A.overlay({ title: 'THE END', big: `SCORE ${score} · WAVE ${wave}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, btn: 'Defend again', onGo: newGame });
+}
+
+A.loop(dt => {
+  if (msgT > 0) msgT -= dt;
+  blasts.forEach(b => b.t += dt); blasts = blasts.filter(b => b.t < 1.2);
+  if (state === 'tally') { phaseT -= dt; if (phaseT <= 0) nextWave(); return; }
+  if (state === 'falling') { phaseT -= dt; if (phaseT <= 0) gameOver(); return; }
+  if (state !== 'play') return;
+  const ax = (A.held('ArrowRight', 'KeyD') ? 1 : 0) - (A.held('ArrowLeft', 'KeyA') ? 1 : 0), ay = (A.held('ArrowDown', 'KeyS') ? 1 : 0) - (A.held('ArrowUp', 'KeyW') ? 1 : 0);
+  cross.x = A.clamp(cross.x + ax * 380 * dt, 6, W - 6); cross.y = A.clamp(cross.y + ay * 380 * dt, 6, GROUND - 24);
+  // spawning
+  spawnT -= dt;
+  if (toSpawn > 0 && spawnT <= 0) { const n = Math.min(toSpawn, 1 + A.rnd(Math.min(4, 1 + wave / 2))); for (let i = 0; i < n; i++) launch(A.rand(20, W - 20), -4); toSpawn -= n; spawnT = Math.max(0.9, 3.2 - wave * 0.18) * A.rand(0.6, 1.3); }
+  // interceptors fly to their mark, then burst
+  for (const s of shots) {
+    s.x += s.vx * dt; s.y += s.vy * dt;
+    if ((s.tx - s.x) * s.vx + (s.ty - s.y) * s.vy <= 0) { s.done = true; blast(s.tx, s.ty, 40, false); }
+  }
+  shots = shots.filter(s => !s.done);
+  // incoming
+  for (const f of foes) {
+    f.x += f.vx * dt; f.y += f.vy * dt;
+    if (f.split && f.y > f.splitY) { f.dead = true; for (let i = 0; i < 2 + (wave > 6 ? 1 : 0); i++) launch(f.x, f.y, true); continue; }
+    for (const b of blasts) {
+      const r = blastR(b);
+      if (r > 2 && Math.hypot(f.x - b.x, f.y - b.y) < r) { f.dead = true; score += 25 * mult(); blast(f.x, f.y, 20, true); break; }
+    }
+    if (!f.dead && f.y >= GROUND - 4) { f.dead = true; hitGround(f); }
+  }
+  foes = foes.filter(f => !f.dead);
+  A.setScore(score);
+  if (!cities.some(c => c.alive)) { state = 'falling'; phaseT = 2; say('THE LAST CITY FELL'); return; }
+  if (!toSpawn && !foes.length && !shots.length && !blasts.some(b => !b.chain && b.t < 0.9)) endWave();
+}, t => {
+  const g = ctx.createLinearGradient(0, 0, 0, GROUND); g.addColorStop(0, '#05030f'); g.addColorStop(1, '#1d0f2e'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#2b1d10'; ctx.fillRect(0, GROUND, W, H - GROUND); ctx.fillStyle = '#ffe14d'; ctx.fillRect(0, GROUND, W, 2);
+  const cs = cities.length ? cities : CITY_X.map(x => ({ x, alive: true })), bs = bases.length ? bases : BASE_X.map(x => ({ x, alive: true, ammo: 10 }));
+  cs.forEach(c => drawCity(c));
+  bs.forEach(b => drawBase(b));
+  // trails
+  ctx.lineWidth = 1.5;
+  foes.forEach(f => { ctx.strokeStyle = 'rgba(255,79,109,.75)'; ctx.beginPath(); ctx.moveTo(f.ox, f.oy); ctx.lineTo(f.x, f.y); ctx.stroke(); ctx.fillStyle = '#fff'; ctx.fillRect(f.x - 1.5, f.y - 1.5, 3, 3); });
+  shots.forEach(s => {
+    ctx.strokeStyle = 'rgba(94,231,255,.8)'; ctx.beginPath(); ctx.moveTo(s.sx, s.sy); ctx.lineTo(s.x, s.y); ctx.stroke();
+    ctx.strokeStyle = '#5ee7ff'; ctx.beginPath(); ctx.moveTo(s.tx - 4, s.ty - 4); ctx.lineTo(s.tx + 4, s.ty + 4); ctx.moveTo(s.tx + 4, s.ty - 4); ctx.lineTo(s.tx - 4, s.ty + 4); ctx.stroke();
+  });
+  blasts.forEach(b => { const r = blastR(b); if (r <= 0) return; ctx.fillStyle = ['#fff', '#ffe14d', '#ff8a3d', '#ff4fd8'][Math.floor(t / 50 + b.x) % 4]; ctx.globalAlpha = 0.85; ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; });
+  if (state === 'title') { // attract: a few missiles drifting down
+    for (let i = 0; i < 5; i++) { const k = ((t / 6000 + i / 5) % 1), x0 = 80 + i * 120, x1 = CITY_X[i]; ctx.strokeStyle = 'rgba(255,79,109,.75)'; ctx.beginPath(); ctx.moveTo(x0, 0); ctx.lineTo(x0 + (x1 - x0) * k, GROUND * k); ctx.stroke(); }
+  }
+  if (state === 'play' || state === 'paused') { ctx.strokeStyle = '#ffe14d'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(cross.x - 9, cross.y); ctx.lineTo(cross.x - 3, cross.y); ctx.moveTo(cross.x + 3, cross.y); ctx.lineTo(cross.x + 9, cross.y); ctx.moveTo(cross.x, cross.y - 9); ctx.lineTo(cross.x, cross.y - 3); ctx.moveTo(cross.x, cross.y + 3); ctx.lineTo(cross.x, cross.y + 9); ctx.stroke(); }
+  if (wave) { ctx.font = '13px Silkscreen, monospace'; ctx.textAlign = 'left'; ctx.fillStyle = '#f4effd'; ctx.fillText(`WAVE ${wave}  ×${mult()}`, 12, 22); }
+  if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '24px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffe14d'; ctx.fillText(msg, W / 2, 190); ctx.globalAlpha = 1; }
+});
+/* blast radius over its life: grow, hold, shrink */
+function blastR(b) { const r = b.r; return b.t < 0.45 ? r * b.t / 0.45 : b.t < 0.75 ? r : b.t < 1.2 ? r * (1 - (b.t - 0.75) / 0.45) : 0; }
+function drawCity(c) {
+  if (!c.alive) { ctx.fillStyle = '#3a2a2a'; ctx.fillRect(c.x - 16, GROUND - 5, 32, 5); return; }
+  [[-16, 12, 14], [-6, 20, 10], [4, 15, 12], [-12, 8, 6]].forEach(([dx, h, w]) => { ctx.fillStyle = '#4f7bff'; ctx.fillRect(c.x + dx, GROUND - h, w, h); });
+  ctx.fillStyle = '#ffe98a'; for (let i = 0; i < 4; i++) ctx.fillRect(c.x - 13 + i * 7, GROUND - 10, 2, 2);
+}
+function drawBase(b) {
+  ctx.fillStyle = b.alive ? '#6b4a2a' : '#3a2a2a'; ctx.beginPath(); ctx.moveTo(b.x - 26, GROUND); ctx.lineTo(b.x - 12, GROUND - 16); ctx.lineTo(b.x + 12, GROUND - 16); ctx.lineTo(b.x + 26, GROUND); ctx.fill();
+  if (!b.alive) return;
+  ctx.fillStyle = '#ffe14d'; for (let i = 0; i < b.ammo; i++) ctx.fillRect(b.x - 11 + (i % 5) * 5, GROUND - 13 + Math.floor(i / 5) * 5, 3, 3);
+  if (state === 'play' && b.ammo <= 2) { ctx.fillStyle = '#ff4f6d'; ctx.font = '10px Silkscreen, monospace'; ctx.textAlign = 'center'; ctx.fillText(b.ammo ? 'LOW' : 'OUT', b.x, GROUND + 16); }
+}
+A.overlay({ title: 'SKY SHIELD', sub: 'Missiles are falling on your six cities. Fire interceptors ahead of them: each one bursts where you aimed and wipes out anything in the blast. Three bases, ten shots each per wave.', btn: 'Start', scores: true, onGo: newGame });
+})();
+</script>
+</body>
+</html>

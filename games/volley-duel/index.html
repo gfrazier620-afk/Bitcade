@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Volley Duel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Rubik:wght@400;500;700&family=Silkscreen&display=swap">
+<link rel="stylesheet" href="../../shared/arcade.css">
+</head>
+<body data-game="volley-duel" style="--game:#ff7bf0">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>VOLLEY DUEL</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <div class="pad">
+    <div class="ab"><button data-k="KeyW" aria-label="Left paddle up">▲</button><button data-k="KeyS" aria-label="Left paddle down">▼</button></div>
+    <div class="ab"><button data-k="ArrowUp" aria-label="Right paddle up">▲</button><button data-k="ArrowDown" aria-label="Right paddle down">▼</button></div>
+  </div>
+  <p class="help"><kbd>W</kbd><kbd>S</kbd> left paddle · <kbd>↑</kbd><kbd>↓</kbd> right paddle (2 players) · <kbd>P</kbd> pause · drag on touch screens</p>
+</main>
+<script src="../../shared/arcade.js"></script>
+<script>
+(() => {
+const A = Arcade, cv = document.getElementById('cv');
+const W = 640, H = 400, PX = 24, PW = 10, PH = 70, BR = 7, WIN = 7, PS = 430, ctx = A.canvas(cv, W, H);
+// err: the CPU aims within ±err of the ball, so anything past PH / 2 + BR (42) is a miss.
+const CPUS = [
+  { name: 'BLIP', spd: 220, err: 60, wake: 0.55 }, { name: 'ZAP', spd: 270, err: 55, wake: 0.45 }, { name: 'NOVA', spd: 320, err: 51, wake: 0.38 },
+  { name: 'VOLT', spd: 380, err: 48, wake: 0.3 }, { name: 'APEX', spd: 460, err: 46, wake: 0.2 }];
+let state = 'title', two = false, L = { y: H / 2, s: 0 }, R = { y: H / 2, s: 0 }, ball = null, trail = [], serveT = 0, nextT = 0;
+let score = 0, opp = 0, msg = '', msgT = 0;
+const touch = new Map(); // pointerId → { side, y }
+
+function newGame(isTwo) { two = isTwo; score = 0; opp = 0; A.setScore(0); startMatch(); }
+function startMatch() {
+  L = { y: H / 2, s: 0 }; R = { y: H / 2, s: 0 }; trail = []; state = 'play';
+  serve(Math.random() < 0.5 ? -1 : 1); say(two ? 'FIRST TO 7' : `VS ${CPUS[opp].name}`); A.jingle([392, 523, 659], 0.08);
+}
+function serve(dir) { ball = { x: W / 2, y: H / 2, vx: 0, vy: 0, sp: 340, dir, aim: aimError() }; serveT = 1; }
+const aimError = () => A.rand(-1, 1) * CPUS[opp].err; // rolled each time the ball heads for the CPU
+function say(t) { msg = t; msgT = 1.6; }
+function pause() { if (state !== 'play' && state !== 'next') return; const prev = state; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = prev }); }
+A.onPress(c => { if (c === 'KeyP' || c === 'Escape') pause(); });
+A.onHide(pause);
+
+/* touch: drag anywhere; in 2 players the left half moves the left paddle and the right half the right one */
+cv.addEventListener('pointerdown', e => { A.unlock(); const p = A.pointer(cv, e); touch.set(e.pointerId, { side: !two || p.x < W / 2 ? 'L' : 'R', y: p.y }); cv.setPointerCapture(e.pointerId); });
+cv.addEventListener('pointermove', e => { const t = touch.get(e.pointerId); if (t) t.y = A.pointer(cv, e).y; });
+['pointerup', 'pointercancel'].forEach(n => cv.addEventListener(n, e => touch.delete(e.pointerId)));
+const touchY = side => { for (const t of touch.values()) if (t.side === side) return t.y; return null; };
+
+function steer(p, side, up, down, dt) {
+  const ty = touchY(side);
+  if (ty != null) p.y += A.clamp(ty - p.y, -PS * 1.6 * dt, PS * 1.6 * dt);
+  else p.y += ((down ? 1 : 0) - (up ? 1 : 0)) * PS * dt;
+  p.y = A.clamp(p.y, PH / 2, H - PH / 2);
+}
+/** Where the ball will cross the right paddle, bouncing off top and bottom. */
+function predictY() {
+  const t = (W - PX - PW / 2 - BR - ball.x) / ball.vx, span = H - 2 * BR;
+  let y = ball.y + ball.vy * t - BR; y = ((y % (2 * span)) + 2 * span) % (2 * span);
+  return (y > span ? 2 * span - y : y) + BR;
+}
+function cpu(dt) {
+  const c = CPUS[opp];
+  let target = H / 2;
+  if (ball && serveT <= 0 && ball.vx > 0 && ball.x > W * c.wake) target = predictY() + ball.aim;
+  R.y = A.clamp(R.y + A.clamp(target - R.y, -c.spd * dt, c.spd * dt), PH / 2, H - PH / 2);
+}
+function bat(p, px, dir) {
+  if (Math.sign(ball.vx) === dir) return; // already heading away from this paddle
+  const face = px + dir * PW / 2;
+  const inX = dir > 0 ? ball.x - BR <= face && ball.x > px - PW : ball.x + BR >= face && ball.x < px + PW;
+  if (!inX || Math.abs(ball.y - p.y) > PH / 2 + BR) return;
+  const ang = A.clamp((ball.y - p.y) / (PH / 2), -1, 1) * 0.95;
+  ball.sp = Math.min(760, ball.sp + 18);
+  ball.vx = Math.cos(ang) * ball.sp * dir; ball.vy = Math.sin(ang) * ball.sp; ball.x = face + dir * BR; ball.aim = aimError();
+  A.tone(dir > 0 ? 520 : 440, 0.05, 'square', 0.05);
+  if (dir > 0 && !two) { score += 10; A.setScore(score); }
+}
+function point(side) {
+  const p = side === 'L' ? L : R; p.s++;
+  if (!two && side === 'L') { score += 100; A.setScore(score); }
+  A.tone(side === 'L' || two ? 880 : 220, 0.25, 'triangle', 0.05, 0, side === 'L' || two ? 1320 : 110);
+  if (p.s >= WIN) return matchOver(side);
+  serve(side === 'L' ? 1 : -1); // serve toward whoever just conceded
+}
+function matchOver(side) {
+  ball = null;
+  if (two) {
+    state = 'over'; A.jingle([523, 659, 784, 1047], 0.1);
+    A.overlay({ title: side === 'L' ? 'LEFT WINS' : 'RIGHT WINS', big: `${L.s} – ${R.s}`, btn: 'Rematch', onGo: () => newGame(true), alt: { btn: '1 Player', onGo: () => newGame(false) } });
+    return;
+  }
+  if (side === 'R') return finish(false);
+  score += 1000; A.setScore(score);
+  if (opp === CPUS.length - 1) { score += 5000; A.setScore(score); return finish(true); }
+  opp++; state = 'next'; nextT = 2.2; say(`NEXT: ${CPUS[opp].name}`); A.jingle([523, 659, 784, 1047], 0.1);
+}
+function finish(champ) {
+  state = 'over'; const rec = A.submit(score);
+  if (!champ) A.jingle([392, 330, 262], 0.16, 'triangle');
+  A.overlay({ title: champ ? 'RALLY CHAMP!' : 'MATCH LOST', big: `SCORE ${score} · BEAT ${champ ? CPUS.length : opp} OF ${CPUS.length}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`,
+    btn: 'Play again', onGo: () => newGame(false), alt: { btn: '2 Players', onGo: () => newGame(true) } });
+}
+
+A.loop(dt => {
+  if (msgT > 0) msgT -= dt;
+  if (state === 'next') { nextT -= dt; if (nextT <= 0) startMatch(); return; }
+  if (state !== 'play') return;
+  if (two) { steer(L, 'L', A.held('KeyW'), A.held('KeyS'), dt); steer(R, 'R', A.held('ArrowUp'), A.held('ArrowDown'), dt); }
+  else { steer(L, 'L', A.held('KeyW', 'ArrowUp'), A.held('KeyS', 'ArrowDown'), dt); cpu(dt); }
+  if (!ball) return;
+  if (serveT > 0) {
+    serveT -= dt;
+    if (serveT <= 0) { const a = A.rand(-0.45, 0.45); ball.vx = Math.cos(a) * ball.sp * ball.dir; ball.vy = Math.sin(a) * ball.sp; A.tone(330, 0.05); }
+    return;
+  }
+  ball.x += ball.vx * dt; ball.y += ball.vy * dt;
+  if (ball.y < BR) { ball.y = BR; ball.vy = Math.abs(ball.vy); A.tone(300, 0.03, 'square', 0.03); }
+  if (ball.y > H - BR) { ball.y = H - BR; ball.vy = -Math.abs(ball.vy); A.tone(300, 0.03, 'square', 0.03); }
+  bat(L, PX, 1); bat(R, W - PX, -1);
+  trail.push({ x: ball.x, y: ball.y }); if (trail.length > 10) trail.shift();
+  if (ball.x < -BR * 2) { trail = []; point('R'); }
+  else if (ball.x > W + BR * 2) { trail = []; point('L'); }
+}, t => {
+  ctx.fillStyle = '#08050f'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = 'rgba(255,123,240,.18)'; for (let y = 8; y < H; y += 24) ctx.fillRect(W / 2 - 2, y, 4, 12);
+  let l = L, r = R, b = ball;
+  if (state === 'title') { // attract: a rally that plays itself
+    const k = t / 1500, tri = v => Math.abs(((v % 2) + 2) % 2 - 1);
+    b = { x: PX + PW + BR + (W - 2 * (PX + PW + BR)) * tri(k), y: BR + 30 + (H - 2 * BR - 60) * tri(k * 1.37) };
+    l = { y: b.y, s: 0 }; r = { y: b.y, s: 0 };
+  }
+  ctx.font = '44px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(244,239,253,.85)';
+  if (state !== 'title') { ctx.fillText(l.s, W / 2 - 70, 62); ctx.fillText(r.s, W / 2 + 70, 62); }
+  ctx.font = '11px Silkscreen, monospace'; ctx.fillStyle = '#a39bc4';
+  if (state !== 'title') { ctx.fillText(two ? 'LEFT' : 'YOU', W / 2 - 70, 80); ctx.fillText(two ? 'RIGHT' : CPUS[opp].name, W / 2 + 70, 80); }
+  const paddle = (x, y, c) => { ctx.shadowColor = c; ctx.shadowBlur = 16; ctx.fillStyle = c; ctx.beginPath(); ctx.roundRect(x - PW / 2, y - PH / 2, PW, PH, 4); ctx.fill(); ctx.shadowBlur = 0; };
+  paddle(PX, l.y, '#ff7bf0'); paddle(W - PX, r.y, '#5ee7ff');
+  if (b) {
+    trail.forEach((p, i) => { ctx.globalAlpha = i / trail.length * 0.35; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(p.x, p.y, BR * (i / trail.length), 0, Math.PI * 2); ctx.fill(); });
+    ctx.globalAlpha = serveT > 0 && Math.floor(t / 120) % 2 ? 0.3 : 1;
+    ctx.shadowColor = '#fff'; ctx.shadowBlur = 14; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(b.x, b.y, BR, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+  }
+  if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '26px Bungee, sans-serif'; ctx.fillStyle = '#ff7bf0'; ctx.fillText(msg, W / 2, H / 2 + 70); ctx.globalAlpha = 1; }
+});
+A.overlay({ title: 'VOLLEY DUEL', sub: 'Bat the ball past your rival. First to 7 wins. <b>1 Player</b> climbs a ladder of five CPU rivals. <b>2 Players</b> share one keyboard or one tablet.',
+  btn: '1 Player', scores: true, onGo: () => newGame(false), alt: { btn: '2 Players', onGo: () => newGame(true) } });
+})();
+</script>
+</body>
+</html>

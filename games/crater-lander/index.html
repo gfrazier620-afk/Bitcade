@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Crater Lander</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Rubik:wght@400;500;700&family=Silkscreen&display=swap">
+<link rel="stylesheet" href="../../shared/arcade.css">
+</head>
+<body data-game="crater-lander" data-pad="1:ArrowUp 7:ArrowUp" style="--game:#9fb4ff">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>CRATER LANDER</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <div class="pad">
+    <div class="ab"><button data-k="ArrowLeft" aria-label="Rotate left">⟲</button><button data-k="ArrowRight" aria-label="Rotate right">⟳</button></div>
+    <div class="ab"><button data-k="ArrowUp">THRUST</button></div>
+  </div>
+  <p class="help"><kbd>←</kbd><kbd>→</kbd> tilt · <kbd>↑</kbd> or <kbd>Space</kbd> thrust · <kbd>P</kbd> pause</p>
+</main>
+<script src="../../shared/arcade.js"></script>
+<script>
+(() => {
+const A = Arcade, cv = document.getElementById('cv');
+const W = 640, H = 480, ctx = A.canvas(cv, W, H);
+const SAFE_VY = 45, SAFE_VX = 30, SAFE_A = 0.26; // landing limits: px/s and radians
+let state = 'title', ship, ground = [], pads = [], parts = [], stars, score, lives, level, fuel, tank, phaseT = 0, msg = '', msgT = 0, burnT = 0;
+stars = Array.from({ length: 80 }, () => ({ x: Math.random() * W, y: Math.random() * H * 0.7, s: Math.random() < 0.15 ? 2 : 1 }));
+const gravity = () => 26 * (1 + (level - 1) * 0.08);
+
+/* terrain: a rough ridge line with flat pads; narrower pads pay more */
+function makeTerrain() {
+  pads = [];
+  const specs = level >= 4 ? [[46, 3], [32, 5]] : [[72, 2], [46, 3], [32, 5]];
+  for (const [w, m] of specs) for (let tries = 0; tries < 60; tries++) {
+    const x0 = A.rand(24, W - 24 - w);
+    if (pads.every(p => x0 > p.x1 + 40 || x0 + w < p.x0 - 40)) { pads.push({ x0, x1: x0 + w, m, y: A.rand(H * 0.55, H - 40) }); break; }
+  }
+  const pts = []; let y = A.rand(H * 0.6, H - 50);
+  for (let x = 0; x <= W; x += 16) { y = A.clamp(y + A.rand(-30, 30), H * 0.42, H - 22); pts.push({ x, y }); }
+  ground = pts.filter(p => pads.every(pd => p.x < pd.x0 - 6 || p.x > pd.x1 + 6));
+  pads.forEach(p => ground.push({ x: p.x0, y: p.y }, { x: p.x1, y: p.y }));
+  ground.sort((a, b) => a.x - b.x);
+}
+function groundY(x) {
+  for (let i = 1; i < ground.length; i++) {
+    const a = ground[i - 1], b = ground[i];
+    if (x <= b.x) return a.y + (b.y - a.y) * (x - a.x) / ((b.x - a.x) || 1);
+  }
+  return ground[ground.length - 1].y;
+}
+level = 1; makeTerrain(); // scenery for the title screen
+function newGame() { score = 0; lives = 3; level = 1; A.setScore(0); parts = []; startLevel(true); }
+function startLevel(fresh) {
+  if (fresh) makeTerrain();
+  tank = Math.max(50, 100 - (level - 1) * 6); fuel = tank;
+  ship = { x: A.rand(90, W - 90), y: 50, vx: A.rand(-40, 40), vy: 0, a: 0, thrust: false };
+  state = 'play'; say(fresh ? `LEVEL ${level}` : 'TRY AGAIN');
+}
+function say(t) { msg = t; msgT = 1.6; }
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+A.onPress(c => { if (c === 'KeyP' || c === 'Escape') pause(); });
+A.onHide(pause);
+
+function boom(x, y, n, c) { for (let i = 0; i < n; i++) { const a = Math.random() * Math.PI * 2, s = A.rand(30, 200); parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 60, t: A.rand(0.5, 1.4), c }); } }
+const feet = () => [-1, 1].map(s => ({ x: ship.x + Math.cos(ship.a) * s * 9 - Math.sin(ship.a) * 11, y: ship.y + Math.sin(ship.a) * s * 9 + Math.cos(ship.a) * 11 }));
+function touchdown() {
+  const f = feet(), pad = pads.find(p => f.every(q => q.x >= p.x0 && q.x <= p.x1));
+  const soft = Math.abs(ship.vy) <= SAFE_VY && Math.abs(ship.vx) <= SAFE_VX && Math.abs(ship.a) <= SAFE_A;
+  if (pad && soft) {
+    const gentle = Math.abs(ship.vy) < 20, pts = pad.m * 100 + Math.round(fuel) * 3 + (gentle ? 100 : 0);
+    score += pts; A.setScore(score); ship.y = pad.y - 11; ship.a = 0; ship.vx = ship.vy = 0; ship.thrust = false;
+    state = 'landed'; phaseT = 2.4; say(`${gentle ? 'FEATHER TOUCH' : 'LANDED'} ×${pad.m} +${pts}`);
+    A.jingle([523, 659, 784, 1047], 0.09);
+  } else {
+    lives--; state = 'crashed'; phaseT = 2; boom(ship.x, ship.y, 50, '#ffb03d'); boom(ship.x, ship.y, 20, '#9fb4ff');
+    A.noise(0.9, 0.12); A.tone(160, 0.6, 'sawtooth', 0.05, 0, 40);
+    say(!pad ? 'MISSED THE PAD' : Math.abs(ship.a) > SAFE_A ? 'TOO TILTED' : 'TOO FAST');
+  }
+}
+function gameOver() {
+  state = 'over'; const rec = A.submit(score);
+  A.overlay({ title: 'MISSION OVER', big: `SCORE ${score} · LEVEL ${level}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, btn: 'Fly again', onGo: newGame });
+}
+
+A.loop(dt => {
+  parts.forEach(p => { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 60 * dt; p.t -= dt; }); parts = parts.filter(p => p.t > 0);
+  if (msgT > 0) msgT -= dt;
+  if (state === 'landed') { phaseT -= dt; if (phaseT <= 0) { level++; startLevel(true); } return; }
+  if (state === 'crashed') { phaseT -= dt; if (phaseT <= 0) { if (lives <= 0) return gameOver(); startLevel(false); } return; }
+  if (state !== 'play') return;
+  const rot = (A.held('ArrowRight', 'KeyD') ? 1 : 0) - (A.held('ArrowLeft', 'KeyA') ? 1 : 0);
+  ship.a = A.clamp(ship.a + rot * 2.6 * dt, -Math.PI / 2, Math.PI / 2);
+  ship.thrust = fuel > 0 && A.held('ArrowUp', 'KeyW', 'Space');
+  if (ship.thrust) {
+    ship.vx += Math.sin(ship.a) * 75 * dt; ship.vy -= Math.cos(ship.a) * 75 * dt; fuel = Math.max(0, fuel - 10 * dt);
+    if (Math.random() < 0.7) parts.push({ x: ship.x - Math.sin(ship.a) * 14, y: ship.y + Math.cos(ship.a) * 14, vx: -Math.sin(ship.a + A.rand(-0.3, 0.3)) * 120, vy: Math.cos(ship.a + A.rand(-0.3, 0.3)) * 120, t: 0.3, c: '#ffb03d' });
+    burnT -= dt; if (burnT <= 0) { burnT = 0.08; A.noise(0.09, 0.025); }
+  }
+  ship.vy += gravity() * dt; ship.x += ship.vx * dt; ship.y += ship.vy * dt;
+  if (ship.x < 12 || ship.x > W - 12) { ship.x = A.clamp(ship.x, 12, W - 12); ship.vx = 0; }
+  if (ship.y < 14) { ship.y = 14; ship.vy = Math.max(0, ship.vy); }
+  if (feet().some(f => f.y >= groundY(f.x)) || ship.y + 4 >= groundY(ship.x)) touchdown();
+  if (fuel <= 0 && msgT <= 0 && state === 'play') say('OUT OF FUEL');
+}, t => {
+  ctx.fillStyle = '#05050d'; ctx.fillRect(0, 0, W, H);
+  stars.forEach(s => { ctx.fillStyle = 'rgba(220,228,255,.6)'; ctx.fillRect(s.x, s.y, s.s, s.s); });
+  ctx.fillStyle = '#c9d2ee'; ctx.beginPath(); ctx.arc(560, 70, 26, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#05050d'; ctx.beginPath(); ctx.arc(570, 64, 24, 0, Math.PI * 2); ctx.fill();
+  // terrain
+  ctx.beginPath(); ctx.moveTo(0, H); ground.forEach(p => ctx.lineTo(p.x, p.y)); ctx.lineTo(W, H); ctx.closePath();
+  ctx.fillStyle = '#16152a'; ctx.fill(); ctx.strokeStyle = '#9fb4ff'; ctx.lineWidth = 2; ctx.stroke();
+  pads.forEach(p => {
+    const lit = Math.floor(t / 300) % 2;
+    ctx.strokeStyle = lit ? '#ffd23d' : '#ffe98a'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(p.x0, p.y); ctx.lineTo(p.x1, p.y); ctx.stroke();
+    ctx.fillStyle = '#ffd23d'; ctx.font = '12px Silkscreen, monospace'; ctx.textAlign = 'center'; ctx.fillText('×' + p.m, (p.x0 + p.x1) / 2, p.y + 18);
+  });
+  parts.forEach(p => { ctx.globalAlpha = Math.min(1, p.t * 2); ctx.fillStyle = p.c; ctx.fillRect(p.x - 1.5, p.y - 1.5, 3, 3); }); ctx.globalAlpha = 1;
+  const s = ship || { x: W / 2 + Math.sin(t / 1400) * 160, y: 150 + Math.sin(t / 900) * 20, a: Math.sin(t / 1400) * 0.3, thrust: Math.floor(t / 400) % 3 === 0 };
+  if (state !== 'crashed' && state !== 'over') drawShip(s, t);
+  if (ship) drawHUD(t);
+  if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '24px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#9fb4ff'; ctx.fillText(msg, W / 2, 150); ctx.globalAlpha = 1; }
+});
+function drawShip(s, t) {
+  ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(s.a);
+  if (s.thrust) { ctx.fillStyle = '#ffb03d'; ctx.shadowColor = '#ffb03d'; ctx.shadowBlur = 14; ctx.beginPath(); ctx.moveTo(-5, 8); ctx.lineTo(0, 16 + Math.random() * 10); ctx.lineTo(5, 8); ctx.fill(); ctx.shadowBlur = 0; }
+  ctx.strokeStyle = '#e6ebff'; ctx.lineWidth = 2; ctx.shadowColor = '#9fb4ff'; ctx.shadowBlur = 10;
+  ctx.beginPath(); ctx.arc(0, -4, 7, Math.PI, 0); ctx.lineTo(8, 5); ctx.lineTo(-8, 5); ctx.closePath(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-6, 5); ctx.lineTo(-9, 11); ctx.moveTo(6, 5); ctx.lineTo(9, 11); ctx.moveTo(-12, 11); ctx.lineTo(-6, 11); ctx.moveTo(6, 11); ctx.lineTo(12, 11); ctx.stroke();
+  ctx.shadowBlur = 0; ctx.fillStyle = '#9fb4ff'; ctx.fillRect(-2, -6, 4, 4);
+  ctx.restore();
+}
+function drawHUD(t) {
+  ctx.font = '12px Silkscreen, monospace'; ctx.textAlign = 'left';
+  const row = (label, val, ok, y) => { ctx.fillStyle = '#a39bc4'; ctx.fillText(label, 12, y); ctx.fillStyle = ok ? '#3dff8f' : '#ff4f6d'; ctx.fillText(val, 86, y); };
+  ctx.fillStyle = '#a39bc4'; ctx.fillText('FUEL', 12, 22);
+  ctx.fillStyle = '#2a2148'; ctx.fillRect(86, 13, 100, 10);
+  ctx.fillStyle = fuel < tank * 0.2 ? (Math.floor(t / 200) % 2 ? '#ff4f6d' : '#7a2020') : '#9fb4ff'; ctx.fillRect(86, 13, 100 * fuel / 100, 10);
+  ctx.strokeStyle = 'rgba(159,180,255,.4)'; ctx.lineWidth = 1; ctx.strokeRect(86.5, 13.5, tank, 9);
+  row('ALT', String(Math.max(0, Math.round((groundY(ship.x) - ship.y - 11) / 2))), true, 40);
+  row('H-SPD', String(Math.round(ship.vx / 2)), Math.abs(ship.vx) <= SAFE_VX, 56);
+  row('V-SPD', String(Math.round(ship.vy / 2)), ship.vy <= SAFE_VY, 72);
+  row('TILT', Math.round(ship.a * 57.3) + '°', Math.abs(ship.a) <= SAFE_A, 88);
+  ctx.textAlign = 'right'; ctx.fillStyle = '#f4effd'; ctx.fillText('LEVEL ' + level, W - 12, 22);
+  for (let i = 0; i < lives; i++) { ctx.strokeStyle = '#9fb4ff'; ctx.beginPath(); ctx.arc(W - 20 - i * 20, 40, 5, Math.PI, 0); ctx.lineTo(W - 14 - i * 20, 46); ctx.lineTo(W - 26 - i * 20, 46); ctx.closePath(); ctx.stroke(); }
+}
+A.overlay({ title: 'CRATER LANDER', sub: 'Touch down on a lit pad. Keep the HUD green: slow, upright, and level. Narrow pads pay more, and leftover fuel adds a bonus.', btn: 'Start', scores: true, onGo: newGame });
+})();
+</script>
+</body>
+</html>
