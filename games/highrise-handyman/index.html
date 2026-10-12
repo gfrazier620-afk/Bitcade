@@ -189,7 +189,7 @@ function draw(t) {
   if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT); ctx.font = '22px Bungee, sans-serif'; ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.shadowColor = '#000'; ctx.shadowBlur = 8; ctx.fillText(msg, W / 2, GROUND + 26); ctx.shadowBlur = 0; ctx.globalAlpha = 1; }
 }
 A.loop(update, draw);
-A.overlay({ title: 'HIGHRISE HANDYMAN', sub: 'A rock giant is wrecking the building. Climb between floors and hammer every broken window back together. Dodge the falling bricks. Grab coffee for double points, and bricks bounce off you while it lasts.', btn: 'Start', onGo: newGame });
+A.overlay({ title: 'HIGHRISE HANDYMAN', sub: 'A rock giant is wrecking the building. Climb between floors and hammer every broken window back together. Dodge the falling bricks. Grab coffee for double points, and bricks bounce off you while it lasts.', btn: 'Start', scores: true, onGo: newGame });
 })();
 </script>
 </body>

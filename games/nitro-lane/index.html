@@ -157,7 +157,7 @@ function draw(t) {
   if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '24px Bungee, sans-serif'; ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.shadowColor = '#ff3d7f'; ctx.shadowBlur = 14; ctx.fillText(msg, W / 2, 260); ctx.shadowBlur = 0; ctx.globalAlpha = 1; }
 }
 A.loop(update, draw);
-A.overlay({ title: 'NITRO LANE', sub: 'Weave through night traffic as far as you can. Grab red fuel cans before the tank runs dry. Blue diamonds are nitro: hit Space (or tap NITRO) for a burst.', btn: 'Start', onGo: () => { bonus = 0; newGame(); } });
+A.overlay({ title: 'NITRO LANE', sub: 'Weave through night traffic as far as you can. Grab red fuel cans before the tank runs dry. Blue diamonds are nitro: hit Space (or tap NITRO) for a burst.', btn: 'Start', scores: true, onGo: () => { bonus = 0; newGame(); } });
 })();
 </script>
 </body>

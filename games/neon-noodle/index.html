@@ -126,7 +126,7 @@ function seg(x, y, a, head, dead) {
     for (let k = 0; k < 2; k++) { ctx.beginPath(); ctx.arc(px + CS / 2 + ex[k], py + CS / 2 + ey[k], 2.2, 0, Math.PI * 2); ctx.fill(); }
   }
 }
-A.overlay({ title: 'NEON NOODLE', sub: 'Eat the pink pellets to grow. Grab gold gems before they fade. Don’t hit the walls or your own tail.', btn: 'Start', onGo: start });
+A.overlay({ title: 'NEON NOODLE', sub: 'Eat the pink pellets to grow. Grab gold gems before they fade. Don’t hit the walls or your own tail.', btn: 'Start', scores: true, onGo: start });
 })();
 </script>
 </body>

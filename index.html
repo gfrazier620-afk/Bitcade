@@ -64,47 +64,68 @@ footer p{margin:4px 0}
 (() => {
 const GAMES = [
   { slug: 'neon-noodle', name: 'Neon Noodle', kind: 'Snake', c: '#3dff8f', blurb: 'Eat, grow, and keep your tail out of the way.',
-    px: ['............', '..GGGGGG....', '..G....G....', '..G....GGGG.', '..G.......G.', '..GGGGG..GW.', '......G.....', '....P.G.....'] },
+    px: ['............', '..GGGGGG....', '..G....G....', '..G....GGGG.', '..G.......G.', '..GGGGG..GW.', '......G.....', '....P.G.....'],
+    px2: ['............', '..GGGGGG....', '..G....G....', '..G....GGGG.', '..G.......G.', '..GGGGG..GG.', '......G...W.', '....P.......'] },
   { slug: 'wallbuster', name: 'Wallbuster', kind: 'Brick breaker', c: '#ff8a3d', blurb: 'Smash the wall with a paddle, a ball, and power-ups.',
-    px: ['RRRRRRRRRRRR', 'OOOOOOOOOOOO', 'YYYY.YYYYYYY', 'GGG...GG.GGG', '............', '......W.....', '............', '...OOOOOO...'] },
+    px: ['RRRRRRRRRRRR', 'OOOOOOOOOOOO', 'YYYY.YYYYYYY', 'GGG...GG.GGG', '............', '......W.....', '............', '...OOOOOO...'],
+    px2: ['RRRRRRRRRRRR', 'OOOOOOOOOOOO', 'YYYY.YYYYYYY', 'GGG...GG.GGG', '.....W......', '............', '............', '..OOOOOO....'] },
   { slug: 'star-siege', name: 'Star Siege', kind: 'Alien shooter', c: '#5ee7ff', blurb: 'Hold the line against a marching alien fleet.',
-    px: ['....CCCC....', '..CCCCCCCC..', '.CC.CCCC.CC.', '.CCCCCCCCCC.', '..C.C..C.C..', '.....W......', '.....C......', '...CCCCC....'] },
+    px: ['....CCCC....', '..CCCCCCCC..', '.CC.CCCC.CC.', '.CCCCCCCCCC.', '..C.C..C.C..', '.....W......', '.....C......', '...CCCCC....'],
+    px2: ['....CCCC....', '..CCCCCCCC..', '.CC.CCCC.CC.', '.CCCCCCCCCC.', '.C..C..C..C.', '............', '.....C......', '...CCCCC....'] },
   { slug: 'rock-rift', name: 'Rock Rift', kind: 'Asteroid blaster', c: '#c6ff3d', blurb: 'Spin, thrust, and blast drifting rocks to dust.',
-    px: ['.......LLL..', '......L...L.', '......L...L.', '.......LLL..', '..W.........', '.LLL........', 'L.L.L.......', '.....W......'] },
+    px: ['.......LLL..', '......L...L.', '......L...L.', '.......LLL..', '..W.........', '.LLL........', 'L.L.L.......', '.....W......'],
+    px2: ['......LLL...', '.....L...L..', '.....L...L..', '..W...LLL...', '............', '.LLL........', 'L.L.L.......', '.....W......'] },
   { slug: 'stackdown', name: 'Stackdown', kind: 'Falling blocks', c: '#b48cff', blurb: 'Drop, spin and stack. Clear four rows at once.',
-    px: ['....VV......', '....VV......', '............', 'C.......YY..', 'CRR.GGG.YYB.', 'CRRGGVVVOBB.', 'COOVVVVVOOB.', 'CVVVVRRVVOBB'] },
+    px: ['....VV......', '....VV......', '............', 'C.......YY..', 'CRR.GGG.YYB.', 'CRRGGVVVOBB.', 'COOVVVVVOOB.', 'CVVVVRRVVOBB'],
+    px2: ['............', '....VV......', '....VV......', 'C.......YY..', 'CRR.GGG.YYB.', 'CRRGGVVVOBB.', 'COOVVVVVOOB.', 'CVVVVRRVVOBB'] },
   { slug: 'back-alley-brawl', name: 'Back Alley Brawl', kind: 'Street fighter', c: '#ff5a3d', blurb: 'Two fighters, four rivals, best of three rounds.',
-    px: ['..SS....SS..', '..BB....OO..', '.BBBB..OOOO.', 'SBBBBSSOOOO.', '.BBBB..OOOO.', '.B..B..O..O.', '.B..B..O..O.', 'KK..KK.KK.KK'] },
+    px: ['..SS....SS..', '..BB....OO..', '.BBBB..OOOO.', 'SBBBBSSOOOO.', '.BBBB..OOOO.', '.B..B..O..O.', '.B..B..O..O.', 'KK..KK.KK.KK'],
+    px2: ['..SS....SS..', '..BB....OO..', '.BBBBS.OOOO.', 'SBBBB..OOOO.', '.BBBB..OOOO.', '.B..B..O..O.', '.B..B..O..O.', 'KK..KK.KK.KK'] },
   { slug: 'circuit-chase', name: 'Circuit Chase', kind: 'Maze chase', c: '#4fd8ff', blurb: 'Grab every data bit while four viruses hunt you.',
-    px: ['NNNNNNNNNNNN', 'N....N.....N', 'N.NN.N.NNN.N', 'N..W...R.y.N', 'N.NN.N.NNN.N', 'N....N.....N', 'NNNNNNNNNNNN', '............'] },
+    px: ['NNNNNNNNNNNN', 'N....N.....N', 'N.NN.N.NNN.N', 'N..W...R.y.N', 'N.NN.N.NNN.N', 'N....N.....N', 'NNNNNNNNNNNN', '............'],
+    px2: ['NNNNNNNNNNNN', 'N....N.....N', 'N.NN.N.NNN.N', 'N...W...Ry.N', 'N.NN.N.NNN.N', 'N....N.....N', 'NNNNNNNNNNNN', '............'] },
   { slug: 'highrise-handyman', name: 'Highrise Handyman', kind: 'Fix-it climber', c: '#ffc23d', blurb: 'Hammer the windows back while a rock giant wrecks them.',
-    px: ['....AAAA....', '....AAAA....', 'BBBBBBBBBBBB', 'BCB.BCB.BKB.', 'BBBBBBBBBBBB', 'BKB.BCBYBCB.', 'BBBBBBBBBBBB', 'BCB.BKB.BCB.'] },
+    px: ['....AAAA....', '....AAAA....', 'BBBBBBBBBBBB', 'BCB.BCB.BKB.', 'BBBBBBBBBBBB', 'BKB.BCBYBCB.', 'BBBBBBBBBBBB', 'BCB.BKB.BCB.'],
+    px2: ['...AAAAAA...', '....AAAA....', 'BBBBBBBBBBBB', 'BCB.BCB.BKB.', 'BBBBBBBBBBBB', 'BCB.BCBYBCB.', 'BBBBBBBBBBBB', 'BCB.BKB.BCB.'] },
   { slug: 'nitro-lane', name: 'Nitro Lane', kind: 'Racing', c: '#ff3d7f', blurb: 'Weave through night traffic and keep the tank full.',
-    px: ['P.W....W..P.', 'P..YY.....P.', 'P..YY..W..P.', 'P.W.....CCP.', 'P.......CCP.', 'P..PP..W..P.', 'P..PP.....P.', 'P.W....W..P.'] },
+    px: ['P.W....W..P.', 'P..YY.....P.', 'P..YY..W..P.', 'P.W.....CCP.', 'P.......CCP.', 'P..PP..W..P.', 'P..PP.....P.', 'P.W....W..P.'],
+    px2: ['P.W....W..P.', 'P.W....W..P.', 'P..YY.....P.', 'P..YY..W..P.', 'P.W.....CCP.', 'P..PP...CCP.', 'P..PP..W..P.', 'P.........P.'] },
   { slug: 'blip-sports', name: 'Blip Sports', kind: 'LED football + baseball', c: '#ff3a22', blurb: 'The 1978 handheld feel. Pick your team, beat the CPU.', label: 'WINS',
-    px: ['............', '.RR..RR..RR.', '............', '.RR..WW..RR.', '............', '.RR..RR..RR.', '............', '............'] }
+    px: ['............', '.RR..RR..RR.', '............', '.RR..WW..RR.', '............', '.RR..RR..RR.', '............', '............'],
+    px2: ['............', '.RR..RR..RR.', '............', '.RR..RWW.RR.', '............', '.RR..RR..RR.', '............', '............'] }
 ];
 const PAL = { G: '#3dff8f', W: '#ffffff', P: '#ff4fa3', R: '#ff4f6d', O: '#ff8a3d', Y: '#ffd23d', C: '#5ee7ff', L: '#c6ff3d', V: '#b48cff', B: '#3d7bff', S: '#e2a978', K: '#222', N: '#4f6bff', A: '#8a92a8', y: '#ffa23d' };
 const get = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 const floor = document.getElementById('floor');
+const paint = (cx, px) => { cx.clearRect(0, 0, 12, 8); px.forEach((row, y) => [...row].forEach((ch, x) => { if (PAL[ch]) { cx.fillStyle = PAL[ch]; cx.fillRect(x, y, 1, 1); } })); };
+/** #1 entry of a game's top-10 table, if it has real initials. */
+const leader = slug => { try { const t = JSON.parse(get('arcade:top:' + slug)); return Array.isArray(t) && t[0] && /^[A-Z]{3}$/.test(t[0].n) ? t[0].n : ''; } catch (e) { return ''; } };
 let total = 0, played = 0;
+const screens = [];
 GAMES.forEach(g => {
   const best = +get('arcade:best:' + g.slug) || 0, plays = +get('arcade:plays:' + g.slug) || 0;
   if (plays || best) played++; total += plays;
+  const who = best ? leader(g.slug) : '';
   const a = document.createElement('a');
   a.className = 'cab'; a.href = `games/${g.slug}/`; a.style.setProperty('--c', g.c);
   a.innerHTML = `<div class="cab-top"><h2></h2><span></span></div><div class="cab-screen"><canvas width="12" height="8"></canvas></div>
-    <div class="cab-body"><p></p><div class="cab-foot"><span>${g.label || 'BEST'} <b>${best ? best.toLocaleString() : '—'}</b></span><span class="play">PLAY ▶</span></div></div>`;
+    <div class="cab-body"><p></p><div class="cab-foot"><span>${g.label || 'BEST'} <b>${who ? who + ' ' : ''}${best ? best.toLocaleString() : '—'}</b></span><span class="play">PLAY ▶</span></div></div>`;
   a.querySelector('h2').textContent = g.name; a.querySelector('.cab-top span').textContent = g.kind.toUpperCase(); a.querySelector('p').textContent = g.blurb;
   const cx = a.querySelector('canvas').getContext('2d');
-  g.px.forEach((row, y) => [...row].forEach((ch, x) => { if (PAL[ch]) { cx.fillStyle = PAL[ch]; cx.fillRect(x, y, 1, 1); } }));
+  paint(cx, g.px); screens.push({ cx, g, f: 0 });
   floor.appendChild(a);
 });
+// Attract mode: each cabinet flips between its two frames, out of step with its neighbours.
+if (!matchMedia('(prefers-reduced-motion: reduce)').matches) setInterval(() => {
+  if (document.hidden) return;
+  const now = performance.now();
+  screens.forEach((s, i) => { const f = Math.floor((now + i * 170) / 520) % 2; if (f !== s.f) { s.f = f; paint(s.cx, f ? s.g.px2 : s.g.px); } });
+}, 60);
 document.getElementById('stats').innerHTML = `<span>CABINETS <b>${GAMES.length}</b></span><span>TRIED <b>${played}</b></span><span>GAMES PLAYED <b>${total}</b></span>`;
 const reset = document.getElementById('reset');
 reset.addEventListener('click', () => {
   if (reset.dataset.armed !== 'true') { reset.dataset.armed = 'true'; reset.textContent = 'Click again to erase every score'; setTimeout(() => { reset.dataset.armed = 'false'; reset.textContent = 'Reset all high scores'; }, 4000); return; }
-  try { Object.keys(localStorage).filter(k => k.startsWith('arcade:best:') || k.startsWith('arcade:plays:')).forEach(k => localStorage.removeItem(k)); } catch (e) {}
+  try { Object.keys(localStorage).filter(k => /^arcade:(best|plays|top|daily):/.test(k)).forEach(k => localStorage.removeItem(k)); } catch (e) {}
   location.reload();
 });
 })();

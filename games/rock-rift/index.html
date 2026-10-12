@@ -149,7 +149,7 @@ function draw(t) {
   if (waveT > 0) { ctx.globalAlpha = Math.min(1, waveT); ctx.fillStyle = '#c6ff3d'; ctx.font = '30px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('WAVE ' + wave, W / 2, H / 2 - 60); ctx.globalAlpha = 1; }
 }
 A.loop(update, draw);
-A.overlay({ title: 'ROCK RIFT', sub: 'Big rocks split into smaller, faster rocks. Clear the field to warp to the next wave. Watch out for the pink saucer.', btn: 'Start', onGo: newGame });
+A.overlay({ title: 'ROCK RIFT', sub: 'Big rocks split into smaller, faster rocks. Clear the field to warp to the next wave. Watch out for the pink saucer.', btn: 'Start', scores: true, onGo: newGame });
 })();
 </script>
 </body>

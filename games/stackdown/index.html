@@ -36,9 +36,9 @@ const PIECES = {
 };
 const rot = m => m[0].map((_, i) => m.map(r => r[i]).reverse());
 const rotL = m => rot(rot(rot(m)));
-let state = 'title', grid, cur, bag, queue, hold, holdUsed, score, lines, level, dropT, lockT, lockMoves, das, dasDir, clearing, clearT, popT, popText;
+let state = 'title', grid, cur, bag, queue, hold, holdUsed, score, lines, level, dropT, lockT, lockMoves, das, dasDir, clearing, clearT, popT, popText, daily = false, bagRnd = Math.random;
 
-function refill() { const b = Object.keys(PIECES); for (let i = b.length - 1; i > 0; i--) { const j = A.rnd(i + 1); [b[i], b[j]] = [b[j], b[i]]; } return b; }
+function refill() { const b = Object.keys(PIECES); for (let i = b.length - 1; i > 0; i--) { const j = Math.floor(bagRnd() * (i + 1)); [b[i], b[j]] = [b[j], b[i]]; } return b; }
 function nextKey() { if (queue.length < 4) queue.push(...refill()); return queue.shift(); }
 function spawn(k) {
   const p = PIECES[k]; cur = { k, m: p.m.map(r => r.slice()), x: Math.floor((CW - p.m[0].length) / 2), y: k === 'I' ? -1 : 0 };
@@ -51,7 +51,9 @@ function collide(m, x, y) {
   }
   return false;
 }
-function newGame() {
+// Daily challenge: the piece bags come from a seed of today's date, so every player gets the same pieces.
+function newGame(isDaily = false) {
+  daily = isDaily; bagRnd = daily ? A.seeded('stackdown:' + A.today()) : Math.random;
   grid = Array.from({ length: CH }, () => Array(CW).fill(null)); queue = refill(); hold = null; holdUsed = false;
   score = 0; lines = 0; level = 1; dropT = 0; clearing = null; popT = 0; A.setScore(0); state = 'play'; spawn(nextKey());
 }
@@ -86,7 +88,7 @@ function finishClear() {
   const nl = Math.floor(lines / 10) + 1; if (nl > level) { level = nl; A.jingle([392, 523, 659, 784, 1047], 0.07); popText = 'LEVEL ' + level; }
   clearing = null; A.setScore(score); spawn(nextKey()); holdUsed = false;
 }
-function gameOver() { state = 'over'; cur = null; A.noise(0.7, 0.08); const rec = A.submit(score); A.overlay({ title: 'TOPPED OUT', big: `SCORE ${score} · LINES ${lines}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, btn: 'Play again', onGo: newGame }); }
+function gameOver() { state = 'over'; cur = null; A.noise(0.7, 0.08); const rec = A.submit(score, daily); A.overlay({ title: 'TOPPED OUT', big: `SCORE ${score} · LINES ${lines}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, btn: daily ? 'Retry daily' : 'Play again', onGo: () => newGame(daily), alt: { btn: daily ? 'Normal game' : 'Daily', onGo: () => newGame(!daily) } }); }
 function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
 A.onPress(c => {
   if (c === 'KeyP' || c === 'Escape') return pause();
@@ -142,6 +144,7 @@ A.loop(dt => {
   label('HOLD', px, BY + 222); if (hold) mini(hold, px, BY + 236, holdUsed ? 0.35 : 1);
   label('LEVEL', px, BY + 322); big(level || 1, px, BY + 350);
   label('LINES', px, BY + 386); big(lines || 0, px, BY + 414);
+  if (daily && grid) { label('DAILY', px, BY + 450); label(A.today().slice(5), px, BY + 466); }
   if (popT > 0) { ctx.globalAlpha = Math.min(1, popT * 2); ctx.fillStyle = '#b48cff'; ctx.font = '20px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillText(popText, BX + CW * S / 2, BY + 200); ctx.globalAlpha = 1; }
 });
 function cell(x, y, c, over) {
@@ -157,7 +160,7 @@ function mini(k, x, y, a) {
 }
 function label(t, x, y) { ctx.fillStyle = '#a39bc4'; ctx.font = '12px Silkscreen, monospace'; ctx.textAlign = 'left'; ctx.fillText(t, x, y); }
 function big(t, x, y) { ctx.fillStyle = '#f4effd'; ctx.font = '24px Silkscreen, monospace'; ctx.textAlign = 'left'; ctx.fillText(t, x, y); }
-A.overlay({ title: 'STACKDOWN', sub: 'Fit the falling blocks together. Fill a whole row to clear it. Clear four rows at once for the big bonus.', btn: 'Start', onGo: newGame });
+A.overlay({ title: 'STACKDOWN', sub: 'Fit the falling blocks together. Fill a whole row to clear it. Clear four rows at once for the big bonus. <b>Daily</b> gives everyone the same pieces today.', btn: 'Start', scores: true, onGo: () => newGame(false), alt: { btn: 'Daily', onGo: () => newGame(true) } });
 })();
 </script>
 </body>

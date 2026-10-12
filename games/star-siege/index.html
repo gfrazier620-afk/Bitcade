@@ -169,7 +169,7 @@ function draw(t) {
   if (bannerT > 0) { ctx.globalAlpha = Math.min(1, bannerT); ctx.fillStyle = '#5ee7ff'; ctx.font = '30px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('WAVE ' + wave, W / 2, 440); ctx.globalAlpha = 1; }
 }
 A.loop(update, draw);
-A.overlay({ title: 'STAR SIEGE', sub: 'The fleet is marching down. Shoot them before they land. Hide behind your shields, and tag the gold saucer for bonus points.', btn: 'Start', onGo: newGame });
+A.overlay({ title: 'STAR SIEGE', sub: 'The fleet is marching down. Shoot them before they land. Hide behind your shields, and tag the gold saucer for bonus points.', btn: 'Start', scores: true, onGo: newGame });
 })();
 </script>
 </body>

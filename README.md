@@ -17,4 +17,4 @@ Ten classic-style arcade games that run in your browser, on phone or keyboard.
 | Nitro Lane | Racing |
 | Blip Sports | LED football + baseball |
 
-High scores save in your browser. To run it locally, use `python3 -m http.server` in this folder, then open http://localhost:8000.
+Top-10 score tables with your initials save in your browser. Stackdown and Wallbuster have a daily challenge that gives every player the same pieces or walls. To run it locally, use `python3 -m http.server` in this folder, then open http://localhost:8000.

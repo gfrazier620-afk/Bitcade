@@ -251,7 +251,7 @@ function drawAttract(t) {
   ctx.shadowColor = '#4fd8ff'; ctx.shadowBlur = 14; ctx.fillStyle = '#c8f6ff'; ctx.beginPath(); ctx.arc(k * T + T / 2, 13 * T + T / 2, 9, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
 }
 function gameOver() { state = 'over'; const rec = A.submit(score); A.overlay({ title: 'SYSTEM CRASH', big: `SCORE ${score} · LEVEL ${level}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, btn: 'Play again', onGo: newGame }); }
-A.overlay({ title: 'CIRCUIT CHASE', sub: 'Collect every data bit in the circuit. The four viruses hunt you down. Grab a glowing hex to turn the tables and zap them.', btn: 'Start', onGo: newGame });
+A.overlay({ title: 'CIRCUIT CHASE', sub: 'Collect every data bit in the circuit. The four viruses hunt you down. Grab a glowing hex to turn the tables and zap them.', btn: 'Start', scores: true, onGo: newGame });
 })();
 </script>
 </body>

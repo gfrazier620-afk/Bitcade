@@ -13,12 +13,40 @@
   A.best = () => +store.get('arcade:best:' + A.id) || 0;
   A.setScore = n => { const e = $('score'); if (e) e.textContent = n; };
   A.showBest = () => { const e = $('best'); if (e) e.textContent = A.best(); };
-  /** Save score if it beats the record. Returns true on a new record. */
-  A.submit = s => {
+  /** Top-10 table: [{ n: 'ABC', s: 1234 }], best first. An old single best score seeds it as '???'. */
+  const topKey = 'arcade:top:' + A.id;
+  A.top = () => {
+    let t = null; try { t = JSON.parse(store.get(topKey)); } catch (e) {}
+    if (Array.isArray(t)) return t;
+    const b = A.best(); return b > 0 ? [{ n: '???', s: b }] : [];
+  };
+  /** Local date as YYYY-MM-DD, for daily challenges. */
+  A.today = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+  /** Seeded random (0..1) from a string, so everyone gets the same sequence for the same key (e.g. 'stackdown:' + A.today()). */
+  A.seeded = key => {
+    let h = 1779033703 ^ key.length;
+    for (let i = 0; i < key.length; i++) { h = Math.imul(h ^ key.charCodeAt(i), 3432918353); h = h << 13 | h >>> 19; }
+    let a = h >>> 0;
+    return () => { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  };
+  let lastResult = null; // read by the next A.overlay call, which shows initials entry and the table
+  /** Save a finished game. Pass daily=true for a daily-challenge run. Returns true on a new record. */
+  A.submit = (s, daily) => {
     s = Math.floor(s);
     store.set('arcade:plays:' + A.id, (+store.get('arcade:plays:' + A.id) || 0) + 1);
-    if (s > A.best()) { store.set('arcade:best:' + A.id, s); A.showBest(); return true; }
-    return false;
+    const top = A.top(); // read before updating the best, which A.top() falls back to when there's no table yet
+    const rec = s > A.best();
+    if (rec) { store.set('arcade:best:' + A.id, s); A.showBest(); }
+    let rank = -1;
+    if (s > 0) { rank = top.findIndex(e => s > e.s); if (rank < 0 && top.length < 10) rank = top.length; }
+    let day = null;
+    if (daily) {
+      const d = A.today(); let db = null; try { db = JSON.parse(store.get('arcade:daily:' + A.id)); } catch (e) {}
+      if (!db || db.d !== d || s > db.s) { db = { d, s }; store.set('arcade:daily:' + A.id, JSON.stringify(db)); }
+      day = db;
+    }
+    lastResult = { s, rank, top, day };
+    return rec;
   };
 
   /* ---------- sound ---------- */
@@ -50,12 +78,17 @@
   const pressFns = [];
   A.onPress = fn => pressFns.push(fn);
   A.held = (...codes) => codes.some(c => A.down.has(c));
-  const kd = code => { if (!A.down.has(code)) { A.down.add(code); pressFns.forEach(f => f(code)); } };
+  // While initials entry is open, presses (keys, pad buttons, gamepad) go to it instead of the game.
+  const kd = code => { if (!A.down.has(code)) { A.down.add(code); if (entry) entryKey(code); else pressFns.forEach(f => f(code)); } };
   const ku = code => A.down.delete(code);
   A.press = kd; A.release = ku;
   const GAME_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space']);
   addEventListener('keydown', e => {
     A.unlock();
+    if (entry && overlayOpen() && !e.repeat) {
+      if (/^Key[A-Z]$/.test(e.code)) { e.preventDefault(); entry.letters[entry.pos] = e.code[3]; entry.pos = Math.min(2, entry.pos + 1); A.tone(660, 0.03); renderHS(); return; }
+      if (e.code === 'Backspace') { e.preventDefault(); entry.pos = Math.max(0, entry.pos - 1); renderHS(); return; }
+    }
     if (overlayOpen() && (e.code === 'Enter' || e.code === 'Space')) {
       if (e.target.closest && e.target.closest('a,button:not(.go)')) return;
       e.preventDefault(); if (!e.repeat) overlayGo(); return;
@@ -109,7 +142,11 @@
       if (y < -0.5) codes.add('ArrowUp'); if (y > 0.5) codes.add('ArrowDown');
     });
     buttons.forEach(i => {
-      if (!gpButtons.has(i)) { A.unlock(); if (overlayOpen() && (i === 0 || i === 9)) { gpSwallow.add(i); overlayGo(); } }
+      if (!gpButtons.has(i)) {
+        A.unlock();
+        if (overlayOpen() && (i === 0 || i === 9)) { gpSwallow.add(i); overlayGo(); }
+        else if (overlayOpen() && i === 3 && altFn && !entry) { gpSwallow.add(i); overlayAlt(); } // Y = second overlay button
+      }
       if (!gpSwallow.has(i) && padMap[i]) codes.add(padMap[i]);
     });
     gpSwallow.forEach(i => { if (!buttons.has(i)) gpSwallow.delete(i); });
@@ -148,21 +185,77 @@
   document.addEventListener('visibilitychange', () => { if (document.hidden) { A.down.clear(); gpHeld.clear(); hideFns.forEach(f => f()); } });
 
   /* ---------- overlay ---------- */
-  let goFn = null;
+  let goFn = null, altFn = null, goLabel = '', entry = null, shown = null; // shown: { top, hi, day } for the table
   const overlayOpen = () => { const o = $('ov'); return o && !o.hidden; };
-  const overlayGo = () => { const f = goFn; if (!f) return; A.hideOverlay(); f(); };
-  A.overlay = ({ title, sub = '', big = '', btn = 'Play', onGo }) => {
-    const o = $('ov');
-    o.innerHTML = `<h2></h2>${big ? '<div class="big"></div>' : ''}${sub ? '<p></p>' : ''}<button class="go"></button>`;
+  const overlayGo = () => { if (entry) return saveEntry(); const f = goFn; if (!f) return; A.hideOverlay(); f(); };
+  const overlayAlt = () => { const f = altFn; if (!f) return; A.hideOverlay(); f(); };
+  /**
+   * Show the overlay. alt: { btn, onGo } adds a second button (gamepad Y). scores: true lists the top 10 (title screens).
+   * Called right after A.submit, it also asks for initials when the score made the top 10.
+   */
+  A.overlay = ({ title, sub = '', big = '', btn = 'Play', onGo, alt, scores }) => {
+    const o = $('ov'), res = lastResult; lastResult = null;
+    o.innerHTML = `<h2></h2>${big ? '<div class="big"></div>' : ''}${sub ? '<p></p>' : ''}<div class="hs"></div>` +
+      `<div class="btns"><button class="go"></button>${alt ? '<button class="go2"></button>' : ''}</div>`;
     o.querySelector('h2').textContent = title;
     if (big) o.querySelector('.big').textContent = big;
     if (sub) o.querySelector('p').innerHTML = sub;
-    const b = o.querySelector('.go'); b.textContent = btn;
-    b.addEventListener('click', () => { A.unlock(); overlayGo(); });
-    goFn = onGo; o.hidden = false;
+    o.querySelector('.go').addEventListener('click', () => { A.unlock(); overlayGo(); });
+    if (alt) { const b2 = o.querySelector('.go2'); b2.textContent = alt.btn; b2.addEventListener('click', () => { A.unlock(); overlayAlt(); }); }
+    const hs = o.querySelector('.hs');
+    hs.addEventListener('mousedown', e => { if (e.target.closest('button')) e.preventDefault(); }); // keep focus off the ▲▼ buttons
+    hs.addEventListener('click', e => {
+      const b = e.target.closest('[data-slot]'); if (!b || !entry) return;
+      entry.pos = +b.dataset.slot; if (b.dataset.dir) entryKey(b.dataset.dir); else renderHS();
+    });
+    goFn = onGo; altFn = alt ? alt.onGo : null; goLabel = btn; entry = null; shown = null;
+    if (res) {
+      shown = { top: res.top, hi: -1, day: res.day };
+      if (res.rank >= 0) entry = { res, pos: 0, letters: [...(/^[A-Z]{3}$/.test(store.get('arcade:initials')) ? store.get('arcade:initials') : 'AAA')] };
+    } else if (scores) shown = { top: A.top(), hi: -1, day: null };
+    renderHS(); o.hidden = false;
   };
-  A.hideOverlay = () => { const o = $('ov'); if (o) o.hidden = true; };
+  A.hideOverlay = () => { const o = $('ov'); if (o) o.hidden = true; entry = null; };
   A.overlayOpen = overlayOpen;
+
+  /* ---------- initials + top-10 table ---------- */
+  const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  function entryKey(code) {
+    const L = entry.letters, i = LETTERS.indexOf(L[entry.pos]);
+    if (code === 'ArrowUp') L[entry.pos] = LETTERS[(i + 1) % 26];
+    else if (code === 'ArrowDown') L[entry.pos] = LETTERS[(i + 25) % 26];
+    else if (code === 'ArrowLeft') entry.pos = Math.max(0, entry.pos - 1);
+    else if (code === 'ArrowRight') entry.pos = Math.min(2, entry.pos + 1);
+    else return;
+    A.tone(660, 0.03); renderHS();
+  }
+  function saveEntry() {
+    const { res } = entry, n = entry.letters.join('');
+    const top = res.top.slice(); top.splice(res.rank, 0, { n, s: res.s }); top.length = Math.min(top.length, 10);
+    store.set(topKey, JSON.stringify(top)); store.set('arcade:initials', n);
+    shown = { top, hi: res.rank, day: shown && shown.day }; entry = null;
+    A.jingle([784, 988, 1175], 0.06); renderHS();
+    const go = $('ov').querySelector('.go'); if (go) go.focus();
+  }
+  function renderHS() {
+    const o = $('ov'), hs = o && o.querySelector('.hs'); if (!hs) return;
+    const go = o.querySelector('.go'), b2 = o.querySelector('.go2');
+    go.textContent = entry ? 'Save' : goLabel; if (b2) b2.hidden = !!entry;
+    if (entry) {
+      const slots = entry.letters.map((ch, i) => `<div class="slot${i === entry.pos ? ' cur' : ''}">` +
+        `<button tabindex="-1" data-slot="${i}" data-dir="ArrowUp" aria-label="Next letter">▲</button>` +
+        `<button tabindex="-1" data-slot="${i}" class="ch">${ch}</button>` +
+        `<button tabindex="-1" data-slot="${i}" data-dir="ArrowDown" aria-label="Previous letter">▼</button></div>`).join('');
+      hs.innerHTML = `<div class="hs-head">RANK ${entry.res.rank + 1} · ENTER YOUR INITIALS</div><div class="ini">${slots}</div>` +
+        `<div class="hs-hint">Type, or ↑↓ to change and ←→ to move</div>`;
+      return;
+    }
+    if (!shown || !shown.top.length) { hs.innerHTML = shown && shown.day ? dayLine(shown.day) : ''; return; }
+    const rows = shown.top.map((e, i) => `<div class="row${i === shown.hi ? ' me' : ''}"><span>${i + 1}</span>` +
+      `<span>${/^[A-Z?]{3}$/.test(e.n) ? e.n : '???'}</span><span>${(+e.s || 0).toLocaleString()}</span></div>`).join('');
+    hs.innerHTML = `<div class="hs-head">HIGH SCORES</div><div class="hs-table">${rows}</div>${shown.day ? dayLine(shown.day) : ''}`;
+  }
+  const dayLine = d => `<div class="hs-day">DAILY ${d.d} · TODAY'S BEST ${d.s.toLocaleString()}</div>`;
 
   /* ---------- misc ---------- */
   A.rnd = n => Math.floor(Math.random() * n);

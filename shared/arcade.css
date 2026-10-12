@@ -32,8 +32,10 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--game);outline-offse
   border-radius:10px;overflow:hidden;border:2px solid color-mix(in srgb,var(--game) 45%,var(--line));
   box-shadow:0 0 0 6px var(--bg2),0 0 40px color-mix(in srgb,var(--game) 25%,transparent);background:#05040c}
 .screen canvas{display:block;width:100%;height:auto;max-width:100%;touch-action:none}
-.overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
-  text-align:center;padding:20px;background:rgba(6,4,16,.78);backdrop-filter:blur(2px)}
+.overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:12px;
+  text-align:center;padding:20px;background:rgba(6,4,16,.78);backdrop-filter:blur(2px);overflow-y:auto}
+/* auto margins centre the content but let a tall overlay (score table on a small screen) scroll from the top */
+.overlay>:first-child{margin-top:auto}.overlay>:last-child{margin-bottom:auto}
 .overlay h2{font-family:var(--f-marquee);font-weight:400;font-size:clamp(24px,7vw,40px);margin:0;color:var(--game);line-height:1.05;
   text-shadow:0 0 18px color-mix(in srgb,var(--game) 70%,transparent);text-wrap:balance}
 .overlay p{margin:0;color:var(--muted);max-width:34ch;font-size:14px}
@@ -41,6 +43,24 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--game);outline-offse
 .go{border:0;border-radius:10px;padding:12px 24px;font-family:var(--f-pixel);font-size:15px;background:var(--game);color:#120a1c;
   box-shadow:0 4px 0 color-mix(in srgb,var(--game) 45%,#000)}
 .go:active{transform:translateY(3px);box-shadow:0 1px 0 color-mix(in srgb,var(--game) 45%,#000)}
+.btns{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+.go2{border:2px solid var(--game);border-radius:10px;padding:10px 20px;font-family:var(--f-pixel);font-size:15px;background:transparent;color:var(--game)}
+
+/* top-10 table and initials entry inside the overlay */
+.hs{display:flex;flex-direction:column;align-items:center;gap:8px;font-family:var(--f-pixel)}
+.hs:empty{display:none}
+.hs-head{font-size:12px;color:var(--game);letter-spacing:.08em}
+.hs-table{display:grid;grid-template-rows:repeat(5,auto);grid-auto-flow:column;gap:2px 22px;font-size:12px;color:var(--muted)}
+.hs-table .row{display:grid;grid-template-columns:2.6ch 3.6ch 7ch;gap:6px;text-align:left}
+.hs-table .row span:last-child{text-align:right;color:var(--ink)}
+.hs-table .me,.hs-table .me span:last-child{color:var(--game);text-shadow:0 0 8px color-mix(in srgb,var(--game) 60%,transparent)}
+.hs-day,.hs-hint{font-size:11px;color:var(--muted)}
+.ini{display:flex;gap:10px}
+.slot{display:flex;flex-direction:column;align-items:center;gap:2px}
+.slot button{border:0;background:transparent;color:var(--muted);font-size:14px;padding:2px 10px;font-family:var(--f-pixel)}
+.slot .ch{font-size:30px;line-height:1;color:var(--ink);border-bottom:3px solid var(--line);padding:2px 8px}
+.slot.cur .ch{color:var(--game);border-color:var(--game);animation:blink-ch 1s steps(2,start) infinite}
+@keyframes blink-ch{50%{opacity:.45}}
 
 .pad{display:none;width:100%;max-width:520px;justify-content:space-between;align-items:center;gap:12px;user-select:none;-webkit-user-select:none}
 .pause{display:none}

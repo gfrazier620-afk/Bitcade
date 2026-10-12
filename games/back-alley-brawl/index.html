@@ -283,7 +283,7 @@ function drawTitle(t) {
 }
 function pickerHTML() { return `<span class="pick">${HEROES.map((h, i) => `<button data-f="${i}" aria-pressed="${i === heroIdx}">${h.name}<small>${h.desc}</small></button>`).join('')}</span>`; }
 function bindPicker() { document.querySelectorAll('#ov [data-f]').forEach(b => b.addEventListener('click', () => { heroIdx = +b.dataset.f; document.querySelectorAll('#ov [data-f]').forEach(x => x.setAttribute('aria-pressed', x === b)); A.tone(660, 0.05); })); }
-A.overlay({ title: 'BACK ALLEY BRAWL', sub: 'Beat four street fighters, best of three rounds each. Hold back to block, duck under high punches. Pick your fighter: ' + pickerHTML(), btn: 'Fight', onGo: newGame });
+A.overlay({ title: 'BACK ALLEY BRAWL', sub: 'Beat four street fighters, best of three rounds each. Hold back to block, duck under high punches. Pick your fighter: ' + pickerHTML(), btn: 'Fight', scores: true, onGo: newGame });
 bindPicker();
 })();
 </script>
