@@ -167,6 +167,13 @@ console.log('\nInstall and offline');
   const sw = await readFile(join(ROOT, 'sw.js'), 'utf8');
   const swGames = JSON.parse(sw.match(/const GAMES = (\[[\s\S]*?\]);/)[1].replace(/'/g, '"'));
   check(JSON.stringify([...swGames].sort()) === JSON.stringify(dirs), 'sw.js caches every game folder');
+  // The deploy copies a fixed list of files into _site; everything the service worker caches must be on it.
+  const wf = await readFile(join(ROOT, '.github/workflows/site.yml'), 'utf8');
+  const copied = ((wf.match(/cp -r (.+?) _site\//) || [])[1] || '').split(/\s+/);
+  const shell = sw.match(/const SHELL = \[([\s\S]*?)\];/)[1];
+  const needed = [...new Set(['index.html', 'sw.js', 'games', ...[...shell.matchAll(/'([^']*)'/g)].map(m => m[1]).filter(p => p !== './').map(p => p.split('/')[0])])];
+  const notCopied = needed.filter(f => !copied.includes(f));
+  check(!notCopied.length, `the deploy workflow publishes every file the app needs${notCopied.length ? ' (missing: ' + notCopied.join(', ') + ')' : ''}`);
   const pages = ['index.html', ...dirs.map(d => `games/${d}/index.html`)], unlinked = [];
   for (const p of pages) if (!/rel="manifest"/.test(await readFile(join(ROOT, p), 'utf8'))) unlinked.push(p);
   check(!unlinked.length, `every page links the manifest${unlinked.length ? ' (missing: ' + unlinked.join(', ') + ')' : ''}`);
