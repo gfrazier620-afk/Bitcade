@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Circuit Chase</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Rubik:wght@400;500;700&family=Silkscreen&display=swap">
+<link rel="stylesheet" href="../../shared/arcade.css">
+</head>
+<body data-game="circuit-chase" style="--game:#4fd8ff">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>CIRCUIT CHASE</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <div class="pad">
+    <div class="dp"><button class="u" data-k="ArrowUp" aria-label="Up">▲</button><button class="l" data-k="ArrowLeft" aria-label="Left">◀</button><button class="r" data-k="ArrowRight" aria-label="Right">▶</button><button class="d" data-k="ArrowDown" aria-label="Down">▼</button></div>
+    <div class="ab"><button class="sm" data-k="KeyP">PAUSE</button></div>
+  </div>
+  <p class="help"><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> or <kbd>WASD</kbd> steer · <kbd>P</kbd> pause · swipe on phones</p>
+</main>
+<script src="../../shared/arcade.js"></script>
+<script>
+(() => {
+const A = Arcade, cv = document.getElementById('cv');
+const MAP = [
+  '#####################',
+  '#o........#........o#',
+  '#.###.###.#.###.###.#',
+  '#...................#',
+  '#.###.#.#####.#.###.#',
+  '#.....#...#...#.....#',
+  '#####.###.#.###.#####',
+  '#####.#.......#.#####',
+  '#####.#.##-##.#.#####',
+  'T.....#.#GGG#.#.....T',
+  '#####.#.#####.#.#####',
+  '#####.#.......#.#####',
+  '#####.#.#####.#.#####',
+  '#.........#.........#',
+  '#.###.###.#.###.###.#',
+  '#o..#.....P.....#..o#',
+  '###.#.#.#####.#.#.###',
+  '#.....#...#...#.....#',
+  '#.#######.#.#######.#',
+  '#...................#',
+  '#####################'];
+const CN = 21, RN = 21, T = 22, W = CN * T, H = RN * T + 30, ctx = A.canvas(cv, W, H);
+const DIRS = { up: { x: 0, y: -1 }, down: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } }, ZERO = { x: 0, y: 0 };
+const KEYS = { ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right' };
+const VDEF = [
+  { name: 'BYTE', c: '#ff4f6d', start: [10, 7], corner: { x: 20, y: -2 } },
+  { name: 'GLITCH', c: '#ff7bf0', start: [10, 9], corner: { x: 0, y: -2 } },
+  { name: 'WORM', c: '#9dff4f', start: [9, 9], corner: { x: 20, y: 22 } },
+  { name: 'LAG', c: '#ffa23d', start: [11, 9], corner: { x: 0, y: 22 } }];
+const SCHEDULE = [['s', 6], ['c', 20], ['s', 6], ['c', 20], ['s', 5], ['c', 1e9]];
+let state = 'title', dots, dotCount, dotTotal, eatenCount, player, viruses, score, lives, level, modeIdx, modeT, frightT, combo, phaseT, bonus, freezeT, pops, nextLife, sirenT = 0;
+
+const cellAt = (x, y) => { if (y < 0 || y >= RN) return '#'; if (x < 0 || x >= CN) return MAP[y][0] === 'T' ? 'T' : '#'; return MAP[y][x]; };
+const passable = (x, y, gate) => { const c = cellAt(x, y); if (c === '#') return false; if (c === '-' || c === 'G') return !!gate; return true; };
+const same = (a, b) => a.x === b.x && a.y === b.y;
+const pos = e => (e.dir.x || e.dir.y) ? { x: e.tx + (e.nx - e.tx) * e.p, y: e.ty + (e.ny - e.ty) * e.p } : { x: e.tx, y: e.ty };
+
+/* walls → offscreen, two colours for the level-clear flash */
+function wallLayer(col) {
+  const d = 2, c = document.createElement('canvas'); c.width = W * d; c.height = RN * T * d; const g = c.getContext('2d'); g.scale(d, d);
+  g.strokeStyle = col; g.lineWidth = 2.4; g.lineCap = 'round'; g.shadowColor = col; g.shadowBlur = 8; g.beginPath();
+  const isWall = (x, y) => x < 0 || x >= CN || y < 0 || y >= RN ? MAP[Math.max(0, Math.min(RN - 1, y))][0] !== 'T' || y < 0 || y >= RN : MAP[y][x] === '#';
+  const ins = 5;
+  for (let y = 0; y < RN; y++) for (let x = 0; x < CN; x++) {
+    if (MAP[y][x] !== '#') continue;
+    const X = x * T, Y = y * T;
+    if (y > 0 && !isWall(x, y - 1)) { g.moveTo(X, Y + ins); g.lineTo(X + T, Y + ins); }
+    if (y < RN - 1 && !isWall(x, y + 1)) { g.moveTo(X, Y + T - ins); g.lineTo(X + T, Y + T - ins); }
+    if (x > 0 && !isWall(x - 1, y)) { g.moveTo(X + ins, Y); g.lineTo(X + ins, Y + T); }
+    if (x < CN - 1 && !isWall(x + 1, y)) { g.moveTo(X + T - ins, Y); g.lineTo(X + T - ins, Y + T); }
+  }
+  g.stroke();
+  // circuit pads at wall corners for texture
+  g.shadowBlur = 0; g.fillStyle = col; g.globalAlpha = 0.25;
+  for (let y = 0; y < RN; y++) for (let x = 0; x < CN; x++) if (MAP[y][x] === '#' && (x * 7 + y * 3) % 5 === 0) g.fillRect(x * T + T / 2 - 1.5, y * T + T / 2 - 1.5, 3, 3);
+  return c;
+}
+const WALLS = wallLayer('#4f6bff'), WALLS_HI = wallLayer('#ffffff');
+
+function resetDots() { dots = MAP.map(r => [...r].map(c => c === '.' ? 1 : c === 'o' ? 2 : 0)); dotCount = dotTotal = dots.flat().filter(Boolean).length; eatenCount = 0; }
+function resetActors() {
+  player = { tx: 10, ty: 15, nx: 10, ny: 15, p: 0, dir: ZERO, want: null, face: DIRS.left };
+  viruses = VDEF.map((d, i) => ({ ...d, i, tx: d.start[0], ty: d.start[1], nx: d.start[0], ny: d.start[1], p: 0, dir: i === 0 ? DIRS.left : ZERO,
+    home: i > 0, release: [0, 1.2, 4.5, 8][i] * Math.max(0.4, 1 - (level - 1) * 0.15), exiting: false, eaten: false, fright: false }));
+  if (viruses[0].dir !== ZERO) { viruses[0].nx = 9; viruses[0].ny = 7; }
+  modeIdx = 0; modeT = SCHEDULE[0][1]; frightT = 0; bonus = null; freezeT = 0; pops = [];
+}
+function newGame() { score = 0; lives = 3; level = 1; nextLife = 10000; A.setScore(0); resetDots(); resetActors(); ready(); }
+function ready() { state = 'ready'; phaseT = 1.8; A.jingle([523, 659, 784, 659, 1047], 0.1); }
+function pause() { if (state !== 'play' && state !== 'ready') return; const prev = state; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = prev }); }
+function want(d) {
+  if (!player) return; const v = DIRS[d]; player.want = v;
+  if ((player.dir.x || player.dir.y) && v.x === -player.dir.x && v.y === -player.dir.y) reverse(player);
+}
+function reverse(e) {
+  if (!(e.dir.x || e.dir.y)) return;
+  const tx = e.nx, ty = e.ny; e.nx = e.tx; e.ny = e.ty; e.tx = tx; e.ty = ty; e.p = 1 - e.p; e.dir = { x: -e.dir.x, y: -e.dir.y };
+}
+A.onPress(c => { if (c === 'KeyP' || c === 'Escape') return pause(); if (KEYS[c]) want(KEYS[c]); });
+A.swipe(cv, d => { if (DIRS[d]) want(d); });
+A.onHide(pause);
+
+function advance(e, speed, dt, decide, arrive) {
+  if (!(e.dir.x || e.dir.y)) { decide(e); if (!(e.dir.x || e.dir.y)) return; e.nx = e.tx + e.dir.x; e.ny = e.ty + e.dir.y; e.p = 0; }
+  e.p += speed * dt;
+  let guard = 0;
+  while (e.p >= 1 && guard++ < 4) {
+    e.p -= 1; e.tx = (e.nx + CN) % CN; e.ty = e.ny; arrive && arrive(e); decide(e);
+    if (!(e.dir.x || e.dir.y)) { e.p = 0; return; }
+    e.nx = e.tx + e.dir.x; e.ny = e.ty + e.dir.y;
+  }
+}
+function playerDecide(e) {
+  if (e.want && passable(e.tx + e.want.x, e.ty + e.want.y)) { e.dir = e.want; e.face = e.want; }
+  else if (!passable(e.tx + e.dir.x, e.ty + e.dir.y)) e.dir = ZERO;
+}
+function playerArrive(e) {
+  const d = dots[e.ty] && dots[e.ty][e.tx];
+  if (d) {
+    dots[e.ty][e.tx] = 0; dotCount--; eatenCount++;
+    if (d === 1) { score += 10; A.tone(eatenCount % 2 ? 620 : 520, 0.04, 'square', 0.03); }
+    else { score += 50; frightT = Math.max(1.5, 7 - (level - 1) * 0.8); combo = 0; A.jingle([392, 523, 659], 0.05);
+      viruses.forEach(v => { if (!v.home && !v.eaten) { v.fright = true; reverse(v); } }); }
+    if (eatenCount === 70 || eatenCount === 140) bonus = { x: 10, y: 11, t: 9, pts: 100 + level * 200 };
+    if (!dotCount) { state = 'clear'; phaseT = 2.4; A.jingle([523, 659, 784, 1047, 1319], 0.09); }
+  }
+  if (bonus && e.tx === bonus.x && e.ty === bonus.y) { score += bonus.pts; pops.push({ x: bonus.x, y: bonus.y, t: 1.5, txt: bonus.pts }); bonus = null; A.jingle([880, 1175, 1568], 0.06); }
+}
+function target(v) {
+  if (v.exiting) return { x: 10, y: 7 };
+  if (v.eaten) return { x: 10, y: 9 };
+  if (SCHEDULE[modeIdx][0] === 's') return v.corner;
+  const p = player, f = p.face;
+  if (v.i === 0) return { x: p.tx, y: p.ty };
+  if (v.i === 1) return { x: p.tx + f.x * 4, y: p.ty + f.y * 4 };
+  if (v.i === 2) { const a = { x: p.tx + f.x * 2, y: p.ty + f.y * 2 }, b = viruses[0]; return { x: 2 * a.x - b.tx, y: 2 * a.y - b.ty }; }
+  return Math.hypot(p.tx - v.tx, p.ty - v.ty) > 8 ? { x: p.tx, y: p.ty } : v.corner;
+}
+function vDecide(v) {
+  const gate = v.exiting || v.eaten, t = target(v), back = { x: -v.dir.x, y: -v.dir.y }, moving = v.dir.x || v.dir.y;
+  let opts = ['up', 'left', 'down', 'right'].map(k => DIRS[k]).filter(d => passable(v.tx + d.x, v.ty + d.y, gate) && !(moving && same(d, back)));
+  if (!opts.length) opts = [back];
+  if (v.fright && !v.eaten) { v.dir = A.pick(opts); return; }
+  let best = opts[0], bd = 1e9;
+  for (const d of opts) { const dd = (v.tx + d.x - t.x) ** 2 + (v.ty + d.y - t.y) ** 2; if (dd < bd) { bd = dd; best = d; } }
+  v.dir = best;
+}
+function vArrive(v) {
+  if (v.exiting && v.tx === 10 && v.ty === 7) v.exiting = false;
+  if (v.eaten && v.tx === 10 && v.ty === 9) { v.eaten = false; v.exiting = true; v.dir = ZERO; }
+}
+function vSpeed(v) {
+  if (v.eaten) return 13;
+  if (v.ty === 9 && (v.tx <= 4 || v.tx >= 16)) return 3.8;
+  if (v.fright) return 4.2;
+  return Math.min(8.2, 6.5 + level * 0.25) * (v.exiting ? 0.7 : 1);
+}
+function die() { state = 'dying'; phaseT = 1.6; A.tone(880, 1.2, 'square', 0.05, 0, 80); }
+A.loop(dt => {
+  if (pops) pops.forEach(p => p.t -= dt);
+  if (state === 'ready') { phaseT -= dt; if (phaseT <= 0) state = 'play'; return; }
+  if (state === 'dying') { phaseT -= dt; if (phaseT <= 0) { lives--; if (lives <= 0) return gameOver(); resetActors(); ready(); } return; }
+  if (state === 'clear') { phaseT -= dt; if (phaseT <= 0) { level++; resetDots(); resetActors(); ready(); } return; }
+  if (state !== 'play') return;
+  if (freezeT > 0) { freezeT -= dt; return; }
+  // modes
+  if (frightT > 0) { frightT -= dt; if (frightT <= 0) viruses.forEach(v => v.fright = false); }
+  else { modeT -= dt; if (modeT <= 0) { modeIdx = Math.min(modeIdx + 1, SCHEDULE.length - 1); modeT = SCHEDULE[modeIdx][1]; viruses.forEach(v => { if (!v.home && !v.eaten && !v.exiting) reverse(v); }); } }
+  if (bonus) { bonus.t -= dt; if (bonus.t <= 0) bonus = null; }
+  advance(player, Math.min(8.6, 7.4 + level * 0.15), dt, playerDecide, playerArrive);
+  if (state !== 'play') return;
+  for (const v of viruses) {
+    if (v.home) { v.release -= dt; if (v.release <= 0) { v.home = false; v.exiting = true; v.dir = ZERO; v.p = 0; } continue; }
+    advance(v, vSpeed(v), dt, vDecide, vArrive);
+  }
+  // collisions
+  const pp = pos(player);
+  for (const v of viruses) {
+    if (v.home || v.eaten) continue;
+    const vp = pos(v); let dx = Math.abs(vp.x - pp.x); dx = Math.min(dx, CN - dx);
+    if (dx < 0.6 && Math.abs(vp.y - pp.y) < 0.6) {
+      if (v.fright) { v.fright = false; v.eaten = true; v.exiting = false; const pts = 200 * 2 ** combo++; score += pts; pops.push({ x: vp.x, y: vp.y, t: 1.2, txt: pts }); freezeT = 0.45; A.jingle([1047, 1319, 1568], 0.05); }
+      else { die(); return; }
+    }
+  }
+  if (score >= nextLife) { lives++; nextLife += 10000; A.jingle([660, 880, 1320], 0.08); }
+  A.setScore(score);
+  sirenT -= dt; if (sirenT <= 0) { sirenT = 0.45; if (frightT > 0) A.tone(200, 0.2, 'triangle', 0.02, 0, 160); else A.tone(300 + (1 - dotCount / dotTotal) * 200, 0.3, 'sine', 0.012, 0, 420); }
+}, t => {
+  ctx.fillStyle = '#04050f'; ctx.fillRect(0, 0, W, H);
+  const flash = state === 'clear' && Math.floor(t / 220) % 2;
+  ctx.drawImage(flash ? WALLS_HI : WALLS, 0, 0, W, RN * T);
+  ctx.fillStyle = '#ff7bf0'; ctx.fillRect(10 * T + 2, 8 * T + T / 2 - 2, T - 4, 4);
+  const D = dots || MAP.map(r => [...r].map(c => c === '.' ? 1 : c === 'o' ? 2 : 0));
+  for (let y = 0; y < RN; y++) for (let x = 0; x < CN; x++) {
+    const d = D[y][x]; if (!d) continue; const cx = x * T + T / 2, cy = y * T + T / 2;
+    if (d === 1) { ctx.fillStyle = '#ffd9a0'; ctx.fillRect(cx - 2, cy - 2, 4, 4); }
+    else { const r = 6 + Math.sin(t / 150) * 1.5; ctx.fillStyle = '#fff'; ctx.shadowColor = '#4fd8ff'; ctx.shadowBlur = 12; hex(cx, cy, r); ctx.shadowBlur = 0; }
+  }
+  if (bonus) { const cx = bonus.x * T + T / 2, cy = bonus.y * T + T / 2; ctx.fillStyle = '#3dff8f'; ctx.fillRect(cx - 7, cy - 5, 14, 10); ctx.fillStyle = '#04050f'; ctx.fillRect(cx - 4, cy - 2, 8, 4); ctx.fillStyle = '#ffd23d'; for (let i = -1; i <= 1; i++) { ctx.fillRect(cx + i * 4 - 1, cy - 8, 2, 3); ctx.fillRect(cx + i * 4 - 1, cy + 5, 2, 3); } }
+  if (player) {
+    if (state !== 'clear' || !flash) viruses.forEach(v => { if (state !== 'dying') drawVirus(v, t); });
+    drawPlayer(t);
+  } else drawAttract(t);
+  (pops || []).filter(p => p.t > 0).forEach(p => { ctx.fillStyle = '#4fd8ff'; ctx.font = '12px Silkscreen, monospace'; ctx.textAlign = 'center'; ctx.fillText(p.txt, p.x * T + T / 2, p.y * T + T / 2 - (1.5 - p.t) * 10); });
+  // footer
+  ctx.fillStyle = '#0b0d22'; ctx.fillRect(0, RN * T, W, 30);
+  if (player) {
+    for (let i = 0; i < lives - 1; i++) { ctx.fillStyle = '#4fd8ff'; ctx.beginPath(); ctx.arc(18 + i * 22, RN * T + 15, 7, 0, Math.PI * 2); ctx.fill(); }
+    ctx.font = '13px Silkscreen, monospace'; ctx.fillStyle = '#f4effd'; ctx.textAlign = 'right'; ctx.fillText('LEVEL ' + level, W - 12, RN * T + 20);
+  }
+  if (state === 'ready') { ctx.font = '22px Bungee, sans-serif'; ctx.fillStyle = '#ffd23d'; ctx.textAlign = 'center'; ctx.fillText('READY!', W / 2, 13 * T + 16); }
+  if (state === 'clear') { ctx.font = '20px Bungee, sans-serif'; ctx.fillStyle = '#3dff8f'; ctx.textAlign = 'center'; ctx.fillText('CIRCUIT CLEAR', W / 2, 13 * T + 16); }
+});
+function hex(x, y, r) { ctx.beginPath(); for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2 + Math.PI / 6; i ? ctx.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r) : ctx.moveTo(x + Math.cos(a) * r, y + Math.sin(a) * r); } ctx.closePath(); ctx.fill(); }
+function wrapX(x) { return x < -0.5 ? x + CN : x > CN - 0.5 ? x - CN : x; }
+function drawPlayer(t) {
+  const p = pos(player), cx = wrapX(p.x) * T + T / 2, cy = p.y * T + T / 2, f = player.face;
+  if (state === 'dying') { const k = 1 - phaseT / 1.6; for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2; ctx.fillStyle = '#4fd8ff'; ctx.fillRect(cx + Math.cos(a) * k * 26 - 2, cy + Math.sin(a) * k * 26 - 2, 4, 4); } if (k < 0.5) { ctx.globalAlpha = 1 - k * 2; } }
+  ctx.shadowColor = '#4fd8ff'; ctx.shadowBlur = 14; ctx.fillStyle = '#c8f6ff'; ctx.beginPath(); ctx.arc(cx, cy, 9, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
+  ctx.fillStyle = '#0a2a3a'; ctx.save(); ctx.translate(cx, cy); ctx.rotate(Math.atan2(f.y, f.x));
+  ctx.fillRect(1, -5, 6, 10); ctx.fillStyle = '#4fd8ff'; ctx.fillRect(4, -3 + Math.sin(t / 80) * 2, 2, 2);
+  ctx.strokeStyle = '#c8f6ff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-6, 0); ctx.lineTo(-13, Math.sin(t / 100) * 3); ctx.stroke();
+  ctx.restore(); ctx.globalAlpha = 1;
+}
+function drawVirus(v, t) {
+  const p = pos(v), cx = wrapX(p.x) * T + T / 2, cy = p.y * T + T / 2 + (v.home ? Math.sin(t / 200 + v.i) * 3 : 0);
+  const ending = frightT > 0 && frightT < 2 && Math.floor(t / 180) % 2;
+  if (!v.eaten) {
+    const col = v.fright ? (ending ? '#ffffff' : '#2a3cff') : v.c;
+    ctx.fillStyle = col; ctx.shadowColor = col; ctx.shadowBlur = 10;
+    ctx.beginPath(); const spikes = 9, rot = t / 400 + v.i;
+    for (let i = 0; i < spikes * 2; i++) { const a = rot + i / (spikes * 2) * Math.PI * 2, r = i % 2 ? 7 : 10.5; i ? ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r) : ctx.moveTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r); }
+    ctx.closePath(); ctx.fill(); ctx.shadowBlur = 0;
+    if (v.fright) { ctx.fillStyle = ending ? '#2a3cff' : '#ffd9a0'; ctx.fillRect(cx - 4, cy - 2, 2, 2); ctx.fillRect(cx + 2, cy - 2, 2, 2); ctx.fillRect(cx - 4, cy + 3, 8, 1.5); return; }
+  }
+  const d = v.dir.x || v.dir.y ? v.dir : DIRS.down;
+  [-3.5, 3.5].forEach(o => { ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(cx + o, cy - 1, 3.2, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#101030'; ctx.beginPath(); ctx.arc(cx + o + d.x * 1.5, cy - 1 + d.y * 1.5, 1.6, 0, Math.PI * 2); ctx.fill(); });
+}
+function drawAttract(t) {
+  const k = (t / 1000 * 4) % 26 - 3;
+  const fake = (x, i) => ({ ...VDEF[i], i, tx: x, ty: 13, nx: x, ny: 13, p: 0, dir: DIRS.right, home: false, eaten: false, fright: false });
+  VDEF.forEach((_, i) => drawVirus(fake(k - 2 - i * 1.4, i), t));
+  ctx.shadowColor = '#4fd8ff'; ctx.shadowBlur = 14; ctx.fillStyle = '#c8f6ff'; ctx.beginPath(); ctx.arc(k * T + T / 2, 13 * T + T / 2, 9, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
+}
+function gameOver() { state = 'over'; const rec = A.submit(score); A.overlay({ title: 'SYSTEM CRASH', big: `SCORE ${score} · LEVEL ${level}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, btn: 'Play again', onGo: newGame }); }
+A.overlay({ title: 'CIRCUIT CHASE', sub: 'Collect every data bit in the circuit. The four viruses hunt you down. Grab a glowing hex to turn the tables and zap them.', btn: 'Start', onGo: newGame });
+})();
+</script>
+</body>
+</html>

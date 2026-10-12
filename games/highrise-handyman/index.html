@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Highrise Handyman</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Rubik:wght@400;500;700&family=Silkscreen&display=swap">
+<link rel="stylesheet" href="../../shared/arcade.css">
+</head>
+<body data-game="highrise-handyman" style="--game:#ffc23d">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>HIGHRISE HANDYMAN</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <div class="pad">
+    <div class="dp"><button class="u" data-k="ArrowUp" aria-label="Up">▲</button><button class="l" data-k="ArrowLeft" aria-label="Left">◀</button><button class="r" data-k="ArrowRight" aria-label="Right">▶</button><button class="d" data-k="ArrowDown" aria-label="Down">▼</button></div>
+    <div class="ab"><button data-k="Space">FIX</button></div>
+  </div>
+  <p class="help"><kbd>←</kbd><kbd>→</kbd> move · <kbd>↑</kbd><kbd>↓</kbd> climb · <kbd>Space</kbd> hammer · <kbd>P</kbd> pause</p>
+</main>
+<script src="../../shared/arcade.js"></script>
+<script>
+(() => {
+const A = Arcade, cv = document.getElementById('cv');
+const W = 480, H = 640, ctx = A.canvas(cv, W, H);
+const COLS = 5, FLOORS = 4, FH = 112, GROUND = 604, ROOF = GROUND - FLOORS * FH;
+const colX = c => 80 + c * 80, floorBase = f => GROUND - f * FH;
+let state = 'title', wins, hero, wreck, bricks, debris, coffee, coffeeT, score, lives, level, msg, msgT, clouds;
+clouds = Array.from({ length: 5 }, (_, i) => ({ x: i * 110, y: 20 + A.rnd(50), w: 60 + A.rnd(50) }));
+debris = [];
+
+function newGame() { score = 0; lives = 3; level = 1; A.setScore(0); setupLevel(); state = 'play'; }
+function setupLevel() {
+  const maxD = Math.min(3, 1 + Math.floor(level / 2));
+  wins = Array.from({ length: FLOORS }, (_, f) => Array.from({ length: COLS }, () => {
+    const r = Math.random(); return r < 0.35 + level * 0.05 ? 1 + A.rnd(maxD) : 0;
+  }));
+  if (!wins.flat().some(Boolean)) wins[1][2] = 1;
+  hero = { c: 2, f: 0, x: colX(2), y: floorBase(0), moveT: 0, from: null, swing: 0, inv: 1.5, coffee: 0, face: 1 };
+  wreck = { x: W / 2, tx: W / 2, stompT: 2.4, wind: 0, slam: 0, smashes: 0 };
+  bricks = []; coffee = null; coffeeT = A.rand(12, 18);
+  say(`FLOOR CREW · LEVEL ${level}`);
+}
+function say(t) { msg = t; msgT = 2; }
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+A.onPress(c => {
+  if (c === 'KeyP' || c === 'Escape') return pause();
+  if (state !== 'play' || hero.dead) return;
+  const step = (dc, df) => {
+    if (hero.moveT > 0) return;
+    const nc = hero.c + dc, nf = hero.f + df; if (nc < 0 || nc >= COLS || nf < 0 || nf >= FLOORS) return;
+    hero.from = { x: hero.x, y: hero.y }; hero.c = nc; hero.f = nf; hero.moveT = df ? 0.24 : 0.12; hero.dur = hero.moveT; if (dc) hero.face = dc;
+    A.tone(df ? 440 : 300, 0.04, 'square', 0.025, 0, df ? 660 : 0);
+  };
+  if (c === 'ArrowLeft' || c === 'KeyA') step(-1, 0);
+  if (c === 'ArrowRight' || c === 'KeyD') step(1, 0);
+  if (c === 'ArrowUp' || c === 'KeyW') step(0, 1);
+  if (c === 'ArrowDown' || c === 'KeyS') step(0, -1);
+  if (c === 'Space' || c === 'KeyJ') hammer();
+});
+A.onHide(pause);
+function hammer() {
+  if (hero.swing > 0 || hero.moveT > 0) return;
+  hero.swing = 0.2;
+  const w = wins[hero.f][hero.c];
+  if (w > 0) {
+    wins[hero.f][hero.c]--; const mult = hero.coffee > 0 ? 2 : 1;
+    score += 100 * mult; A.tone(1300, 0.04, 'square', 0.04); A.tone(1700, 0.05, 'square', 0.03, 0.04);
+    if (wins[hero.f][hero.c] === 0) { score += 150 * mult; sparkle(colX(hero.c), floorBase(hero.f) - 70, '#bff4ff'); }
+    A.setScore(score);
+    if (!wins.flat().some(Boolean)) levelDone();
+  } else A.tone(180, 0.03, 'square', 0.02);
+}
+function levelDone() {
+  const bonus = 1000 * level; score += bonus; A.setScore(score); A.jingle([523, 659, 784, 1047, 784, 1047, 1319], 0.1);
+  state = 'cleared'; say(`ALL FIXED! +${bonus}`); bricks = [];
+  setTimeout(() => { if (state === 'cleared') { level++; setupLevel(); state = 'play'; } }, 2400);
+}
+function sparkle(x, y, c, n = 16) { for (let i = 0; i < n; i++) { const a = Math.random() * 6.28, s = A.rand(40, 180); debris.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 60, t: A.rand(0.3, 0.8), c, s: 3 }); } }
+function update(dt) {
+  clouds.forEach(c => { c.x += 8 * dt; if (c.x > W + 60) c.x = -c.w - 20; });
+  debris.forEach(d => { d.x += d.vx * dt; d.y += d.vy * dt; d.vy += 600 * dt; d.t -= dt; }); debris = debris.filter(d => d.t > 0);
+  if (msgT > 0) msgT -= dt;
+  if (state !== 'play') return;
+  // hero
+  if (hero.moveT > 0) { hero.moveT -= dt; const k = 1 - Math.max(0, hero.moveT) / hero.dur; hero.x = hero.from.x + (colX(hero.c) - hero.from.x) * k; hero.y = hero.from.y + (floorBase(hero.f) - hero.from.y) * k; }
+  else { hero.x = colX(hero.c); hero.y = floorBase(hero.f); }
+  hero.swing = Math.max(0, hero.swing - dt); hero.inv = Math.max(0, hero.inv - dt); hero.coffee = Math.max(0, hero.coffee - dt);
+  if (hero.dead) { hero.dead -= dt; if (hero.dead <= 0) { hero.dead = 0; if (lives <= 0) return gameOver(); hero.inv = 2; } }
+  // wrecker
+  if (Math.abs(wreck.tx - wreck.x) < 3) { if (Math.random() < dt * 1.2) wreck.tx = colX(A.rnd(COLS)); }
+  else wreck.x += Math.sign(wreck.tx - wreck.x) * (70 + level * 12) * dt;
+  wreck.slam = Math.max(0, wreck.slam - dt);
+  if (wreck.wind > 0) {
+    wreck.wind -= dt;
+    if (wreck.wind <= 0) {
+      wreck.slam = 0.3; A.noise(0.3, 0.1); A.tone(70, 0.3, 'square', 0.07);
+      const n = level >= 3 && Math.random() < 0.5 ? 2 : 1;
+      for (let i = 0; i < n; i++) bricks.push({ x: wreck.x + (i ? A.rand(-90, 90) : A.rand(-10, 10)), y: ROOF + 4, v: 150 + level * 22 + A.rand(0, 40), rot: 0 });
+      wreck.smashes++;
+      if (level >= 2 && wreck.smashes % 3 === 0) { const c = Math.round((wreck.x - 80) / 80); if (c >= 0 && c < COLS && wins[FLOORS - 1][c] < 3) { wins[FLOORS - 1][c]++; sparkle(colX(c), floorBase(FLOORS - 1) - 70, '#8fd8ff', 10); A.noise(0.2, 0.06); } }
+    }
+  } else { wreck.stompT -= dt; if (wreck.stompT <= 0) { wreck.wind = 0.55; wreck.stompT = Math.max(0.9, 2.6 - level * 0.22) + A.rand(0, 0.8); } }
+  // bricks
+  for (const b of bricks) {
+    b.y += b.v * dt; b.rot += dt * 6;
+    if (!hero.dead && hero.inv <= 0 && hero.coffee <= 0 && Math.abs(b.x - hero.x) < 20 && b.y > hero.y - 64 && b.y < hero.y - 4) { b.dead = true; hit(); }
+    if (b.y > GROUND) { b.dead = true; sparkle(b.x, GROUND, '#b8553a', 8); A.noise(0.08, 0.04); }
+  }
+  bricks = bricks.filter(b => !b.dead);
+  // coffee
+  coffeeT -= dt;
+  if (!coffee && coffeeT <= 0) coffee = { c: A.rnd(COLS), f: A.rnd(FLOORS), t: 7 };
+  if (coffee) { coffee.t -= dt; if (coffee.t <= 0) { coffee = null; coffeeT = A.rand(14, 22); }
+    else if (hero.c === coffee.c && hero.f === coffee.f && hero.moveT <= 0) { hero.coffee = 6; coffee = null; coffeeT = A.rand(16, 24); score += 300; A.setScore(score); A.jingle([784, 988, 1175, 1568], 0.06); say('COFFEE! 2X + BRICKPROOF'); } }
+}
+function hit() { lives--; hero.dead = 1.4; A.tone(500, 0.5, 'sawtooth', 0.06, 0, 90); sparkle(hero.x, hero.y - 40, '#ffc23d', 20); }
+function gameOver() { state = 'over'; const rec = A.submit(score); A.overlay({ title: 'CREW OUT', big: `SCORE ${score} · LEVEL ${level}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, btn: 'Play again', onGo: newGame }); }
+
+function R(x, y, w, h, c) { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); }
+function drawWindow(x, y, d, t) {
+  R(x - 26, y - 4, 52, 66, '#3a2a40'); R(x - 22, y, 44, 58, d ? '#1a2240' : '#5fb8e0');
+  if (!d) { ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.beginPath(); ctx.moveTo(x - 18, y + 4); ctx.lineTo(x - 6, y + 4); ctx.lineTo(x - 18, y + 22); ctx.fill(); R(x - 1, y, 2, 58, '#3a2a40'); R(x - 22, y + 28, 44, 2, '#3a2a40'); return; }
+  // broken: shards and cracks
+  ctx.fillStyle = '#4b8db0';
+  if (d === 1) { ctx.beginPath(); ctx.moveTo(x - 22, y); ctx.lineTo(x + 22, y); ctx.lineTo(x + 22, y + 30); ctx.lineTo(x + 4, y + 18); ctx.lineTo(x - 10, y + 36); ctx.lineTo(x - 22, y + 26); ctx.fill(); }
+  if (d === 2) { ctx.beginPath(); ctx.moveTo(x - 22, y); ctx.lineTo(x + 6, y); ctx.lineTo(x - 6, y + 16); ctx.lineTo(x - 22, y + 20); ctx.fill(); ctx.beginPath(); ctx.moveTo(x + 22, y + 58); ctx.lineTo(x + 22, y + 40); ctx.lineTo(x + 8, y + 58); ctx.fill(); }
+  if (d >= 3) { ctx.beginPath(); ctx.moveTo(x - 22, y + 58); ctx.lineTo(x - 22, y + 46); ctx.lineTo(x - 12, y + 58); ctx.fill(); }
+  ctx.strokeStyle = 'rgba(220,240,255,.7)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x + 4, y + 18); ctx.lineTo(x + 14, y + 8); ctx.moveTo(x + 4, y + 18); ctx.lineTo(x - 4, y + 30); ctx.stroke();
+  R(x - 1, y, 2, 58, '#3a2a40');
+}
+function drawHero(t) {
+  if (!hero || hero.dead && Math.floor(t / 90) % 2) return;
+  if (hero.inv > 0 && Math.floor(t / 100) % 2) return;
+  const x = Math.round(hero.x), y = Math.round(hero.y), f = hero.face;
+  if (hero.coffee > 0) { ctx.shadowColor = '#ffc23d'; ctx.shadowBlur = 20; }
+  ctx.save(); ctx.translate(x, y); ctx.scale(f, 1);
+  const climbing = hero.moveT > 0 && hero.from && hero.from.y !== floorBase(hero.f);
+  R(-9, -22, 7, 22, '#1f6f78'); R(2, -22, 7, 22, '#1f6f78'); R(-11, -3, 9, 3, '#2a1a10'); R(1, -3, 9, 3, '#2a1a10');
+  R(-11, -46, 22, 26, '#24a3a8'); R(-11, -30, 22, 4, '#6b4a2a'); R(-6, -46, 3, 16, '#ffc23d'); R(3, -46, 3, 16, '#ffc23d');
+  R(-8, -62, 16, 16, '#e3a877'); R(-10, -68, 20, 7, '#ff8a1f'); R(-12, -62, 24, 3, '#ff8a1f'); R(4, -56, 2, 2, '#1a1010');
+  const sw = hero.swing > 0 ? hero.swing / 0.2 : 0;
+  ctx.save(); ctx.translate(8, -40); ctx.rotate(climbing ? -2.6 : -0.4 - sw * 1.6 + (1 - sw) * 0);
+  R(0, -3, 14, 6, '#24a3a8'); R(12, -2, 4, 4, '#e3a877'); R(14, -12, 3, 22, '#8a5a2a'); R(10, -16, 11, 7, '#c0c6d0');
+  ctx.restore(); ctx.restore(); ctx.shadowBlur = 0;
+}
+function drawWrecker(t) {
+  const x = wreck ? wreck.x : W / 2 + Math.sin(t / 900) * 100, base = ROOF;
+  const wind = wreck && wreck.wind > 0 ? 1 - wreck.wind / 0.55 : 0, slam = wreck && wreck.slam > 0 ? wreck.slam / 0.3 : 0;
+  const bob = Math.sin(t / 160) * 2, sx = wind > 0 ? A.rand(-2, 2) : 0;
+  ctx.save(); ctx.translate(x + sx, base + bob * 0);
+  R(-34, -24, 26, 24, '#5d6478'); R(8, -24, 26, 24, '#5d6478');
+  R(-46, -86, 92, 64, '#7a8296'); R(-46, -86, 92, 6, '#9aa3b8'); R(-46, -54, 92, 3, '#5d6478'); R(-10, -86, 3, 62, '#5d6478'); R(18, -70, 3, 46, '#5d6478');
+  R(-24, -116, 48, 34, '#8a92a8'); R(-24, -116, 48, 5, '#a8b0c4');
+  ctx.fillStyle = '#ff7a1a'; ctx.shadowColor = '#ff7a1a'; ctx.shadowBlur = 12; R(-15, -103, 10, 6, '#ff7a1a'); R(5, -103, 10, 6, '#ff7a1a'); ctx.shadowBlur = 0;
+  R(-12, -92, 24, 4, '#3a3f50');
+  const armUp = wind * 70 - slam * 10;
+  [-1, 1].forEach(s => { ctx.save(); ctx.translate(s * 46, -76); ctx.rotate(s * (-0.2 - wind * 2.4 + slam * 0.6));
+    R(-9 + s * 4, 0, 18, 40, '#6a7286'); R(-15 + s * 4, 36, 30, 26, '#8a92a8'); R(-15 + s * 4, 36, 30, 5, '#a8b0c4'); ctx.restore(); });
+  ctx.restore();
+  if (slam > 0) { ctx.strokeStyle = `rgba(255,220,180,${slam})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(x, base + 2, 70 * (1.4 - slam), 8, 0, 0, Math.PI * 2); ctx.stroke(); }
+}
+function draw(t) {
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#ff9a6a'); g.addColorStop(0.45, '#ff6a8a'); g.addColorStop(1, '#5a2a6a'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = 'rgba(255,240,220,.35)'; clouds.forEach(c => { ctx.beginPath(); ctx.ellipse(c.x, c.y, c.w / 2, 10, 0, 0, Math.PI * 2); ctx.fill(); });
+  ctx.fillStyle = '#3a1e4a'; for (let i = 0; i < 8; i++) R(i * 64 - 10, GROUND - 120 - (i * 37 % 80), 54, 200, '#3a1e4a');
+  // building
+  R(36, ROOF, 408, GROUND - ROOF, '#a8483a');
+  ctx.fillStyle = 'rgba(0,0,0,.12)'; for (let y = ROOF; y < GROUND; y += 10) ctx.fillRect(36, y, 408, 1);
+  for (let f = 0; f < FLOORS; f++) { const yb = floorBase(f); R(30, yb - 10, 420, 10, '#d9c6a8'); R(30, yb - 10, 420, 3, '#f2e4cc'); }
+  R(26, ROOF - 12, 428, 14, '#6b2a22'); R(26, ROOF - 12, 428, 4, '#8a3a30');
+  R(0, GROUND, W, H - GROUND, '#2a1830'); R(0, GROUND, W, 3, '#4a2a50');
+  const ws = wins || [[0, 1, 0, 2, 0], [1, 0, 0, 0, 1], [0, 0, 2, 0, 0], [1, 0, 0, 1, 0]];
+  for (let f = 0; f < FLOORS; f++) for (let c = 0; c < COLS; c++) drawWindow(colX(c), floorBase(f) - 86, ws[f][c], t);
+  if (coffee) { const x = colX(coffee.c), y = floorBase(coffee.f) - 14; if (coffee.t > 2 || Math.floor(t / 120) % 2) { R(x + 22, y - 12, 12, 12, '#fff'); R(x + 24, y - 10, 8, 3, '#6b3a1a'); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x + 35, y - 6, 3, -1.5, 1.5); ctx.stroke(); ctx.strokeStyle = 'rgba(255,255,255,.6)'; ctx.beginPath(); ctx.moveTo(x + 26, y - 15); ctx.quadraticCurveTo(x + 24, y - 20, x + 28, y - 24); ctx.stroke(); } }
+  drawWrecker(t);
+  if (bricks) bricks.forEach(b => { ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.rot); R(-9, -6, 18, 12, '#b8553a'); R(-9, -6, 18, 3, '#d8755a'); ctx.restore(); });
+  drawHero(t);
+  debris.forEach(d => { ctx.globalAlpha = Math.min(1, d.t * 2); R(d.x - d.s / 2, d.y - d.s / 2, d.s, d.s, d.c); }); ctx.globalAlpha = 1;
+  if (hero) {
+    ctx.font = '13px Silkscreen, monospace'; ctx.textAlign = 'left'; ctx.fillStyle = '#fff';
+    ctx.fillText('LEVEL ' + level, 12, 22);
+    for (let i = 0; i < lives; i++) { R(W - 24 - i * 24, 12, 16, 6, '#ff8a1f'); R(W - 26 - i * 24, 17, 20, 3, '#ff8a1f'); }
+    const left = wins.flat().reduce((a, b) => a + (b > 0), 0); ctx.textAlign = 'center'; ctx.fillText(`${left} WINDOW${left === 1 ? '' : 'S'} LEFT`, W / 2, 22);
+    if (hero.coffee > 0) { ctx.fillStyle = '#ffc23d'; ctx.fillText('2X · ' + Math.ceil(hero.coffee), W / 2, 40); }
+  }
+  if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT); ctx.font = '22px Bungee, sans-serif'; ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.shadowColor = '#000'; ctx.shadowBlur = 8; ctx.fillText(msg, W / 2, GROUND + 26); ctx.shadowBlur = 0; ctx.globalAlpha = 1; }
+}
+A.loop(update, draw);
+A.overlay({ title: 'HIGHRISE HANDYMAN', sub: 'A rock giant is wrecking the building. Climb between floors and hammer every broken window back together. Dodge the falling bricks. Grab coffee for double points, and bricks bounce off you while it lasts.', btn: 'Start', onGo: newGame });
+})();
+</script>
+</body>
+</html>

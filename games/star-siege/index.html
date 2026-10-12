@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Star Siege</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Rubik:wght@400;500;700&family=Silkscreen&display=swap">
+<link rel="stylesheet" href="../../shared/arcade.css">
+</head>
+<body data-game="star-siege" style="--game:#5ee7ff">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>STAR SIEGE</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <div class="pad">
+    <div class="ab"><button data-k="ArrowLeft" aria-label="Left">◀</button><button data-k="ArrowRight" aria-label="Right">▶</button></div>
+    <div class="ab"><button data-k="Space">FIRE</button></div>
+  </div>
+  <p class="help"><kbd>←</kbd><kbd>→</kbd> move · <kbd>Space</kbd> fire · <kbd>P</kbd> pause</p>
+</main>
+<script src="../../shared/arcade.js"></script>
+<script>
+(() => {
+const A = Arcade, cv = document.getElementById('cv');
+const W = 480, H = 640, ctx = A.canvas(cv, W, H);
+// Original creature sprites, 11×8, two frames each
+const SPR = {
+  jelly: [[
+    '...XXXXX...', '..XXXXXXX..', '.XX.XXX.XX.', '.XXXXXXXXX.', '..XXXXXXX..', '..X.X.X.X..', '.X..X.X..X.', '..X.....X..'
+  ], [
+    '...XXXXX...', '..XXXXXXX..', '.XX.XXX.XX.', '.XXXXXXXXX.', '..XXXXXXX..', '..X.X.X.X..', '..X.X.X.X..', '.X..X.X..X.'
+  ]],
+  beetle: [[
+    '....XXX....', '..XXXXXXX..', '.XXX.X.XXX.', 'XXXXXXXXXXX', 'X.XXXXXXX.X', '..XX...XX..', '.X.......X.', 'X.........X'
+  ], [
+    '....XXX....', '..XXXXXXX..', '.XXX.X.XXX.', 'XXXXXXXXXXX', 'X.XXXXXXX.X', '..XX...XX..', '..X.....X..', '..XX...XX..'
+  ]],
+  eye: [[
+    'X..X...X..X', '.X.XXXXX.X.', '..XXXXXXX..', '.XX..X..XX.', '.XX.XXX.XX.', '..XXXXXXX..', '...X.X.X...', '..X.....X..'
+  ], [
+    '.X.X...X.X.', '...XXXXX...', '..XXXXXXX..', '.XX..X..XX.', '.XX.XXX.XX.', '..XXXXXXX..', '...X.X.X...', '...X...X...'
+  ]]
+};
+const ROWS = [{ k: 'eye', pts: 30, col: '#ff5edb' }, { k: 'jelly', pts: 20, col: '#5ee7ff' }, { k: 'jelly', pts: 20, col: '#5ee7ff' }, { k: 'beetle', pts: 10, col: '#7dff6a' }, { k: 'beetle', pts: 10, col: '#7dff6a' }];
+const PX = 3, AW = 11 * PX, AH = 8 * PX, COLS = 9, SX = 44, SY = 38;
+let state = 'title', score, lives, wave, player, shots, bombs, aliens, fleet, bunkers, ufo, ufoT, parts, frame, stars, bannerT, extraGiven, pops = [];
+stars = Array.from({ length: 90 }, () => ({ x: Math.random() * W, y: Math.random() * H, s: Math.random() * 1.6 + 0.3, v: Math.random() * 14 + 4 }));
+parts = [];
+
+function newGame() { score = 0; lives = 3; wave = 1; extraGiven = false; A.setScore(0); buildBunkers(); startWave(); state = 'play'; }
+function startWave() {
+  player = { x: W / 2, y: 596, cool: 0, dead: 0, inv: 1.2 }; shots = []; bombs = []; parts = []; ufo = null; ufoT = A.rand(14, 24); frame = 0;
+  aliens = [];
+  for (let r = 0; r < 5; r++) for (let c = 0; c < COLS; c++) aliens.push({ r, c, alive: true, ...ROWS[r] });
+  fleet = { x: 44, y: 96 + Math.min(wave - 1, 5) * 14, dir: 1, t: 0 };
+  bannerT = 1.8;
+}
+function buildBunkers() {
+  bunkers = [];
+  const shape = ['..XXXXXXXX..', '.XXXXXXXXXX.', 'XXXXXXXXXXXX', 'XXXXXXXXXXXX', 'XXXX....XXXX', 'XXX......XXX'];
+  for (let i = 0; i < 4; i++) { const bx = 52 + i * 112; shape.forEach((row, y) => [...row].forEach((ch, x) => { if (ch === 'X') bunkers.push({ x: bx + x * 6, y: 512 + y * 6, hp: 3 }); })); }
+}
+const alive = () => aliens.filter(a => a.alive);
+const apos = a => ({ x: fleet.x + a.c * SX, y: fleet.y + a.r * SY });
+function stepInterval() { const n = alive().length; return 0.03 + 0.6 * (n / 45) / (1 + (wave - 1) * 0.12); }
+function boom(x, y, c, n = 14) { for (let i = 0; i < n; i++) { const a = Math.random() * 6.28, s = A.rand(40, 200); parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, t: A.rand(0.3, 0.8), c }); } }
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+A.onPress(c => { if (c === 'KeyP' || c === 'Escape') pause(); });
+A.onHide(pause);
+const MARCH = [98, 92, 86, 82];
+
+function update(dt) {
+  stars.forEach(s => { s.y += s.v * dt; if (s.y > H) { s.y = 0; s.x = Math.random() * W; } });
+  parts.forEach(p => { p.x += p.vx * dt; p.y += p.vy * dt; p.t -= dt; }); parts = parts.filter(p => p.t > 0);
+  pops.forEach(p => p.t -= dt); pops = pops.filter(p => p.t > 0);
+  if (state !== 'play') return;
+  if (bannerT > 0) bannerT -= dt;
+  // player
+  if (player.dead > 0) { player.dead -= dt; if (player.dead <= 0) { if (lives <= 0) return gameOver(); player.inv = 2; } }
+  else {
+    player.inv = Math.max(0, player.inv - dt);
+    const d = (A.held('ArrowRight', 'KeyD') ? 1 : 0) - (A.held('ArrowLeft', 'KeyA') ? 1 : 0);
+    player.x = A.clamp(player.x + d * 260 * dt, 24, W - 24);
+    player.cool -= dt;
+    if (A.held('Space', 'KeyJ', 'ArrowUp') && player.cool <= 0 && shots.length < 2) { shots.push({ x: player.x, y: player.y - 16 }); player.cool = 0.32; A.tone(1200, 0.08, 'square', 0.03, 0, 400); }
+  }
+  shots.forEach(s => s.y -= 560 * dt);
+  // fleet march
+  fleet.t += dt;
+  if (fleet.t >= stepInterval()) {
+    fleet.t = 0; frame ^= 1; A.tone(MARCH[(fleet.n = ((fleet.n || 0) + 1) % 4)], 0.07, 'square', 0.05);
+    const L = alive(); const xs = L.map(a => apos(a).x);
+    const minX = Math.min(...xs), maxX = Math.max(...xs) + AW;
+    if ((fleet.dir > 0 && maxX + 10 > W - 8) || (fleet.dir < 0 && minX - 10 < 8)) { fleet.y += 16; fleet.dir *= -1; }
+    else fleet.x += 10 * fleet.dir;
+  }
+  // alien fire
+  const L = alive();
+  const fireRate = 0.7 + wave * 0.18;
+  if (L.length && Math.random() < fireRate * dt && player.dead <= 0) {
+    const cols = {}; L.forEach(a => { if (!cols[a.c] || a.r > cols[a.c].r) cols[a.c] = a; });
+    const shooters = Object.values(cols); let s = A.pick(shooters);
+    if (Math.random() < 0.45) s = shooters.reduce((b, a) => Math.abs(apos(a).x - player.x) < Math.abs(apos(b).x - player.x) ? a : b);
+    const p = apos(s); bombs.push({ x: p.x + AW / 2, y: p.y + AH, v: 190 + wave * 14, w: Math.random() < 0.3 });
+  }
+  bombs.forEach(b => b.y += b.v * dt);
+  // ufo
+  ufoT -= dt;
+  if (!ufo && ufoT <= 0) { const d = Math.random() < 0.5 ? 1 : -1; ufo = { x: d > 0 ? -30 : W + 30, d, pts: A.pick([50, 100, 150, 300]) }; }
+  if (ufo) { ufo.x += ufo.d * 110 * dt; ufo.humT = (ufo.humT || 0) - dt; if (ufo.humT <= 0) { ufo.humT = 0.36; A.tone(440, 0.18, 'sine', 0.02); } if (ufo.x < -40 || ufo.x > W + 40) { ufo = null; ufoT = A.rand(16, 26); } }
+  // collisions: shots
+  for (const s of shots) {
+    if (s.y < 40) { s.dead = true; continue; }
+    for (const a of L) { const p = apos(a); if (s.x > p.x && s.x < p.x + AW && s.y > p.y && s.y < p.y + AH) { a.alive = false; s.dead = true; score += a.pts; boom(p.x + AW / 2, p.y + AH / 2, a.col); A.noise(0.12, 0.05); break; } }
+    if (!s.dead && ufo && Math.abs(s.x - ufo.x) < 22 && Math.abs(s.y - 66) < 10) { score += ufo.pts; boom(ufo.x, 66, '#ffd23d', 26); s.dead = true; flashPts(ufo.x, ufo.pts); ufo = null; ufoT = A.rand(16, 26); A.jingle([880, 660, 880, 1320], 0.06); }
+    if (!s.dead) for (const b of bunkers) if (b.hp > 0 && s.x > b.x - 1 && s.x < b.x + 7 && s.y > b.y && s.y < b.y + 6) { b.hp = 0; s.dead = true; break; }
+    if (!s.dead) for (const b of bombs) if (Math.abs(b.x - s.x) < 6 && Math.abs(b.y - s.y) < 10) { b.dead = true; s.dead = true; boom(s.x, s.y, '#fff', 5); score += 5; }
+  }
+  for (const b of bombs) {
+    if (b.dead) continue;
+    if (b.y > H) { b.dead = true; continue; }
+    for (const k of bunkers) if (k.hp > 0 && b.x > k.x - 2 && b.x < k.x + 8 && b.y > k.y && b.y < k.y + 6) { k.hp--; b.dead = true; break; }
+    if (!b.dead && player.dead <= 0 && player.inv <= 0 && Math.abs(b.x - player.x) < 18 && b.y > player.y - 10 && b.y < player.y + 12) { b.dead = true; hitPlayer(); }
+  }
+  shots = shots.filter(s => !s.dead); bombs = bombs.filter(b => !b.dead);
+  // aliens erode bunkers / reach bottom
+  for (const a of L) { const p = apos(a);
+    if (p.y + AH > 506) bunkers.forEach(k => { if (k.hp > 0 && k.x + 6 > p.x && k.x < p.x + AW && k.y < p.y + AH && k.y + 6 > p.y) k.hp = 0; });
+    if (player.dead <= 0 && p.y + AH >= player.y - 12) { lives = 0; player.dead = 1.2; boom(player.x, player.y, '#5ee7ff', 30); A.noise(0.8, 0.1); return; }
+  }
+  if (!extraGiven && score >= 5000) { extraGiven = true; lives++; A.jingle([660, 880, 1320], 0.08); }
+  A.setScore(score);
+  if (!alive().length) { wave++; score += 200; A.jingle([523, 659, 784, 1047], 0.1); startWave(); }
+}
+function flashPts(x, p) { pops.push({ x, t: 1.2, p }); }
+function hitPlayer() { lives--; player.dead = 1.6; boom(player.x, player.y, '#5ee7ff', 30); A.noise(0.6, 0.1); A.tone(160, 0.6, 'sawtooth', 0.05, 0, 40); bombs = []; }
+function gameOver() { state = 'over'; const rec = A.submit(score); A.overlay({ title: 'EARTH FALLS', big: `SCORE ${score} · WAVE ${wave}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, btn: 'Play again', onGo: newGame }); }
+
+function sprite(name, f, x, y, c) {
+  const rows = SPR[name][f]; ctx.fillStyle = c;
+  for (let r = 0; r < 8; r++) for (let k = 0; k < 11; k++) if (rows[r][k] === 'X') ctx.fillRect(x + k * PX, y + r * PX, PX, PX);
+}
+function ship(x, y) {
+  ctx.fillStyle = '#5ee7ff'; ctx.shadowColor = '#5ee7ff'; ctx.shadowBlur = 12;
+  ctx.beginPath(); ctx.moveTo(x, y - 14); ctx.lineTo(x + 6, y - 4); ctx.lineTo(x + 18, y + 2); ctx.lineTo(x + 18, y + 10); ctx.lineTo(x - 18, y + 10); ctx.lineTo(x - 18, y + 2); ctx.lineTo(x - 6, y - 4); ctx.closePath(); ctx.fill();
+  ctx.shadowBlur = 0; ctx.fillStyle = '#0b2030'; ctx.fillRect(x - 3, y - 6, 6, 6);
+}
+function draw(t) {
+  ctx.fillStyle = '#04030c'; ctx.fillRect(0, 0, W, H);
+  stars.forEach(s => { ctx.fillStyle = `rgba(200,220,255,${0.3 + s.s / 3})`; ctx.fillRect(s.x, s.y, s.s, s.s); });
+  ctx.fillStyle = 'rgba(94,231,255,.25)'; ctx.fillRect(0, 624, W, 2);
+  if (state === 'title' || !aliens) {
+    const f = Math.floor(t / 500) % 2;
+    ['eye', 'jelly', 'beetle'].forEach((k, i) => { sprite(k, f, 120, 190 + i * 70, ROWS[[0, 1, 3][i]].col); ctx.fillStyle = '#f4effd'; ctx.font = '16px Silkscreen, monospace'; ctx.textAlign = 'left'; ctx.fillText(`= ${[30, 20, 10][i]} PTS`, 180, 210 + i * 70); });
+    return;
+  }
+  ctx.font = '14px Silkscreen, monospace'; ctx.textAlign = 'left'; ctx.fillStyle = '#f4effd'; ctx.fillText('WAVE ' + wave, 12, 26);
+  for (let i = 0; i < Math.max(0, lives - (player.dead > 0 ? 0 : 1)); i++) { ctx.save(); ctx.translate(W - 26 - i * 34, 22); ctx.scale(0.6, 0.6); ship(0, 0); ctx.restore(); }
+  for (const a of aliens) if (a.alive) { const p = apos(a); sprite(a.k, frame, p.x, p.y, a.col); }
+  for (const k of bunkers) if (k.hp > 0) { ctx.fillStyle = ['', '#2c7a3a', '#3db14f', '#5bea6f'][k.hp]; ctx.fillRect(k.x, k.y, 6, 6); }
+  if (ufo) { ctx.fillStyle = '#ffd23d'; ctx.shadowColor = '#ffd23d'; ctx.shadowBlur = 14; ctx.beginPath(); ctx.ellipse(ufo.x, 68, 22, 7, 0, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.ellipse(ufo.x, 62, 10, 7, 0, Math.PI, 0); ctx.fill(); ctx.shadowBlur = 0; ctx.fillStyle = '#3b2a00'; [-12, 0, 12].forEach(o => ctx.fillRect(ufo.x + o - 2, 67, 4, 3)); }
+  ctx.fillStyle = '#fff'; shots.forEach(s => { ctx.shadowColor = '#5ee7ff'; ctx.shadowBlur = 8; ctx.fillRect(s.x - 1.5, s.y - 8, 3, 12); }); ctx.shadowBlur = 0;
+  bombs.forEach(b => { ctx.fillStyle = b.w ? '#ff5edb' : '#ffb03d'; const z = Math.floor(b.y / 6) % 2 ? 2 : -2; ctx.fillRect(b.x - 1.5 + (b.w ? z : 0), b.y - 6, 3, 4); ctx.fillRect(b.x - 1.5 - (b.w ? z : 0), b.y - 2, 3, 4); });
+  if (player.dead <= 0 && !(player.inv > 0 && Math.floor(t / 100) % 2)) ship(player.x, player.y);
+  parts.forEach(p => { ctx.globalAlpha = Math.min(1, p.t * 2); ctx.fillStyle = p.c; ctx.fillRect(p.x - 1.5, p.y - 1.5, 3, 3); }); ctx.globalAlpha = 1;
+  pops.forEach(p => { ctx.fillStyle = '#ffd23d'; ctx.font = '14px Silkscreen, monospace'; ctx.textAlign = 'center'; ctx.fillText(p.p, p.x, 70); });
+  if (bannerT > 0) { ctx.globalAlpha = Math.min(1, bannerT); ctx.fillStyle = '#5ee7ff'; ctx.font = '30px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('WAVE ' + wave, W / 2, 440); ctx.globalAlpha = 1; }
+}
+A.loop(update, draw);
+A.overlay({ title: 'STAR SIEGE', sub: 'The fleet is marching down. Shoot them before they land. Hide behind your shields, and tag the gold saucer for bonus points.', btn: 'Start', onGo: newGame });
+})();
+</script>
+</body>
+</html>

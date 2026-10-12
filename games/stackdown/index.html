@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Stackdown</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Rubik:wght@400;500;700&family=Silkscreen&display=swap">
+<link rel="stylesheet" href="../../shared/arcade.css">
+</head>
+<body data-game="stackdown" style="--game:#b48cff;--chrome:230px">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>STACKDOWN</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <div class="pad">
+    <div class="dp"><button class="u" data-k="ArrowUp" aria-label="Rotate">⟳</button><button class="l" data-k="ArrowLeft" aria-label="Left">◀</button><button class="r" data-k="ArrowRight" aria-label="Right">▶</button><button class="d" data-k="ArrowDown" aria-label="Soft drop">▼</button></div>
+    <div class="ab"><button class="sm" data-k="KeyC">HOLD</button><button data-k="Space">DROP</button></div>
+  </div>
+  <p class="help"><kbd>←</kbd><kbd>→</kbd> move · <kbd>↑</kbd>/<kbd>X</kbd> rotate · <kbd>Z</kbd> rotate back · <kbd>↓</kbd> soft drop · <kbd>Space</kbd> hard drop · <kbd>C</kbd> hold · <kbd>P</kbd> pause</p>
+</main>
+<script src="../../shared/arcade.js"></script>
+<script>
+(() => {
+const A = Arcade, cv = document.getElementById('cv');
+const CW = 10, CH = 20, S = 24, BX = 12, BY = 12, W = 400, H = 504, ctx = A.canvas(cv, W, H);
+const PIECES = {
+  I: { c: '#3de7ff', m: [[0, 0, 0, 0], [1, 1, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]] },
+  O: { c: '#ffd23d', m: [[1, 1], [1, 1]] },
+  T: { c: '#b48cff', m: [[0, 1, 0], [1, 1, 1], [0, 0, 0]] },
+  S: { c: '#3dff8f', m: [[0, 1, 1], [1, 1, 0], [0, 0, 0]] },
+  Z: { c: '#ff4f6d', m: [[1, 1, 0], [0, 1, 1], [0, 0, 0]] },
+  J: { c: '#4f7bff', m: [[1, 0, 0], [1, 1, 1], [0, 0, 0]] },
+  L: { c: '#ff8a3d', m: [[0, 0, 1], [1, 1, 1], [0, 0, 0]] }
+};
+const rot = m => m[0].map((_, i) => m.map(r => r[i]).reverse());
+const rotL = m => rot(rot(rot(m)));
+let state = 'title', grid, cur, bag, queue, hold, holdUsed, score, lines, level, dropT, lockT, lockMoves, das, dasDir, clearing, clearT, popT, popText;
+
+function refill() { const b = Object.keys(PIECES); for (let i = b.length - 1; i > 0; i--) { const j = A.rnd(i + 1); [b[i], b[j]] = [b[j], b[i]]; } return b; }
+function nextKey() { if (queue.length < 4) queue.push(...refill()); return queue.shift(); }
+function spawn(k) {
+  const p = PIECES[k]; cur = { k, m: p.m.map(r => r.slice()), x: Math.floor((CW - p.m[0].length) / 2), y: k === 'I' ? -1 : 0 };
+  lockT = 0; lockMoves = 0;
+  if (collide(cur.m, cur.x, cur.y)) gameOver();
+}
+function collide(m, x, y) {
+  for (let r = 0; r < m.length; r++) for (let c = 0; c < m[r].length; c++) if (m[r][c]) {
+    const gx = x + c, gy = y + r; if (gx < 0 || gx >= CW || gy >= CH) return true; if (gy >= 0 && grid[gy][gx]) return true;
+  }
+  return false;
+}
+function newGame() {
+  grid = Array.from({ length: CH }, () => Array(CW).fill(null)); queue = refill(); hold = null; holdUsed = false;
+  score = 0; lines = 0; level = 1; dropT = 0; clearing = null; popT = 0; A.setScore(0); state = 'play'; spawn(nextKey());
+}
+const gravity = () => Math.max(0.045, 0.8 * Math.pow(0.82, level - 1));
+function move(dx) { if (!collide(cur.m, cur.x + dx, cur.y)) { cur.x += dx; touchLock(); A.tone(300, 0.02, 'square', 0.02); return true; } return false; }
+function turn(dir) {
+  const m = dir > 0 ? rot(cur.m) : rotL(cur.m);
+  for (const [dx, dy] of [[0, 0], [-1, 0], [1, 0], [0, -1], [-2, 0], [2, 0], [-1, -1], [1, -1]]) {
+    if (!collide(m, cur.x + dx, cur.y + dy)) { cur.m = m; cur.x += dx; cur.y += dy; touchLock(); A.tone(520, 0.03, 'square', 0.025); return; }
+  }
+}
+function touchLock() { if (grounded() && lockMoves < 15) { lockT = 0; lockMoves++; } }
+const grounded = () => collide(cur.m, cur.x, cur.y + 1);
+function ghostY() { let y = cur.y; while (!collide(cur.m, cur.x, y + 1)) y++; return y; }
+function hardDrop() { const g = ghostY(); score += (g - cur.y) * 2; cur.y = g; A.tone(160, 0.08, 'triangle', 0.07); lock(); }
+function doHold() {
+  if (holdUsed) return; holdUsed = true; A.tone(700, 0.04);
+  const k = cur.k; if (hold) { const h = hold; hold = k; spawn(h); } else { hold = k; spawn(nextKey()); }
+}
+function lock() {
+  cur.m.forEach((row, r) => row.forEach((v, c) => { if (v && cur.y + r >= 0) grid[cur.y + r][cur.x + c] = PIECES[cur.k].c; }));
+  if (cur.m.some((row, r) => row.some(v => v) && cur.y + r < 0)) return gameOver();
+  const full = []; grid.forEach((row, y) => { if (row.every(Boolean)) full.push(y); });
+  if (full.length) { clearing = full; clearT = 0.28; A.jingle(full.length === 4 ? [523, 659, 784, 1047] : [659, 880, 1047].slice(0, full.length), 0.06); cur = null; }
+  else { A.tone(220, 0.03, 'square', 0.03); spawn(nextKey()); holdUsed = false; }
+  A.setScore(score);
+}
+function finishClear() {
+  const n = clearing.length; clearing.forEach(y => { grid.splice(y, 1); grid.unshift(Array(CW).fill(null)); });
+  const pts = [0, 100, 300, 500, 800][n] * level; score += pts; lines += n;
+  popText = ['', 'SINGLE', 'DOUBLE', 'TRIPLE', 'STACKDOWN!'][n] + ' +' + pts; popT = 1.3;
+  const nl = Math.floor(lines / 10) + 1; if (nl > level) { level = nl; A.jingle([392, 523, 659, 784, 1047], 0.07); popText = 'LEVEL ' + level; }
+  clearing = null; A.setScore(score); spawn(nextKey()); holdUsed = false;
+}
+function gameOver() { state = 'over'; cur = null; A.noise(0.7, 0.08); const rec = A.submit(score); A.overlay({ title: 'TOPPED OUT', big: `SCORE ${score} · LINES ${lines}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, btn: 'Play again', onGo: newGame }); }
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+A.onPress(c => {
+  if (c === 'KeyP' || c === 'Escape') return pause();
+  if (state !== 'play' || !cur) return;
+  if (c === 'ArrowLeft' || c === 'KeyA') { move(-1); das = 0.16; dasDir = -1; }
+  if (c === 'ArrowRight' || c === 'KeyD') { move(1); das = 0.16; dasDir = 1; }
+  if (c === 'ArrowUp' || c === 'KeyX' || c === 'KeyW') turn(1);
+  if (c === 'KeyZ') turn(-1);
+  if (c === 'Space') hardDrop();
+  if (c === 'KeyC' || c === 'ShiftLeft' || c === 'ShiftRight') doHold();
+});
+A.swipe(cv, d => { if (state !== 'play' || !cur) return; if (d === 'tap') turn(1); else if (d === 'left') move(-1); else if (d === 'right') move(1); else if (d === 'down') hardDrop(); else if (d === 'up') doHold(); });
+A.onHide(pause);
+
+A.loop(dt => {
+  if (popT > 0) popT -= dt;
+  if (state !== 'play') return;
+  if (clearing) { clearT -= dt; if (clearT <= 0) finishClear(); return; }
+  if (!cur) return;
+  // auto-shift
+  const hd = (A.held('ArrowRight', 'KeyD') ? 1 : 0) - (A.held('ArrowLeft', 'KeyA') ? 1 : 0);
+  if (hd && hd === dasDir) { das -= dt; while (das <= 0) { das += 0.045; if (!move(hd)) break; } } else dasDir = hd ? dasDir : 0;
+  const soft = A.held('ArrowDown', 'KeyS');
+  dropT += dt;
+  const g = soft ? Math.min(0.035, gravity()) : gravity();
+  while (dropT >= g) {
+    dropT -= g;
+    if (!grounded()) { cur.y++; lockT = 0; if (soft) score++; } else break;
+  }
+  if (grounded()) { lockT += dt; if (lockT >= 0.5) { lock(); dropT = 0; } }
+  A.setScore(score);
+}, t => {
+  ctx.fillStyle = '#0b0818'; ctx.fillRect(0, 0, W, H);
+  // well
+  ctx.fillStyle = '#120d26'; ctx.fillRect(BX, BY, CW * S, CH * S);
+  ctx.strokeStyle = 'rgba(180,140,255,.08)'; ctx.lineWidth = 1;
+  for (let x = 1; x < CW; x++) { ctx.beginPath(); ctx.moveTo(BX + x * S, BY); ctx.lineTo(BX + x * S, BY + CH * S); ctx.stroke(); }
+  for (let y = 1; y < CH; y++) { ctx.beginPath(); ctx.moveTo(BX, BY + y * S); ctx.lineTo(BX + CW * S, BY + y * S); ctx.stroke(); }
+  ctx.strokeStyle = 'rgba(180,140,255,.6)'; ctx.lineWidth = 2; ctx.strokeRect(BX - 1, BY - 1, CW * S + 2, CH * S + 2);
+  if (grid) grid.forEach((row, y) => row.forEach((c, x) => { if (c) cell(BX + x * S, BY + y * S, c, clearing && clearing.includes(y) ? (Math.floor(t / 60) % 2 ? '#fff' : c) : null); }));
+  else { // attract
+    const k = Math.floor(t / 300); Object.keys(PIECES).forEach((key, i) => { const p = PIECES[key]; const y = (k * 1 + i * 3) % 24 - 2; p.m.forEach((row, r) => row.forEach((v, c) => { if (v && y + r >= 0 && y + r < CH) cell(BX + (i % 3) * 3 * S + c * S + S, BY + (y + r) * S, p.c); })); });
+  }
+  if (cur && state === 'play') {
+    const gy = ghostY(), col = PIECES[cur.k].c;
+    cur.m.forEach((row, r) => row.forEach((v, c) => { if (v && gy + r >= 0) { ctx.strokeStyle = col; ctx.globalAlpha = 0.45; ctx.lineWidth = 2; ctx.strokeRect(BX + (cur.x + c) * S + 3, BY + (gy + r) * S + 3, S - 6, S - 6); ctx.globalAlpha = 1; } }));
+    cur.m.forEach((row, r) => row.forEach((v, c) => { if (v && cur.y + r >= 0) cell(BX + (cur.x + c) * S, BY + (cur.y + r) * S, col); }));
+  }
+  // side panel
+  const px = BX + CW * S + 20;
+  label('NEXT', px, BY + 12);
+  (queue || []).slice(0, 3).forEach((k, i) => mini(k, px, BY + 26 + i * 62, i === 0 ? 1 : 0.7));
+  label('HOLD', px, BY + 222); if (hold) mini(hold, px, BY + 236, holdUsed ? 0.35 : 1);
+  label('LEVEL', px, BY + 322); big(level || 1, px, BY + 350);
+  label('LINES', px, BY + 386); big(lines || 0, px, BY + 414);
+  if (popT > 0) { ctx.globalAlpha = Math.min(1, popT * 2); ctx.fillStyle = '#b48cff'; ctx.font = '20px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillText(popText, BX + CW * S / 2, BY + 200); ctx.globalAlpha = 1; }
+});
+function cell(x, y, c, over) {
+  ctx.fillStyle = over || c; ctx.fillRect(x + 1, y + 1, S - 2, S - 2);
+  ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.fillRect(x + 1, y + 1, S - 2, 3); ctx.fillRect(x + 1, y + 1, 3, S - 2);
+  ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.fillRect(x + 1, y + S - 4, S - 2, 3); ctx.fillRect(x + S - 4, y + 1, 3, S - 2);
+}
+function mini(k, x, y, a) {
+  const p = PIECES[k], s = 16; ctx.globalAlpha = a;
+  const rows = p.m.filter(r => r.some(Boolean)), w = rows[0].length;
+  rows.forEach((row, r) => row.forEach((v, c) => { if (v) { ctx.fillStyle = p.c; ctx.fillRect(x + c * s + (4 - w) * s / 2, y + r * s + 6, s - 2, s - 2); } }));
+  ctx.globalAlpha = 1;
+}
+function label(t, x, y) { ctx.fillStyle = '#a39bc4'; ctx.font = '12px Silkscreen, monospace'; ctx.textAlign = 'left'; ctx.fillText(t, x, y); }
+function big(t, x, y) { ctx.fillStyle = '#f4effd'; ctx.font = '24px Silkscreen, monospace'; ctx.textAlign = 'left'; ctx.fillText(t, x, y); }
+A.overlay({ title: 'STACKDOWN', sub: 'Fit the falling blocks together. Fill a whole row to clear it. Clear four rows at once for the big bonus.', btn: 'Start', onGo: newGame });
+})();
+</script>
+</body>
+</html>
