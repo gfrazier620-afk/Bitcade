@@ -24,6 +24,7 @@
   </div>
   <p class="help"><kbd>←</kbd><kbd>→</kbd> or mouse to move · <kbd>Space</kbd> launch · <kbd>P</kbd> pause · drag on phones</p>
 </main>
+<script src="../../shared/badges.js"></script>
 <script src="../../shared/arcade.js"></script>
 <script>
 (() => {
@@ -131,13 +132,13 @@ function update(dt) {
     if (p.y > paddle.y - 10 && p.y < paddle.y + 12 && Math.abs(p.x - paddle.x) < paddle.w / 2 + 14) {
       p.got = true; A.jingle([660, 880, 1100], 0.05); score += 50; A.setScore(score); flash(POW[p.k].n);
       if (p.k === 'W') wideT = 14; if (p.k === 'S') slowT = 10; if (p.k === 'L') lives = Math.min(lives + 1, 6);
-      if (p.k === 'M') { launch(); const extra = []; balls.forEach(b => { if (b.stuck) return; [-0.5, 0.5].forEach(a => { const c = Math.cos(a), s = Math.sin(a); extra.push({ ...b, vx: b.vx * c - b.vy * s, vy: b.vx * s + b.vy * c }); }); }); balls.push(...extra); }
+      if (p.k === 'M') { launch(); const extra = []; balls.forEach(b => { if (b.stuck) return; [-0.5, 0.5].forEach(a => { const c = Math.cos(a), s = Math.sin(a); extra.push({ ...b, vx: b.vx * c - b.vy * s, vy: b.vx * s + b.vy * c }); }); }); balls.push(...extra); if (balls.length >= 3) A.badge('multi'); }
     }
   }
   pows = pows.filter(p => !p.got && p.y < H + 20);
   if (!bricks.length) {
     score += 500 + lives * 100; A.setScore(score); A.jingle([523, 659, 784, 1047, 784, 1047], 0.1);
-    level++; buildLevel();
+    A.badge('clear'); level++; if (level >= 5) A.badge('lvl5'); buildLevel();
   }
 }
 function gameOver() {

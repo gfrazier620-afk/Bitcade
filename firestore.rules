@@ -46,6 +46,22 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Blip Sports world wins: one record per player, which only ever goes up by one, at most once a minute.
+    function validWin() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['n', 's', 't']) && d.keys().hasAll(['n', 's', 't'])
+        && d.n is string && d.n.matches('^[A-Z]{3}$')
+        && d.s is int && d.t == request.time;
+    }
+    match /wins/{uid} {
+      allow read: if true;
+      allow create: if request.auth != null && request.auth.uid == uid && validWin() && request.resource.data.s == 1;
+      allow update: if request.auth != null && request.auth.uid == uid && validWin()
+        && request.resource.data.s == resource.data.s + 1
+        && request.time > resource.data.t + duration.value(60, 's');
+      allow delete: if false;
+    }
+
     // Cooldown stamp: one score post every 10 seconds per player.
     match /players/{uid} {
       allow read: if false;

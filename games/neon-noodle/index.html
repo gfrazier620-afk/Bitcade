@@ -24,6 +24,7 @@
   </div>
   <p class="help"><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> or <kbd>WASD</kbd> steer · <kbd>P</kbd> pause · swipe on phones</p>
 </main>
+<script src="../../shared/badges.js"></script>
 <script src="../../shared/arcade.js"></script>
 <script>
 (() => {
@@ -75,11 +76,13 @@ function step() {
     food = free(); speed = Math.max(0.055, speed - 0.0024);
     if (!bonus && eaten % 5 === 0) bonus = { ...free(), t: 6 };
   } else if (bonus && h.x === bonus.x && h.y === bonus.y) {
-    const pts = 20 + Math.ceil(bonus.t) * 10; score += pts; grow += 4; bonus = null;
+    const pts = 20 + Math.ceil(bonus.t) * 10; score += pts; grow += 4; bonus = null; A.badge('gem');
     A.jingle([784, 988, 1175, 1568], 0.05);
   }
   if (grow > 0) grow--; else snake.pop();
   A.setScore(score);
+  if (snake.length >= 30) A.badge('long');
+  if (score >= 1000) A.badge('score');
 }
 A.onPress(c => {
   if (c === 'KeyP' || c === 'Escape') return pause();

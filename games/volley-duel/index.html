@@ -24,6 +24,7 @@
   </div>
   <p class="help"><kbd>W</kbd><kbd>S</kbd> left paddle · <kbd>↑</kbd><kbd>↓</kbd> right paddle (2 players) · <kbd>P</kbd> pause · drag on touch screens</p>
 </main>
+<script src="../../shared/badges.js"></script>
 <script src="../../shared/arcade.js"></script>
 <script>
 (() => {
@@ -99,8 +100,8 @@ function matchOver(side) {
     return;
   }
   if (side === 'R') return finish(false);
-  score += 1000; A.setScore(score);
-  if (opp === CPUS.length - 1) { score += 5000; A.setScore(score); return finish(true); }
+  score += 1000; A.setScore(score); A.badge('match'); if (R.s === 0) A.badge('shutout');
+  if (opp === CPUS.length - 1) { score += 5000; A.setScore(score); A.badge('champ'); return finish(true); }
   opp++; state = 'next'; nextT = 2.2; say(`NEXT: ${CPUS[opp].name}`); A.jingle([523, 659, 784, 1047], 0.1);
 }
 function finish(champ) {

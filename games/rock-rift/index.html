@@ -24,6 +24,7 @@
   </div>
   <p class="help"><kbd>←</kbd><kbd>→</kbd> rotate · <kbd>↑</kbd> thrust · <kbd>Space</kbd> fire · <kbd>↓</kbd> warp · <kbd>P</kbd> pause</p>
 </main>
+<script src="../../shared/badges.js"></script>
 <script src="../../shared/arcade.js"></script>
 <script>
 (() => {
@@ -41,7 +42,7 @@ function rock(x, y, size) {
 function newGame() { score = 0; lives = 3; wave = 0; nextLife = 10000; A.setScore(0); parts = []; resetShip(); nextWave(); state = 'play'; }
 function resetShip() { ship = { x: W / 2, y: H / 2, a: -Math.PI / 2, vx: 0, vy: 0, inv: 2.5, dead: 0, cool: 0, thrust: false }; bullets = []; }
 function nextWave() {
-  wave++; rocks = []; waveT = 2; saucer = null; saucerT = A.rand(15, 25); sbullets = [];
+  wave++; if (wave > 1) A.badge('wave'); rocks = []; waveT = 2; saucer = null; saucerT = A.rand(15, 25); sbullets = [];
   for (let i = 0; i < 3 + wave; i++) { let x, y; do { x = Math.random() * W; y = Math.random() * H; } while (Math.hypot(x - ship.x, y - ship.y) < 150); rocks.push(rock(x, y, 3)); }
 }
 function boom(x, y, n, c = '#c6ff3d', sp = 160) { for (let i = 0; i < n; i++) { const a = Math.random() * 6.28, s = A.rand(20, sp); parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, t: A.rand(0.4, 1), c }); } }
@@ -102,7 +103,7 @@ function update(dt) {
   // bullets vs rocks / saucer
   for (const b of bullets) {
     for (let i = rocks.length - 1; i >= 0; i--) { const r = rocks[i]; if (Math.hypot(b.x - r.x, b.y - r.y) < r.r) { b.t = 0; split(r, i); break; } }
-    if (b.t > 0 && saucer && Math.abs(b.x - saucer.x) < (saucer.small ? 12 : 20) && Math.abs(b.y - saucer.y) < 10) { b.t = 0; score += saucer.small ? 1000 : 200; boom(saucer.x, saucer.y, 30, '#ff5edb'); A.noise(0.5, 0.09); saucer = null; saucerT = A.rand(15, 25); }
+    if (b.t > 0 && saucer && Math.abs(b.x - saucer.x) < (saucer.small ? 12 : 20) && Math.abs(b.y - saucer.y) < 10) { b.t = 0; score += saucer.small ? 1000 : 200; boom(saucer.x, saucer.y, 30, '#ff5edb'); A.noise(0.5, 0.09); A.badge('saucer'); saucer = null; saucerT = A.rand(15, 25); }
   }
   bullets = bullets.filter(b => b.t > 0);
   // ship collisions
@@ -111,6 +112,7 @@ function update(dt) {
     if (ship.dead <= 0) for (const b of sbullets) if (Math.hypot(b.x - ship.x, b.y - ship.y) < 11) { b.t = 0; crash(); break; }
     if (ship.dead <= 0 && saucer && Math.hypot(saucer.x - ship.x, saucer.y - ship.y) < 22) { saucer = null; crash(); }
   }
+  if (score >= 10000) A.badge('score');
   if (score >= nextLife) { lives++; nextLife += 10000; A.jingle([660, 880, 1320], 0.08); }
   A.setScore(score);
   if (!rocks.length && !saucer) nextWave();

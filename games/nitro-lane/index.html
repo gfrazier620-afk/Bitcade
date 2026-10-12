@@ -24,6 +24,7 @@
   </div>
   <p class="help"><kbd>←</kbd><kbd>→</kbd> steer · <kbd>↑</kbd> gas · <kbd>↓</kbd> brake · <kbd>Space</kbd> nitro · <kbd>P</kbd> pause</p>
 </main>
+<script src="../../shared/badges.js"></script>
 <script src="../../shared/arcade.js"></script>
 <script>
 (() => {
@@ -47,7 +48,7 @@ cv.addEventListener('pointermove', e => { if (drag != null) drag = A.pointer(cv,
 ['pointerup', 'pointercancel', 'pointerleave'].forEach(t => cv.addEventListener(t, () => drag = null));
 A.onPress(c => {
   if (c === 'KeyP' || c === 'Escape') return pause();
-  if (state === 'play' && (c === 'Space' || c === 'KeyN') && nitro > 0 && car.boost <= 0 && car.spin <= 0) { nitro--; car.boost = 3; A.tone(200, 0.8, 'sawtooth', 0.05, 0, 900); say('NITRO!'); }
+  if (state === 'play' && (c === 'Space' || c === 'KeyN') && nitro > 0 && car.boost <= 0 && car.spin <= 0) { nitro--; car.boost = 3; A.badge('nitro'); A.tone(200, 0.8, 'sawtooth', 0.05, 0, 900); say('NITRO!'); }
 });
 A.onHide(pause);
 const level = () => 1 + Math.floor(dist / 4000);
@@ -74,6 +75,7 @@ function update(dt) {
   car.x = A.clamp(car.x, RL + 16, RR - 16);
   // distance, fuel
   const d = car.speed * dt; dist += d; scroll += d;
+  if (dist >= 5000) A.badge('km5');
   fuel = Math.max(0, fuel - dt * (2.2 + car.speed / 300));
   score = Math.floor(dist / 10) + bonus; A.setScore(score);
   if (fuel <= 0 && car.speed <= 1) return gameOver('OUT OF FUEL');
@@ -92,7 +94,7 @@ function update(dt) {
     if (Math.random() < dt * 0.15 && !t.shift && level() >= 2) { const nl = t.lane + (Math.random() < 0.5 ? -1 : 1); if (nl >= 0 && nl < LANES) { t.lane = nl; t.shift = 1; } }
     t.x += (laneX(t.lane) - t.x) * Math.min(1, dt * 2.5); if (Math.abs(laneX(t.lane) - t.x) < 1) t.shift = 0;
     const len = t.truck ? 78 : 50;
-    if (!t.passed && t.y - len / 2 > car.y + 30) { t.passed = true; const near = Math.abs(t.x - car.x) < 50; if (near) { bonus += 50; say('CLOSE CALL +50'); A.tone(1200, 0.06, 'square', 0.03); } }
+    if (!t.passed && t.y - len / 2 > car.y + 30) { t.passed = true; const near = Math.abs(t.x - car.x) < 50; if (near) { A.badge('close'); bonus += 50; say('CLOSE CALL +50'); A.tone(1200, 0.06, 'square', 0.03); } }
     if (car.inv <= 0 && car.spin <= 0 && Math.abs(t.x - car.x) < 30 && Math.abs(t.y - car.y) < (len / 2 + 26)) crash(t);
   }
   traffic = traffic.filter(t => t.y < H + 120 && t.y > -300);

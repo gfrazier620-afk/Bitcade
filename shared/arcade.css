@@ -55,7 +55,16 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--game);outline-offse
 .hs-table .row span:last-child{text-align:right;color:var(--ink)}
 .hs-table .me,.hs-table .me span:last-child{color:var(--game);text-shadow:0 0 8px color-mix(in srgb,var(--game) 60%,transparent)}
 .hs-day,.hs-hint,.hs-note{font-size:11px;color:var(--muted)}
-.hs-tabs{display:flex;gap:4px}
+.hs-tabs{display:flex;gap:4px;flex-wrap:wrap;justify-content:center}
+.hs-badges{display:flex;flex-direction:column;gap:5px;text-align:left;max-width:300px}
+.badge{display:grid;grid-template-columns:auto 1fr;column-gap:8px;font-size:12px;color:var(--muted)}
+.badge span{grid-row:span 2;font-size:15px;line-height:1.1}
+.badge b{font-weight:400}
+.badge small{font-family:var(--f-body);font-size:11px;opacity:.85}
+.badge.got{color:#ffd23d}
+.badge.got b{color:var(--ink)}
+.share{border:0;background:transparent;color:var(--muted);font-family:var(--f-pixel);font-size:12px;text-decoration:underline;text-underline-offset:3px;padding:4px 8px}
+.share:hover{color:var(--ink)}
 .hs-tabs button{border:1px solid var(--line);background:transparent;border-radius:6px;padding:3px 9px;font-family:var(--f-pixel);font-size:11px;color:var(--muted)}
 .hs-tabs button.on{border-color:var(--game);color:var(--game)}
 .ini{display:flex;gap:10px}

@@ -24,6 +24,7 @@
   </div>
   <p class="help"><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> or <kbd>WASD</kbd> hop · <kbd>P</kbd> pause · swipe or tap on phones</p>
 </main>
+<script src="../../shared/badges.js"></script>
 <script src="../../shared/arcade.js"></script>
 <script>
 (() => {
@@ -73,10 +74,10 @@ A.onHide(pause);
 function arrive() {
   const i = BURROWS.findIndex(b => Math.abs(hog.x - b) < 0.45);
   if (i < 0 || homes[i]) return die('SPIKY HEDGE!');
-  homes[i] = true; let pts = 50 + Math.ceil(timeLeft) * 10;
-  if (berry && berry.i === i) { pts += 200; berry = null; }
+  homes[i] = true; A.badge('home'); let pts = 50 + Math.ceil(timeLeft) * 10;
+  if (berry && berry.i === i) { pts += 200; berry = null; A.badge('berry'); }
   score += pts; A.setScore(score); A.jingle([659, 784, 1047], 0.07); say(`HOME! +${pts}`);
-  if (homes.every(Boolean)) { score += 1000; A.setScore(score); level++; homes = BURROWS.map(() => false); say(`ALL HOME! LEVEL ${level}`); A.jingle([523, 659, 784, 1047, 1319], 0.09); }
+  if (homes.every(Boolean)) { A.badge('all'); score += 1000; A.setScore(score); level++; homes = BURROWS.map(() => false); say(`ALL HOME! LEVEL ${level}`); A.jingle([523, 659, 784, 1047, 1319], 0.09); }
   respawn();
 }
 function die(why) {

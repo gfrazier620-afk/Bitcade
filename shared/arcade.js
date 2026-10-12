@@ -43,7 +43,7 @@
   function flush() {
     const q = outbox(); if (flushing || !q.length) return;
     flushing = true; const e = q[0];
-    A.world().then(w => w.post(e.g, e.n, e.s, { all: e.all !== false, day: e.d || null })).then(() => {
+    A.world().then(w => e.k === 'win' ? w.addWin(e.n) : w.post(e.g, e.n, e.s, { all: e.all !== false, day: e.d || null })).then(() => {
       saveOutbox(outbox().filter(x => x.id !== e.id)); flushing = false;
       if (e.g === A.id && shown && overlayOpen()) loadWorld();
       if (outbox().length) setTimeout(flush, 11000);
@@ -57,6 +57,48 @@
     if (A.id === 'game' || (!all && !d)) return;
     saveOutbox([...outbox(), { id: Date.now() + '-' + Math.random().toString(36).slice(2, 7), g: A.id, n, s, all, d }]); flush();
   };
+  /** Count one more win on the world wins board (Blip Sports). The server allows one per player per minute. */
+  A.postWin = n => { if (!/^[A-Z]{3}$/.test(n)) return; saveOutbox([...outbox(), { id: Date.now() + '-' + Math.random().toString(36).slice(2, 7), k: 'win', n }]); flush(); };
+
+  /* ---------- badges (definitions in shared/badges.js, loaded before this script) ---------- */
+  const badgeKey = 'arcade:badges:' + A.id;
+  A.badgeList = () => (window.BADGES && window.BADGES[A.id]) || [];
+  let gotCache = null; // games may call A.badge every frame, so the unlocked list is read from storage once
+  A.badgesGot = () => {
+    if (!gotCache) { try { const b = JSON.parse(store.get(badgeKey)); gotCache = Array.isArray(b) ? b : []; } catch (e) { gotCache = []; } }
+    return gotCache;
+  };
+  /** Unlock a badge once, with a toast and a jingle. Unknown ids are ignored. */
+  A.badge = id => {
+    const got = A.badgesGot();
+    if (got.includes(id)) return;
+    const def = A.badgeList().find(b => b.id === id);
+    if (!def) return;
+    gotCache = [...got, id]; store.set(badgeKey, JSON.stringify(gotCache));
+    toast(`★ BADGE · ${def.name}`); A.jingle([659, 880, 1175, 1568], 0.07, 'triangle');
+    if (shown && overlayOpen()) renderHS();
+  };
+  /** A short message at the top of the screen. Styled inline so pages without arcade.css (Blip Sports) get it too. */
+  function toast(text) {
+    const n = document.querySelectorAll('.arcade-toast').length, t = document.createElement('div');
+    t.className = 'arcade-toast'; t.textContent = text; t.setAttribute('role', 'status');
+    t.style.cssText = `position:fixed;left:50%;top:${64 + n * 46}px;transform:translate(-50%,-12px);z-index:50;padding:9px 16px;border-radius:10px;` +
+      'background:#1f1940;border:1px solid #ffd23d;color:#ffd23d;font:13px Silkscreen,ui-monospace,monospace;letter-spacing:.04em;' +
+      'box-shadow:0 6px 24px rgba(0,0,0,.5);opacity:0;transition:opacity .25s,transform .25s;pointer-events:none;white-space:nowrap';
+    document.body.appendChild(t);
+    requestAnimationFrame(() => { t.style.opacity = '1'; t.style.transform = 'translate(-50%,0)'; });
+    setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 2600);
+  }
+
+  /** Share a score: the share sheet where there is one, otherwise copy to the clipboard. */
+  async function shareScore(s, day, btn) {
+    const url = location.origin + location.pathname;
+    const text = `I scored ${s.toLocaleString()} on ${document.title}${day ? ` in the daily challenge (${day})` : ''} at Bitcade. Can you beat it?`;
+    try { if (navigator.share) { await navigator.share({ title: 'Bitcade', text, url }); return; } } catch (e) { if (e.name === 'AbortError') return; }
+    try { await navigator.clipboard.writeText(`${text} ${url}`); btn.textContent = 'Copied!'; setTimeout(() => { btn.textContent = 'Share score'; }, 2000); }
+    catch (e) { prompt('Copy your score:', `${text} ${url}`); }
+  }
+
   // Online boards shown in score tables: all-time ('world') and, for daily challenges, today's ('today').
   const boards = { world: { state: 'idle', list: [] }, today: { state: 'idle', list: [] } }; // state: idle | loading | ok | off
   let hsTab = 'world', lastSaved = null, dailyDay = null; // dailyDay: date of the TODAY tab, or null when it isn't shown
@@ -134,6 +176,7 @@
   A.press = kd; A.release = ku;
   const GAME_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space']);
   addEventListener('keydown', e => {
+    if (e.target.closest && e.target.closest('[data-keys-native]')) return; // forms and pickers that need their own keys
     A.unlock();
     if (entry && overlayOpen() && !e.repeat) {
       if (/^Key[A-Z]$/.test(e.code)) { e.preventDefault(); entry.letters[entry.pos] = e.code[3]; entry.pos = Math.min(2, entry.pos + 1); A.tone(660, 0.03); renderHS(); return; }
@@ -246,8 +289,11 @@
    */
   A.overlay = ({ title, sub = '', big = '', btn = 'Play', onGo, alt, scores, daily }) => {
     const o = $('ov'), res = lastResult; lastResult = null;
+    const canShare = res && res.s > 0;
     o.innerHTML = `<h2></h2>${big ? '<div class="big"></div>' : ''}${sub ? '<p></p>' : ''}<div class="hs"></div>` +
-      `<div class="btns"><button class="go"></button>${alt ? '<button class="go2"></button>' : ''}</div>`;
+      `<div class="btns"><button class="go"></button>${alt ? '<button class="go2"></button>' : ''}</div>` +
+      (canShare ? '<button class="share">Share score</button>' : '');
+    if (canShare) { const sb = o.querySelector('.share'); sb.addEventListener('click', () => shareScore(res.s, res.day && res.day.d, sb)); }
     o.querySelector('h2').textContent = title;
     if (big) o.querySelector('.big').textContent = big;
     if (sub) o.querySelector('p').innerHTML = sub;
@@ -297,6 +343,7 @@
     const o = $('ov'), hs = o && o.querySelector('.hs'); if (!hs) return;
     const go = o.querySelector('.go'), b2 = o.querySelector('.go2');
     go.textContent = entry ? 'Save' : goLabel; if (b2) b2.hidden = !!entry;
+    const sb = o.querySelector('.share'); if (sb) sb.hidden = !!entry;
     if (entry) {
       const slots = entry.letters.map((ch, i) => `<div class="slot${i === entry.pos ? ' cur' : ''}">` +
         `<button tabindex="-1" data-slot="${i}" data-dir="ArrowUp" aria-label="Next letter">▲</button>` +
@@ -308,13 +355,17 @@
       return;
     }
     if (!shown) { hs.innerHTML = ''; return; }
-    const LABEL = { world: 'WORLD', today: 'TODAY', local: 'THIS DEVICE' };
+    const LABEL = { world: 'WORLD', today: 'TODAY', local: 'THIS DEVICE', badges: `BADGES ${A.badgesGot().length}/${A.badgeList().length}` };
     const tab = id => `<button tabindex="-1" data-tab="${id}"${hsTab === id ? ' class="on"' : ''}>${LABEL[id]}</button>`;
     const note = t => `<div class="hs-note">${t}</div>`;
     const local = shown.top.length ? table(shown.top, shown.hi) : note('No scores on this device yet');
     let body;
     if (hsTab === 'local') body = local;
-    else {
+    else if (hsTab === 'badges') {
+      const got = A.badgesGot();
+      body = `<div class="hs-badges">${A.badgeList().map(b => `<div class="badge${got.includes(b.id) ? ' got' : ''}">` +
+        `<span>${got.includes(b.id) ? '★' : '☆'}</span><b>${b.name}</b><small>${b.desc}</small></div>`).join('')}</div>`;
+    } else {
       const b = boards[hsTab], what = hsTab === 'today' ? `today's daily scores` : 'world scores';
       if (b.state === 'ok') body = b.list.length ? table(b.list, lastSaved ? b.list.findIndex(e => e.n === lastSaved.n && e.s === lastSaved.s) : -1) : note(`No ${what} yet. Be the first!`);
       else if (b.state === 'off') body = note(`${what[0].toUpperCase() + what.slice(1)} are offline · showing this device`) + local;
@@ -322,7 +373,7 @@
     }
     hs.innerHTML = `<div class="hs-tabs">${tabs().map(tab).join('')}</div>${body}${shown.day ? dayLine(shown.day) : ''}`;
   }
-  const tabs = () => dailyDay ? ['world', 'today', 'local'] : ['world', 'local'];
+  const tabs = () => [...(dailyDay ? ['world', 'today'] : ['world']), 'local', ...(A.badgeList().length ? ['badges'] : [])];
   // Names are checked against 3 capital letters before display: world scores come from other players.
   const table = (list, hi) => `<div class="hs-table">${list.map((e, i) => `<div class="row${i === hi ? ' me' : ''}"><span>${i + 1}</span>` +
     `<span>${/^[A-Z?]{3}$/.test(e.n) ? e.n : '???'}</span><span>${(+e.s || 0).toLocaleString()}</span></div>`).join('')}</div>`;

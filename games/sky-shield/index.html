@@ -20,6 +20,7 @@
   <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
   <p class="help">Aim with the mouse and click to fire · or <kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> aim, <kbd>Space</kbd> fire from the nearest base, <kbd>Z</kbd><kbd>X</kbd><kbd>C</kbd> pick a base · <kbd>P</kbd> pause · tap to fire on phones</p>
 </main>
+<script src="../../shared/badges.js"></script>
 <script src="../../shared/arcade.js"></script>
 <script>
 (() => {
@@ -36,7 +37,7 @@ function newGame() {
   nextWave();
 }
 function nextWave() {
-  wave++; foes = []; shots = []; blasts = [];
+  wave++; if (wave >= 5) A.badge('w5'); foes = []; shots = []; blasts = [];
   bases.forEach(b => { b.alive = true; b.ammo = 10; });
   toSpawn = 10 + wave * 2; spawnT = 1.5; state = 'play'; say(`WAVE ${wave} · ×${mult()} POINTS`);
   A.jingle([392, 523, 659, 784], 0.08);
@@ -83,8 +84,9 @@ function endWave() {
   state = 'tally'; phaseT = 2.6;
   const m = mult(), ammo = bases.reduce((s, b) => s + (b.alive ? b.ammo : 0), 0), alive = cities.filter(c => c.alive).length;
   const bonus = (ammo * 5 + alive * 100) * m; score += bonus;
+  if (alive === 6) A.badge('wave');
   let rebuilt = '';
-  while (score >= nextCity) { nextCity += 10000; const c = cities.find(k => !k.alive); if (c) { c.alive = true; rebuilt = ' · CITY REBUILT'; } }
+  while (score >= nextCity) { nextCity += 10000; const c = cities.find(k => !k.alive); if (c) { c.alive = true; rebuilt = ' · CITY REBUILT'; A.badge('rebuild'); } }
   A.setScore(score); say(`BONUS +${bonus}${rebuilt}`); A.jingle([523, 659, 784, 1047, 1319], 0.09);
 }
 function gameOver() {

@@ -24,6 +24,7 @@
   </div>
   <p class="help"><kbd>←</kbd><kbd>→</kbd> tilt · <kbd>↑</kbd> or <kbd>Space</kbd> thrust · <kbd>P</kbd> pause</p>
 </main>
+<script src="../../shared/badges.js"></script>
 <script src="../../shared/arcade.js"></script>
 <script>
 (() => {
@@ -76,6 +77,7 @@ function touchdown() {
   if (pad && soft) {
     const gentle = Math.abs(ship.vy) < 20, pts = pad.m * 100 + Math.round(fuel) * 3 + (gentle ? 100 : 0);
     score += pts; A.setScore(score); ship.y = pad.y - 11; ship.a = 0; ship.vx = ship.vy = 0; ship.thrust = false;
+    A.badge('land'); if (gentle) A.badge('feather'); if (pad.m === 5) A.badge('x5');
     state = 'landed'; phaseT = 2.4; say(`${gentle ? 'FEATHER TOUCH' : 'LANDED'} ×${pad.m} +${pts}`);
     A.jingle([523, 659, 784, 1047], 0.09);
   } else {

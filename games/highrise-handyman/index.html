@@ -24,6 +24,7 @@
   </div>
   <p class="help"><kbd>←</kbd><kbd>→</kbd> move · <kbd>↑</kbd><kbd>↓</kbd> climb · <kbd>Space</kbd> hammer · <kbd>P</kbd> pause</p>
 </main>
+<script src="../../shared/badges.js"></script>
 <script src="../../shared/arcade.js"></script>
 <script>
 (() => {
@@ -78,9 +79,10 @@ function hammer() {
   } else A.tone(180, 0.03, 'square', 0.02);
 }
 function levelDone() {
+  A.badge('clear');
   const bonus = 1000 * level; score += bonus; A.setScore(score); A.jingle([523, 659, 784, 1047, 784, 1047, 1319], 0.1);
   state = 'cleared'; say(`ALL FIXED! +${bonus}`); bricks = [];
-  setTimeout(() => { if (state === 'cleared') { level++; setupLevel(); state = 'play'; } }, 2400);
+  setTimeout(() => { if (state === 'cleared') { level++; if (level >= 3) A.badge('lvl3'); setupLevel(); state = 'play'; } }, 2400);
 }
 function sparkle(x, y, c, n = 16) { for (let i = 0; i < n; i++) { const a = Math.random() * 6.28, s = A.rand(40, 180); debris.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 60, t: A.rand(0.3, 0.8), c, s: 3 }); } }
 function update(dt) {
@@ -118,7 +120,7 @@ function update(dt) {
   coffeeT -= dt;
   if (!coffee && coffeeT <= 0) coffee = { c: A.rnd(COLS), f: A.rnd(FLOORS), t: 7 };
   if (coffee) { coffee.t -= dt; if (coffee.t <= 0) { coffee = null; coffeeT = A.rand(14, 22); }
-    else if (hero.c === coffee.c && hero.f === coffee.f && hero.moveT <= 0) { hero.coffee = 6; coffee = null; coffeeT = A.rand(16, 24); score += 300; A.setScore(score); A.jingle([784, 988, 1175, 1568], 0.06); say('COFFEE! 2X + BRICKPROOF'); } }
+    else if (hero.c === coffee.c && hero.f === coffee.f && hero.moveT <= 0) { hero.coffee = 6; A.badge('coffee'); coffee = null; coffeeT = A.rand(16, 24); score += 300; A.setScore(score); A.jingle([784, 988, 1175, 1568], 0.06); say('COFFEE! 2X + BRICKPROOF'); } }
 }
 function hit() { lives--; hero.dead = 1.4; A.tone(500, 0.5, 'sawtooth', 0.06, 0, 90); sparkle(hero.x, hero.y - 40, '#ffc23d', 20); }
 function gameOver() { state = 'over'; const rec = A.submit(score); A.overlay({ title: 'CREW OUT', big: `SCORE ${score} · LEVEL ${level}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, btn: 'Play again', onGo: newGame }); }

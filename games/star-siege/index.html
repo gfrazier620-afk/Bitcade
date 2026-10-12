@@ -24,6 +24,7 @@
   </div>
   <p class="help"><kbd>←</kbd><kbd>→</kbd> move · <kbd>Space</kbd> fire · <kbd>P</kbd> pause</p>
 </main>
+<script src="../../shared/badges.js"></script>
 <script src="../../shared/arcade.js"></script>
 <script>
 (() => {
@@ -118,7 +119,7 @@ function update(dt) {
   for (const s of shots) {
     if (s.y < 40) { s.dead = true; continue; }
     for (const a of L) { const p = apos(a); if (s.x > p.x && s.x < p.x + AW && s.y > p.y && s.y < p.y + AH) { a.alive = false; s.dead = true; score += a.pts; boom(p.x + AW / 2, p.y + AH / 2, a.col); A.noise(0.12, 0.05); break; } }
-    if (!s.dead && ufo && Math.abs(s.x - ufo.x) < 22 && Math.abs(s.y - 66) < 10) { score += ufo.pts; boom(ufo.x, 66, '#ffd23d', 26); s.dead = true; flashPts(ufo.x, ufo.pts); ufo = null; ufoT = A.rand(16, 26); A.jingle([880, 660, 880, 1320], 0.06); }
+    if (!s.dead && ufo && Math.abs(s.x - ufo.x) < 22 && Math.abs(s.y - 66) < 10) { score += ufo.pts; boom(ufo.x, 66, '#ffd23d', 26); s.dead = true; flashPts(ufo.x, ufo.pts); A.badge('saucer'); ufo = null; ufoT = A.rand(16, 26); A.jingle([880, 660, 880, 1320], 0.06); }
     if (!s.dead) for (const b of bunkers) if (b.hp > 0 && s.x > b.x - 1 && s.x < b.x + 7 && s.y > b.y && s.y < b.y + 6) { b.hp = 0; s.dead = true; break; }
     if (!s.dead) for (const b of bombs) if (Math.abs(b.x - s.x) < 6 && Math.abs(b.y - s.y) < 10) { b.dead = true; s.dead = true; boom(s.x, s.y, '#fff', 5); score += 5; }
   }
@@ -136,7 +137,7 @@ function update(dt) {
   }
   if (!extraGiven && score >= 5000) { extraGiven = true; lives++; A.jingle([660, 880, 1320], 0.08); }
   A.setScore(score);
-  if (!alive().length) { wave++; score += 200; A.jingle([523, 659, 784, 1047], 0.1); startWave(); }
+  if (!alive().length) { A.badge('wave'); wave++; if (wave >= 5) A.badge('w5'); score += 200; A.jingle([523, 659, 784, 1047], 0.1); startWave(); }
 }
 function flashPts(x, p) { pops.push({ x, t: 1.2, p }); }
 function hitPlayer() { lives--; player.dead = 1.6; boom(player.x, player.y, '#5ee7ff', 30); A.noise(0.6, 0.1); A.tone(160, 0.6, 'sawtooth', 0.05, 0, 40); bombs = []; }

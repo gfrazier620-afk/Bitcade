@@ -24,6 +24,7 @@
   </div>
   <p class="help"><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> or <kbd>WASD</kbd> steer · <kbd>P</kbd> pause · swipe on phones</p>
 </main>
+<script src="../../shared/badges.js"></script>
 <script src="../../shared/arcade.js"></script>
 <script>
 (() => {
@@ -133,7 +134,7 @@ function playerArrive(e) {
     else { score += 50; frightT = Math.max(1.5, 7 - (level - 1) * 0.8); combo = 0; A.jingle([392, 523, 659], 0.05);
       viruses.forEach(v => { if (!v.home && !v.eaten) { v.fright = true; reverse(v); } }); }
     if (eatenCount === 70 || eatenCount === 140) bonus = { x: 10, y: 11, t: 9, pts: 100 + level * 200 };
-    if (!dotCount) { state = 'clear'; phaseT = 2.4; A.jingle([523, 659, 784, 1047, 1319], 0.09); }
+    if (!dotCount) { A.badge('clear'); state = 'clear'; phaseT = 2.4; A.jingle([523, 659, 784, 1047, 1319], 0.09); }
   }
   if (bonus && e.tx === bonus.x && e.ty === bonus.y) { score += bonus.pts; pops.push({ x: bonus.x, y: bonus.y, t: 1.5, txt: bonus.pts }); bonus = null; A.jingle([880, 1175, 1568], 0.06); }
 }
@@ -190,7 +191,7 @@ A.loop(dt => {
     if (v.home || v.eaten) continue;
     const vp = pos(v); let dx = Math.abs(vp.x - pp.x); dx = Math.min(dx, CN - dx);
     if (dx < 0.6 && Math.abs(vp.y - pp.y) < 0.6) {
-      if (v.fright) { v.fright = false; v.eaten = true; v.exiting = false; const pts = 200 * 2 ** combo++; score += pts; pops.push({ x: vp.x, y: vp.y, t: 1.2, txt: pts }); freezeT = 0.45; A.jingle([1047, 1319, 1568], 0.05); }
+      if (v.fright) { v.fright = false; v.eaten = true; v.exiting = false; const pts = 200 * 2 ** combo++; A.badge('zap'); if (combo >= 4) A.badge('combo'); score += pts; pops.push({ x: vp.x, y: vp.y, t: 1.2, txt: pts }); freezeT = 0.45; A.jingle([1047, 1319, 1568], 0.05); }
       else { die(); return; }
     }
   }

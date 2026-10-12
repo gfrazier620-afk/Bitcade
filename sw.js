@@ -7,14 +7,15 @@
  *
  * Adding a game? Add its slug to GAMES and bump VERSION. The smoke tests check that GAMES matches games/.
  */
-const VERSION = 'bitcade-v1', RUNTIME = 'bitcade-runtime';
+const VERSION = 'bitcade-v3', RUNTIME = 'bitcade-runtime';
 const GAMES = ['neon-noodle', 'wallbuster', 'star-siege', 'rock-rift', 'stackdown', 'back-alley-brawl', 'circuit-chase',
   'highrise-handyman', 'nitro-lane', 'volley-duel', 'crater-lander', 'sky-shield', 'hedge-hop', 'blip-sports'];
-const SHELL = ['./', 'manifest.json', 'shared/arcade.js', 'shared/arcade.css', 'shared/world.js',
+const SHELL = ['./', 'manifest.json', 'shared/arcade.js', 'shared/arcade.css', 'shared/world.js', 'shared/badges.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', ...GAMES.map(g => `games/${g}/`)];
 
+// cache: 'reload' skips the browser's HTTP cache, so the offline copy is the current one
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys()
@@ -30,10 +31,15 @@ self.addEventListener('fetch', e => {
     (url.hostname === 'www.gstatic.com' && url.pathname.startsWith('/firebasejs/'))) e.respondWith(cacheFirst(req));
 });
 
-/** Fresh from the network, but answer from the cache if the network fails or takes more than 4 s. */
+/**
+ * Fresh from the network, but answer from the cache if the network fails or takes more than 4 s.
+ * cache: 'no-cache' revalidates with the server instead of trusting the HTTP cache, which could otherwise mix
+ * a new arcade.js with a stale arcade.css for a few minutes after a deploy.
+ */
 async function networkFirst(req) {
   const cache = await caches.open(VERSION);
-  const net = fetch(req).then(res => { if (res.ok) cache.put(req, res.clone()); return res; });
+  const live = req.mode === 'navigate' ? fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' }) : fetch(new Request(req, { cache: 'no-cache' }));
+  const net = live.then(res => { if (res.ok) cache.put(req, res.clone()); return res; });
   const slow = new Promise(r => setTimeout(r, 4000)).then(() => cache.match(req, { ignoreSearch: true }));
   try {
     const first = await Promise.race([net, slow]);

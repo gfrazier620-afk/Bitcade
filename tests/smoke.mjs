@@ -74,7 +74,7 @@ const KEYS = ['ArrowUp', 'ArrowLeft', 'Space', 'ArrowRight', 'ArrowDown', 'KeyJ'
 for (const slug of dirs) {
   console.log(`\n${slug}`);
   const { page, errors, close } = await open(`/games/${slug}/`);
-  const kit = await page.evaluate(() => !!window.Arcade);
+  const kit = await page.evaluate(() => !!document.getElementById('ov')); // kit games use the overlay; Blip Sports has its own shell
   if (kit) {
     check(await page.isVisible('#ov .go'), 'title screen shows a start button');
     check((await page.getAttribute('body', 'data-game')) === slug, 'body data-game matches the folder name');
@@ -88,11 +88,20 @@ for (const slug of dirs) {
     for (const k of KEYS) { await page.keyboard.down(k); await wait(120); await page.keyboard.up(k); }
     await wait(800);
   } else {
-    // Blip Sports: its own handheld shell
+    // Blip Sports: its own handheld shell, with the shared kit underneath
+    check(await page.evaluate(() => !!window.Arcade && Arcade.id === 'blip-sports'), 'the shared kit is loaded');
     await page.keyboard.press('Enter');
     await wait(400);
     check(/BALL ON|KICKOFF|BATTING/.test(await page.textContent('#ticker')), 'Enter kicks off a game');
     for (const k of ['ArrowRight', 'ArrowRight', 'ArrowUp', 'Space']) { await page.keyboard.press(k); await wait(150); }
+    await page.keyboard.press('KeyP');
+    check(/PAUSED/.test(await page.textContent('#ticker')), 'P pauses');
+    await page.keyboard.press('KeyP');
+    check(!/PAUSED/.test(await page.textContent('#ticker')), 'P resumes');
+    await page.waitForFunction(() => /offline|No world/.test(document.getElementById('worldWins').textContent));
+    check(true, 'world wins board falls back when offline');
+    await page.click('#ini'); await page.keyboard.type('qz9x');
+    check((await page.inputValue('#ini')) === 'QZX' && (await page.evaluate(() => localStorage.getItem('arcade:initials'))) === 'QZX', 'initials box keeps 3 capital letters, and typing in it does not steer the game');
   }
   // the canvas actually draws something
   const painted = await page.evaluate(() => {
@@ -135,7 +144,7 @@ console.log('\nDaily boards');
 {
   const { page, errors, close } = await open('/games/stackdown/');
   const tabs = await page.$$eval('#ov .hs-tabs button', bs => bs.map(b => b.textContent));
-  check(JSON.stringify(tabs) === '["WORLD","TODAY","THIS DEVICE"]', `daily game's title screen has WORLD, TODAY and THIS DEVICE tabs (${tabs.join(', ')})`);
+  check(JSON.stringify(tabs) === '["WORLD","TODAY","THIS DEVICE","BADGES 0/3"]', `daily game's title screen has WORLD, TODAY, THIS DEVICE and BADGES tabs (${tabs.join(', ')})`);
   await page.click('#ov .go2'); // Daily
   await page.evaluate(() => { Arcade.submit(321, true); Arcade.overlay({ title: 'TOPPED OUT', btn: 'Retry daily', daily: true, onGo: () => {} }); });
   check(await page.isVisible('#ov .ini'), 'a daily best asks for initials');
@@ -184,7 +193,8 @@ console.log('\nInstall and offline');
   page.on('pageerror', e => errors.push(e.message));
   await page.goto(BASE + '/');
   await page.evaluate(() => navigator.serviceWorker.ready);
-  const cached = await page.waitForFunction(n => caches.open('bitcade-v1').then(c => c.keys()).then(k => k.length >= n && k.length), swGames.length + 3, { timeout: 20000 }).then(h => h.jsonValue(), () => 0);
+  const cacheName = sw.match(/VERSION = '([^']+)'/)[1];
+  const cached = await page.waitForFunction(([name, n]) => caches.open(name).then(c => c.keys()).then(k => k.length >= n && k.length), [cacheName, swGames.length + 3], { timeout: 20000 }).then(h => h.jsonValue(), () => 0);
   check(cached >= swGames.length + 3, `service worker cached the lobby and all ${swGames.length} games (${cached} files)`);
   await ctx.setOffline(true);
   await page.reload();
@@ -197,6 +207,43 @@ console.log('\nInstall and offline');
   check(await page.isVisible('#ticker'), 'offline: Blip Sports loads');
   check(!errors.length, `offline: no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
   await ctx.close();
+}
+
+/* ---------- badges and sharing ---------- */
+console.log('\nBadges and sharing');
+{
+  // every Arcade.badge('id') in a game exists in shared/badges.js, and every game has badges
+  global.window = {}; await import(new URL('../shared/badges.js', import.meta.url)); const DEFS = global.window.BADGES; delete global.window;
+  const missing = [], noBadges = dirs.filter(d => !(DEFS[d] && DEFS[d].length));
+  for (const d of dirs) {
+    const html = await readFile(join(ROOT, 'games', d, 'index.html'), 'utf8'), ids = (DEFS[d] || []).map(b => b.id);
+    for (const m of html.matchAll(/A\.badge\('([a-z0-9]+)'\)/g)) if (!ids.includes(m[1])) missing.push(`${d}:${m[1]}`);
+    for (const id of ids) if (!html.includes(`A.badge('${id}')`)) missing.push(`${d}:${id} is never unlocked`);
+  }
+  check(!noBadges.length, `every game has badges${noBadges.length ? ' (none for ' + noBadges.join(', ') + ')' : ''}`);
+  check(!missing.length, `badge ids in the games match shared/badges.js${missing.length ? ' (' + missing.join(', ') + ')' : ''}`);
+
+  const { page, errors, close } = await open('/games/neon-noodle/', { permissions: ['clipboard-read', 'clipboard-write'] });
+  await page.evaluate(() => { delete Navigator.prototype.share; Arcade.badge('gem'); Arcade.badge('gem'); });
+  check(await page.isVisible('.arcade-toast'), 'unlocking a badge shows a toast');
+  check((await page.evaluate(() => JSON.parse(localStorage.getItem('arcade:badges:neon-noodle')))).join() === 'gem', 'the badge is saved once');
+  await page.keyboard.press('ArrowLeft'); // WORLD → BADGES (tabs wrap around)
+  check(/BADGES 1\/3/.test(await page.textContent('#ov .hs-tabs .on')), 'the title screen has a BADGES 1/3 tab');
+  await page.evaluate(() => { Arcade.submit(4321); Arcade.overlay({ title: 'GAME OVER', btn: 'Play again', onGo: () => {} }); });
+  check(await page.isHidden('#ov .share'), 'Share waits until initials are saved');
+  await page.keyboard.type('SHR'); await page.keyboard.press('Enter');
+  await page.click('#ov .share');
+  const clip = await page.evaluate(() => navigator.clipboard.readText());
+  check(/4,321 on Neon Noodle/.test(clip) && /games\/neon-noodle\//.test(clip), `Share copies the score and a link ("${clip.slice(0, 60)}…")`);
+  check(!errors.length, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
+  await close();
+
+  const lobby = await open('/');
+  await lobby.page.evaluate(() => localStorage.setItem('arcade:badges:wallbuster', '["clear"]'));
+  await lobby.page.reload();
+  check(/BADGES 1\/\d+/.test(await lobby.page.textContent('#stats')), 'the lobby counts badges');
+  check((await lobby.page.textContent('.cab[href="games/wallbuster/"] .bd')).includes('1/3'), 'each cabinet shows its badges');
+  await lobby.close();
 }
 
 /* ---------- phones: pause button and touch pad ---------- */

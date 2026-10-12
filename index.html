@@ -45,6 +45,7 @@ body{display:block;overflow-x:hidden;
 .cab-foot b{color:var(--ink);font-weight:400;font-size:13px}
 .cab-world{font-family:var(--f-pixel);font-size:11px;color:var(--muted)}
 .cab-world b{color:var(--c);font-weight:400;font-size:13px}
+.cab-foot .bd{margin-left:auto;margin-right:10px;color:#ffd23d}
 .play{background:var(--c);color:#120a1c;border-radius:7px;padding:5px 10px;font-size:11px}
 footer{margin-top:44px;text-align:center;color:var(--muted);font-size:13px}
 footer p{margin:4px 0}
@@ -71,6 +72,7 @@ footer p{margin:4px 0}
     <button class="reset" id="reset">Reset all high scores</button>
   </footer>
 </div>
+<script src="shared/badges.js"></script>
 <script>
 (() => {
 const GAMES = [
@@ -123,16 +125,19 @@ const floor = document.getElementById('floor');
 const paint = (cx, px) => { cx.clearRect(0, 0, 12, 8); px.forEach((row, y) => [...row].forEach((ch, x) => { if (PAL[ch]) { cx.fillStyle = PAL[ch]; cx.fillRect(x, y, 1, 1); } })); };
 /** #1 entry of a game's top-10 table, if it has real initials. */
 const leader = slug => { try { const t = JSON.parse(get('arcade:top:' + slug)); return Array.isArray(t) && t[0] && /^[A-Z]{3}$/.test(t[0].n) ? t[0].n : ''; } catch (e) { return ''; } };
-let total = 0, played = 0;
+let total = 0, played = 0, badgesGot = 0, badgesAll = 0;
+/** Badges this player has for a game, from shared/badges.js. */
+const badges = slug => { const all = (window.BADGES || {})[slug] || []; let got = []; try { got = JSON.parse(get('arcade:badges:' + slug)) || []; } catch (e) {} return { got: all.filter(b => got.includes(b.id)).length, all: all.length }; };
 const screens = [];
 GAMES.forEach(g => {
   const best = +get('arcade:best:' + g.slug) || 0, plays = +get('arcade:plays:' + g.slug) || 0;
   if (plays || best) played++; total += plays;
-  const who = best ? leader(g.slug) : '';
+  const who = best ? leader(g.slug) : '', bd = badges(g.slug);
+  badgesGot += bd.got; badgesAll += bd.all;
   const a = document.createElement('a');
   a.className = 'cab'; a.href = `games/${g.slug}/`; a.style.setProperty('--c', g.c);
   a.innerHTML = `<div class="cab-top"><h2></h2><span></span></div><div class="cab-screen"><canvas width="12" height="8"></canvas></div>
-    <div class="cab-body"><p></p><div class="cab-foot"><span>${g.label || 'BEST'} <b>${who ? who + ' ' : ''}${best ? best.toLocaleString() : '—'}</b></span><span class="play">PLAY ▶</span></div></div>`;
+    <div class="cab-body"><p></p><div class="cab-foot"><span>${g.label || 'BEST'} <b>${who ? who + ' ' : ''}${best ? best.toLocaleString() : '—'}</b></span><span class="bd" title="Badges">★ ${bd.got}/${bd.all}</span><span class="play">PLAY ▶</span></div></div>`;
   a.querySelector('h2').textContent = g.name; a.querySelector('.cab-top span').textContent = g.kind.toUpperCase(); a.querySelector('p').textContent = g.blurb;
   const cx = a.querySelector('canvas').getContext('2d');
   paint(cx, g.px); screens.push({ cx, g, f: 0 });
@@ -142,23 +147,28 @@ GAMES.forEach(g => {
 // World #1 for each cabinet from the online leaderboard, plus today's #1 for daily-challenge games.
 // The lobby works the same without it.
 const d = new Date(), today = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-const leaderRow = (g, label, e) => {
+const leaderRow = (g, label, e, unit = '') => {
   if (!e || !/^[A-Z]{3}$/.test(e.n)) return;
   const row = document.createElement('div'); row.className = 'cab-world'; row.textContent = label + ' ';
-  const b = document.createElement('b'); b.textContent = `${e.n} ${(+e.s || 0).toLocaleString()}`; row.append(b);
+  const b = document.createElement('b'); b.textContent = `${e.n} ${(+e.s || 0).toLocaleString()}${unit}`; row.append(b);
   g.el.querySelector('.cab-foot').before(row);
 };
-import('./shared/world.js').then(w => GAMES.filter(g => !g.label).forEach(g => {
-  w.top(g.slug, 1).then(([e]) => leaderRow(g, 'WORLD #1', e), () => {});
-  if (g.daily) w.top(g.slug, 1, today).then(([e]) => leaderRow(g, 'TODAY #1', e), () => {});
-}), () => {});
+import('./shared/world.js').then(w => {
+  GAMES.forEach(g => {
+    if (g.label) return; // Blip Sports counts wins, below
+    w.top(g.slug, 1).then(([e]) => leaderRow(g, 'WORLD #1', e), () => {});
+    if (g.daily) w.top(g.slug, 1, today).then(([e]) => leaderRow(g, 'TODAY #1', e), () => {});
+  });
+  const blip = GAMES.find(g => g.slug === 'blip-sports');
+  w.topWins(1).then(([e]) => leaderRow(blip, 'WORLD #1', e, e && e.s === 1 ? ' win' : ' wins'), () => {});
+}, () => {});
 // Attract mode: each cabinet flips between its two frames, out of step with its neighbours.
 if (!matchMedia('(prefers-reduced-motion: reduce)').matches) setInterval(() => {
   if (document.hidden) return;
   const now = performance.now();
   screens.forEach((s, i) => { const f = Math.floor((now + i * 170) / 520) % 2; if (f !== s.f) { s.f = f; paint(s.cx, f ? s.g.px2 : s.g.px); } });
 }, 60);
-document.getElementById('stats').innerHTML = `<span>CABINETS <b>${GAMES.length}</b></span><span>TRIED <b>${played}</b></span><span>GAMES PLAYED <b>${total}</b></span>`;
+document.getElementById('stats').innerHTML = `<span>CABINETS <b>${GAMES.length}</b></span><span>TRIED <b>${played}</b></span><span>GAMES PLAYED <b>${total}</b></span><span>BADGES <b>${badgesGot}/${badgesAll}</b></span>`;
 /* Install: the service worker caches the lobby and every game. Browsers that support an install prompt get a button;
    iPhones and iPads install from the Share menu, so they get a hint instead. */
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

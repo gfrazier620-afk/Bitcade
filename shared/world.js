@@ -5,10 +5,11 @@
  * Data: boards/{game}/scores/{id} = { n: 'ABC', s: 1234, uid, t }        all-time board
  *       daily/{game}/days/{YYYY-MM-DD}/scores/{id} = same shape          daily-challenge board
  *       players/{uid} = { last }                                          post cooldown
+ *       wins/{uid} = { n, s: total wins, t }                              Blip Sports world wins, +1 per win
  * The config below only identifies the project. firestore.rules (published in the Firebase console) protects the data.
  */
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
-import { getFirestore, collection, query, orderBy, limit, getDocs, doc, writeBatch, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-lite.js';
+import { getFirestore, collection, query, orderBy, limit, getDocs, getDoc, setDoc, doc, writeBatch, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-lite.js';
 
 const app = initializeApp({
   apiKey: 'AIzaSyAPy1xQoxSHA64Efns07QCNw7ASNIWQpOQ',
@@ -49,4 +50,16 @@ export async function post(game, name, score, { all = true, day = null } = {}) {
   if (all) b.set(doc(board(game)), entry());
   if (day) b.set(doc(board(game, day)), entry());
   await b.commit();
+}
+
+/** World wins board (Blip Sports): players with the most wins, best first: [{ n, s }]. */
+export async function topWins(n = 10) {
+  const snap = await getDocs(query(collection(db, 'wins'), orderBy('s', 'desc'), limit(n)));
+  return snap.docs.map(d => ({ n: d.get('n'), s: d.get('s') }));
+}
+
+/** Add one win to this player's world total. The rules allow +1 per minute, so callers queue and retry. */
+export async function addWin(name) {
+  const u = await signIn(), ref = doc(db, 'wins', u.uid), cur = await getDoc(ref);
+  await setDoc(ref, { n: name, s: (cur.exists() ? cur.get('s') : 0) + 1, t: serverTimestamp() });
 }

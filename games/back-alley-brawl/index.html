@@ -30,6 +30,7 @@
   </div>
   <p class="help"><kbd>←</kbd><kbd>→</kbd> walk (hold back to block) · <kbd>↑</kbd> jump · <kbd>↓</kbd> crouch · <kbd>J</kbd> punch · <kbd>K</kbd> kick · <kbd>L</kbd> special · <kbd>P</kbd> pause</p>
 </main>
+<script src="../../shared/badges.js"></script>
 <script src="../../shared/arcade.js"></script>
 <script>
 (() => {
@@ -159,13 +160,13 @@ function separate() {
 }
 function endRound(winner) {
   state = 'roundEnd'; phaseT = 2.6;
-  if (winner === P) { match.pw++; const bonus = 1000 + Math.round(P.hp) * 10 + Math.ceil(roundT) * 10 + (P.hp >= 100 ? 2000 : 0); score += bonus; A.setScore(score); banner = P.hp >= 100 ? 'PERFECT!' : `${P.def.name} WINS`; A.jingle([523, 659, 784, 1047], 0.12); }
+  if (winner === P) { match.pw++; A.badge('round'); if (P.hp >= 100) A.badge('perfect'); const bonus = 1000 + Math.round(P.hp) * 10 + Math.ceil(roundT) * 10 + (P.hp >= 100 ? 2000 : 0); score += bonus; A.setScore(score); banner = P.hp >= 100 ? 'PERFECT!' : `${P.def.name} WINS`; A.jingle([523, 659, 784, 1047], 0.12); }
   else if (winner === C) { match.cw++; banner = `${C.def.name} WINS`; A.jingle([392, 330, 262, 196], 0.16, 'triangle'); }
   else banner = 'DRAW';
 }
 function afterRound() {
   if (match.pw >= 2) {
-    if (match.opp === LADDER.length - 1) { score += 5000; A.setScore(score); return finish(true); }
+    if (match.opp === LADDER.length - 1) { score += 5000; A.setScore(score); A.badge('champ'); return finish(true); }
     match.opp++; match.round = 1; match.pw = 0; match.cw = 0; state = 'next'; phaseT = 2.2; banner = `NEXT: ${LADDER[match.opp].name}`; return;
   }
   if (match.cw >= 2) return finish(false);

@@ -113,10 +113,20 @@ kbd{font-family:var(--f-ui);font-weight:600;font-size:11px;border:1px solid var(
 #log li.big{color:var(--stripe);font-weight:600}
 #log li.empty{color:var(--muted)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+.wwins{list-style:none;margin:0;padding:0;border-top:1px solid var(--line);font-variant-numeric:tabular-nums}
+.wwins li{display:flex;gap:10px;padding:6px 2px;border-bottom:1px solid var(--line);font-size:13px}
+.wwins li .w{color:var(--muted);flex:0 0 22px}
+.wwins li b{margin-left:auto;font-weight:600}
+.wwins li.empty{color:var(--muted)}
+.ini-row{display:flex;align-items:center;gap:10px;font-size:13px;font-weight:600}
+.ini-row input{width:5.5ch;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:600 16px ui-monospace,monospace;letter-spacing:.15em;text-transform:uppercase}
+.badges{display:flex;flex-wrap:wrap;gap:6px}
+.badges .bdg{font-size:12px;padding:4px 9px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+.badges .bdg.got{color:var(--stripe);border-color:var(--stripe)}
 .backlink{display:block;max-width:1080px;margin:0 auto 14px;font-family:'Silkscreen',ui-monospace,monospace;font-size:13px;color:var(--muted);text-decoration:none}.backlink:hover{color:var(--ink)}
 </style>
 </head>
-<body>
+<body data-game="blip-sports" data-pad="1:KeyK 8:Enter">
 
 <a class="backlink" href="../../">◀ BITCADE</a>
 <div class="wrap">
@@ -147,12 +157,13 @@ kbd{font-family:var(--f-ui);font-weight:600;font-size:11px;border:1px solid var(
     </div>
     <div class="small">
       <div class="pill"><button id="btnStart" aria-label="Start new game"></button><span>START</span></div>
+      <div class="pill"><button id="btnPause" aria-label="Pause"></button><span>PAUSE</span></div>
       <div class="pill"><button id="btnSound" aria-label="Toggle sound"></button><span id="lblSound">SOUND ON</span></div>
     </div>
     <div class="keys" id="keys"></div>
   </div>
 
-  <section class="panel">
+  <section class="panel" data-keys-native>
     <div>
       <h1 id="panelTitle">Football setup</h1>
       <p class="lede" id="lede">Pick your team and an opponent. Ratings change how the CPU plays.</p>
@@ -182,14 +193,24 @@ kbd{font-family:var(--f-ui);font-weight:600;font-size:11px;border:1px solid var(
     <button class="go" id="goBtn">Kick off</button>
     <details class="how" id="how"><summary>How to play</summary><ul id="howList"></ul></details>
     <div class="sec">
+      <h2>World wins</h2>
+      <ol id="worldWins" class="wwins"><li class="empty">Loading…</li></ol>
+      <label class="ini-row">Your initials <input id="ini" maxlength="3" autocomplete="off" spellcheck="false" placeholder="ABC" aria-describedby="iniHint"></label>
+      <div class="hint" id="iniHint">Every win counts on the world board once you set these.</div>
+      <div class="badges" id="badges"></div>
+    </div>
+    <div class="sec">
       <h2>Play-by-play</h2>
       <ol id="log"><li class="empty">No plays yet.</li></ol>
     </div>
   </section>
 </div>
 
+<script src="../../shared/badges.js"></script>
+<script src="../../shared/arcade.js"></script>
 <script>
 (()=>{
+const A=Arcade; // shared kit: gamepad and key input, world board, badges
 const FB_TEAMS=[
  {id:'PHX',name:'Phoenix Scorchers',a:8,b:6},{id:'CHI',name:'Chicago Blizzard',a:5,b:9},
  {id:'DAL',name:'Dallas Wranglers',a:7,b:7},{id:'MIA',name:'Miami Riptide',a:9,b:4},
@@ -213,9 +234,12 @@ const ord=n=>ORD[n]||n+'TH';
 const teams=()=>S.mode==='fb'?FB_TEAMS:BB_TEAMS;
 const team=(id)=>teams().find(t=>t.id===id);
 /* game time freezes while the tab is hidden, so drives, pitches and the clock wait for you */
-let hiddenAt=0, hiddenFor=0;
-document.addEventListener('visibilitychange',()=>{if(document.hidden)hiddenAt=performance.now();else hiddenFor+=performance.now()-hiddenAt});
-const gnow=()=>(document.hidden?hiddenAt:performance.now())-hiddenFor;
+let paused=false, frozen=false, frozeAt=0, frozenFor=0;
+function setFrozen(f){if(f===frozen)return;frozen=f;if(f)frozeAt=performance.now();else frozenFor+=performance.now()-frozeAt}
+document.addEventListener('visibilitychange',()=>setFrozen(document.hidden||paused));
+const gnow=()=>(frozen?frozeAt:performance.now())-frozenFor;
+function setPaused(p){paused=p;setFrozen(p||document.hidden)}
+function togglePause(){if(!G||G.phase==='over')return;setPaused(!paused);ticker(paused?'PAUSED · PRESS P OR PAUSE TO RESUME':'BACK IN PLAY')}
 const sleep=ms=>{const t=TOKEN,end=gnow()+ms;return new Promise((res,rej)=>{const tick=()=>{if(t!==TOKEN)return rej('cancel');const left=end-gnow();if(left<=0)res();else setTimeout(tick,left)};setTimeout(tick,ms)})};
 const run=fn=>fn().catch(e=>{if(e!=='cancel')console.error(e)});
 
@@ -414,13 +438,13 @@ function fbFormation(){
 function stopTimers(){if(G&&G.timers){G.timers.forEach(clearInterval);G.timers=[]}}
 function fbTick(){return Math.max(260,560-(G.cpu.b-5)*38+(G.me.a-5)*22-(G.q-1)*8)}
 function fbSnap(){
-  if(!G||G.sport!=='fb'||G.phase!=='presnap')return;
+  if(paused||!G||G.sport!=='fb'||G.phase!=='presnap')return;
   G.phase='live';sfx.snap();ticker('HIKE! RUN FOR DAYLIGHT');
   G.timers.push(setInterval(fbDefStep,fbTick()));
-  G.timers.push(setInterval(()=>{if(G.clock>0&&!document.hidden){G.clock--; if(G.clock<=5)sfx.tick()}},1000));
+  G.timers.push(setInterval(()=>{if(G.clock>0&&!frozen){G.clock--; if(G.clock<=5)sfx.tick()}},1000));
 }
 function fbMove(dr,dc){
-  if(!G||G.sport!=='fb')return;
+  if(paused||!G||G.sport!=='fb')return;
   if(G.phase==='presnap')fbSnap();
   if(G.phase!=='live')return;
   const p=G.p;
@@ -432,7 +456,7 @@ function fbMove(dr,dc){
   if(G.defs.some(d=>d.r===p.r&&d.c===p.c))return fbTackle();
 }
 function fbDefStep(){
-  if(!G||G.phase!=='live'||document.hidden)return;
+  if(!G||G.phase!=='live'||frozen)return;
   const p=G.p, occ=(r,c)=>G.defs.some(d=>d.r===r&&d.c===c);
   for(const d of shuffle(G.defs)){
     if(Math.random()>0.7)continue;
@@ -479,7 +503,7 @@ async function kickAnim(fromX,dir,len){
   G.kickBall=null;
 }
 function fbKick(){
-  if(!G||G.sport!=='fb'||G.phase!=='presnap')return;
+  if(paused||!G||G.sport!=='fb'||G.phase!=='presnap')return;
   G.phase='kick';G.defs=[];G.clock=Math.max(0,G.clock-5);
   run(async()=>{
     const dist=100-G.ball+17;
@@ -558,7 +582,7 @@ function fbFinal(){
   stopTimers();G.phase='over';G.anim=null;G.defs=[];
   const m=G.score.me,c=G.score.cpu;
   setBanner('FINAL',3000);
-  if(m>c){recordWin();sfx.fanfare();ticker(`FINAL · ${G.me.id} WINS ${m}–${c} · PRESS START TO PLAY AGAIN`)}
+  if(m>c){A.badge('fbwin');if(c===0)A.badge('shutout');recordWin();sfx.fanfare();ticker(`FINAL · ${G.me.id} WINS ${m}–${c} · PRESS START TO PLAY AGAIN`)}
   else if(c>m){sfx.sad();ticker(`FINAL · ${G.cpu.id} WINS ${c}–${m} · PRESS START FOR A REMATCH`)}
   else ticker(`FINAL · TIE GAME ${m}–${c} · PRESS START`);
   log(`FINAL: ${G.me.id} ${m}, ${G.cpu.id} ${c}`,true);
@@ -632,7 +656,7 @@ async function userPA(){
 }
 function finishPitch(r){if(G.phase!=='pitch')return;G.phase='result';G.pitch.stopIdx=Math.min(6,Math.floor((gnow()-G.pitch.t0)/G.pitch.step));const res=G.pitchResolve;G.pitchResolve=null;res&&res(r)}
 function bbSwing(){
-  if(!G||G.sport!=='bb'||G.phase!=='pitch'||G.swung)return;
+  if(paused||!G||G.sport!=='bb'||G.phase!=='pitch'||G.swung)return;
   G.swung=true; const diff=gnow()-(G.pitch.t0+6*G.pitch.step); finishPitch({swing:true,diff});
 }
 async function hitAnim(dir,depth,blink){
@@ -692,14 +716,18 @@ async function cpuHalf(){
 function bbFinal(walkoff){
   G.phase='over';G.batter=false;G.pitch=null;
   const m=G.score.me,c=G.score.cpu; setBanner(walkoff?'WALK-OFF!':'FINAL',3000);
-  if(m>c){recordWin();sfx.fanfare();ticker(`${walkoff?'WALK-OFF WIN! ':''}FINAL · ${G.me.id} ${m}, ${G.cpu.id} ${c} · PRESS START`)}
+  if(m>c){A.badge('bbwin');if(c===0)A.badge('shutout');recordWin();sfx.fanfare();ticker(`${walkoff?'WALK-OFF WIN! ':''}FINAL · ${G.me.id} ${m}, ${G.cpu.id} ${c} · PRESS START`)}
   else{sfx.sad();ticker(`FINAL · ${G.cpu.id} ${c}, ${G.me.id} ${m} · PRESS START FOR A REMATCH`)}
   log(`FINAL${G.inning>G.N?` (${G.inning})`:''}: ${G.me.id} ${m}, ${G.cpu.id} ${c}`,true);
 }
 
-function recordWin(){const k='arcade:best:blip-sports';store.set(k,(+store.get(k)||0)+1)}
+function recordWin(){
+  const k='arcade:best:blip-sports';store.set(k,(+store.get(k)||0)+1);
+  const n=myIni(); if(n)A.postWin(n); else log('Set your initials under World wins to count wins on the world board.');
+  renderBadges(); setTimeout(renderWorld,4000);
+}
 /* ================= SHELL ================= */
-function stopGame(){stopTimers();TOKEN++;G=null}
+function stopGame(){stopTimers();TOKEN++;G=null;setPaused(false)}
 /* START / Enter mid-game needs a second press, so a stray key can't wipe a game */
 let armT=0;
 function requestStart(){
@@ -743,8 +771,8 @@ function renderShell(){
   $('lblA').textContent=fb?'RUN':'SWING'; $('btnA').setAttribute('aria-label',fb?'Run (snap)':'Swing');
   $('actB').hidden=!fb;
   $('dpad').setAttribute('aria-disabled',fb?'false':'true');
-  $('keys').innerHTML=fb?'<kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> or <kbd>WASD</kbd> move · <kbd>Space</kbd> snap · <kbd>K</kbd> kick · <kbd>Enter</kbd> start'
-                        :'<kbd>Space</kbd> swing · <kbd>Enter</kbd> start';
+  $('keys').innerHTML=fb?'<kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> or <kbd>WASD</kbd> move · <kbd>Space</kbd> snap · <kbd>K</kbd> kick · <kbd>P</kbd> pause · <kbd>Enter</kbd> start'
+                        :'<kbd>Space</kbd> swing · <kbd>P</kbd> pause · <kbd>Enter</kbd> start';
   $('howList').innerHTML=(fb?[
     'Your runner is the bright blip. Defenders are the dim ones, and they close in on you.',
     'Moving (or pressing RUN) snaps the ball. Each column forward is one yard. Get 10 yards in four downs for a first down.',
@@ -778,37 +806,60 @@ function bind(el,fn){
 }
 const DIRS={up:[-1,0],down:[1,0],left:[0,-1],right:[0,1]};
 document.querySelectorAll('#dpad button').forEach(b=>bind(b,()=>{const [r,c]=DIRS[b.dataset.dir];fbMove(r,c)}));
-function actionA(){if(!G){startGame();return}if(G.sport==='fb')fbSnap();else bbSwing()}
+function actionA(){if(!G){startGame();return}if(paused)return;if(G.sport==='fb')fbSnap();else bbSwing()}
 bind($('btnA'),actionA);
 bind($('btnB'),fbKick);
 bind($('btnStart'),requestStart);
+bind($('btnPause'),togglePause);
 const soundLabel=()=>{$('lblSound').textContent=S.sound?'SOUND ON':'SOUND OFF'};
-bind($('btnSound'),()=>{S.sound=!S.sound;store.set('arcade:muted',S.sound?'0':'1');soundLabel()});
+bind($('btnSound'),()=>{S.sound=!S.sound;A.muted=!S.sound;store.set('arcade:muted',S.sound?'0':'1');soundLabel()});
 soundLabel();
 
 const KEYMAP={ArrowUp:'up',KeyW:'up',ArrowDown:'down',KeyS:'down',ArrowLeft:'left',KeyA:'left',ArrowRight:'right',KeyD:'right'};
-document.addEventListener('keydown',e=>{
-  const inPanel=e.target.closest&&e.target.closest('.panel');
-  if(inPanel&&(e.code==='Space'||e.code==='Enter'))return;
+// Keys and gamepads both arrive through the shared kit (the setup panel keeps its own keys: data-keys-native).
+// Gamepad: d-pad moves, A = run/swing, B = kick, Start = pause, Back = start.
+A.onPress(c=>{
   audio();
-  if(KEYMAP[e.code]&&G&&G.sport==='fb'){e.preventDefault();if(!e.repeat){const [r,c]=DIRS[KEYMAP[e.code]];fbMove(r,c)}return}
-  if(e.code==='Space'){e.preventDefault();if(!e.repeat)actionA();return}
-  if(e.code==='KeyK'&&G&&G.sport==='fb'){fbKick();return}
-  if(e.code==='Enter'&&!(e.target.closest&&e.target.closest('button'))){requestStart()}
+  if(c==='KeyP'||c==='Escape')return togglePause();
+  if(KEYMAP[c]&&G&&G.sport==='fb'){const [r,cc]=DIRS[KEYMAP[c]];fbMove(r,cc);return}
+  if(c==='Space'){actionA();return}
+  if(c==='KeyK'&&G&&G.sport==='fb'){fbKick();return}
+  if(c==='Enter'&&!(document.activeElement&&document.activeElement.closest&&document.activeElement.closest('button')))requestStart();
 });
+
+/* world wins board and badges (shared kit) */
+const iniEl=$('ini');
+const myIni=()=>{const v=store.get('arcade:initials')||'';return /^[A-Z]{3}$/.test(v)?v:''};
+iniEl.value=myIni();
+iniEl.addEventListener('input',()=>{
+  const v=iniEl.value.toUpperCase().replace(/[^A-Z]/g,'').slice(0,3); iniEl.value=v;
+  if(v.length===3){store.set('arcade:initials',v);$('iniHint').textContent='Saved. Your wins count on the world board.'}
+});
+function renderWorld(){
+  const ol=$('worldWins');
+  A.world().then(w=>w.topWins(10)).then(list=>{
+    ol.innerHTML=list.length?'':'<li class="empty">No world wins yet. Be the first!</li>';
+    list.forEach((e,i)=>{ if(!/^[A-Z]{3}$/.test(e.n))return; // names come from other players
+      const li=document.createElement('li'); li.innerHTML='<span class="w"></span><span></span><b></b>';
+      li.children[0].textContent=i+1; li.children[1].textContent=e.n; li.children[2].textContent=(+e.s||0)+(e.s===1?' win':' wins'); ol.appendChild(li) });
+  },()=>{ol.innerHTML='<li class="empty">World wins are offline right now.</li>'});
+}
+function renderBadges(){const got=A.badgesGot();$('badges').innerHTML=A.badgeList().map(b=>`<span class="bdg${got.includes(b.id)?' got':''}" title="${b.desc}">${got.includes(b.id)?'★':'☆'} ${b.name}</span>`).join('')}
+A.muted=!S.sound;
+renderWorld(); renderBadges();
 
 /* render loop */
 function frame(now){
   ctx.clearRect(0,0,W,H);
   if(S.mode==='fb')drawFB(now);else drawBB(now);
   if(G&&G.sport==='bb'&&G.phase==='pitch'&&!G.swung&&gnow()-G.pitch.t0>6*G.pitch.step+230)finishPitch({swing:false});
+  if(paused){ctx.fillStyle='rgba(0,0,0,.6)';ctx.fillRect(0,0,W,H);printText('PAUSED',W/2,H/2,'center',22)}
   updateReadout();
   requestAnimationFrame(frame);
 }
 renderShell();
 requestAnimationFrame(frame);
-// offline play (sw.js at the site root caches every game)
-if('serviceWorker' in navigator)navigator.serviceWorker.register('../../sw.js').catch(()=>{});
+// offline play: the shared kit registers the service worker
 })();
 </script>
 
