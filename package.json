@@ -1,0 +1,12 @@
+{
+  "name": "bitcade",
+  "private": true,
+  "type": "module",
+  "description": "Dev tooling only. The site itself has no build step and no dependencies.",
+  "scripts": {
+    "test": "node tests/smoke.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "1.48.2"
+  }
+}

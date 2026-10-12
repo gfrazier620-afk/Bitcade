@@ -33,8 +33,9 @@ All names, characters and art are original. Keep it that way: no trademarked gam
 - Every game works on keyboard and touch. Kit games also work on a gamepad (Blip Sports doesn't yet). Touch pads appear only on coarse pointers.
 - Pages need `[hidden]{display:none!important}` (it's in arcade.css), because the overlay uses `display:flex`.
 - Initialise arrays used by draw/update at declaration. The loop runs on the title screen before a game starts.
-- Test locally by running `python3 -m http.server` in the repo root and opening http://localhost:8000.
+- Play locally by running `python3 -m http.server` in the repo root and opening http://localhost:8000. Pick another port, such as 5173, if 8000 is blocked, which it is on Windows here.
+- Run the smoke tests with `npm install` then `npm test`. `tests/smoke.mjs` serves the repo and opens the lobby and every game in headless Chromium. It checks cabinets and folders match, start, pause and resume, that the canvas draws, the top-10 table, the phone layout, and that there are no errors. New games are picked up automatically from `games/`. Locally it uses installed Chrome or Edge. `package.json` is dev tooling only; the site still has no dependencies.
 
 ## Deploy
 
-GitHub Pages from the `main` branch, root folder. The site lives at https://gfrazier620-afk.github.io/Bitcade/
+`.github/workflows/site.yml` runs the smoke tests on every push and pull request. On `main`, a passing run publishes `index.html`, `shared/` and `games/` to GitHub Pages, so a broken game never goes live. This needs the repo's Settings → Pages → Source set to "GitHub Actions". The site lives at https://gfrazier620-afk.github.io/Bitcade/
