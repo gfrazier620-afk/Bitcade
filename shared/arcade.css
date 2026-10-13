@@ -16,6 +16,9 @@ body{font-family:var(--f-body);font-size:15px;line-height:1.45;display:flex;flex
   padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
   -webkit-tap-highlight-color:transparent;overscroll-behavior:none}
 button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation}
+/* touch screens: taps and long-presses shouldn't select text, pop up the copy menu or double-tap zoom (inputs still type) */
+body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
+input,textarea{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
 button:focus-visible,a:focus-visible{outline:2px solid var(--game);outline-offset:3px}
 
 .bar{display:flex;align-items:center;gap:14px;padding:10px 16px;border-bottom:1px solid var(--line);background:rgba(15,12,31,.7);flex-wrap:wrap}

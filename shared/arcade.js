@@ -316,10 +316,10 @@
     if (res && res.day) hsTab = 'today'; else if (!tabs().includes(hsTab)) hsTab = 'world';
     renderHS(); o.hidden = false;
     if (shown) loadWorld();
-    // title screens play the game's theme; anything else is quiet
-    if (music()) { if (scores && !res) music().play(music().theme(A.id)); else music().stop(0.3); }
+    // the game's theme plays from the title screen right through the game: full volume on screens like this, quieter in play
+    if (music()) { music().play(music().theme(A.id)); music().volume(0.5); }
   };
-  A.hideOverlay = () => { const o = $('ov'); if (o) o.hidden = true; entry = null; if (music()) music().stop(0.5); };
+  A.hideOverlay = () => { const o = $('ov'); if (o) o.hidden = true; entry = null; if (music()) music().volume(0.3); };
   A.overlayOpen = overlayOpen;
 
   /* ---------- initials + top-10 table ---------- */

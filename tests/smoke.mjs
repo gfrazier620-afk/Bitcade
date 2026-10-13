@@ -135,7 +135,8 @@ console.log('\nMusic and CRT');
   await page.keyboard.press('KeyM'); // a key press lets the browser start sound
   check(await page.waitForFunction(() => Chip.playing, null, { timeout: 3000 }).then(() => true, () => false), 'the title screen plays its theme');
   await page.click('#ov .go');
-  check(await page.waitForFunction(() => !Chip.playing, null, { timeout: 2000 }).then(() => true, () => false), 'the music stops when the game starts');
+  await wait(800);
+  check(await page.evaluate(() => Chip.playing && Chip.level < 0.5), 'the music keeps playing through the game, a little quieter');
   await page.keyboard.press('KeyP'); await page.click('#music');
   check((await page.textContent('#music')) === 'MUSIC OFF' && (await page.evaluate(() => localStorage.getItem('arcade:music'))) === '0', 'MUSIC OFF is remembered');
   await page.click('#crt');
@@ -329,6 +330,7 @@ console.log('\nPhone layout');
   const { page, errors, close } = await open('/games/star-siege/', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   check(await page.isVisible('.bar .pause'), 'header PAUSE button shows on a touch screen');
   check(await page.isVisible('.pad'), 'touch pad shows on a touch screen');
+  check(await page.evaluate(() => { const s = getComputedStyle(document.body); return s.userSelect === 'none' || s.webkitUserSelect === 'none'; }), 'tapping and holding does not select text');
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
   check(!overflow, 'no sideways scrolling at phone width');
   check(!errors.length, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);

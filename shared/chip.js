@@ -11,7 +11,7 @@
   };
   const on = () => store.get('arcade:music') !== '0' && store.get('arcade:muted') !== '1';
   const hz = m => 440 * Math.pow(2, (m - 69) / 12);
-  let ac = null, out = null, noise = null, song = null, timer = null, step = 0, nextT = 0;
+  let ac = null, out = null, noise = null, song = null, timer = null, step = 0, nextT = 0, level = 0.5; // level: music volume
 
   /* ---------- voices ---------- */
   function tone(type, m, t, dur, vol) {
@@ -51,7 +51,7 @@
   function start() {
     if (!song || !on() || !ac || ac.state !== 'running' || timer) return;
     const t = ac.currentTime;
-    out.gain.cancelScheduledValues(t); out.gain.setValueAtTime(0.0001, t); out.gain.exponentialRampToValueAtTime(0.5, t + 0.4);
+    out.gain.cancelScheduledValues(t); out.gain.setValueAtTime(0.0001, t); out.gain.exponentialRampToValueAtTime(level, t + 0.4);
     step = 0; nextT = t + 0.05; timer = setInterval(tick, 25); tick();
   }
   function halt(fade) {
@@ -147,6 +147,9 @@
     get enabled() { return store.get('arcade:music') !== '0'; },
     set enabled(v) { store.set('arcade:music', v ? '1' : '0'); this.refresh(); },
     get playing() { return !!timer; },
+    get level() { return level; },
+    /** Music volume, 0–1 (0.5 is full; games play it quieter so sound effects stay clear). */
+    volume(v) { level = Math.max(0.0001, v); if (ac && out && timer) { const t = ac.currentTime; out.gain.cancelScheduledValues(t); out.gain.setValueAtTime(out.gain.value, t); out.gain.linearRampToValueAtTime(level, t + 0.6); } },
     lobby: LOBBY,
     theme: name => themes[name] || (themes[name] = compose(name))
   };

@@ -123,6 +123,9 @@ kbd{font-family:var(--f-ui);font-weight:600;font-size:11px;border:1px solid var(
 .badges{display:flex;flex-wrap:wrap;gap:6px}
 .badges .bdg{font-size:12px;padding:4px 9px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
 .badges .bdg.got{color:var(--stripe);border-color:var(--stripe)}
+/* touch screens: no text selection, copy menu, tap flash or double-tap zoom while playing (the initials box still types) */
+body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+input{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
 .backlink{display:block;max-width:1080px;margin:0 auto 14px;font-family:'Silkscreen',ui-monospace,monospace;font-size:13px;color:var(--muted);text-decoration:none}.backlink:hover{color:var(--ink)}
 </style>
 </head>
