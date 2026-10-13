@@ -101,6 +101,9 @@ footer p{margin:4px 0}
 .boot-coin{font-size:clamp(12px,3vw,17px);color:#ffe36a;letter-spacing:.1em;text-shadow:0 0 10px rgba(255,227,106,.8)}
 .boot.scene .boot-coin{animation:boot-fade .4s 1.2s both,boot-blink 1s steps(2,start) 1.6s infinite}
 @keyframes boot-fade{from{opacity:0;transform:translateY(8px)}}
+.boot-start{font-size:clamp(10px,2.4vw,12px);color:rgba(255,255,255,.7);letter-spacing:.12em}
+.boot.scene .boot-start{animation:boot-fade .4s 1.6s both}
+.boot.scene .boot-skip{display:none}
 .boot-skip{position:absolute;left:0;right:0;bottom:max(14px,3vh);text-align:center;z-index:6;font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.12em}
 .boot.out{animation:boot-out .45s ease-in forwards}
 .boot.out.fast{animation-duration:.25s}
@@ -115,7 +118,7 @@ footer p{margin:4px 0}
     <div class="boot-scene">
       <div class="boot-sky"><div class="boot-stars"></div><div class="boot-sun"></div></div>
       <div class="boot-grid"></div>
-      <div class="boot-title"><div class="boot-glitch"><div class="boot-logo">BITCADE</div></div><div class="boot-sub" id="bootSub">CLASSIC GAMES · NO QUARTERS REQUIRED</div><div class="boot-coin">INSERT COIN</div></div>
+      <div class="boot-title"><div class="boot-glitch"><div class="boot-logo">BITCADE</div></div><div class="boot-sub" id="bootSub">CLASSIC GAMES · NO QUARTERS REQUIRED</div><div class="boot-coin">INSERT COIN</div><div class="boot-start">TAP, CLICK OR PRESS ANY KEY</div></div>
     </div>
   </div>
   <div class="boot-line"></div>
@@ -268,7 +271,8 @@ reset.addEventListener('click', () => {
 })();
 </script>
 <script>
-/* Boot sequence: BIOS check typed out on the CRT, then the synthwave title, then zoom into the lobby. Any key or tap skips it. */
+/* Boot sequence: BIOS check typed out on the CRT, then the synthwave title, which waits for a key, click, tap or controller
+   button before zooming into the lobby. Pressing during the BIOS check skips straight in. */
 (() => {
   const boot = document.getElementById('boot'); if (!boot) return;
   const post = document.getElementById('bootPost'), reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -291,11 +295,16 @@ reset.addEventListener('click', () => {
       const ac = new (window.AudioContext || window.webkitAudioContext)(), t = ac.currentTime;
       if (get('arcade:muted') !== '1') [988, 1319].forEach((f, i) => { const o = ac.createOscillator(), g = ac.createGain(); o.type = 'square'; o.frequency.value = f; g.gain.setValueAtTime(0.05, t + i * 0.08); g.gain.exponentialRampToValueAtTime(0.0001, t + i * 0.08 + 0.12); o.connect(g).connect(ac.destination); o.start(t + i * 0.08); o.stop(t + i * 0.08 + 0.14); });
     } catch (err) {}
-    finish(true);
+    finish(!boot.classList.contains('scene'));
   }
   const get = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
   addEventListener('keydown', skip, true);
   boot.addEventListener('pointerdown', skip);
+  // controllers: any button (the lobby doesn't load the shared kit, so poll here)
+  const pads = () => { try { return [...(navigator.getGamepads ? navigator.getGamepads() : [])].filter(Boolean); } catch (e) { return []; } };
+  const held = () => pads().some(g => g.buttons.some(b => b.pressed));
+  let wasHeld = held();
+  (function poll() { if (done) return; const h = held(); if (h && !wasHeld) return skip({ type: 'pad' }); wasHeld = h; requestAnimationFrame(poll); })();
 
   (async () => {
     const cabs = document.querySelectorAll('.cab').length;
@@ -319,9 +328,7 @@ reset.addEventListener('click', () => {
     if (done) return; bar.insertAdjacentHTML('beforeend', '  <span class="ok">OK</span>');
     line(); await type(line('ok'), 'ALL SYSTEMS GO. LOADING BITCADE...'); if (done) return;
     await sleep(380); if (done) return;
-    boot.classList.add('scene');
-    await new Promise(r => setTimeout(r, reduced ? 1400 : 2600));
-    finish(false);
+    boot.classList.add('scene'); // and it stays on the title until a key, click, tap or controller button
   })();
 })();
 </script>

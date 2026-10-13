@@ -84,7 +84,15 @@ console.log('\nBoot sequence');
   check(!(await page.$('#boot')), 'it plays once per visit');
   await page.goto(BASE + '/?boot');
   check(await page.isVisible('#boot'), '?boot replays it');
-  check(await gone(12000), 'left alone, it finishes and opens the lobby');
+  const titled = await page.waitForFunction(() => document.getElementById('boot').classList.contains('scene'), null, { timeout: 8000 }).then(() => true, () => false);
+  await wait(3000);
+  check(titled && !!(await page.$('#boot')), 'left alone, it waits on the title screen');
+  await page.mouse.click(200, 200);
+  check(await gone(1500), 'a click on the title opens the lobby');
+  // a controller button works too
+  await page.goto(BASE + '/?boot');
+  await page.evaluate(() => { const gp = { buttons: Array.from({ length: 17 }, () => ({ pressed: false })) }; Object.defineProperty(navigator, 'getGamepads', { value: () => [gp], configurable: true }); setTimeout(() => { gp.buttons[0].pressed = true; }, 300); });
+  check(await gone(2500), 'a controller button skips it');
   check(!errors.length, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
   await close();
   // with reduced motion the animations are off, so everything must still be visible, and it ends quickly
@@ -92,7 +100,8 @@ console.log('\nBoot sequence');
   await calm.page.waitForFunction(() => document.getElementById('boot').classList.contains('scene'), null, { timeout: 3000 }).catch(() => {});
   const logoVisible = await calm.page.evaluate(() => { const l = document.querySelector('.boot-logo'); return !!l && getComputedStyle(l).opacity === '1'; });
   check(logoVisible, 'reduced motion: the title shows without animating');
-  check(await calm.page.waitForSelector('#boot', { state: 'detached', timeout: 4000 }).then(() => true, () => false), 'reduced motion: it finishes in a couple of seconds');
+  await calm.page.keyboard.press('Enter');
+  check(await calm.page.waitForSelector('#boot', { state: 'detached', timeout: 1500 }).then(() => true, () => false), 'reduced motion: a key opens the lobby');
   await calm.close();
 }
 
