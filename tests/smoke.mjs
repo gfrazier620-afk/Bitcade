@@ -69,6 +69,33 @@ console.log('\nLobby');
   await close();
 }
 
+/* ---------- boot sequence ---------- */
+console.log('\nBoot sequence');
+{
+  const { page, errors, close } = await open('/');
+  const gone = ms => page.waitForSelector('#boot', { state: 'detached', timeout: ms }).then(() => true, () => false);
+  check(await page.isVisible('#boot'), 'the boot sequence plays on the first visit');
+  const bios = await page.waitForFunction(() => /CPU/.test(document.getElementById('bootPost').textContent), null, { timeout: 4000 }).then(() => true, () => false);
+  check(bios, 'the BIOS check types out');
+  await page.keyboard.press('Space');
+  check(await gone(1500), 'any key skips it');
+  check(!(await page.evaluate(() => document.documentElement.classList.contains('booting'))), 'the lobby can scroll again afterwards');
+  await page.reload();
+  check(!(await page.$('#boot')), 'it plays once per visit');
+  await page.goto(BASE + '/?boot');
+  check(await page.isVisible('#boot'), '?boot replays it');
+  check(await gone(12000), 'left alone, it finishes and opens the lobby');
+  check(!errors.length, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
+  await close();
+  // with reduced motion the animations are off, so everything must still be visible, and it ends quickly
+  const calm = await open('/', { reducedMotion: 'reduce' });
+  await calm.page.waitForFunction(() => document.getElementById('boot').classList.contains('scene'), null, { timeout: 3000 }).catch(() => {});
+  const logoVisible = await calm.page.evaluate(() => { const l = document.querySelector('.boot-logo'); return !!l && getComputedStyle(l).opacity === '1'; });
+  check(logoVisible, 'reduced motion: the title shows without animating');
+  check(await calm.page.waitForSelector('#boot', { state: 'detached', timeout: 4000 }).then(() => true, () => false), 'reduced motion: it finishes in a couple of seconds');
+  await calm.close();
+}
+
 /* ---------- every game ---------- */
 const KEYS = ['ArrowUp', 'ArrowLeft', 'Space', 'ArrowRight', 'ArrowDown', 'KeyJ', 'KeyK', 'KeyW'];
 for (const slug of dirs) {

@@ -4,7 +4,7 @@ A GitHub Pages arcade site: a lobby page plus 18 classic-style browser games. Pl
 
 ## Layout
 
-- `index.html`: the lobby. The `GAMES` array lists each cabinet: slug, name, colour, blurb, and a 12×8 pixel icon with two frames (`px`, `px2`) that alternate. Add a new game here to show it in the lobby.
+- `index.html`: the lobby. The `GAMES` array lists each cabinet: slug, name, colour, blurb, and a 12×8 pixel icon with two frames (`px`, `px2`) that alternate. Add a new game here to show it in the lobby. The lobby opens with a boot sequence (CRT power-on, BIOS check, synthwave title) that plays once per visit (`sessionStorage` `bitcade:booted`), skips on any key or tap, and replays with `?boot`.
 - `shared/arcade.css`: the cabinet frame shared by every game page (header bar, screen, overlay, touch pad).
 - `shared/arcade.js`: the shared kit, exposed as `window.Arcade`. It covers:
   - high scores in localStorage: `arcade:best:<slug>` (the record), `arcade:top:<slug>` (top 10 with initials, JSON), `arcade:daily:<slug>` (today's daily-challenge best)
