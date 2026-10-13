@@ -73,7 +73,7 @@ console.log('\nLobby');
 console.log('\nBoot sequence');
 {
   const { page, errors, close } = await open('/');
-  const gone = ms => page.waitForSelector('#boot', { state: 'detached', timeout: ms }).then(() => true, () => false);
+  const gone = ms => page.waitForSelector('#boot', { state: 'hidden', timeout: ms }).then(() => true, () => false);
   check(await page.isVisible('#boot'), 'the boot sequence plays on the first visit');
   const bios = await page.waitForFunction(() => /CPU/.test(document.getElementById('bootPost').textContent), null, { timeout: 4000 }).then(() => true, () => false);
   check(bios, 'the BIOS check types out');
@@ -81,7 +81,7 @@ console.log('\nBoot sequence');
   check(await gone(1500), 'any key skips it');
   check(!(await page.evaluate(() => document.documentElement.classList.contains('booting'))), 'the lobby can scroll again afterwards');
   await page.reload();
-  check(!(await page.$('#boot')), 'it plays once per visit');
+  check(await page.isHidden('#boot'), 'it plays once per visit');
   await page.goto(BASE + '/?boot');
   check(await page.isVisible('#boot'), '?boot replays it');
   const titled = await page.waitForFunction(() => document.getElementById('boot').classList.contains('scene'), null, { timeout: 8000 }).then(() => true, () => false);
@@ -101,8 +101,49 @@ console.log('\nBoot sequence');
   const logoVisible = await calm.page.evaluate(() => { const l = document.querySelector('.boot-logo'); return !!l && getComputedStyle(l).opacity === '1'; });
   check(logoVisible, 'reduced motion: the title shows without animating');
   await calm.page.keyboard.press('Enter');
-  check(await calm.page.waitForSelector('#boot', { state: 'detached', timeout: 1500 }).then(() => true, () => false), 'reduced motion: a key opens the lobby');
+  check(await calm.page.waitForSelector('#boot', { state: 'hidden', timeout: 1500 }).then(() => true, () => false), 'reduced motion: a key opens the lobby');
   await calm.close();
+}
+
+/* ---------- attract mode ---------- */
+console.log('\nAttract mode');
+{
+  const { page, errors, close } = await open('/');
+  await page.evaluate(() => { sessionStorage.setItem('bitcade:booted', '1'); localStorage.setItem('arcade:best:stackdown', '4321'); });
+  await page.goto(BASE + '/?idle=2');
+  check(await page.isHidden('#boot'), 'no boot screen once this visit has booted');
+  const came = await page.waitForFunction(() => document.getElementById('boot').classList.contains('attract') && !document.getElementById('boot').hidden, null, { timeout: 5000 }).then(() => true, () => false);
+  check(came, 'after sitting idle, the title comes back (attract mode)');
+  const hof = await page.waitForFunction(() => document.getElementById('boot').classList.contains('hof'), null, { timeout: 9000 }).then(() => true, () => false);
+  check(hof && /STACKDOWN/.test(await page.textContent('#bootHof')) && /4,321/.test(await page.textContent('#bootHof')), 'then it shows a high-score screen');
+  await page.keyboard.press('KeyA');
+  check(await page.waitForSelector('#boot', { state: 'hidden', timeout: 1500 }).then(() => true, () => false), 'any key returns to the lobby');
+  check(!errors.length, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
+  await close();
+}
+
+/* ---------- music and CRT ---------- */
+console.log('\nMusic and CRT');
+{
+  const { page, errors, close } = await open('/games/swarm-strike/');
+  const themes = await page.evaluate(() => {
+    const a = JSON.stringify(Chip.theme('swarm-strike')), b = JSON.stringify(Chip.theme('swarm-strike')), c = JSON.stringify(Chip.theme('cube-hopper'));
+    const s = Chip.theme('swarm-strike'); return { same: a === b, differ: a !== c, notes: s.lead.filter(Boolean).length, bpm: s.bpm };
+  });
+  check(themes.same && themes.differ && themes.notes > 20, `each game has its own theme, the same every time (${themes.notes} melody notes at ${themes.bpm} bpm)`);
+  check(await page.isVisible('#music') && await page.isVisible('#crt'), 'MUSIC and CRT buttons sit next to SOUND');
+  await page.keyboard.press('KeyM'); // a key press lets the browser start sound
+  check(await page.waitForFunction(() => Chip.playing, null, { timeout: 3000 }).then(() => true, () => false), 'the title screen plays its theme');
+  await page.click('#ov .go');
+  check(await page.waitForFunction(() => !Chip.playing, null, { timeout: 2000 }).then(() => true, () => false), 'the music stops when the game starts');
+  await page.keyboard.press('KeyP'); await page.click('#music');
+  check((await page.textContent('#music')) === 'MUSIC OFF' && (await page.evaluate(() => localStorage.getItem('arcade:music'))) === '0', 'MUSIC OFF is remembered');
+  await page.click('#crt');
+  check(await page.evaluate(() => document.body.classList.contains('crt')), 'CRT ON turns on the scanline look');
+  await page.reload();
+  check(await page.evaluate(() => document.body.classList.contains('crt')) && (await page.textContent('#crt')) === 'CRT ON', 'CRT is remembered');
+  check(!errors.length, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
+  await close();
 }
 
 /* ---------- every game ---------- */

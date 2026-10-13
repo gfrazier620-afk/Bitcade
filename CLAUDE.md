@@ -4,7 +4,7 @@ A GitHub Pages arcade site: a lobby page plus 18 classic-style browser games. Pl
 
 ## Layout
 
-- `index.html`: the lobby. The `GAMES` array lists each cabinet: slug, name, colour, blurb, and a 12×8 pixel icon with two frames (`px`, `px2`) that alternate. Add a new game here to show it in the lobby. The lobby opens with a boot sequence (CRT power-on, BIOS check, synthwave title) that plays once per visit (`sessionStorage` `bitcade:booted`) and replays with `?boot`. A key, tap or controller button skips the BIOS part; the title then waits for one before opening the lobby.
+- `index.html`: the lobby. The `GAMES` array lists each cabinet: slug, name, colour, blurb, and a 12×8 pixel icon with two frames (`px`, `px2`) that alternate. Add a new game here to show it in the lobby. The lobby opens with a boot sequence (CRT power-on, BIOS check, synthwave title) that plays once per visit (`sessionStorage` `bitcade:booted`) and replays with `?boot`. A key, tap or controller button skips the BIOS part; the title then waits for one before opening the lobby. After a minute idle (`?idle=5` shortens it for testing), attract mode brings the title back, alternating with a high-score screen built from the cabinets. The lobby plays the Bitcade theme and has a ♪ MUSIC button.
 - `shared/arcade.css`: the cabinet frame shared by every game page (header bar, screen, overlay, touch pad).
 - `shared/arcade.js`: the shared kit, exposed as `window.Arcade`. It covers:
   - high scores in localStorage: `arcade:best:<slug>` (the record), `arcade:top:<slug>` (top 10 with initials, JSON), `arcade:daily:<slug>` (today's daily-challenge best)
@@ -14,11 +14,14 @@ A GitHub Pages arcade site: a lobby page plus 18 classic-style browser games. Pl
   - badges: `A.badge(id)` unlocks one (toast and jingle, once). Definitions for every game live in `shared/badges.js`, loaded before arcade.js and by the lobby. Score tables get a BADGES tab
   - a Share score link on game-over screens (share sheet, or copy to the clipboard)
   - sound (`tone`, `noise`, `jingle`)
+  - MUSIC and CRT header toggles (`arcade:music`, `arcade:crt`). Title screens (`scores: true`) play the game's theme from `shared/chip.js`, and starting a game stops it
+  - CRT: `body.crt` adds scanlines, rounded glass and a vignette to `.screen`
   - keyboard, touch and gamepad input (`held`, `onPress`, `swipe`, `[data-k]` pad buttons). Inside an element marked `data-keys-native`, keys are left to the page
   - a header PAUSE button for touch, added automatically unless the pad already has a `KeyP` button
   - canvas sizing
   - the fixed-step `loop`
   - the start/pause/game-over `overlay`. Pass `scores: true` on title screens to list the top 10, and `alt: { btn, onGo }` for a second button (gamepad Y)
+- `shared/chip.js`: the chiptune player (`window.Chip`), loaded before arcade.js on kit games and by the lobby. `Chip.lobby` is the hand-written Bitcade theme; `Chip.theme(slug)` composes a game's theme from its name (same tune every time). Music needs a tap or key first (browser rule) and plays only with SOUND and MUSIC on.
 - `games/<slug>/index.html`: one self-contained page per game, loading the shared kit with `../../shared/`.
   - `body data-game="<slug>"` sets the score key.
   - `style="--game:#hex"` sets the accent colour.
@@ -36,7 +39,7 @@ All names, characters and art are original. Keep it that way: no trademarked gam
 
 ## Adding a game
 
-1. `games/<slug>/index.html`, using the kit (copy the head tags, including the manifest and icon links, from another game).
+1. `games/<slug>/index.html`, using the kit (copy the head tags, including the manifest and icon links, and the chip.js / badges.js / arcade.js script tags from another game).
 2. A cabinet in the lobby's `GAMES` array, and the count word in its tagline ("EIGHTEEN CLASSIC-STYLE GAMES").
 3. The slug in `sw.js` `GAMES`, then bump `VERSION`.
 4. Its badges in `shared/badges.js`, with matching `A.badge('id')` calls in the game.

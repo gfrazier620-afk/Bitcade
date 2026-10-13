@@ -7,10 +7,10 @@
  *
  * Adding a game? Add its slug to GAMES and bump VERSION. The smoke tests check that GAMES matches games/.
  */
-const VERSION = 'bitcade-v4', RUNTIME = 'bitcade-runtime';
+const VERSION = 'bitcade-v5', RUNTIME = 'bitcade-runtime';
 const GAMES = ['neon-noodle', 'wallbuster', 'star-siege', 'rock-rift', 'stackdown', 'back-alley-brawl', 'circuit-chase',
   'highrise-handyman', 'nitro-lane', 'volley-duel', 'crater-lander', 'sky-shield', 'hedge-hop', 'scaffold-scramble', 'swarm-strike', 'garden-gunner', 'cube-hopper', 'blip-sports'];
-const SHELL = ['./', 'manifest.json', 'shared/arcade.js', 'shared/arcade.css', 'shared/world.js', 'shared/badges.js',
+const SHELL = ['./', 'manifest.json', 'shared/arcade.js', 'shared/arcade.css', 'shared/world.js', 'shared/badges.js', 'shared/chip.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', ...GAMES.map(g => `games/${g}/`)];
 
 // cache: 'reload' skips the browser's HTTP cache, so the offline copy is the current one

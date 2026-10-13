@@ -104,6 +104,21 @@ footer p{margin:4px 0}
 .boot-start{font-size:clamp(10px,2.4vw,12px);color:rgba(255,255,255,.7);letter-spacing:.12em}
 .boot.scene .boot-start{animation:boot-fade .4s 1.6s both}
 .boot.scene .boot-skip{display:none}
+.boot-title{transition:opacity .5s}
+.boot.hof .boot-title{opacity:0}
+.boot-hof{position:absolute;left:50%;top:50%;z-index:2;width:min(92vw,520px);transform:translate(-50%,-50%);padding:18px 20px;
+  background:rgba(7,2,26,.82);border:2px solid #ff3d9a;border-radius:12px;box-shadow:0 0 30px rgba(255,61,154,.45);opacity:0;transition:opacity .5s;text-align:center}
+.boot.hof .boot-hof{opacity:1}
+.boot-hof h3{margin:0 0 12px;font-family:var(--f-marquee);font-weight:400;font-size:clamp(20px,5vw,30px);color:#ffe36a;text-shadow:0 0 14px rgba(255,227,106,.7)}
+.boot-hof ol{list-style:none;margin:0;padding:0;font-size:clamp(10px,2.6vw,14px);line-height:2;text-align:left}
+.boot-hof li{display:flex;gap:8px;align-items:baseline;color:#5ee7ff}
+.boot-hof li i{flex:1;border-bottom:2px dotted rgba(94,231,255,.35)}
+.boot-hof li b{font-weight:400;color:#f4effd}
+.boot-hof li.world b{color:#ffe36a}
+.boot-hof li.world b::before{content:"★ "}
+.boot-hof p{margin:12px 0 0;font-size:10px;color:rgba(255,255,255,.6);letter-spacing:.1em}
+.music-btn{position:fixed;top:12px;right:12px;z-index:50;border:1px solid var(--line);background:rgba(15,12,31,.85);border-radius:8px;padding:6px 10px;font-family:var(--f-pixel);font-size:11px;color:var(--muted)}
+.music-btn[aria-pressed="true"]{color:#ffe36a;border-color:#ffe36a}
 .boot-skip{position:absolute;left:0;right:0;bottom:max(14px,3vh);text-align:center;z-index:6;font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.12em}
 .boot.out{animation:boot-out .45s ease-in forwards}
 .boot.out.fast{animation-duration:.25s}
@@ -119,6 +134,7 @@ footer p{margin:4px 0}
       <div class="boot-sky"><div class="boot-stars"></div><div class="boot-sun"></div></div>
       <div class="boot-grid"></div>
       <div class="boot-title"><div class="boot-glitch"><div class="boot-logo">BITCADE</div></div><div class="boot-sub" id="bootSub">CLASSIC GAMES · NO QUARTERS REQUIRED</div><div class="boot-coin">INSERT COIN</div><div class="boot-start">TAP, CLICK OR PRESS ANY KEY</div></div>
+      <div class="boot-hof" id="bootHof"></div>
     </div>
   </div>
   <div class="boot-line"></div>
@@ -126,8 +142,9 @@ footer p{margin:4px 0}
 </div>
 <script>
 // The boot sequence plays once per visit (or with ?boot). Decided before the first paint, so there's no flash of either.
-try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(location.search)) document.getElementById('boot').remove(); else document.documentElement.classList.add('booting'); } catch (e) { document.getElementById('boot').remove(); }
+try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(location.search)) document.getElementById('boot').hidden = true; else document.documentElement.classList.add('booting'); } catch (e) { document.getElementById('boot').hidden = true; }
 </script>
+<button class="music-btn" id="musicBtn">♪ MUSIC ON</button>
 <div class="lobby">
   <header class="marquee">
     <h1 class="logo">BITCADE</h1>
@@ -144,6 +161,7 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
     <p><a class="reboot" href="?boot">Replay the boot sequence</a></p>
   </footer>
 </div>
+<script src="shared/chip.js"></script>
 <script src="shared/badges.js"></script>
 <script>
 (() => {
@@ -271,63 +289,108 @@ reset.addEventListener('click', () => {
 })();
 </script>
 <script>
-/* Boot sequence: BIOS check typed out on the CRT, then the synthwave title, which waits for a key, click, tap or controller
-   button before zooming into the lobby. Pressing during the BIOS check skips straight in. */
+/* Boot sequence, attract mode and lobby music.
+   Boot: the BIOS check types out, then the synthwave title waits for a key, click, tap or controller button (pressing
+   during the BIOS skips straight in). Attract mode: after a minute with nothing happening, the title comes back and
+   alternates with a high-score screen, like a cabinet waiting for a coin, until someone presses something. */
 (() => {
-  const boot = document.getElementById('boot'); if (!boot) return;
-  const post = document.getElementById('bootPost'), reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let done = false;
+  const boot = document.getElementById('boot'), post = document.getElementById('bootPost'), hof = document.getElementById('bootHof');
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const get = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  const IDLE = (+new URLSearchParams(location.search).get('idle') || 60) * 1000; // ?idle=5 shortens it for testing
+  const chip = window.Chip;
+  let mode = boot.hidden ? 'lobby' : 'boot', idleT = 0, cycleT = 0;
   const sleep = ms => new Promise(r => setTimeout(r, reduced ? 0 : ms));
-  const line = (cls = '') => { const d = document.createElement('div'); if (cls) d.className = cls; post.appendChild(d); return d; };
-  async function type(el, text) { el.classList.add('cur'); for (let i = 1; i <= text.length && !done; i++) { el.textContent = text.slice(0, i); if (i % 2 === 0) await sleep(12); } el.classList.remove('cur'); }
-  async function check(label, value) { const d = line(); await type(d, label + value); if (done) return; await sleep(70); d.insertAdjacentHTML('beforeend', '  <span class="ok">OK</span>'); }
-  function finish(fast) {
-    if (done) return; done = true;
-    try { sessionStorage.setItem('bitcade:booted', '1'); } catch (e) {}
+
+  /* ---------- music: the Bitcade theme, from the first tap or key ---------- */
+  const musicBtn = document.getElementById('musicBtn');
+  const musicLabel = () => { musicBtn.textContent = `♪ MUSIC ${chip && chip.enabled ? 'ON' : 'OFF'}`; musicBtn.setAttribute('aria-pressed', String(!!(chip && chip.enabled))); };
+  if (chip) { chip.play(chip.lobby); musicLabel(); musicBtn.addEventListener('click', () => { chip.enabled = !chip.enabled; if (chip.enabled) chip.play(chip.lobby); musicLabel(); }); }
+  else musicBtn.hidden = true;
+
+  /* ---------- leaving the boot or attract screen ---------- */
+  function coin() { // a coin drops (a key or tap is the gesture browsers want before playing sound)
+    if (get('arcade:muted') === '1') return;
+    try {
+      const ac = new (window.AudioContext || window.webkitAudioContext)(), t = ac.currentTime;
+      [988, 1319].forEach((f, i) => { const o = ac.createOscillator(), g = ac.createGain(); o.type = 'square'; o.frequency.value = f; g.gain.setValueAtTime(0.05, t + i * 0.08); g.gain.exponentialRampToValueAtTime(0.0001, t + i * 0.08 + 0.12); o.connect(g).connect(ac.destination); o.start(t + i * 0.08); o.stop(t + i * 0.08 + 0.14); });
+    } catch (err) {}
+  }
+  function dismiss(fast) {
+    if (mode === 'boot') try { sessionStorage.setItem('bitcade:booted', '1'); } catch (e) {}
+    mode = 'lobby'; clearInterval(cycleT);
     boot.classList.add('out'); if (fast) boot.classList.add('fast');
     document.documentElement.classList.remove('booting');
-    removeEventListener('keydown', skip, true);
-    setTimeout(() => boot.remove(), fast ? 260 : 470);
+    setTimeout(() => { if (mode === 'lobby') { boot.hidden = true; boot.className = 'boot'; } }, fast ? 260 : 470);
+    armIdle();
   }
-  function skip(e) {
-    if (e.type === 'keydown') e.preventDefault();
-    try { // a coin drops (a key or tap is the gesture browsers want before playing sound)
-      const ac = new (window.AudioContext || window.webkitAudioContext)(), t = ac.currentTime;
-      if (get('arcade:muted') !== '1') [988, 1319].forEach((f, i) => { const o = ac.createOscillator(), g = ac.createGain(); o.type = 'square'; o.frequency.value = f; g.gain.setValueAtTime(0.05, t + i * 0.08); g.gain.exponentialRampToValueAtTime(0.0001, t + i * 0.08 + 0.12); o.connect(g).connect(ac.destination); o.start(t + i * 0.08); o.stop(t + i * 0.08 + 0.14); });
-    } catch (err) {}
-    finish(!boot.classList.contains('scene'));
+  function press(e) {
+    if (mode === 'lobby') return;
+    if (e && e.type === 'keydown') e.preventDefault();
+    coin(); dismiss(mode === 'boot' && !boot.classList.contains('scene'));
   }
-  const get = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
-  addEventListener('keydown', skip, true);
-  boot.addEventListener('pointerdown', skip);
-  // controllers: any button (the lobby doesn't load the shared kit, so poll here)
-  const pads = () => { try { return [...(navigator.getGamepads ? navigator.getGamepads() : [])].filter(Boolean); } catch (e) { return []; } };
-  const held = () => pads().some(g => g.buttons.some(b => b.pressed));
-  let wasHeld = held();
-  (function poll() { if (done) return; const h = held(); if (h && !wasHeld) return skip({ type: 'pad' }); wasHeld = h; requestAnimationFrame(poll); })();
+  addEventListener('keydown', press, true);
+  boot.addEventListener('pointerdown', press);
+  // controllers: any button (the lobby doesn't load the shared kit, so poll here while a screen is up)
+  const held = () => { try { return [...(navigator.getGamepads ? navigator.getGamepads() : [])].some(g => g && g.buttons.some(b => b.pressed)); } catch (e) { return false; } };
+  function watchPads() { let was = held(); (function poll() { if (mode === 'lobby') return; const h = held(); if (h && !was) return press({ type: 'pad' }); was = h; requestAnimationFrame(poll); })(); }
 
+  /* ---------- attract mode ---------- */
+  function armIdle() { clearTimeout(idleT); idleT = setTimeout(attract, IDLE); }
+  ['pointerdown', 'pointermove', 'keydown', 'wheel', 'scroll', 'touchstart'].forEach(ev => addEventListener(ev, () => { if (mode === 'lobby') armIdle(); }, { capture: true, passive: true }));
+  /** High-score pages from the cabinets: the world #1 where there is one, otherwise this device's best. */
+  function hofPages() {
+    const rows = [...document.querySelectorAll('.cab')].map(c => {
+      const world = [...c.querySelectorAll('.cab-world')].find(r => r.textContent.startsWith('WORLD'));
+      return { name: c.querySelector('h2').textContent, score: (world ? world.querySelector('b') : c.querySelector('.cab-foot b')).textContent.trim(), world: !!world };
+    }).filter(r => r.score && r.score !== '—');
+    const pages = []; for (let i = 0; i < rows.length; i += 9) pages.push(rows.slice(i, i + 9)); return pages;
+  }
+  function showPage(rows) {
+    hof.innerHTML = '<h3>HIGH SCORES</h3><ol></ol>';
+    const ol = hof.querySelector('ol');
+    rows.forEach(r => { const li = document.createElement('li'); li.innerHTML = '<span></span><i></i><b></b>'; li.children[0].textContent = r.name.toUpperCase(); li.children[2].textContent = r.score; if (r.world) li.classList.add('world'); ol.appendChild(li); });
+    hof.insertAdjacentHTML('beforeend', `<p>${rows.some(r => r.world) ? '★ WORLD RECORD · ' : ''}TAP, CLICK OR PRESS ANY KEY</p>`);
+  }
+  function attract() {
+    if (mode !== 'lobby' || document.hidden) return armIdle();
+    mode = 'attract'; post.innerHTML = ''; boot.className = 'boot scene attract'; boot.hidden = false;
+    const pages = hofPages(); let k = 0;
+    cycleT = setInterval(() => { // title, then each page of high scores, then round again
+      k = (k + 1) % (pages.length + 1);
+      if (k === 0) boot.classList.remove('hof'); else { showPage(pages[k - 1]); boot.classList.add('hof'); }
+    }, 7000);
+    watchPads();
+  }
+
+  /* ---------- the boot sequence ---------- */
+  if (mode === 'lobby') return armIdle();
+  watchPads();
   (async () => {
-    const cabs = document.querySelectorAll('.cab').length;
+    const cabs = document.querySelectorAll('.cab').length, gone = () => mode !== 'boot';
     let tables = 0; try { tables = Object.keys(localStorage).filter(k => k.startsWith('arcade:top:')).length; } catch (e) {}
     let pads = 0; try { pads = [...(navigator.getGamepads ? navigator.getGamepads() : [])].filter(Boolean).length; } catch (e) {}
     const input = pads ? 'CONTROLLER' : matchMedia('(pointer: coarse)').matches ? 'TOUCH SCREEN' : 'KEYBOARD';
+    const line = (cls = '') => { const d = document.createElement('div'); if (cls) d.className = cls; post.appendChild(d); return d; };
+    const type = async (el, text) => { el.classList.add('cur'); for (let i = 1; i <= text.length && !gone(); i++) { el.textContent = text.slice(0, i); if (i % 2 === 0) await sleep(12); } el.classList.remove('cur'); };
+    const check = async (label, value) => { const d = line(); await type(d, label + value); if (gone()) return; await sleep(70); d.insertAdjacentHTML('beforeend', '  <span class="ok">OK</span>'); };
     document.getElementById('bootSub').textContent = `${cabs} CLASSIC GAMES · NO QUARTERS REQUIRED`;
     await sleep(520);
-    await type(line(), 'BITCADE SYSTEMS INC.   BIOS V1.84'); if (done) return;
-    await type(line('dim'), '(C) 1984 BITCADE. ALL RIGHTS RESERVED.'); if (done) return;
+    await type(line(), 'BITCADE SYSTEMS INC.   BIOS V1.84'); if (gone()) return;
+    await type(line('dim'), '(C) 1984 BITCADE. ALL RIGHTS RESERVED.'); if (gone()) return;
     line(); await sleep(120);
-    await check('CPU ......... ', '8-BIT TURBO @ 4.77 MHZ'); if (done) return;
+    await check('CPU ......... ', '8-BIT TURBO @ 4.77 MHZ'); if (gone()) return;
     const mem = line();
-    for (let k = 0; k <= 640 && !done; k += 32) { mem.textContent = 'MEMORY ...... ' + String(k).padStart(3, ' ') + 'K'; await sleep(16); }
-    if (done) return; mem.insertAdjacentHTML('beforeend', '  <span class="ok">OK</span>');
-    await check('SOUND ....... ', '3-VOICE SYNTH'); if (done) return;
-    await check('INPUT ....... ', input); if (done) return;
-    await check('HIGH SCORES . ', `${tables} TABLE${tables === 1 ? '' : 'S'} ON FILE`); if (done) return;
+    for (let k = 0; k <= 640 && !gone(); k += 32) { mem.textContent = 'MEMORY ...... ' + String(k).padStart(3, ' ') + 'K'; await sleep(16); }
+    if (gone()) return; mem.insertAdjacentHTML('beforeend', '  <span class="ok">OK</span>');
+    await check('SOUND ....... ', '3-VOICE SYNTH'); if (gone()) return;
+    await check('INPUT ....... ', input); if (gone()) return;
+    await check('HIGH SCORES . ', `${tables} TABLE${tables === 1 ? '' : 'S'} ON FILE`); if (gone()) return;
     const bar = line();
-    for (let i = 1; i <= cabs && !done; i++) { bar.innerHTML = `CABINETS .... <span class="boot-bar"><i style="width:${i / cabs * 100}%"></i></span>${String(i).padStart(2, '0')}/${cabs}`; await sleep(48); }
-    if (done) return; bar.insertAdjacentHTML('beforeend', '  <span class="ok">OK</span>');
-    line(); await type(line('ok'), 'ALL SYSTEMS GO. LOADING BITCADE...'); if (done) return;
-    await sleep(380); if (done) return;
+    for (let i = 1; i <= cabs && !gone(); i++) { bar.innerHTML = `CABINETS .... <span class="boot-bar"><i style="width:${i / cabs * 100}%"></i></span>${String(i).padStart(2, '0')}/${cabs}`; await sleep(48); }
+    if (gone()) return; bar.insertAdjacentHTML('beforeend', '  <span class="ok">OK</span>');
+    line(); await type(line('ok'), 'ALL SYSTEMS GO. LOADING BITCADE...'); if (gone()) return;
+    await sleep(380); if (gone()) return;
     boot.classList.add('scene'); // and it stays on the title until a key, click, tap or controller button
   })();
 })();

@@ -281,6 +281,7 @@
   let goFn = null, altFn = null, goLabel = '', entry = null, shown = null; // shown: { top, hi, day } for the table
   const overlayOpen = () => { const o = $('ov'); return o && !o.hidden; };
   const overlayGo = () => { if (entry) return saveEntry(); const f = goFn; if (!f) return; A.hideOverlay(); f(); };
+  const music = () => window.Chip; // shared/chip.js, when the page loads it
   const overlayAlt = () => { const f = altFn; if (!f) return; A.hideOverlay(); f(); };
   /**
    * Show the overlay. alt: { btn, onGo } adds a second button (gamepad Y). scores: true lists the top 10 (title screens),
@@ -315,8 +316,10 @@
     if (res && res.day) hsTab = 'today'; else if (!tabs().includes(hsTab)) hsTab = 'world';
     renderHS(); o.hidden = false;
     if (shown) loadWorld();
+    // title screens play the game's theme; anything else is quiet
+    if (music()) { if (scores && !res) music().play(music().theme(A.id)); else music().stop(0.3); }
   };
-  A.hideOverlay = () => { const o = $('ov'); if (o) o.hidden = true; entry = null; };
+  A.hideOverlay = () => { const o = $('ov'); if (o) o.hidden = true; entry = null; if (music()) music().stop(0.5); };
   A.overlayOpen = overlayOpen;
 
   /* ---------- initials + top-10 table ---------- */
@@ -398,7 +401,21 @@
     if ('serviceWorker' in navigator) navigator.serviceWorker.register(new URL('../sw.js', KIT_URL).href).catch(() => {});
     if (m) {
       const label = () => { m.textContent = A.muted ? 'SOUND OFF' : 'SOUND ON'; m.setAttribute('aria-pressed', String(!A.muted)); };
-      label(); m.addEventListener('click', () => { A.muted = !A.muted; store.set('arcade:muted', A.muted ? '1' : '0'); A.unlock(); label(); });
+      label(); m.addEventListener('click', () => { A.muted = !A.muted; store.set('arcade:muted', A.muted ? '1' : '0'); A.unlock(); label(); if (music()) music().refresh(); });
+      // MUSIC (title themes) and CRT (scanline look) toggles, both remembered
+      const toggle = (id, text, isOn, flip) => {
+        const b = document.createElement('button'); b.className = 'mute'; b.id = id;
+        const set = () => { b.textContent = `${text} ${isOn() ? 'ON' : 'OFF'}`; b.setAttribute('aria-pressed', String(isOn())); };
+        b.addEventListener('click', () => { flip(); set(); }); set(); return b;
+      };
+      const crtOn = () => store.get('arcade:crt') === '1';
+      document.body.classList.toggle('crt', crtOn());
+      const crt = toggle('crt', 'CRT', crtOn, () => { store.set('arcade:crt', crtOn() ? '0' : '1'); document.body.classList.toggle('crt', crtOn()); });
+      m.after(crt);
+      if (music()) m.after(toggle('music', 'MUSIC', () => music().enabled, () => { music().enabled = !music().enabled; }));
+      // keep the header buttons together, so they wrap as one row on narrow screens
+      const group = document.createElement('div'); group.className = 'toggles'; m.before(group);
+      [document.querySelector('.bar .pause'), m, $('music'), crt].filter(Boolean).forEach(b => group.append(b));
     }
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
