@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Swarm Strike</title>
+<link rel="manifest" href="../../manifest.json">
+<meta name="theme-color" content="#0f0c1f">
+<link rel="icon" type="image/png" href="../../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../../icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Rubik:wght@400;500;700&family=Silkscreen&display=swap">
+<link rel="stylesheet" href="../../shared/arcade.css">
+</head>
+<body data-game="swarm-strike" style="--game:#d47dff">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>SWARM STRIKE</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <div class="pad">
+    <div class="ab"><button data-k="ArrowLeft" aria-label="Left">◀</button><button data-k="ArrowRight" aria-label="Right">▶</button></div>
+    <div class="ab"><button data-k="Space">FIRE</button></div>
+  </div>
+  <p class="help"><kbd>←</kbd><kbd>→</kbd> move · hold <kbd>Space</kbd> to fire · <kbd>P</kbd> pause</p>
+</main>
+<script src="../../shared/badges.js"></script>
+<script src="../../shared/arcade.js"></script>
+<script>
+(() => {
+const A = Arcade, cv = document.getElementById('cv');
+const W = 480, H = 640, PX = 3, SW = 11 * PX, SH = 8 * PX, PY = 590, ctx = A.canvas(cv, W, H);
+// Original sprites, 11×8, two frames. X = body colour, o = accent.
+const SPR = {
+  drone: [['....o.o....', '...XXXXX...', '..XoXXXoX..', '.XXXXXXXXX.', 'X.XXXXXXX.X', 'X..X...X..X', '...X...X...', '..XX...XX..'],
+          ['....o.o....', '...XXXXX...', '..XoXXXoX..', '.XXXXXXXXX.', '..XXXXXXX..', '.X.X...X.X.', 'X..X...X..X', '...XX.XX...']],
+  moth: [['.X.......X.', 'XXX..o..XXX', 'XXXXXXXXXXX', '.XXXoXoXXX.', '..XXXXXXX..', '.XX.XXX.XX.', 'XX...X...XX', 'X.........X'],
+         ['...........', '.XX..o..XX.', 'XXXXXXXXXXX', 'XXXXoXoXXXX', '.XXXXXXXXX.', '..X.XXX.X..', '.XX..X..XX.', '...........']],
+  boss: [['..o.o.o.o..', '..ooooooo..', '.XXXXXXXXX.', 'XXoXXXXXoXX', 'XXXXXXXXXXX', '.XX.XXX.XX.', '.X..X.X..X.', 'X..X...X..X'],
+         ['..o.o.o.o..', '..ooooooo..', '.XXXXXXXXX.', 'XXoXXXXXoXX', 'XXXXXXXXXXX', '..XX.X.XX..', '.X.X...X.X.', '..X.....X..']]
+};
+const TYPES = { drone: { c: '#ffd23d', a: '#3d7bff', pts: 50, dive: 100, hp: 1 }, moth: { c: '#ff4f6d', a: '#ffffff', pts: 80, dive: 160, hp: 1 }, boss: { c: '#3dff8f', a: '#ffd23d', hurt: '#b48cff', pts: 150, dive: 400, hp: 2 } };
+// Entry paths: the swarm flies these loops, then settles into its slot.
+const mirror = pts => pts.map(p => ({ x: W - p.x, y: p.y }));
+const TOP_L = [{ x: W / 2 - 40, y: -20 }, { x: W / 2 - 150, y: 210 }, { x: W / 2 - 40, y: 340 }, { x: W / 2 + 70, y: 250 }];
+const SIDE_L = [{ x: -20, y: 430 }, { x: 120, y: 340 }, { x: 210, y: 230 }, { x: 110, y: 170 }];
+const GROUPS = [
+  { path: TOP_L, slots: [[1, 3], [1, 4], [1, 5], [1, 6], [3, 3], [3, 4], [3, 5], [3, 6]] },
+  { path: SIDE_L, slots: [[0, 3], [0, 4], [0, 5], [0, 6], [1, 1], [1, 2], [1, 7], [1, 8]] },
+  { path: mirror(SIDE_L), slots: [[2, 1], [2, 2], [2, 3], [2, 4], [2, 5], [2, 6], [2, 7], [2, 8]] },
+  { path: mirror(TOP_L), slots: [[3, 0], [3, 1], [3, 2], [3, 7], [3, 8], [3, 9], [4, 4], [4, 5]] },
+  { path: TOP_L, slots: [[4, 0], [4, 1], [4, 2], [4, 3], [4, 6], [4, 7], [4, 8], [4, 9]] }];
+const typeOf = row => row === 0 ? 'boss' : row <= 2 ? 'moth' : 'drone';
+let state = 'title', stage = 1, score = 0, lives = 3, nextLife = 20000, enemies = [], shots = [], bombs = [], parts = [], pops = [];
+let player = { x: W / 2, alive: false, dual: false, inv: 0, cool: 0, respawnT: 0 }, capture = null, rescue = null, pendingDual = false;
+let swayT = 0, diveT = 0, phaseT = 0, msg = '', msgT = 0, frame = 0, frameT = 0;
+const stars = Array.from({ length: 70 }, () => ({ x: Math.random() * W, y: Math.random() * H, v: A.rand(20, 90), c: A.pick(['#fff', '#d47dff', '#5ee7ff', '#ffd23d']) }));
+
+const sway = () => Math.sin(swayT * 0.7) * 22;
+const slotPos = e => ({ x: W / 2 + (e.col - 4.5) * 38 + sway(), y: 82 + e.row * 34 });
+function buildStage() {
+  enemies = []; shots = []; bombs = []; capture = null;
+  GROUPS.forEach((g, gi) => g.slots.forEach(([row, col], k) => {
+    const type = typeOf(row), start = g.path[0];
+    enemies.push({ type, row, col, x: start.x, y: start.y, vx: 0, vy: 0, st: 'wait', wait: 1 + gi * 2.3 + k * 0.15, wp: g.path.slice(1).map(p => ({ ...p })), wpT: 0, hp: TYPES[type].hp, diving: false, captive: false });
+  }));
+  diveT = 2; say(`STAGE ${stage}`);
+}
+function newGame() { score = 0; lives = 3; stage = 1; nextLife = 20000; A.setScore(0); player = { x: W / 2, alive: true, dual: false, inv: 1.5, cool: 0, respawnT: 0 }; rescue = null; pendingDual = false; buildStage(); state = 'play'; A.jingle([392, 523, 659, 784, 1047], 0.09); }
+function say(t) { msg = t; msgT = 1.8; }
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+A.onPress(c => { if (c === 'KeyP' || c === 'Escape') pause(); });
+A.onHide(pause);
+
+const ships = () => !player.alive ? [] : player.dual ? [player.x - 15, player.x + 15] : [player.x];
+function startDive() {
+  const formed = enemies.filter(e => e.st === 'form');
+  if (!formed.length || !player.alive) return;
+  const e = A.pick(formed), dir = e.x < W / 2 ? -1 : 1;
+  const captiveOut = enemies.some(x => x.captive) || capture || rescue;
+  e.diving = true; e.st = 'path'; e.wpT = 0; e.fired = 0;
+  if (e.type === 'boss' && !e.captive && !player.dual && !captiveOut && Math.random() < 0.55) {
+    e.wp = [{ x: e.x + dir * 40, y: e.y + 60 }, { x: A.clamp(player.x, 60, W - 60), y: 380 }]; e.beamNext = true; e.fired = 9; return;
+  }
+  e.wp = [{ x: e.x + dir * 50, y: e.y - 30 }, { x: e.x + dir * 100, y: e.y + 40 }, { x: player.x + A.rand(-50, 50), y: 440 }, { x: player.x + A.rand(-140, 140), y: H + 40 }];
+  if (e.type === 'boss') formed.filter(x => x.type === 'moth' && x.row === 1 && Math.abs(x.col - e.col) <= 1).slice(0, 2).forEach((x, i) => {
+    x.diving = true; x.st = 'path'; x.wpT = 0; x.fired = 0; x.wp = e.wp.map(w => ({ x: w.x + (i ? 30 : -30), y: w.y + 22 }));
+  });
+}
+function arrive(e) {
+  if (e.beamNext) { e.beamNext = false; e.st = 'beam'; e.beamT = 0; e.vx = e.vy = 0; A.tone(160, 2.4, 'sine', 0.04, 0, 520); return; }
+  if (e.y > H) { e.y = -30; e.x = slotPos(e).x; } // looped off the bottom: come back in from the top
+  e.diving = false; e.st = 'home';
+}
+function updateEnemies(dt) {
+  for (const e of enemies) {
+    if (e.st === 'wait') { e.wait -= dt; if (e.wait <= 0) e.st = 'path'; continue; }
+    if (e.st === 'form') { const s = slotPos(e); e.x = s.x; e.y = s.y; continue; }
+    if (e.st === 'beam') {
+      e.beamT += dt;
+      if (!capture && e.beamT > 0.6 && e.beamT < 2.8 && player.alive && !player.dual && player.inv <= 0 && Math.abs(player.x - e.x) < 30) {
+        capture = { e, x: player.x, y: PY, t: 0 }; player.alive = false; A.jingle([660, 523, 392, 262], 0.15, 'triangle'); say('SHIP CAPTURED!');
+      }
+      if (e.beamT > 3 && (!capture || capture.e !== e)) { e.st = 'path'; e.wp = [{ x: e.x, y: -40 }]; e.wpT = 0; }
+      continue;
+    }
+    let tx, ty, sp;
+    if (e.st === 'home') {
+      const s = slotPos(e); tx = s.x; ty = s.y; sp = 230;
+      const d = Math.hypot(tx - e.x, ty - e.y);
+      if (d < 3) { e.st = 'form'; continue; }
+      if (d < 40) { const k = Math.min(1, dt * 7); e.x += (tx - e.x) * k; e.y += (ty - e.y) * k; e.vx = e.vy = 0; continue; }
+    } else {
+      const w = e.wp[0]; tx = w.x; ty = w.y; sp = e.diving ? 190 + stage * 8 : 260; e.wpT += dt;
+      const done = w.y > H ? e.y > H + 10 : w.y < 0 ? e.y < -20 : Math.hypot(tx - e.x, ty - e.y) < 40;
+      if (done || e.wpT > 2.6) { e.wp.shift(); e.wpT = 0; if (!e.wp.length) arrive(e); continue; }
+    }
+    const dx = tx - e.x, dy = ty - e.y, d = Math.hypot(dx, dy) || 1, k = Math.min(1, dt * 4);
+    e.vx += (dx / d * sp - e.vx) * k; e.vy += (dy / d * sp - e.vy) * k;
+    e.x += e.vx * dt; e.y += e.vy * dt;
+    // divers shoot on the way down
+    if (e.diving && player.alive && e.fired < 1 + Math.floor(stage / 3) && e.y > 200 && e.y < 420 && Math.random() < dt * 1.6) {
+      e.fired++; const s = 250 + stage * 10, vx = A.clamp((player.x - e.x) / Math.max(60, PY - e.y) * s, -120, 120);
+      bombs.push({ x: e.x, y: e.y + 10, vx, vy: s });
+    }
+  }
+}
+function kill(e) {
+  const T = TYPES[e.type], pts = e.st === 'form' ? T.pts : T.dive;
+  score += pts; pops.push({ x: e.x, y: e.y, n: pts, t: 1 }); boom(e.x, e.y, T.c, 18); e.dead = true;
+  A.noise(0.18, 0.06); A.tone(e.type === 'boss' ? 300 : 600, 0.1, 'square', 0.04, 0, 100);
+  if (e.type === 'boss') A.badge('boss');
+  if (e.captive) { rescue = { x: e.x, y: e.y - 26, t: 0 }; say('SHIP RESCUED!'); A.jingle([523, 659, 784, 1047, 1319], 0.08); }
+  if (capture && capture.e === e) capture = null; // shot mid-capture: the ship is lost anyway
+}
+function boom(x, y, c, n) { for (let i = 0; i < n; i++) { const a = Math.random() * 6.28, s = A.rand(40, 200); parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, t: A.rand(0.3, 0.8), c }); } }
+function hitPlayer(at) {
+  if (player.dual) { // lose one of the pair
+    player.dual = false; player.x = at < player.x ? player.x + 15 : player.x - 15; boom(at, PY, '#d47dff', 24); A.noise(0.5, 0.08); player.inv = 1; return;
+  }
+  player.alive = false; boom(player.x, PY, '#d47dff', 36); A.noise(0.8, 0.1); A.tone(160, 0.7, 'sawtooth', 0.05, 0, 40);
+  lives--; player.respawnT = 2.2;
+}
+function gameOver() { state = 'over'; const rec = A.submit(score); A.overlay({ title: 'SWARMED', big: `SCORE ${score} · STAGE ${stage}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, btn: 'Play again', onGo: newGame }); }
+
+A.loop(dt => {
+  stars.forEach(s => { s.y += s.v * dt; if (s.y > H) { s.y = 0; s.x = Math.random() * W; } });
+  parts.forEach(q => { q.x += q.vx * dt; q.y += q.vy * dt; q.t -= dt; }); parts = parts.filter(q => q.t > 0);
+  pops.forEach(q => q.t -= dt); pops = pops.filter(q => q.t > 0);
+  frameT += dt; if (frameT > 0.4) { frameT = 0; frame ^= 1; }
+  if (msgT > 0) msgT -= dt;
+  swayT += dt;
+  if (state === 'clear') { phaseT -= dt; if (phaseT <= 0) { stage++; if (stage >= 5) A.badge('stage5'); buildStage(); state = 'play'; } return; }
+  if (state !== 'play') return;
+  // player
+  if (player.alive) {
+    const d = (A.held('ArrowRight', 'KeyD') ? 1 : 0) - (A.held('ArrowLeft', 'KeyA') ? 1 : 0), m = player.dual ? 34 : 20;
+    player.x = A.clamp(player.x + d * 270 * dt, m, W - m);
+    player.inv = Math.max(0, player.inv - dt); player.cool -= dt;
+    if (A.held('Space', 'KeyJ', 'ArrowUp') && player.cool <= 0 && shots.length < (player.dual ? 4 : 2)) {
+      ships().forEach(x => shots.push({ x, y: PY - 18 })); player.cool = 0.2; A.tone(1100, 0.06, 'square', 0.03, 0, 500);
+    }
+  } else if (!capture) {
+    player.respawnT -= dt;
+    if (player.respawnT <= 0) {
+      if (lives <= 0) return gameOver();
+      if (!enemies.some(e => e.diving && e.y > 380)) { player = { x: W / 2, alive: true, dual: pendingDual, inv: 2, cool: 0.3, respawnT: 0 }; pendingDual = false; }
+    }
+  }
+  // the capture: the ship is drawn up into the commander's beam
+  if (capture) {
+    capture.t += dt; const e = capture.e;
+    capture.x += (e.x - capture.x) * Math.min(1, dt * 2); capture.y += (e.y - 26 - capture.y) * Math.min(1, dt * 1.6);
+    if (capture.t > 1.6) { e.captive = true; e.st = 'path'; e.wp = [{ x: e.x, y: -40 }]; e.wpT = 0; capture = null; lives--; player.respawnT = 1.2; }
+  }
+  if (rescue) {
+    rescue.t += dt; const tx = player.alive ? player.x + 15 : W / 2;
+    rescue.x += (tx - rescue.x) * Math.min(1, dt * 2.5); rescue.y += (PY - rescue.y) * Math.min(1, dt * 2.5);
+    if (rescue.t > 1.4) { if (player.alive) { player.x = A.clamp(player.x, 34, W - 34); player.dual = true; } else pendingDual = true; rescue = null; A.badge('rescue'); }
+  }
+  updateEnemies(dt);
+  // dives
+  diveT -= dt;
+  if (diveT <= 0 && enemies.every(e => e.st !== 'wait' && e.st !== 'path' || e.diving)) {
+    diveT = Math.max(0.8, 2.3 - stage * 0.15) * A.rand(0.7, 1.3);
+    if (enemies.filter(e => e.diving || e.st === 'beam').length < 2 + Math.floor(stage / 2)) startDive();
+  }
+  // shots
+  shots.forEach(s => s.y -= 620 * dt); shots = shots.filter(s => s.y > -10);
+  for (const s of shots) for (const e of enemies) {
+    if (e.dead || e.st === 'wait' || Math.abs(s.x - e.x) > SW / 2 || Math.abs(s.y - e.y) > SH / 2) continue;
+    s.y = -99; e.hp--; if (e.hp <= 0) kill(e); else A.tone(900, 0.05, 'square', 0.03);
+    break;
+  }
+  shots = shots.filter(s => s.y > -10);
+  // bombs and collisions with the player
+  bombs.forEach(b => { b.x += b.vx * dt; b.y += b.vy * dt; }); bombs = bombs.filter(b => b.y < H + 10);
+  if (player.alive && player.inv <= 0) {
+    for (const x of ships()) {
+      const b = bombs.find(b => Math.abs(b.x - x) < 11 && Math.abs(b.y - PY) < 14);
+      if (b) { b.y = H + 99; hitPlayer(x); break; }
+      const e = enemies.find(e => !e.dead && e.diving && Math.abs(e.x - x) < 22 && Math.abs(e.y - PY) < 20);
+      if (e) { kill(e); hitPlayer(x); break; }
+    }
+  }
+  enemies = enemies.filter(e => !e.dead);
+  if (score >= nextLife) { lives++; nextLife += nextLife === 20000 ? 50000 : 70000; A.jingle([660, 880, 1320], 0.08); }
+  A.setScore(score);
+  if (!enemies.length && !capture && !rescue) { state = 'clear'; phaseT = 2.4; say(`STAGE ${stage} CLEAR`); A.jingle([523, 659, 784, 1047], 0.1); }
+}, t => {
+  ctx.fillStyle = '#05030e'; ctx.fillRect(0, 0, W, H);
+  stars.forEach(s => { ctx.globalAlpha = 0.3 + (Math.floor(t / 300 + s.x) % 3) * 0.25; ctx.fillStyle = s.c; ctx.fillRect(s.x, s.y, 2, 2); }); ctx.globalAlpha = 1;
+  if (state === 'title') {
+    ['boss', 'moth', 'drone'].forEach((k, i) => { sprite(k, Math.floor(t / 400) % 2, 150, 200 + i * 70, TYPES[k].c, TYPES[k].a, 0); ctx.fillStyle = '#f4effd'; ctx.font = '15px Silkscreen, monospace'; ctx.textAlign = 'left'; ctx.fillText(`${TYPES[k].pts} / ${TYPES[k].dive} DIVING`, 190, 206 + i * 70); });
+    return;
+  }
+  for (const e of enemies) {
+    if (e.st === 'wait') continue;
+    if (e.st === 'beam' && e.beamT > 0.3) {
+      const k = Math.min(1, (e.beamT - 0.3) / 0.4), w = 30 * k, len = (PY + 20 - e.y) * k;
+      ctx.fillStyle = `rgba(94,231,255,${0.18 + 0.12 * Math.sin(t / 60)})`; ctx.beginPath(); ctx.moveTo(e.x - 6, e.y + 10); ctx.lineTo(e.x + 6, e.y + 10); ctx.lineTo(e.x + w, e.y + 10 + len); ctx.lineTo(e.x - w, e.y + 10 + len); ctx.fill();
+      ctx.strokeStyle = 'rgba(94,231,255,.5)'; for (let i = 1; i < 6; i++) { const yy = e.y + 10 + len * ((i / 6 + t / 900) % 1); const ww = 6 + (w - 6) * ((yy - e.y - 10) / (len || 1)); ctx.beginPath(); ctx.moveTo(e.x - ww, yy); ctx.lineTo(e.x + ww, yy); ctx.stroke(); }
+    }
+    if (e.captive) drawShip(e.x, e.y - 26, '#ff4f6d', true);
+    const T = TYPES[e.type], ang = e.st === 'form' || e.st === 'beam' ? 0 : Math.atan2(e.vy, e.vx) - Math.PI / 2; // sprites face down
+    sprite(e.type, frame, e.x, e.y, e.type === 'boss' && e.hp === 1 ? T.hurt : T.c, T.a, (e.st === 'form' || e.st === 'beam') ? 0 : ang);
+  }
+  if (capture) drawShip(capture.x, capture.y, '#d47dff', false, capture.t * 6);
+  if (rescue) drawShip(rescue.x, rescue.y, '#d47dff');
+  if (player.alive && !(player.inv > 0 && Math.floor(t / 90) % 2)) ships().forEach(x => drawShip(x, PY, '#d47dff'));
+  ctx.fillStyle = '#fff'; shots.forEach(s => { ctx.fillRect(s.x - 1.5, s.y - 8, 3, 10); });
+  bombs.forEach(b => { ctx.fillStyle = '#ff4f6d'; ctx.fillRect(b.x - 2, b.y - 5, 4, 10); ctx.fillStyle = '#fff'; ctx.fillRect(b.x - 1, b.y - 3, 2, 4); });
+  parts.forEach(q => { ctx.globalAlpha = Math.min(1, q.t * 2); ctx.fillStyle = q.c; ctx.fillRect(q.x - 1.5, q.y - 1.5, 3, 3); }); ctx.globalAlpha = 1;
+  ctx.font = '12px Silkscreen, monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#5ee7ff'; pops.forEach(q => ctx.fillText(q.n, q.x, q.y - (1 - q.t) * 20));
+  ctx.textAlign = 'left'; ctx.fillStyle = '#f4effd'; ctx.font = '13px Silkscreen, monospace'; ctx.fillText('STAGE ' + stage, 12, 22);
+  for (let i = 0; i < lives - (player.alive ? 1 : 0); i++) { ctx.save(); ctx.translate(20 + i * 24, H - 16); ctx.scale(0.55, 0.55); drawShip(0, 0, '#d47dff'); ctx.restore(); }
+  if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '26px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#d47dff'; ctx.fillText(msg, W / 2, 330); ctx.globalAlpha = 1; }
+});
+function sprite(name, f, x, y, c, a, ang) {
+  const rows = SPR[name][f];
+  ctx.save(); ctx.translate(x, y); if (ang) ctx.rotate(ang);
+  for (let r = 0; r < 8; r++) for (let k = 0; k < 11; k++) { const ch = rows[r][k]; if (ch === '.') continue; ctx.fillStyle = ch === 'o' ? a : c; ctx.fillRect(-SW / 2 + k * PX, -SH / 2 + r * PX, PX, PX); }
+  ctx.restore();
+}
+function drawShip(x, y, c, flip, spin) {
+  ctx.save(); ctx.translate(x, y); if (flip) ctx.rotate(Math.PI); if (spin) ctx.rotate(spin);
+  ctx.fillStyle = '#f4effd'; ctx.beginPath(); ctx.moveTo(0, -16); ctx.lineTo(5, -4); ctx.lineTo(5, 8); ctx.lineTo(-5, 8); ctx.lineTo(-5, -4); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(-5, -2); ctx.lineTo(-15, 8); ctx.lineTo(-15, 12); ctx.lineTo(-5, 8); ctx.moveTo(5, -2); ctx.lineTo(15, 8); ctx.lineTo(15, 12); ctx.lineTo(5, 8); ctx.fill();
+  ctx.fillStyle = '#5ee7ff'; ctx.fillRect(-1.5, -9, 3, 5);
+  ctx.restore();
+}
+A.overlay({ title: 'SWARM STRIKE', sub: 'The swarm swoops in, lines up, then dive-bombs you. Commanders take two hits and can beam your ship away. Shoot a commander holding your ship to win it back and fly two ships at once.', btn: 'Start', scores: true, onGo: newGame });
+})();
+</script>
+</body>
+</html>

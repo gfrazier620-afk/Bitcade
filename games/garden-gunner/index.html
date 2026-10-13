@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Garden Gunner</title>
+<link rel="manifest" href="../../manifest.json">
+<meta name="theme-color" content="#0f0c1f">
+<link rel="icon" type="image/png" href="../../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../../icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Rubik:wght@400;500;700&family=Silkscreen&display=swap">
+<link rel="stylesheet" href="../../shared/arcade.css">
+</head>
+<body data-game="garden-gunner" style="--game:#2ee6c5">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>GARDEN GUNNER</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <div class="pad">
+    <div class="dp"><button class="u" data-k="ArrowUp" aria-label="Up">▲</button><button class="l" data-k="ArrowLeft" aria-label="Left">◀</button><button class="r" data-k="ArrowRight" aria-label="Right">▶</button><button class="d" data-k="ArrowDown" aria-label="Down">▼</button></div>
+    <div class="ab"><button data-k="Space">SPRAY</button></div>
+  </div>
+  <p class="help"><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> move · hold <kbd>Space</kbd> to spray · or steer with the mouse and hold the button · drag to move and spray on phones · <kbd>P</kbd> pause</p>
+</main>
+<script src="../../shared/badges.js"></script>
+<script src="../../shared/arcade.js"></script>
+<script>
+(() => {
+const A = Arcade, cv = document.getElementById('cv');
+const CELL = 20, COLS = 24, ROWS = 30, ZONE = 24, W = COLS * CELL, H = ROWS * CELL, ctx = A.canvas(cv, W, H);
+const PETALS = ['#ff7bf0', '#ffd23d', '#ff8a3d', '#b48cff', '#5ee7ff'];
+let state = 'title', flowers = new Map(), segs = [], shot = null, spider = null, beetle = null, parts = [], pops = [];
+let pl = { x: W / 2, y: H - 30 }, target = null, firing = false, score = 0, lives = 3, wave = 1, cleared = 0, stepT = 0, spiderT = 6, phaseT = 0, msg = '', msgT = 0, nextLife = 12000;
+const key = (c, r) => c + ',' + r;
+const flowerAt = (c, r) => flowers.get(key(c, r));
+const cx = c => c * CELL + CELL / 2;
+const stepEvery = () => Math.max(0.045, 0.09 - wave * 0.005);
+
+function plantGarden() {
+  flowers = new Map();
+  for (let i = 0; i < 48; i++) { const c = A.rnd(COLS), r = 1 + A.rnd(ZONE - 2); flowers.set(key(c, r), { hp: 4, col: A.pick(PETALS) }); }
+  for (let i = 0; i < 5; i++) flowers.set(key(A.rnd(COLS), ZONE + A.rnd(ROWS - ZONE - 1)), { hp: 4, col: A.pick(PETALS) });
+}
+plantGarden(); // scenery for the title screen
+/** A fresh caterpillar of n segments across the top row, plus loose heads on later waves. */
+function hatch(n) {
+  segs = []; let ahead = null;
+  for (let i = 0; i < n; i++) { const s = { c: 12 - i, r: 0, pc: 12 - i, pr: 0, dir: 1, vdir: 1, ahead }; segs.push(s); ahead = s; }
+  for (let i = 0; i < Math.min(wave - 1, 5); i++) { const c = A.rnd(COLS); segs.push({ c, r: 0, pc: c, pr: 0, dir: Math.random() < 0.5 ? 1 : -1, vdir: 1, ahead: null }); }
+}
+function newGame() { score = 0; lives = 3; wave = 1; cleared = 0; nextLife = 12000; A.setScore(0); plantGarden(); hatch(12); pl = { x: W / 2, y: H - 30 }; shot = null; spider = null; beetle = null; spiderT = 6; state = 'play'; say('PROTECT THE GARDEN!'); A.jingle([523, 659, 784], 0.08); }
+function say(t) { msg = t; msgT = 1.6; }
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+A.onPress(c => { if (c === 'KeyP' || c === 'Escape') pause(); });
+A.onHide(pause);
+// mouse: the sprayer follows the pointer and sprays while the button is down. Touch: drag to move and spray.
+cv.addEventListener('pointermove', e => { if (e.pointerType === 'mouse' || e.buttons) target = A.pointer(cv, e); });
+cv.addEventListener('pointerdown', e => { A.unlock(); target = A.pointer(cv, e); firing = true; cv.setPointerCapture(e.pointerId); });
+['pointerup', 'pointercancel'].forEach(n => cv.addEventListener(n, e => { firing = false; if (e.pointerType !== 'mouse') target = null; }));
+addEventListener('keydown', e => { if (/^Arrow|^Key[WASD]$/.test(e.code)) target = null; });
+
+/* the caterpillar moves one cell per step; each body segment steps into the cell its leader just left */
+function step() {
+  const old = new Map(segs.map(s => [s, { c: s.c, r: s.r, dir: s.dir, vdir: s.vdir }]));
+  for (const s of segs) {
+    s.pc = s.c; s.pr = s.r;
+    if (s.ahead) { const o = old.get(s.ahead); s.c = o.c; s.r = o.r; s.dir = o.dir; s.vdir = o.vdir; continue; }
+    const nc = s.c + s.dir;
+    if (nc < 0 || nc >= COLS || flowerAt(nc, s.r)) { // blocked: drop a row and turn around
+      let nr = s.r + s.vdir;
+      if (nr >= ROWS || (s.vdir < 0 && nr < ZONE)) { s.vdir = -s.vdir; nr = s.r + s.vdir; }
+      s.r = nr; s.dir = -s.dir;
+    } else s.c = nc;
+  }
+}
+const segPos = s => { const k = Math.min(1, stepT / stepEvery()); return { x: cx(s.pc + (s.c - s.pc) * k), y: cx(s.pr + (s.r - s.pr) * k) }; };
+function killSeg(s) {
+  const head = !s.ahead; score += head ? 100 : 10; pops.push({ x: cx(s.c), y: cx(s.r), n: head ? 100 : 10, t: 0.8 });
+  if (!flowerAt(s.c, s.r) && s.r < ROWS - 1) flowers.set(key(s.c, s.r), { hp: 4, col: A.pick(PETALS) }); // it turns into a flower
+  segs.forEach(x => { if (x.ahead === s) x.ahead = null; }); // the one behind becomes a new head
+  segs = segs.filter(x => x !== s);
+  burst(cx(s.c), cx(s.r), '#7dff6a', 8); A.tone(head ? 520 : 760, 0.05, 'square', 0.04);
+  if (!segs.length) {
+    cleared++; A.badge('wave'); if (cleared >= 5) A.badge('w5');
+    wave++; say(`WAVE ${wave}`); A.jingle([523, 659, 784, 1047], 0.08); stepT = 0; hatch(12);
+  }
+}
+function burst(x, y, c, n) { for (let i = 0; i < n; i++) { const a = Math.random() * 6.28, s = A.rand(30, 140); parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, t: A.rand(0.2, 0.5), c }); } }
+function hitFlower(c, r) { const f = flowerAt(c, r); if (!f) return false; f.hp--; if (f.hp <= 0) { flowers.delete(key(c, r)); score += 1; } A.tone(300, 0.02, 'square', 0.02); return true; }
+const blocked = (x, y) => [[-7, -7], [7, -7], [-7, 7], [7, 7]].some(([dx, dy]) => flowerAt(Math.floor((x + dx) / CELL), Math.floor((y + dy) / CELL)));
+function die() {
+  state = 'dying'; phaseT = 1.6; lives--; burst(pl.x, pl.y, '#2ee6c5', 30); A.noise(0.6, 0.08); A.tone(400, 0.6, 'sawtooth', 0.05, 0, 60);
+}
+function regrow() {
+  let bonus = 0; flowers.forEach(f => { if (f.hp < 4) { f.hp = 4; bonus += 5; } });
+  score += bonus; if (bonus) say(`GARDEN REGROWN +${bonus}`);
+  const n = segs.length; hatch(Math.max(4, Math.min(12, n))); spider = null; beetle = null; shot = null; pl = { x: W / 2, y: H - 30 };
+}
+function gameOver() { state = 'over'; const rec = A.submit(score); A.overlay({ title: 'GARDEN EATEN', big: `SCORE ${score} · WAVE ${wave}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, btn: 'Replant', onGo: newGame }); }
+
+A.loop(dt => {
+  parts.forEach(q => { q.x += q.vx * dt; q.y += q.vy * dt; q.t -= dt; }); parts = parts.filter(q => q.t > 0);
+  pops.forEach(q => q.t -= dt); pops = pops.filter(q => q.t > 0);
+  if (msgT > 0) msgT -= dt;
+  if (state === 'dying') { phaseT -= dt; if (phaseT <= 0) { if (lives <= 0) return gameOver(); regrow(); state = 'play'; } return; }
+  if (state !== 'play') return;
+  // the sprayer: keys, or follow the pointer; flowers block it
+  const kx = (A.held('ArrowRight', 'KeyD') ? 1 : 0) - (A.held('ArrowLeft', 'KeyA') ? 1 : 0), ky = (A.held('ArrowDown', 'KeyS') ? 1 : 0) - (A.held('ArrowUp', 'KeyW') ? 1 : 0);
+  let mx = kx * 240 * dt, my = ky * 240 * dt;
+  if (!kx && !ky && target) { const dx = target.x - pl.x, dy = target.y - 26 - pl.y, d = Math.hypot(dx, dy); if (d > 2) { const s = Math.min(d, 420 * dt); mx = dx / d * s; my = dy / d * s; } }
+  const nx = A.clamp(pl.x + mx, 9, W - 9), ny = A.clamp(pl.y + my, ZONE * CELL + 9, H - 9);
+  if (!blocked(nx, pl.y)) pl.x = nx;
+  if (!blocked(pl.x, ny)) pl.y = ny;
+  // spray: one droplet at a time, fast, like a hose
+  if (!shot && (A.held('Space', 'KeyJ') || firing)) { shot = { x: pl.x, y: pl.y - 12 }; A.tone(1400, 0.02, 'square', 0.015); }
+  if (shot) for (let sub = 0; sub < 3 && shot; sub++) {
+    shot.y -= 960 * dt / 3;
+    if (shot.y < 0) { shot = null; break; }
+    const s = segs.find(s => { const p = segPos(s); return Math.abs(p.x - shot.x) < 10 && Math.abs(p.y - shot.y) < 10; });
+    if (s) { killSeg(s); shot = null; break; }
+    if (spider && Math.abs(spider.x - shot.x) < 14 && Math.abs(spider.y - shot.y) < 10) {
+      const d = Math.abs(spider.y - pl.y), pts = d < 40 ? 900 : d < 80 ? 600 : 300;
+      score += pts; pops.push({ x: spider.x, y: spider.y, n: pts, t: 1.2 }); burst(spider.x, spider.y, '#b48cff', 16); spider = null; shot = null; A.badge('spider'); A.jingle([784, 988, 1175], 0.05); break;
+    }
+    if (beetle && Math.abs(beetle.x - shot.x) < 10 && Math.abs(beetle.y - shot.y) < 12) {
+      shot = null; beetle.hp--; if (beetle.hp <= 0) { score += 200; pops.push({ x: beetle.x, y: beetle.y, n: 200, t: 1 }); burst(beetle.x, beetle.y, '#ff4f6d', 12); beetle = null; } else beetle.v = 560; A.tone(500, 0.05); break;
+    }
+    if (hitFlower(Math.floor(shot.x / CELL), Math.floor(shot.y / CELL))) { shot = null; break; }
+  }
+  // caterpillar
+  stepT += dt;
+  while (stepT >= stepEvery()) { stepT -= stepEvery(); step(); }
+  // spider: zig-zags through the sprayer's patch and nibbles flowers
+  spiderT -= dt;
+  if (!spider && spiderT <= 0) { const left = Math.random() < 0.5; spider = { x: left ? -12 : W + 12, y: A.rand(ZONE * CELL + 10, H - 12), vx: (left ? 1 : -1) * (90 + wave * 6), vy: 150 * (Math.random() < 0.5 ? 1 : -1) }; spiderT = A.rand(5, 9); }
+  if (spider) {
+    spider.x += spider.vx * dt; spider.y += spider.vy * dt;
+    if (spider.y < ZONE * CELL - 30 || spider.y > H - 10) { spider.vy = -spider.vy; spider.y = A.clamp(spider.y, ZONE * CELL - 30, H - 10); }
+    if (Math.random() < dt * 1.5) spider.vy = -spider.vy;
+    const fc = Math.floor(spider.x / CELL), fr = Math.floor(spider.y / CELL); if (flowerAt(fc, fr) && Math.random() < dt * 4) flowers.delete(key(fc, fr));
+    if (spider.x < -20 || spider.x > W + 20) spider = null;
+  }
+  // beetle: drops in when the sprayer's patch runs low on flowers, planting new ones on the way down
+  if (!beetle && wave >= 2) { let n = 0; flowers.forEach((f, k) => { if (+k.split(',')[1] >= ZONE) n++; }); if (n < 4 && Math.random() < dt * 0.5) beetle = { x: cx(A.rnd(COLS)), y: -10, v: 260, hp: 2, row: -1 }; }
+  if (beetle) {
+    beetle.y += beetle.v * dt; const r = Math.floor(beetle.y / CELL);
+    if (r !== beetle.row) { beetle.row = r; if (r > 0 && r < ROWS - 1 && Math.random() < 0.3 && !flowerAt(Math.floor(beetle.x / CELL), r)) flowers.set(key(Math.floor(beetle.x / CELL), r), { hp: 4, col: A.pick(PETALS) }); }
+    if (beetle.y > H + 12) beetle = null;
+  }
+  // anything touching the sprayer ends the turn
+  if (segs.some(s => { const p = segPos(s); return Math.hypot(p.x - pl.x, p.y - pl.y) < 15; }) || (spider && Math.hypot(spider.x - pl.x, spider.y - pl.y) < 16) || (beetle && Math.hypot(beetle.x - pl.x, beetle.y - pl.y) < 14)) return die();
+  if (score >= nextLife) { lives++; nextLife += 12000; A.jingle([660, 880, 1320], 0.08); }
+  A.setScore(score);
+}, t => {
+  ctx.fillStyle = '#120c08'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = 'rgba(255,255,255,.025)'; for (let r = 0; r < ROWS; r++) for (let c = (r % 2); c < COLS; c += 2) ctx.fillRect(c * CELL, r * CELL, CELL, CELL);
+  ctx.fillStyle = 'rgba(46,230,197,.08)'; ctx.fillRect(0, ZONE * CELL, W, H - ZONE * CELL);
+  ctx.fillStyle = 'rgba(46,230,197,.35)'; ctx.fillRect(0, ZONE * CELL, W, 1);
+  flowers.forEach((f, k) => { const [c, r] = k.split(',').map(Number); drawFlower(cx(c), cx(r), f); });
+  if (state === 'title') { // attract: a caterpillar winding across
+    for (let i = 0; i < 10; i++) { const x = ((t / 9) - i * 18) % (W + 200) - 40, y = 300 + Math.sin(((t / 9) - i * 18) / 40) * 20; drawSeg(x, y, i === 0, 1); }
+  } else segs.forEach(s => { const p = segPos(s); drawSeg(p.x, p.y, !s.ahead, s.dir); });
+  if (spider) drawSpider(spider.x, spider.y, t);
+  if (beetle) drawBeetle(beetle.x, beetle.y, beetle.hp);
+  if (shot) { ctx.fillStyle = '#5ee7ff'; ctx.fillRect(shot.x - 1.5, shot.y - 7, 3, 10); }
+  if (state !== 'title' && !(state === 'dying' && Math.floor(t / 90) % 2)) drawSprayer(pl.x, pl.y);
+  parts.forEach(q => { ctx.globalAlpha = Math.min(1, q.t * 3); ctx.fillStyle = q.c; ctx.fillRect(q.x - 2, q.y - 2, 4, 4); }); ctx.globalAlpha = 1;
+  ctx.font = '12px Silkscreen, monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffd23d'; pops.forEach(q => ctx.fillText(q.n, q.x, q.y - (1 - q.t) * 18));
+  if (state !== 'title') {
+    ctx.textAlign = 'left'; ctx.fillStyle = '#f4effd'; ctx.font = '12px Silkscreen, monospace'; ctx.fillText('WAVE ' + wave, 8, 14);
+    for (let i = 0; i < lives - 1; i++) { ctx.save(); ctx.translate(W - 14 - i * 20, 12); ctx.scale(0.6, 0.6); drawSprayer(0, 0); ctx.restore(); }
+  }
+  if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '22px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#2ee6c5'; ctx.shadowColor = '#000'; ctx.shadowBlur = 8; ctx.fillText(msg, W / 2, 260); ctx.shadowBlur = 0; ctx.globalAlpha = 1; }
+});
+function drawFlower(x, y, f) {
+  const s = 2 + f.hp * 1.4;
+  ctx.fillStyle = '#2f7a2c'; ctx.fillRect(x - 1, y, 2, 8);
+  ctx.fillStyle = f.col; for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2 + Math.PI / 4; ctx.beginPath(); ctx.arc(x + Math.cos(a) * s * 0.7, y + Math.sin(a) * s * 0.7, s * 0.6, 0, Math.PI * 2); ctx.fill(); }
+  ctx.fillStyle = '#fff3b0'; ctx.beginPath(); ctx.arc(x, y, Math.max(1.5, s * 0.35), 0, Math.PI * 2); ctx.fill();
+}
+function drawSeg(x, y, head, dir) {
+  ctx.fillStyle = head ? '#c6ff3d' : '#7dff6a'; ctx.beginPath(); ctx.arc(x, y, head ? 9 : 8, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(x - 1, y - 8, 2, 16);
+  if (head) {
+    ctx.fillStyle = '#120c08'; ctx.fillRect(x + dir * 3 - 1, y - 4, 3, 3); ctx.fillRect(x + dir * 3 - 1, y + 1, 3, 3);
+    ctx.strokeStyle = '#c6ff3d'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x + dir * 5, y - 6); ctx.lineTo(x + dir * 10, y - 12); ctx.moveTo(x + dir * 5, y + 6); ctx.lineTo(x + dir * 10, y + 12); ctx.stroke();
+  }
+}
+function drawSpider(x, y, t) {
+  ctx.strokeStyle = '#b48cff'; ctx.lineWidth = 2; const k = Math.sin(t / 60) * 3;
+  ctx.beginPath(); for (const s of [-1, 1]) for (let i = 0; i < 3; i++) { ctx.moveTo(x, y); ctx.lineTo(x + s * 9, y - 5 + i * 5 + (i % 2 ? k : -k)); ctx.lineTo(x + s * 14, y + i * 5); } ctx.stroke();
+  ctx.fillStyle = '#7a4fd8'; ctx.beginPath(); ctx.ellipse(x, y, 8, 6, 0, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#ff4f6d'; ctx.fillRect(x - 3, y - 2, 2, 2); ctx.fillRect(x + 1, y - 2, 2, 2);
+}
+function drawBeetle(x, y, hp) {
+  ctx.fillStyle = hp > 1 ? '#ff4f6d' : '#ff9a6a'; ctx.beginPath(); ctx.ellipse(x, y, 7, 9, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#120c08'; ctx.fillRect(x - 0.5, y - 9, 1, 18); ctx.beginPath(); ctx.arc(x - 3, y - 1, 1.6, 0, 6.3); ctx.arc(x + 3, y + 3, 1.6, 0, 6.3); ctx.fill(); ctx.fillRect(x - 3, y + 7, 6, 3);
+}
+function drawSprayer(x, y) {
+  ctx.fillStyle = '#2ee6c5'; ctx.beginPath(); ctx.arc(x, y + 2, 8, Math.PI, 0); ctx.fill(); ctx.fillRect(x - 8, y + 2, 16, 5);
+  ctx.fillStyle = '#c8fff4'; ctx.fillRect(x - 2, y - 10, 4, 8); ctx.fillStyle = '#0d3a33'; ctx.fillRect(x - 4, y, 3, 3); ctx.fillRect(x + 1, y, 3, 3);
+}
+A.overlay({ title: 'GARDEN GUNNER', sub: 'A caterpillar is winding down through the flower bed. Spray it to pieces: every segment you hit becomes a flower, and the piece behind grows a new head. Watch out for the spider in your patch.', btn: 'Start', scores: true, onGo: newGame });
+})();
+</script>
+</body>
+</html>

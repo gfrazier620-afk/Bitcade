@@ -1,6 +1,6 @@
 # Bitcade
 
-A GitHub Pages arcade site: a lobby page plus 14 classic-style browser games. Plain HTML, CSS and canvas JavaScript. No build step, no frameworks. The only outside dependencies are Google Fonts and the Firebase SDK, loaded from gstatic only for the world leaderboard.
+A GitHub Pages arcade site: a lobby page plus 18 classic-style browser games. Plain HTML, CSS and canvas JavaScript. No build step, no frameworks. The only outside dependencies are Google Fonts and the Firebase SDK, loaded from gstatic only for the world leaderboard.
 
 ## Layout
 
@@ -27,7 +27,7 @@ A GitHub Pages arcade site: a lobby page plus 14 classic-style browser games. Pl
 
 ## Games
 
-neon-noodle (snake), wallbuster (brick breaker), star-siege (alien shooter), rock-rift (asteroids), stackdown (falling blocks), back-alley-brawl (1v1 fighter vs CPU ladder), circuit-chase (maze chase), highrise-handyman (fix-it climber), nitro-lane (racing), volley-duel (paddle duel, 1P vs CPU ladder or 2P on one keyboard/tablet), crater-lander (lunar lander), sky-shield (missile defense), hedge-hop (road crossing), blip-sports (LED football + baseball).
+neon-noodle (snake), wallbuster (brick breaker), star-siege (alien shooter), rock-rift (asteroids), stackdown (falling blocks), back-alley-brawl (1v1 fighter vs CPU ladder), circuit-chase (maze chase), highrise-handyman (fix-it climber), nitro-lane (racing), volley-duel (paddle duel, 1P vs CPU ladder or 2P on one keyboard/tablet), crater-lander (lunar lander), sky-shield (missile defense), hedge-hop (road crossing), scaffold-scramble (girder climber), swarm-strike (dive-bomb shooter), garden-gunner (caterpillar shooter), cube-hopper (pyramid hopper), blip-sports (LED football + baseball).
 
 All names, characters and art are original. Keep it that way: no trademarked game names, characters or sprites.
 
@@ -37,7 +37,7 @@ All names, characters and art are original. Keep it that way: no trademarked gam
 ## Adding a game
 
 1. `games/<slug>/index.html`, using the kit (copy the head tags, including the manifest and icon links, from another game).
-2. A cabinet in the lobby's `GAMES` array, and the count word in its tagline ("FOURTEEN CLASSIC-STYLE GAMES").
+2. A cabinet in the lobby's `GAMES` array, and the count word in its tagline ("EIGHTEEN CLASSIC-STYLE GAMES").
 3. The slug in `sw.js` `GAMES`, then bump `VERSION`.
 4. Its badges in `shared/badges.js`, with matching `A.badge('id')` calls in the game.
 5. The slug and a max score in `firestore.rules` `maxScore()`, then publish the rules in the Firebase console.

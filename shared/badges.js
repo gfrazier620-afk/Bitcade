@@ -55,6 +55,22 @@ window.BADGES = {
     { id: 'home', name: 'Home Sweet Home', desc: 'Get a hedgehog into a burrow' },
     { id: 'berry', name: 'Berry Good', desc: 'Bring home a berry' },
     { id: 'all', name: 'Full House', desc: 'Fill all five burrows' }],
+  'scaffold-scramble': [
+    { id: 'jump', name: 'Can Hurdler', desc: 'Jump over a rolling paint can' },
+    { id: 'smash', name: 'Hammer Time', desc: 'Smash a can with a hammer' },
+    { id: 'top', name: 'Topping Out', desc: 'Reach the finish flag' }],
+  'swarm-strike': [
+    { id: 'boss', name: 'Commander Down', desc: 'Destroy a commander' },
+    { id: 'rescue', name: 'Double Trouble', desc: 'Win back a captured ship' },
+    { id: 'stage5', name: 'Swarm Breaker', desc: 'Reach stage 5' }],
+  'garden-gunner': [
+    { id: 'spider', name: 'Web Buster', desc: 'Spray a spider' },
+    { id: 'wave', name: 'Pest Control', desc: 'Clear a whole caterpillar' },
+    { id: 'w5', name: 'Master Gardener', desc: 'Clear 5 caterpillars in one game' }],
+  'cube-hopper': [
+    { id: 'round', name: 'Colour Me In', desc: 'Finish a round' },
+    { id: 'lure', name: 'Spring Trap', desc: 'Lure the spring off the pyramid' },
+    { id: 'r5', name: 'Pyramid Pro', desc: 'Reach round 5' }],
   'blip-sports': [
     { id: 'fbwin', name: 'Gridiron Win', desc: 'Win a football game' },
     { id: 'bbwin', name: 'Ballpark Win', desc: 'Win a baseball game' },

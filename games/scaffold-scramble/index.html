@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Scaffold Scramble</title>
+<link rel="manifest" href="../../manifest.json">
+<meta name="theme-color" content="#0f0c1f">
+<link rel="icon" type="image/png" href="../../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../../icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Rubik:wght@400;500;700&family=Silkscreen&display=swap">
+<link rel="stylesheet" href="../../shared/arcade.css">
+</head>
+<body data-game="scaffold-scramble" style="--game:#ff6f61">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>SCAFFOLD SCRAMBLE</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <div class="pad">
+    <div class="dp"><button class="u" data-k="ArrowUp" aria-label="Climb up">▲</button><button class="l" data-k="ArrowLeft" aria-label="Left">◀</button><button class="r" data-k="ArrowRight" aria-label="Right">▶</button><button class="d" data-k="ArrowDown" aria-label="Climb down">▼</button></div>
+    <div class="ab"><button data-k="Space">JUMP</button></div>
+  </div>
+  <p class="help"><kbd>←</kbd><kbd>→</kbd> walk · <kbd>↑</kbd><kbd>↓</kbd> climb ladders · <kbd>Space</kbd> jump · <kbd>P</kbd> pause</p>
+</main>
+<script src="../../shared/badges.js"></script>
+<script src="../../shared/arcade.js"></script>
+<script>
+(() => {
+const A = Arcade, cv = document.getElementById('cv');
+const W = 480, H = 560, ctx = A.canvas(cv, W, H);
+// Girders from the ground (0) up. Each slopes toward its open end, so paint cans roll downhill and drop to the girder below.
+const GIRDERS = [{ x0: 0, x1: 480, yl: 533, yr: 527 }];
+for (let i = 1; i <= 5; i++) { const b = 530 - i * 82; GIRDERS.push(i % 2 ? { x0: 0, x1: 440, yl: b - 8, yr: b + 8 } : { x0: 40, x1: 480, yl: b + 8, yr: b - 8 }); }
+GIRDERS.push({ x0: 180, x1: 300, yl: 46, yr: 46 }); // the finish platform
+const TOP = GIRDERS.length - 1;
+// [lower girder, x, broken] — a broken ladder only goes halfway
+const LADDERS = [[0, 380], [0, 180, 1], [1, 110], [1, 260], [2, 360], [2, 200, 1], [3, 90], [3, 300], [4, 400], [4, 230, 1], [5, 240]].map(([i, x, b]) => ({ i, x, broken: !!b }));
+const HAMMER_SPOTS = [[2, 440], [4, 100]];
+const gy = (g, x) => { const G = GIRDERS[g]; return G.yl + (G.yr - G.yl) * (x - G.x0) / (G.x1 - G.x0); };
+const downhill = g => GIRDERS[g].yr > GIRDERS[g].yl ? 1 : -1;
+const CAN_COLS = ['#3d7bff', '#3dff8f', '#ffd23d', '#ff4fd8'];
+let state = 'title', p = null, cans = [], hammers = [], pops = [], parts = [], score = 0, lives = 3, level = 1, bonus = 5000, bonusT = 0, throwT = 0, craneT = 0, phaseT = 0, msg = '', msgT = 0, nextLife = 20000;
+
+function resetRun() {
+  p = { x: 100, y: gy(0, 100), g: 0, st: 'walk', vx: 0, vy: 0, y0: 0, face: 1, lad: null, hammer: 0, walkT: 0 };
+  cans = []; pops = []; throwT = 1.4; bonus = 5000; bonusT = 0;
+  hammers = HAMMER_SPOTS.map(([g, x]) => ({ g, x, taken: false }));
+}
+function newGame() { score = 0; lives = 3; level = 1; nextLife = 20000; A.setScore(0); resetRun(); state = 'play'; say('CLIMB TO THE FLAG!'); A.jingle([392, 523, 659, 784], 0.09); }
+function say(t) { msg = t; msgT = 1.8; }
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+A.onPress(c => {
+  if (c === 'KeyP' || c === 'Escape') return pause();
+  if (state === 'play' && c === 'Space' && p.st === 'walk' && !p.hammer) {
+    const dir = (A.held('ArrowRight', 'KeyD') ? 1 : 0) - (A.held('ArrowLeft', 'KeyA') ? 1 : 0);
+    p.st = 'jump'; p.vy = -232; p.vx = dir * 95; p.y0 = p.y; A.tone(520, 0.08, 'square', 0.03, 0, 780);
+  }
+});
+A.onHide(pause);
+
+const ladderAt = (g, x, goingUp) => LADDERS.find(L => (goingUp ? L.i === g : L.i + 1 === g && !L.broken) && Math.abs(L.x - x) < 8);
+function updatePlayer(dt) {
+  p.hammer = Math.max(0, p.hammer - dt);
+  const dir = (A.held('ArrowRight', 'KeyD') ? 1 : 0) - (A.held('ArrowLeft', 'KeyA') ? 1 : 0);
+  const up = A.held('ArrowUp', 'KeyW'), down = A.held('ArrowDown', 'KeyS');
+  if (p.st === 'walk') {
+    if (dir) { p.face = dir; p.walkT += dt; }
+    const G = GIRDERS[p.g];
+    p.x = A.clamp(p.x + dir * 95 * dt, G.x0 + 8, G.x1 - 8); p.y = gy(p.g, p.x);
+    if (!p.hammer) { // no climbing with a hammer in hand
+      const L = up ? ladderAt(p.g, p.x, true) : down ? ladderAt(p.g, p.x, false) : null;
+      if (L) { p.st = 'climb'; p.lad = L; p.x = L.x; }
+    }
+  } else if (p.st === 'climb') {
+    const L = p.lad, bot = gy(L.i, L.x), topY = gy(L.i + 1, L.x), lim = L.broken ? bot - (bot - topY) * 0.5 : topY;
+    const v = (down ? 1 : 0) - (up ? 1 : 0); p.y += v * 62 * dt; if (v) p.walkT += dt;
+    if (p.y <= lim) { if (L.broken) p.y = lim; else { p.g = L.i + 1; p.y = topY; p.st = 'walk'; if (p.g === TOP) clearLevel(); } }
+    else if (p.y >= bot) { p.g = L.i; p.y = bot; p.st = 'walk'; }
+  } else if (p.st === 'jump') {
+    const before = p.y; p.x += p.vx * dt; p.vy += 760 * dt; p.y += p.vy * dt;
+    if (p.x < 6 || p.x > W - 6) { p.x = A.clamp(p.x, 6, W - 6); p.vx = 0; }
+    if (p.vy > 0) {
+      for (let g = 0; g < GIRDERS.length; g++) {
+        const G = GIRDERS[g]; if (p.x < G.x0 || p.x > G.x1) continue;
+        const top = gy(g, p.x);
+        if (before <= top && p.y >= top) {
+          if (top - p.y0 > 36) return die('TOO FAR TO FALL');
+          p.st = 'walk'; p.g = g; p.y = top; if (g === TOP) clearLevel(); return;
+        }
+      }
+      if (p.y > H + 20) die('TOO FAR TO FALL');
+    }
+  }
+}
+function updateCans(dt) {
+  const sp = 100 + level * 12;
+  for (const c of cans) {
+    if (c.st === 'roll') {
+      const d = downhill(c.g), G = GIRDERS[c.g], ox = c.x;
+      c.x += d * sp * dt; c.rot += d * sp * dt / 9;
+      if (c.g > 0) for (const L of LADDERS) if (L.i + 1 === c.g && (ox - L.x) * (c.x - L.x) <= 0 && c.lastL !== L) {
+        c.lastL = L; // decide once per ladder
+        if (Math.random() < 0.25 + level * 0.03) { c.st = 'ladder'; c.lad = L; c.x = L.x; }
+        break;
+      }
+      if (c.st !== 'roll') continue;
+      if (c.x < G.x0 - 4 || c.x > G.x1 + 4) { if (c.g === 0) c.gone = true; else { c.st = 'fall'; c.vy = 40; c.dx = d; } }
+      else c.y = gy(c.g, c.x) - 9;
+    } else if (c.st === 'fall') {
+      c.vy += 900 * dt; c.y += c.vy * dt; c.x += c.dx * 30 * dt;
+      const g = c.g - 1, G = GIRDERS[g];
+      if (c.x >= G.x0 && c.x <= G.x1 && c.y >= gy(g, c.x) - 9) { c.g = g; c.st = 'roll'; c.y = gy(g, c.x) - 9; A.tone(90, 0.06, 'square', 0.03); }
+      if (c.y > H + 30) c.gone = true;
+    } else { // down a ladder
+      c.y += 95 * dt; c.rot += dt * 4;
+      const by = gy(c.lad.i, c.lad.x) - 9;
+      if (c.y >= by) { c.y = by; c.g = c.lad.i; c.st = 'roll'; c.lastL = c.lad; }
+    }
+  }
+  cans = cans.filter(c => !c.gone);
+}
+function collide() {
+  const py = p.y - 14; // middle of the worker
+  for (const c of cans) {
+    if (p.hammer > 0 && Math.abs(c.y - py) < 22 && (c.x - p.x) * p.face > -8 && (c.x - p.x) * p.face < 36) {
+      c.gone = true; score += 300; pop(c.x, c.y, 300); burst(c.x, c.y, c.col); A.noise(0.15, 0.06); A.badge('smash'); continue;
+    }
+    if (Math.abs(c.x - p.x) < 11 && Math.abs(c.y - py) < 13) return die('SPLAT!');
+    if (p.st === 'jump' && !c.jumped && Math.abs(c.x - p.x) < 12 && c.y > p.y - 2 && c.y - p.y < 44) {
+      c.jumped = true; score += 100; pop(p.x, p.y - 30, 100); A.tone(880, 0.06, 'square', 0.03); A.badge('jump');
+    }
+  }
+  cans = cans.filter(c => !c.gone);
+  for (const h of hammers) if (!h.taken && h.g === p.g && p.st === 'walk' && Math.abs(h.x - p.x) < 14) { h.taken = true; p.hammer = 9; A.jingle([523, 784, 1047], 0.06); say('HAMMER TIME!'); }
+}
+function pop(x, y, n) { pops.push({ x, y, n, t: 1 }); }
+function burst(x, y, c) { for (let i = 0; i < 12; i++) { const a = Math.random() * 6.28, s = A.rand(40, 160); parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 40, t: A.rand(0.3, 0.7), c }); } }
+function die(why) {
+  if (state !== 'play') return;
+  state = 'dying'; phaseT = 1.6; lives--; say(why); burst(p.x, p.y - 14, '#ffd23d');
+  A.noise(0.4, 0.07); A.tone(400, 0.7, 'sawtooth', 0.05, 0, 60);
+}
+function clearLevel() {
+  state = 'clear'; phaseT = 2.6; score += bonus; A.setScore(score); A.badge('top');
+  say(`TOPPED OUT! +${bonus}`); A.jingle([523, 659, 784, 1047, 784, 1047], 0.1);
+}
+function gameOver() { state = 'over'; const rec = A.submit(score); A.overlay({ title: 'SITE CLOSED', big: `SCORE ${score} · LEVEL ${level}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, btn: 'Clock in again', onGo: newGame }); }
+
+A.loop(dt => {
+  parts.forEach(q => { q.x += q.vx * dt; q.y += q.vy * dt; q.vy += 500 * dt; q.t -= dt; }); parts = parts.filter(q => q.t > 0);
+  pops.forEach(q => { q.t -= dt; q.y -= 30 * dt; }); pops = pops.filter(q => q.t > 0);
+  if (msgT > 0) msgT -= dt;
+  craneT = Math.max(0, craneT - dt);
+  if (state === 'dying') { phaseT -= dt; if (phaseT <= 0) { if (lives <= 0) return gameOver(); resetRun(); state = 'play'; } return; }
+  if (state === 'clear') { phaseT -= dt; if (phaseT <= 0) { level++; resetRun(); state = 'play'; say(`LEVEL ${level}`); } return; }
+  if (state !== 'play') return;
+  bonusT += dt; if (bonusT >= 2) { bonusT -= 2; bonus -= 100; if (bonus <= 0) { bonus = 0; return die('OUT OF TIME'); } }
+  throwT -= dt;
+  if (throwT <= 0) { throwT = Math.max(0.95, 2.5 - level * 0.22) * A.rand(0.75, 1.25); craneT = 0.4; cans.push({ x: 74, y: gy(5, 74) - 9, g: 5, st: 'roll', rot: 0, col: A.pick(CAN_COLS) }); }
+  updatePlayer(dt); if (state !== 'play') return;
+  updateCans(dt);
+  collide();
+  if (score >= nextLife) { lives++; nextLife += 20000; A.jingle([660, 880, 1320], 0.08); }
+  A.setScore(score);
+}, t => {
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#0b0820'); g.addColorStop(1, '#22102a'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#160d2a'; for (let i = 0; i < 9; i++) ctx.fillRect(i * 56 - 8, H - 150 - (i * 47 % 90), 48, 160);
+  drawCrane(t);
+  LADDERS.forEach(drawLadder);
+  GIRDERS.forEach(drawGirder);
+  // finish flag
+  ctx.fillStyle = '#ddd'; ctx.fillRect(286, 6, 3, 40); ctx.fillStyle = '#3dff8f'; ctx.beginPath(); ctx.moveTo(289, 6); ctx.lineTo(316, 13 + Math.sin(t / 200) * 2); ctx.lineTo(289, 20); ctx.fill();
+  ctx.font = '10px Silkscreen, monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#3dff8f'; ctx.fillText('FINISH', 225, 38);
+  hammers.forEach(h => { if (!h.taken) drawHammer(h.x, gy(h.g, h.x) - 30, Math.sin(t / 300) * 0.3); });
+  const list = state === 'title' ? [{ x: 74 + ((t / 8) % 360), y: gy(5, 74 + ((t / 8) % 360)) - 9, rot: t / 80, col: '#3d7bff' }] : cans;
+  list.forEach(drawCan);
+  if (p && !(state === 'dying' && Math.floor(t / 100) % 2)) drawWorker(t);
+  parts.forEach(q => { ctx.globalAlpha = Math.min(1, q.t * 2); ctx.fillStyle = q.c; ctx.fillRect(q.x - 2, q.y - 2, 4, 4); }); ctx.globalAlpha = 1;
+  ctx.font = '12px Silkscreen, monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffd23d'; pops.forEach(q => ctx.fillText(q.n, q.x, q.y));
+  if (p) {
+    // top-left belongs to the crane, so the HUD sits on the right and under the ground girder
+    ctx.font = '13px Silkscreen, monospace'; ctx.textAlign = 'right';
+    ctx.fillStyle = bonus < 1000 && Math.floor(t / 250) % 2 ? '#ff4f6d' : '#ffd23d'; ctx.fillText('BONUS ' + bonus, W - 12, 20);
+    ctx.fillStyle = '#f4effd'; ctx.fillText('LEVEL ' + level, W - 12, 38);
+    for (let i = 0; i < lives - 1; i++) { ctx.fillStyle = '#ffd23d'; ctx.beginPath(); ctx.arc(W - 20 - i * 20, 54, 7, Math.PI, 0); ctx.fill(); ctx.fillRect(W - 29 - i * 20, 53, 18, 3); }
+    if (p.hammer > 0) { ctx.textAlign = 'left'; ctx.fillStyle = '#ff6f61'; ctx.fillText('HAMMER ' + Math.ceil(p.hammer), 12, H - 8); }
+  }
+  if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '22px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#ff6f61'; ctx.shadowColor = '#000'; ctx.shadowBlur = 8; ctx.fillText(msg, W / 2, 290); ctx.shadowBlur = 0; ctx.globalAlpha = 1; }
+});
+function drawGirder(G, i) {
+  const th = 8;
+  ctx.fillStyle = i === TOP ? '#ffd23d' : '#ff6f61';
+  ctx.beginPath(); ctx.moveTo(G.x0, G.yl); ctx.lineTo(G.x1, G.yr); ctx.lineTo(G.x1, G.yr + th); ctx.lineTo(G.x0, G.yl + th); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 1.5; ctx.beginPath();
+  for (let x = G.x0; x < G.x1; x += 16) { const y1 = G.yl + (G.yr - G.yl) * (x - G.x0) / (G.x1 - G.x0), y2 = G.yl + (G.yr - G.yl) * (x + 8 - G.x0) / (G.x1 - G.x0); ctx.moveTo(x, y1 + 1); ctx.lineTo(x + 8, y2 + th - 1); ctx.lineTo(x + 16, y1 + 1); }
+  ctx.stroke();
+}
+function drawLadder(L) {
+  const bot = gy(L.i, L.x) + 2, top = gy(L.i + 1, L.x) + 8, x = L.x;
+  ctx.strokeStyle = '#4fd8ff'; ctx.lineWidth = 2; ctx.beginPath();
+  if (L.broken) { const mid = bot - (bot - top) * 0.55; ctx.moveTo(x - 7, bot); ctx.lineTo(x - 7, mid); ctx.moveTo(x + 7, bot); ctx.lineTo(x + 7, mid); ctx.moveTo(x - 7, top + 10); ctx.lineTo(x - 7, top); ctx.moveTo(x + 7, top + 10); ctx.lineTo(x + 7, top); for (let y = bot - 6; y > mid; y -= 9) { ctx.moveTo(x - 7, y); ctx.lineTo(x + 7, y); } }
+  else { ctx.moveTo(x - 7, bot); ctx.lineTo(x - 7, top); ctx.moveTo(x + 7, bot); ctx.lineTo(x + 7, top); for (let y = bot - 6; y > top; y -= 9) { ctx.moveTo(x - 7, y); ctx.lineTo(x + 7, y); } }
+  ctx.stroke();
+}
+function drawCan(c) {
+  ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.rot || 0);
+  ctx.fillStyle = c.col || '#3d7bff'; ctx.beginPath(); ctx.arc(0, 0, 9, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.fillRect(-9, -2.5, 18, 5); ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fillRect(-1, -9, 2, 18);
+  ctx.restore();
+}
+function drawHammer(x, y, a) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(a);
+  ctx.fillStyle = '#c8905a'; ctx.fillRect(-2, -2, 4, 18); ctx.fillStyle = '#c0c6d0'; ctx.fillRect(-9, -8, 18, 8);
+  ctx.restore();
+}
+function drawCrane(t) {
+  const base = gy(5, 30), swing = craneT > 0 ? 1 : 0;
+  ctx.strokeStyle = '#ffd23d'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(18, base); ctx.lineTo(18, 14); ctx.moveTo(42, base); ctx.lineTo(42, 14);
+  for (let y = base; y > 18; y -= 14) { ctx.moveTo(18, y); ctx.lineTo(42, y - 14); ctx.moveTo(18, y - 14); ctx.lineTo(42, y); }
+  ctx.moveTo(10, 14); ctx.lineTo(130, 14); ctx.stroke();
+  ctx.fillStyle = '#ffd23d'; ctx.fillRect(12, 8, 34, 10); ctx.fillStyle = '#0b0820'; ctx.fillRect(16, 10, 10, 6);
+  const hx = 70 + swing * 6; ctx.strokeStyle = '#c0c6d0'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(hx, 14); ctx.lineTo(hx, 40 + Math.sin(t / 300) * 3); ctx.stroke();
+  // stack of cans waiting by the crane
+  [[52, 0], [64, 0], [58, 1]].forEach(([x, r], i) => drawCan({ x, y: base - 9 - r * 16, rot: 0, col: CAN_COLS[i] }));
+}
+function drawWorker(t) {
+  const x = Math.round(p.x), y = Math.round(p.y), f = p.face, climb = p.st === 'climb', step = Math.floor(p.walkT * 10) % 2;
+  ctx.save(); ctx.translate(x, y); ctx.scale(climb ? 1 : f, 1);
+  ctx.fillStyle = '#2b4a8a'; // overalls and legs
+  if (climb) { ctx.fillRect(-6, -10 - step * 3, 4, 10); ctx.fillRect(2, -10 - (1 - step) * 3, 4, 10); }
+  else if (p.st === 'jump') { ctx.fillRect(-6, -10, 4, 7); ctx.fillRect(3, -9, 4, 7); }
+  else { ctx.fillRect(-6 + step * 2, -10, 4, 10); ctx.fillRect(2 - step * 2, -10, 4, 10); }
+  ctx.fillRect(-7, -22, 14, 13); ctx.fillStyle = '#ff6f61'; ctx.fillRect(-7, -22, 14, 4);
+  ctx.fillStyle = '#e3a877'; ctx.fillRect(-5, -31, 10, 9); ctx.fillStyle = '#1a1010'; ctx.fillRect(1, -28, 2, 2);
+  ctx.fillStyle = '#ffd23d'; ctx.fillRect(-7, -34, 14, 4); ctx.fillRect(-5, -36, 10, 3);
+  if (p.hammer > 0) { const up = Math.floor(t / 110) % 2; ctx.save(); ctx.translate(6, -18); ctx.rotate(up ? -1.4 : 0.2); ctx.fillStyle = '#c8905a'; ctx.fillRect(0, -2, 16, 3); ctx.fillStyle = '#c0c6d0'; ctx.fillRect(14, -7, 7, 13); ctx.restore(); }
+  else { ctx.fillStyle = '#e3a877'; ctx.fillRect(5, -19 + (climb ? -6 * step : 0), 4, 4); }
+  ctx.restore();
+}
+A.overlay({ title: 'SCAFFOLD SCRAMBLE', sub: 'A runaway crane is rolling paint cans down the building site. Climb the ladders to the finish flag. Jump the cans for points, and grab a hammer to smash them. Broken ladders only go halfway.', btn: 'Clock in', scores: true, onGo: newGame });
+})();
+</script>
+</body>
+</html>
