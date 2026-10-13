@@ -258,7 +258,7 @@
     const ctx = cv.getContext('2d');
     const fit = () => { const d = Math.min(window.devicePixelRatio || 1, 2); cv.width = w * d; cv.height = h * d; ctx.setTransform(d, 0, 0, d, 0, 0); };
     fit(); addEventListener('resize', fit);
-    cv.parentElement.style.setProperty('--ar', w / h);
+    cv.parentElement.style.setProperty('--ar', w / h); document.documentElement.style.setProperty('--ar', w / h);
     A.W = w; A.H = h;
     return ctx;
   };
@@ -290,10 +290,12 @@
    */
   A.overlay = ({ title, sub = '', big = '', btn = 'Play', onGo, alt, scores, daily }) => {
     const o = $('ov'), res = lastResult; lastResult = null;
-    const canShare = res && res.s > 0;
+    const canShare = res && res.s > 0, isTitle = scores && !res;
+    clearInterval(contT);
     o.innerHTML = `<h2></h2>${big ? '<div class="big"></div>' : ''}${sub ? '<p></p>' : ''}<div class="hs"></div>` +
+      (isTitle ? '<div class="push">PUSH START</div>' : '') + (res ? '<div class="cont" hidden></div>' : '') +
       `<div class="btns"><button class="go"></button>${alt ? '<button class="go2"></button>' : ''}</div>` +
-      (canShare ? '<button class="share">Share score</button>' : '');
+      (canShare ? '<button class="share">Share score</button>' : '') + (isTitle ? '<div class="credit">FREE PLAY · CREDIT 99</div>' : '');
     if (canShare) { const sb = o.querySelector('.share'); sb.addEventListener('click', () => shareScore(res.s, res.day && res.day.d, sb)); }
     o.querySelector('h2').textContent = title;
     if (big) o.querySelector('.big').textContent = big;
@@ -315,11 +317,25 @@
     } else if (scores) shown = { top: A.top(), hi: -1, day: null };
     if (res && res.day) hsTab = 'today'; else if (!tabs().includes(hsTab)) hsTab = 'world';
     renderHS(); o.hidden = false;
+    if (res && !entry) startContinue();
     if (shown) loadWorld();
     // the game's theme plays from the title screen right through the game: full volume on screens like this, quieter in play
     if (music()) { music().play(music().theme(A.id)); music().volume(0.5); }
   };
-  A.hideOverlay = () => { const o = $('ov'); if (o) o.hidden = true; entry = null; if (music()) music().volume(0.3); };
+  A.hideOverlay = () => { const o = $('ov'); if (o) o.hidden = true; entry = null; clearInterval(contT); if (music()) music().volume(0.3); };
+  /** Game over, arcade style: CONTINUE? counts down 9 to 0 with a beep each second (starting a new game any time). */
+  let contT = 0;
+  function startContinue() {
+    const c = $('ov') && $('ov').querySelector('.cont'); if (!c) return;
+    let n = 9; c.hidden = false; c.classList.remove('done'); c.textContent = 'CONTINUE? 9';
+    clearInterval(contT);
+    contT = setInterval(() => {
+      if (!c.isConnected || !overlayOpen()) return clearInterval(contT);
+      n--;
+      if (n < 0) { clearInterval(contT); c.textContent = 'THANKS FOR PLAYING'; c.classList.add('done'); return; }
+      c.textContent = 'CONTINUE? ' + n; A.tone(n ? 880 : 440, 0.07, 'square', 0.03);
+    }, 1000);
+  }
   A.overlayOpen = overlayOpen;
 
   /* ---------- initials + top-10 table ---------- */
@@ -338,7 +354,7 @@
     const top = res.top.slice(); if (placed) { top.splice(res.rank, 0, { n, s: res.s }); top.length = Math.min(top.length, 10); store.set(topKey, JSON.stringify(top)); }
     store.set('arcade:initials', n);
     shown = { top, hi: res.rank, day: shown && shown.day }; entry = null; lastSaved = { n, s: res.s };
-    A.jingle([784, 988, 1175], 0.06); renderHS();
+    A.jingle([784, 988, 1175], 0.06); renderHS(); startContinue();
     queuePost(n, res.s, placed, res.day && res.day.improved ? res.day.d : null);
     const go = $('ov').querySelector('.go'); if (go) go.focus();
   }
@@ -378,7 +394,8 @@
   }
   const tabs = () => [...(dailyDay ? ['world', 'today'] : ['world']), 'local', ...(A.badgeList().length ? ['badges'] : [])];
   // Names are checked against 3 capital letters before display: world scores come from other players.
-  const table = (list, hi) => `<div class="hs-table">${list.map((e, i) => `<div class="row${i === hi ? ' me' : ''}"><span>${i + 1}</span>` +
+  const ORD = ['1ST', '2ND', '3RD'];
+  const table = (list, hi) => `<div class="hs-table">${list.map((e, i) => `<div class="row${i < 3 ? ' r' + (i + 1) : ''}${i === hi ? ' me' : ''}"><span>${ORD[i] || (i + 1) + 'TH'}</span>` +
     `<span>${/^[A-Z?]{3}$/.test(e.n) ? e.n : '???'}</span><span>${(+e.s || 0).toLocaleString()}</span></div>`).join('')}</div>`;
   const dayLine = d => `<div class="hs-day">DAILY ${d.d} · TODAY'S BEST ${d.s.toLocaleString()}</div>`;
 
@@ -388,8 +405,24 @@
   A.rand = (a, b) => a + Math.random() * (b - a);
   A.pick = arr => arr[Math.floor(Math.random() * arr.length)];
 
+  /* ---------- the cabinet: lit marquee, bezel with a 1UP / HI-SCORE strip, control panel ---------- */
+  function buildCabinet() {
+    const screen = document.querySelector('.stage > .screen'), h1 = document.querySelector('.bar h1'); if (!screen || !h1) return;
+    const el = (cls, html = '') => { const d = document.createElement('div'); d.className = cls; d.innerHTML = html; return d; };
+    const cab = el('cabinet'), marquee = el('marquee', '<span></span>'), bezel = el('bezel'), strip = el('bezel-top'), panel = el('cpanel', '<div class="stick" aria-hidden="true"></div><div class="card"></div><div class="cp-buttons" aria-hidden="true"><i></i><i></i></div>');
+    marquee.firstChild.textContent = h1.textContent;
+    const sc = document.querySelector('.bar .sc');
+    if (sc) { sc.querySelectorAll('span').forEach((s, i) => { s.firstChild.textContent = i ? 'HI-SCORE' : '1UP'; }); strip.append(sc); }
+    strip.insertAdjacentHTML('beforeend', '<span class="freeplay">FREE PLAY</span>');
+    screen.before(cab); bezel.append(strip, screen);
+    const help = document.querySelector('.stage > .help'); if (help) panel.querySelector('.card').append(help);
+    cab.append(marquee, bezel, panel);
+    document.body.classList.add('cab-on');
+  }
+
   function init() {
     A.showBest();
+    buildCabinet();
     const m = $('mute');
     // Touch players need a way to pause; add a header button unless the pad already has one (shown on coarse pointers only).
     if (m && !document.querySelector('[data-k="KeyP"]')) {

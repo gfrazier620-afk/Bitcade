@@ -324,12 +324,32 @@ console.log('\nBadges and sharing');
   await lobby.close();
 }
 
+/* ---------- the cabinet and arcade details ---------- */
+console.log('\nCabinet');
+{
+  const { page, errors, close } = await open('/games/star-siege/');
+  check((await page.textContent('.cabinet .marquee')).trim() === 'STAR SIEGE', 'the lit marquee shows the game name');
+  check(await page.isVisible('.bezel-top #score') && /1UP/.test(await page.textContent('.bezel-top')), 'the bezel carries the 1UP / HI-SCORE strip');
+  check(await page.isVisible('.cpanel .stick') && await page.isVisible('.cpanel .help'), 'the control panel has a joystick and the controls card');
+  check(await page.isVisible('#ov .push') && /FREE PLAY/.test(await page.textContent('#ov .credit')), 'the title screen says PUSH START and FREE PLAY');
+  const fits = await page.evaluate(() => { const c = document.querySelector('.cabinet').getBoundingClientRect(); return c.right <= innerWidth + 1 && c.bottom <= innerHeight + 40; });
+  check(fits, 'the cabinet fits the window');
+  await page.evaluate(() => { localStorage.setItem('arcade:top:star-siege', JSON.stringify([{ n: 'AAA', s: 900 }, { n: 'BBB', s: 800 }])); Arcade.submit(5); Arcade.overlay({ title: 'EARTH FALLS', btn: 'Play again', onGo: () => {} }); });
+  await page.keyboard.press('Enter'); // save the initials (5 makes this device's top 10)
+  const first = await page.textContent('#ov .cont'); await wait(1300); const later = await page.textContent('#ov .cont');
+  check(/CONTINUE\? 9/.test(first) && /CONTINUE\? [78]/.test(later), `game over counts down to continue ("${first}" → "${later}")`);
+  check((await page.textContent('#ov .hs-table .r1 span')) === '1ST', 'score tables rank 1ST, 2ND, 3RD');
+  check(!errors.length, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
+  await close();
+}
+
 /* ---------- phones: pause button and touch pad ---------- */
 console.log('\nPhone layout');
 {
   const { page, errors, close } = await open('/games/star-siege/', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   check(await page.isVisible('.bar .pause'), 'header PAUSE button shows on a touch screen');
   check(await page.isVisible('.pad'), 'touch pad shows on a touch screen');
+  check(await page.isVisible('.marquee') && await page.isHidden('.cpanel'), 'phones get the slim cabinet: marquee, no control panel');
   check(await page.evaluate(() => { const s = getComputedStyle(document.body); return s.userSelect === 'none' || s.webkitUserSelect === 'none'; }), 'tapping and holding does not select text');
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
   check(!overflow, 'no sideways scrolling at phone width');

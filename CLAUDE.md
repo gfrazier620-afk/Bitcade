@@ -19,8 +19,9 @@ A GitHub Pages arcade site: a lobby page plus 18 classic-style browser games. Pl
   - keyboard, touch and gamepad input (`held`, `onPress`, `swipe`, `[data-k]` pad buttons). Inside an element marked `data-keys-native`, keys are left to the page
   - a header PAUSE button for touch, added automatically unless the pad already has a `KeyP` button
   - canvas sizing
+  - the cabinet: `buildCabinet()` wraps `.screen` in a lit marquee (the page's h1), a bezel with the 1UP / HI-SCORE / FREE PLAY strip (it moves `.sc` there) and a control panel (joystick, the `.help` card, buttons). Phones and narrow windows get a slim version and keep the touch pad. Screen size comes from `--cab-chrome` in arcade.css (measured heights of everything around the screen); a page's `--chrome` now only matters on phones
   - the fixed-step `loop`
-  - the start/pause/game-over `overlay`. Pass `scores: true` on title screens to list the top 10, and `alt: { btn, onGo }` for a second button (gamepad Y)
+  - the start/pause/game-over `overlay`. Pass `scores: true` on title screens to list the top 10 (they also show PUSH START and FREE PLAY · CREDIT 99), and `alt: { btn, onGo }` for a second button (gamepad Y). After `A.submit`, game over shows a CONTINUE? 9→0 countdown, and tables rank 1ST/2ND/3RD in gold, silver and bronze
 - `shared/chip.js`: the chiptune player (`window.Chip`), loaded before arcade.js on kit games and by the lobby. `Chip.lobby` is the hand-written Bitcade theme; `Chip.theme(slug)` composes a game's theme from its name (same tune every time). Music needs a tap or key first (browser rule) and plays only with SOUND and MUSIC on.
 - `games/<slug>/index.html`: one self-contained page per game, loading the shared kit with `../../shared/`.
   - `body data-game="<slug>"` sets the score key.

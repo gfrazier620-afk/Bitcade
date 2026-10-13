@@ -101,3 +101,79 @@ kbd{font-family:var(--f-pixel);font-size:11px;border:1px solid var(--line);borde
   box-shadow:inset 0 0 70px rgba(0,0,0,.65),inset 0 0 10px rgba(255,255,255,.1);animation:crt-flicker 5s steps(1) infinite}
 .crt .screen canvas{filter:saturate(1.25) contrast(1.08) brightness(1.08)}
 @keyframes crt-flicker{0%,100%{opacity:1}47%{opacity:.9}48%{opacity:1}81%{opacity:.95}82%{opacity:1}}
+
+/* ---------- the cabinet (built around .screen by arcade.js): lit marquee, bezel, control panel ----------
+   --sw is the screen width: it fits the window's width and its height minus everything around the screen
+   (--cab-chrome: header, marquee, score strip, bezel and control panel, measured). */
+.cab-on{--bz:16px;--cab-chrome:252px;
+  --sw:min(calc(100vw - 32px - 2 * var(--bz)),calc((100dvh - var(--cab-chrome)) * var(--ar,1)));
+  background:
+    radial-gradient(ellipse at 50% -5%,color-mix(in srgb,var(--game) 20%,transparent) 0%,transparent 55%),
+    radial-gradient(circle at 30% 30%,rgba(255,79,163,.08) 0 2px,transparent 3px) 0 0/44px 44px,
+    radial-gradient(circle at 70% 70%,rgba(94,231,255,.07) 0 2px,transparent 3px) 0 0/36px 36px,
+    radial-gradient(circle at 50% 50%,rgba(255,227,106,.06) 0 1.5px,transparent 2.5px) 11px 5px/58px 58px,
+    #09070f}
+.cab-on .bar{border-bottom:0;background:transparent;padding-top:6px;padding-bottom:6px}
+.cab-on .bar h1{display:none}
+.cab-on .stage{gap:0;padding-top:4px}
+.cabinet{display:flex;flex-direction:column;align-items:center;width:calc(var(--sw) + 2 * var(--bz));max-width:100%;
+  filter:drop-shadow(0 18px 40px rgba(0,0,0,.6))}
+/* the backlit marquee */
+.marquee{position:relative;width:100%;height:52px;display:flex;align-items:center;justify-content:center;overflow:hidden;
+  border-radius:14px 14px 0 0;background:linear-gradient(180deg,#221b40,#120e26);border:2px solid #2d2556;border-bottom:0}
+.marquee::before{content:"";position:absolute;inset:7px 9px;border-radius:7px;
+  background:repeating-linear-gradient(90deg,rgba(255,255,255,.05) 0 2px,transparent 2px 46px),
+    radial-gradient(ellipse at 50% 50%,color-mix(in srgb,var(--game) 50%,#140a26) 0%,color-mix(in srgb,var(--game) 14%,#0a0716) 75%);
+  box-shadow:inset 0 0 18px rgba(0,0,0,.65),0 0 24px color-mix(in srgb,var(--game) 35%,transparent);animation:marquee-hum 7s steps(1) infinite}
+.marquee span{position:relative;max-width:96%;white-space:nowrap;/* no overflow clipping: it would box in the glow */
+  font-family:var(--f-marquee);font-size:clamp(17px,3.6vw,30px);letter-spacing:.06em;color:#fff;
+  text-shadow:0 0 4px #fff,0 0 12px var(--game),0 0 26px var(--game),0 2px 0 rgba(0,0,0,.45)}
+@keyframes marquee-hum{0%,100%{opacity:1}41%{opacity:.82}42%{opacity:1}43%{opacity:.9}44%{opacity:1}}
+/* the bezel around the screen, with side-art stripes and the score strip */
+.bezel{width:100%;padding:0 var(--bz) var(--bz);border:2px solid #2d2556;border-top:0;border-bottom:0;
+  background:linear-gradient(90deg,color-mix(in srgb,var(--game) 70%,#000) 0 4px,transparent 4px calc(100% - 4px),color-mix(in srgb,var(--game) 70%,#000) calc(100% - 4px)),
+    radial-gradient(circle,rgba(255,255,255,.035) 1px,transparent 1.5px) 0 0/7px 7px,linear-gradient(180deg,#16122e,#0f0c22)}
+.bezel-top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:7px 2px 8px;font-family:var(--f-pixel);font-size:11px;color:var(--muted)}
+.bezel-top .sc{gap:20px}
+.bezel-top .sc span{color:#ff4f6d}
+.bezel-top .sc span:last-child{color:#ffe36a}
+.bezel-top .sc b{color:#fff;font-size:14px}
+.freeplay{color:#5ee7ff;letter-spacing:.08em;animation:boot-blink-k 1.4s steps(2,start) infinite}
+@keyframes boot-blink-k{to{visibility:hidden}}
+.cab-on .screen{width:var(--sw);border:3px solid #030207;border-radius:10px;
+  box-shadow:0 0 0 2px #2d2556,0 0 28px color-mix(in srgb,var(--game) 22%,transparent)}
+/* the control panel: joystick, instruction card, buttons */
+.cpanel{position:relative;width:max(calc(100% + 28px),min(600px,calc(100vw - 24px)));flex:none;min-height:70px;display:flex;align-items:center;gap:18px;padding:10px 44px 12px;
+  clip-path:polygon(0 0,100% 0,96% 100%,4% 100%);
+  background:linear-gradient(180deg,color-mix(in srgb,var(--game) 55%,#2d2556) 0 3px,#2a2350 3px,#191433 45%,#0f0b22 100%)}
+.stick{position:relative;flex:none;width:50px;height:50px;margin-top:14px;border-radius:50%;background:radial-gradient(circle,#05040b 0 34%,#3a3266 36% 58%,#0d0a1c 60%)}
+.stick::before{content:"";position:absolute;left:50%;bottom:22px;width:6px;height:24px;margin-left:-3px;border-radius:3px;background:linear-gradient(90deg,#6b6b78,#e6e6ee,#6b6b78)}
+.stick::after{content:"";position:absolute;left:50%;bottom:40px;width:28px;height:28px;margin-left:-14px;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,#fff 0 9%,var(--game) 32%,color-mix(in srgb,var(--game) 45%,#000) 100%);box-shadow:0 3px 6px rgba(0,0,0,.6)}
+.card{flex:1;min-width:0;padding:6px 10px;border-radius:6px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.09)}
+.card .help{font-size:11.5px;line-height:1.5}
+.cp-buttons{display:flex;gap:12px;flex:none}
+.cp-buttons i{width:34px;height:34px;border-radius:50%;--c:var(--game);
+  background:radial-gradient(circle at 35% 30%,#fff 0 10%,var(--c) 36%,color-mix(in srgb,var(--c) 45%,#000) 100%);
+  box-shadow:0 4px 0 color-mix(in srgb,var(--c) 35%,#000),0 7px 10px rgba(0,0,0,.5)}
+.cp-buttons i:last-child{--c:#ffe36a}
+/* phones and narrow windows: a slimmer cabinet, and the touch pad instead of the panel */
+@media (pointer:coarse),(max-width:620px){
+  .cab-on{--bz:8px;--cab-chrome:calc(var(--chrome,190px) + 80px)}
+  .marquee{height:44px}
+  .marquee::before{inset:5px 7px}
+  .cpanel{display:none}
+  .bezel{padding-bottom:var(--bz);border-bottom:2px solid #2d2556;border-radius:0 0 12px 12px}
+  .cab-on .pad{margin-top:14px}
+}
+@media (pointer:fine) and (min-width:621px){.cab-on .help{display:block}}
+
+/* title screens and game over, arcade style */
+.push{font-family:var(--f-pixel);font-size:14px;letter-spacing:.14em;color:#ffe36a;text-shadow:0 0 10px rgba(255,227,106,.7);animation:boot-blink-k 1s steps(2,start) infinite}
+.credit{font-family:var(--f-pixel);font-size:10px;letter-spacing:.12em;color:var(--muted)}
+.cont{font-family:var(--f-marquee);font-size:22px;color:#ff4f6d;letter-spacing:.04em;text-shadow:0 0 14px rgba(255,79,109,.7)}
+.cont.done{font-family:var(--f-pixel);font-size:12px;color:var(--muted);text-shadow:none}
+.hs-table .row{grid-template-columns:4.2ch 3.6ch 7ch}
+.hs-table .r1 span:not(:last-child){color:#ffd23d}
+.hs-table .r2 span:not(:last-child){color:#d6dbe6}
+.hs-table .r3 span:not(:last-child){color:#e0915a}
