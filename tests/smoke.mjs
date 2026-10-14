@@ -48,7 +48,8 @@ async function open(path, opts = {}) {
   await page.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
   // The world leaderboard is never contacted from tests: pages must work with Firebase unreachable.
   await page.route(/gstatic\.com\/firebasejs|googleapis\.com/, r => r.abort());
-  await page.goto(BASE + path);
+  // The weekly tournament game changes every Monday; pages get ?feature=none (no featured game) unless a test picks one.
+  await page.goto(BASE + path + (/feature=/.test(path) ? '' : (path.includes('?') ? '&' : '?') + 'feature=none'));
   return { page, errors, close: () => ctx.close() };
 }
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -246,6 +247,54 @@ console.log('\nDaily boards');
   const t2 = await plain.page.$$eval('#ov .hs-tabs button', bs => bs.map(b => b.textContent));
   check(!t2.includes('TODAY'), 'games without a daily challenge have no TODAY tab');
   await plain.close();
+  for (const slug of ['wallbuster', 'stackdown', 'twin-blast', 'mole-patrol', 'wing-duel']) {
+    const g = await open(`/games/${slug}/`);
+    const btns = await g.page.$$eval('#ov .btns button', bs => bs.map(b => b.textContent));
+    const t = await g.page.$$eval('#ov .hs-tabs button', bs => bs.map(b => b.textContent));
+    check(btns.includes('Daily') && t.includes('TODAY'), `${slug} offers a Daily run and a TODAY board (${btns.join(', ')})`);
+    await g.close();
+  }
+}
+
+/* ---------- weekly tournament ---------- */
+console.log('\nWeekly tournament');
+{
+  global.window = {}; global.location = { search: '' };
+  await import(new URL('../shared/badges.js?weekly', import.meta.url)); const WK = global.window.WEEKLY; delete global.window; delete global.location;
+  const notIn = dirs.filter(d => d !== 'blip-sports' && !WK.rotation.includes(d)), extra = WK.rotation.filter(d => !dirs.includes(d));
+  check(!notIn.length && !extra.length, `the tournament rotation covers every score game${notIn.length ? ' (missing: ' + notIn.join(', ') + ')' : ''}${extra.length ? ' (no folder: ' + extra.join(', ') + ')' : ''}`);
+  const mon = Date.UTC(2026, 9, 12, 0, 0, 1); // a Monday
+  check(WK.key(mon) === '2026-10-12' && WK.key(mon + 6.9 * 864e5) === '2026-10-12' && WK.key(mon + 7 * 864e5) === '2026-10-19', 'tournament weeks run Monday to Monday (UTC)');
+  check(WK.game(mon) !== WK.game(mon + 7 * 864e5), 'next week features a different game');
+
+  const { page, errors, close } = await open('/games/neon-noodle/?feature=neon-noodle');
+  check(/WEEKLY TOURNAMENT · ENDS IN/.test(await page.textContent('#ov .weekly')), 'the featured game\'s title screen shows the tournament banner');
+  const tabs = await page.$$eval('#ov .hs-tabs button', bs => bs.map(b => b.textContent));
+  check(tabs.includes('THIS WEEK'), `the featured game has a THIS WEEK board (${tabs.join(', ')})`);
+  await page.evaluate(() => { Arcade.submit(700); Arcade.overlay({ title: 'GAME OVER', btn: 'Play again', onGo: () => {} }); });
+  await page.keyboard.type('WKY'); await page.keyboard.press('Enter');
+  check((await page.textContent('#ov .hs-tabs .on')) === 'THIS WEEK', 'after a run the THIS WEEK tab is selected');
+  const week = await page.evaluate(() => Arcade.week());
+  const q = await page.evaluate(() => JSON.parse(localStorage.getItem('arcade:outbox') || '[]'));
+  check(q.length === 1 && q[0].w === week && q[0].all === true, 'the run is queued for both the all-time and this week\'s board');
+  await page.evaluate(() => { localStorage.setItem('arcade:top:neon-noodle', JSON.stringify(Array.from({ length: 10 }, () => ({ n: 'TOP', s: 9999 })))); Arcade.submit(800); Arcade.overlay({ title: 'GAME OVER', btn: 'Play again', onGo: () => {} }); });
+  check(/THIS WEEK'S BEST/.test(await page.textContent('#ov .hs')), 'a weekly best that misses the top 10 still asks for initials');
+  await page.keyboard.press('Enter');
+  await page.evaluate(() => { Arcade.submit(100); Arcade.overlay({ title: 'GAME OVER', btn: 'Play again', onGo: () => {} }); });
+  const q2 = await page.evaluate(() => JSON.parse(localStorage.getItem('arcade:outbox') || '[]'));
+  check(q2.length === 2 && q2[1].w === week && q2[1].all === false && !(await page.isVisible('#ov .ini')), 'a lower score this week isn\'t sent again');
+  check(!errors.length, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
+  await close();
+  const other = await open('/games/neon-noodle/?feature=stackdown');
+  check(!(await other.page.isVisible('#ov .weekly')) && !(await other.page.$$eval('#ov .hs-tabs button', bs => bs.map(b => b.textContent))).includes('THIS WEEK'), 'other games have no banner or THIS WEEK board');
+  await other.close();
+  const lobby = await open('/?feature=twin-blast');
+  check(await lobby.page.isVisible('#tourney') && (await lobby.page.textContent('#tourney h2')) === 'Twin Blast', 'the lobby shows this week\'s tournament banner');
+  check(await lobby.page.$eval('#tourney', a => a.getAttribute('href')) === 'games/twin-blast/' && await lobby.page.isVisible('.cab.feat[href="games/twin-blast/"]'), 'the banner links to the featured cabinet, which wears the THIS WEEK ribbon');
+  await lobby.page.waitForFunction(() => /Offline/.test(document.querySelector('#tourney .t-top').textContent));
+  check(true, 'with the world board offline, the banner says so');
+  check(!lobby.errors.length, `no errors${lobby.errors.length ? ': ' + lobby.errors.join(' | ') : ''}`);
+  await lobby.close();
 }
 
 /* ---------- install + offline ---------- */

@@ -1,5 +1,6 @@
 /*
- * Badges for every game. Games unlock them with Arcade.badge(id); the lobby shows how many each player has.
+ * Badges for every game, and the weekly tournament rotation (at the end). Games unlock badges with Arcade.badge(id);
+ * the lobby shows how many each player has.
  * Loaded before arcade.js on every game page, and by the lobby. Ids must match the Arcade.badge calls in the games.
  */
 window.BADGES = {
@@ -92,3 +93,33 @@ window.BADGES = {
     { id: 'bbwin', name: 'Ballpark Win', desc: 'Win a baseball game' },
     { id: 'shutout', name: 'Shutout', desc: 'Win without the CPU scoring' }]
 };
+
+/*
+ * The weekly tournament: one featured game each week, with its own world board
+ * (weekly/{game}/weeks/{monday}/scores). Weeks start on Monday 00:00 UTC, so everyone sees the same game.
+ * It lives here because the lobby and every game load this file. ?feature=<slug> overrides it for testing.
+ */
+window.WEEKLY = (() => {
+  // Single-player score games, mixed so neighbouring weeks feel different. Blip Sports counts wins, so it sits out.
+  const ROTATION = ['twin-blast', 'stackdown', 'hedge-hop', 'wing-duel', 'neon-noodle', 'sky-shield', 'mole-patrol', 'star-siege',
+    'nitro-lane', 'cube-hopper', 'rock-rift', 'light-trail', 'wallbuster', 'garden-gunner', 'crater-lander', 'circuit-chase',
+    'scaffold-scramble', 'back-alley-brawl', 'swarm-strike', 'highrise-handyman', 'volley-duel'];
+  const DAY = 864e5, EPOCH = Date.UTC(2024, 0, 1); // a Monday
+  const index = (now = Date.now()) => Math.floor((now - EPOCH) / (7 * DAY));
+  const start = (now = Date.now()) => EPOCH + index(now) * 7 * DAY;
+  let override = null; try { override = new URLSearchParams(location.search).get('feature'); } catch (e) {}
+  return {
+    rotation: ROTATION,
+    /** This week's featured game slug. */
+    game: (now = Date.now()) => override !== null ? override : ROTATION[index(now) % ROTATION.length],
+    /** This week's id: the Monday it started, as YYYY-MM-DD (UTC). */
+    key: (now = Date.now()) => new Date(start(now)).toISOString().slice(0, 10),
+    /** Milliseconds until the tournament ends and the next game takes over. */
+    left: (now = Date.now()) => start(now) + 7 * DAY - now,
+    /** "3D 04H" / "5H 12M" style countdown. */
+    leftText(now = Date.now()) {
+      const m = Math.max(0, Math.floor(this.left(now) / 6e4)), d = Math.floor(m / 1440), h = Math.floor(m / 60) % 24;
+      return d ? `${d}D ${String(h).padStart(2, '0')}H` : `${h}H ${String(m % 60).padStart(2, '0')}M`;
+    }
+  };
+})();

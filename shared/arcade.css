@@ -61,6 +61,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--game);outline-offse
 .hs-table .row span:last-child{text-align:right;color:var(--ink)}
 .hs-table .me,.hs-table .me span:last-child{color:var(--game);text-shadow:0 0 8px color-mix(in srgb,var(--game) 60%,transparent)}
 .hs-day,.hs-hint,.hs-note{font-size:11px;color:var(--muted)}
+.weekly{font-family:var(--f-pixel);font-size:11px;letter-spacing:.12em;color:#1a0f00;background:linear-gradient(90deg,#ffd23d,#ff9a3d);padding:5px 12px;border-radius:999px;box-shadow:0 0 14px rgba(255,190,61,.5)}
 .hs-tabs{display:flex;gap:4px;flex-wrap:wrap;justify-content:center}
 .hs-badges{display:flex;flex-direction:column;gap:5px;text-align:left;max-width:300px}
 .badge{display:grid;grid-template-columns:auto 1fr;column-gap:8px;font-size:12px;color:var(--muted)}

@@ -4,6 +4,7 @@
  *
  * Data: boards/{game}/scores/{id} = { n: 'ABC', s: 1234, uid, t }        all-time board
  *       daily/{game}/days/{YYYY-MM-DD}/scores/{id} = same shape          daily-challenge board
+ *       weekly/{game}/weeks/{YYYY-MM-DD}/scores/{id} = same shape        weekly tournament board (the week's Monday, UTC)
  *       players/{uid} = { last }                                          post cooldown
  *       wins/{uid} = { n, s: total wins, t }                              Blip Sports world wins, +1 per win
  * The config below only identifies the project. firestore.rules (published in the Firebase console) protects the data.
@@ -30,25 +31,30 @@ async function signIn() {
   return user;
 }
 
-const board = (game, day) => day ? collection(db, 'daily', game, 'days', day, 'scores') : collection(db, 'boards', game, 'scores');
+const board = (game, day, week) => week ? collection(db, 'weekly', game, 'weeks', week, 'scores')
+  : day ? collection(db, 'daily', game, 'days', day, 'scores') : collection(db, 'boards', game, 'scores');
 
-/** Top n scores for a game, best first: [{ n, s }]. Pass day ('YYYY-MM-DD') for that day's daily-challenge board. */
-export async function top(game, n = 10, day = null) {
-  const snap = await getDocs(query(board(game, day), orderBy('s', 'desc'), limit(n)));
+/**
+ * Top n scores for a game, best first: [{ n, s }]. Pass day ('YYYY-MM-DD') for that day's daily-challenge board,
+ * or week (its Monday, 'YYYY-MM-DD') for that week's tournament board.
+ */
+export async function top(game, n = 10, day = null, week = null) {
+  const snap = await getDocs(query(board(game, day, week), orderBy('s', 'desc'), limit(n)));
   return snap.docs.map(d => ({ n: d.get('n'), s: d.get('s') }));
 }
 
 /**
- * Post a score to the all-time board (all) and/or a daily board (day), in one write.
+ * Post a score to the all-time board (all), a daily board (day) and/or a tournament board (week), in one write.
  * The rules allow one post every 10 seconds per player, so callers queue and retry.
  */
-export async function post(game, name, score, { all = true, day = null } = {}) {
+export async function post(game, name, score, { all = true, day = null, week = null } = {}) {
   const u = await signIn();
   const b = writeBatch(db);
   b.set(doc(db, 'players', u.uid), { last: serverTimestamp() });
   const entry = () => ({ n: name, s: score, uid: u.uid, t: serverTimestamp() });
   if (all) b.set(doc(board(game)), entry());
   if (day) b.set(doc(board(game, day)), entry());
+  if (week) b.set(doc(board(game, null, week)), entry());
   await b.commit();
 }
 

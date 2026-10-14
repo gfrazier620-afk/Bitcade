@@ -37,7 +37,7 @@ const ROCK_PTS = [0, 1000, 2500, 4000, 6000, 8000, 10000, 12000, 15000];
 const STRATA = ['#e0a458', '#c4803e', '#a05c34', '#7a3c2a'];
 const band = r => r < 5 ? 0 : r < 8 ? 1 : r < 11 ? 2 : 3;
 const cx = c => c * C + 16, cy = r => r * C + 16;
-let state = 'title', level = 1, score = 0, lives = 3, nextLife = 20000, dug = new Uint8Array(COLS * ROWS), rocks = [], pests = [], parts = [], pops = [];
+let state = 'title', daily = false, rnd = Math.random, level = 1, score = 0, lives = 3, nextLife = 20000, dug = new Uint8Array(COLS * ROWS), rocks = [], pests = [], parts = [], pops = [];
 let mole = null, ray = null, veg = null, dropped = 0, clearT = 0, dieT = 0, msg = '', msgT = 0;
 
 const inside = (c, r) => c >= 0 && c < COLS && r >= 1 && r < ROWS;
@@ -48,7 +48,11 @@ function say(t) { msg = t; msgT = 2; }
 function pop(x, y, txt) { pops.push({ x, y, t: 1.1, txt }); }
 function burst(x, y, c, n = 14) { for (let i = 0; i < n; i++) { const a = Math.random() * 6.28, s = A.rand(30, 160); parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, t: A.rand(0.3, 0.7), c }); } }
 
-/* a level: a surface path, the mole's shaft down the middle, a pocket of tunnel for each pest, and loose rocks */
+/*
+ * A level: a surface path, the mole's shaft down the middle, a pocket of tunnel for each pest, and loose rocks.
+ * Layouts use rnd(), which in the daily challenge is seeded from today's date, so every player digs the same garden.
+ */
+const rr = (a, b) => a + rnd() * (b - a);
 function buildLevel() {
   dug = new Uint8Array(COLS * ROWS); rocks = []; pests = []; veg = null; dropped = 0; ray = null; clearT = 0;
   for (let c = 0; c < COLS; c++) dug[COLS + c] = 1;
@@ -58,7 +62,7 @@ function buildLevel() {
   const n = Math.min(3 + level, 8);
   for (let i = 0; i < n; i++) {
     for (let k = 0; k < 80; k++) {
-      const horiz = Math.random() < 0.5, len = 3 + (Math.random() < 0.5 ? 1 : 0), c0 = Math.floor(A.rand(1, COLS - (horiz ? len : 1) - 1)), r0 = Math.floor(A.rand(3, ROWS - (horiz ? 1 : len) - 1));
+      const horiz = rnd() < 0.5, len = 3 + (rnd() < 0.5 ? 1 : 0), c0 = Math.floor(rr(1, COLS - (horiz ? len : 1) - 1)), r0 = Math.floor(rr(3, ROWS - (horiz ? 1 : len) - 1));
       const cells = Array.from({ length: len }, (_, j) => horiz ? [c0 + j, r0] : [c0, r0 + j]);
       if (cells.some(([c, r]) => taken.has(r * COLS + c))) continue;
       cells.forEach(([c, r]) => { dug[r * COLS + c] = 1; mark(c, r); });
@@ -68,14 +72,14 @@ function buildLevel() {
     }
   }
   for (let i = 0; i < 4; i++) for (let k = 0; k < 80; k++) {
-    const c = Math.floor(A.rand(1, COLS - 1)), r = Math.floor(A.rand(3, ROWS - 3));
+    const c = Math.floor(rr(1, COLS - 1)), r = Math.floor(rr(3, ROWS - 3));
     if (taken.has(r * COLS + c) || taken.has((r + 1) * COLS + c) || dug[r * COLS + c] || dug[(r + 1) * COLS + c]) continue;
     rocks.push({ c, r, y: cy(r), state: 'still', t: 0, kills: 0 }); mark(c, r); break;
   }
   mole = ent(10, 1, { dir: 'down', walk: 0, inv: 0 });
   dirt = paintDirt();
 }
-function newGame() { level = 1; score = 0; lives = 3; nextLife = 20000; parts = []; pops = []; A.setScore(0); buildLevel(); state = 'play'; say('LEVEL 1'); }
+function newGame(isDaily = false) { daily = isDaily; rnd = daily ? A.seeded('mole-patrol:' + A.today()) : Math.random; level = 1; score = 0; lives = 3; nextLife = 20000; parts = []; pops = []; A.setScore(0); buildLevel(); state = 'play'; say('LEVEL 1'); }
 function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
 A.onPress(c => {
   if (c === 'KeyP' || c === 'Escape') return pause();
@@ -146,8 +150,9 @@ function respawn() {
   for (const p of pests) if (Math.abs(p.c - 10) + Math.abs(p.r - 1) < 7 || p.ghost) Object.assign(p, ent(p.home[0], p.home[1]), { ghost: false, ghostT: A.rand(6, 12), spit: 0, breath: 0 });
 }
 function finish() {
-  state = 'over'; A.setScore(score); const rec = A.submit(score);
-  A.overlay({ title: 'GAME OVER', big: `SCORE ${score} · LEVEL ${level}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, btn: 'Dig again', onGo: newGame });
+  state = 'over'; A.setScore(score); const rec = A.submit(score, daily);
+  A.overlay({ title: 'GAME OVER', big: `SCORE ${score} · LEVEL ${level}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, daily: true,
+    btn: daily ? 'Retry daily' : 'Dig again', onGo: () => newGame(daily), alt: { btn: daily ? 'Normal game' : 'Daily', onGo: () => newGame(!daily) } });
 }
 
 A.loop(dt => {
@@ -231,6 +236,7 @@ A.loop(dt => {
   pops.forEach(q => { ctx.globalAlpha = Math.min(1, q.t * 2); ctx.fillStyle = '#fff6c2'; ctx.fillText(q.txt, q.x, q.y); }); ctx.globalAlpha = 1;
   // HUD in the sky: spare moles on the left, a flower for each level on the right
   for (let i = 0; i < Math.min(lives - 1, 6); i++) { ctx.fillStyle = '#0a0612'; ctx.fillRect(10 + i * 18, 8, 14, 12); ctx.fillStyle = '#ffd23d'; ctx.fillRect(12 + i * 18, 10, 10, 4); ctx.fillStyle = '#6a5848'; ctx.fillRect(12 + i * 18, 14, 10, 4); }
+  if (daily) { ctx.font = '11px Silkscreen, monospace'; ctx.textAlign = 'left'; ctx.fillStyle = '#fff'; ctx.fillText('DAILY ' + A.today().slice(5), 128, 20); }
   for (let i = 0; i < Math.min(level, 12); i++) { const fx = W - 16 - i * 16; ctx.fillStyle = '#3dbb5a'; ctx.fillRect(fx, 18, 2, 12); ctx.fillStyle = i % 2 ? '#ff7ab8' : '#fff'; ctx.fillRect(fx - 3, 12, 8, 6); ctx.fillStyle = '#ffd23d'; ctx.fillRect(fx - 1, 14, 4, 2); }
   if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '26px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.shadowColor = '#d9a066'; ctx.shadowBlur = 16; ctx.fillText(msg, W / 2, H / 2 - 30); ctx.shadowBlur = 0; ctx.globalAlpha = 1; }
 });
@@ -330,7 +336,7 @@ function drawVeg(x, y, t, left) {
   ctx.restore();
 }
 buildLevel(); mole.inv = 0;
-A.overlay({ title: 'MOLE PATROL', sub: 'Pests are tunnelling under the garden. Dig after them and trap them in bubbles: <b>tap again to pump</b> until they pop. Dig under a rock to drop it on them. Watch for newts’ spore clouds!', btn: 'Start', scores: true, onGo: newGame });
+A.overlay({ title: 'MOLE PATROL', sub: 'Pests are tunnelling under the garden. Dig after them and trap them in bubbles: <b>tap again to pump</b> until they pop. Dig under a rock to drop it on them. Watch for newts’ spore clouds! <b>Daily</b> gives everyone the same gardens today.', btn: 'Start', scores: true, daily: true, onGo: () => newGame(false), alt: { btn: 'Daily', onGo: () => newGame(true) } });
 })();
 </script>
 </body>

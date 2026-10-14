@@ -10,7 +10,8 @@ A GitHub Pages arcade site: a lobby page plus 22 classic-style browser games. Pl
   - high scores in localStorage: `arcade:best:<slug>` (the record), `arcade:top:<slug>` (top 10 with initials, JSON), `arcade:daily:<slug>` (today's daily-challenge best)
   - `A.submit(score, daily)` on game over. The next `A.overlay` call then asks for initials if the score made the top 10, and shows the table
   - world leaderboard: saving initials queues the score in `arcade:outbox` and posts it through `shared/world.js` (Firebase project `bitcade-4fa25`, Firestore Lite plus anonymous auth, loaded on demand). Score tables have WORLD and THIS DEVICE tabs. Every page must keep working when Firebase is unreachable
-  - daily challenges: `A.seeded(key)` returns a seeded random function, and `A.today()` returns the local date. Stackdown and Wallbuster use them. A run that beats the player's best today goes to that day's world board (`daily/{game}/days/{YYYY-MM-DD}/scores`) along with the all-time board, in one write. Pass `daily: true` to `A.overlay` to add a TODAY tab
+  - daily challenges: `A.seeded(key)` returns a seeded random function, and `A.today()` returns the local date. Stackdown, Wallbuster, Twin Blast, Mole Patrol and Wing Duel use them (only for layouts, never for enemy moves), with a Daily button on the title screen. A new daily game also needs its slug in the daily rule in `firestore.rules`. A run that beats the player's best today goes to that day's world board (`daily/{game}/days/{YYYY-MM-DD}/scores`) along with the all-time board, in one write. Pass `daily: true` to `A.overlay` to add a TODAY tab
+  - weekly tournament: `window.WEEKLY` (at the end of `shared/badges.js`) picks one featured game per week (Monday to Monday, UTC) from its `ROTATION` list; add new score games there. `A.featured()` and `A.week()` tell a page whether it's featured and the week's id (its Monday). On the featured game the title screen shows a ★ WEEKLY TOURNAMENT banner, score tables get a THIS WEEK tab, and a run that beats the player's best this week (`arcade:week:<slug>`) also goes to `weekly/{game}/weeks/{monday}/scores` in the same write. The lobby shows a banner with the countdown and world top 3, and a ribbon on the cabinet. `?feature=<slug>` (or `none`) overrides the pick for testing; the smoke tests use `none` unless they pick one
   - badges: `A.badge(id)` unlocks one (toast and jingle, once). Definitions for every game live in `shared/badges.js`, loaded before arcade.js and by the lobby. Score tables get a BADGES tab
   - a Share score link on game-over screens (share sheet, or copy to the clipboard)
   - sound (`tone`, `noise`, `jingle`)
@@ -21,7 +22,7 @@ A GitHub Pages arcade site: a lobby page plus 22 classic-style browser games. Pl
   - canvas sizing
   - the cabinet: `buildCabinet()` wraps `.screen` in a lit marquee (the page's h1), a bezel with the 1UP / HI-SCORE / FREE PLAY strip (it moves `.sc` there) and a control panel (joystick, the `.help` card, buttons). Phones and narrow windows get a slim version and keep the touch pad. Screen size comes from `--cab-chrome` in arcade.css (measured heights of everything around the screen); a page's `--chrome` now only matters on phones
   - the fixed-step `loop`
-  - the start/pause/game-over `overlay`. Pass `scores: true` on title screens to list the top 10 (they also show PUSH START and FREE PLAY · CREDIT 99), and `alt: { btn, onGo }` for a second button (gamepad Y). After `A.submit`, game over shows a CONTINUE? 9→0 countdown, and tables rank 1ST/2ND/3RD in gold, silver and bronze
+  - the start/pause/game-over `overlay`. Pass `scores: true` on title screens to list the top 10 (they also show PUSH START and FREE PLAY · CREDIT 99), and `alt: { btn, onGo }` for a second button (gamepad Y) and `alt2` for a third (gamepad X). After `A.submit`, game over shows a CONTINUE? 9→0 countdown, and tables rank 1ST/2ND/3RD in gold, silver and bronze
 - `shared/chip.js`: the chiptune player (`window.Chip`), loaded before arcade.js on kit games and by the lobby. `Chip.lobby` is the hand-written Bitcade theme; `Chip.theme(slug)` composes a game's theme from its name (same tune every time). Music needs a tap or key first (browser rule) and plays only with SOUND and MUSIC on.
 - `games/<slug>/index.html`: one self-contained page per game, loading the shared kit with `../../shared/`.
   - `body data-game="<slug>"` sets the score key.
@@ -45,6 +46,7 @@ All names, characters and art are original. Keep it that way: no trademarked gam
 2. A cabinet in the lobby's `GAMES` array, and the count word in its tagline ("TWENTY-TWO CLASSIC-STYLE GAMES").
 3. The slug in `sw.js` `GAMES`, then bump `VERSION`.
 4. Its badges in `shared/badges.js`, with matching `A.badge('id')` calls in the game.
+   Score games also go in `WEEKLY` `ROTATION` at the end of that file (the tests check it).
 5. The slug and a max score in `firestore.rules` `maxScore()`, then publish the rules in the Firebase console.
 6. `npm test`. It fails if the lobby, `sw.js`, the manifest links or the badges miss the new folder.
 

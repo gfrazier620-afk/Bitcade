@@ -22,6 +22,10 @@
   };
   /** Local date as YYYY-MM-DD, for daily challenges. */
   A.today = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+  /** The weekly tournament (shared/badges.js): is this page's game the featured one this week, and the week's id. */
+  const WK = window.WEEKLY;
+  A.featured = () => !!WK && WK.game() === A.id;
+  A.week = () => WK ? WK.key() : null;
   /** Seeded random (0..1) from a string, so everyone gets the same sequence for the same key (e.g. 'stackdown:' + A.today()). */
   A.seeded = key => {
     let h = 1779033703 ^ key.length;
@@ -36,14 +40,14 @@
   A.world = () => worldMod || (worldMod = import(new URL('world.js', KIT_URL).href).catch(e => { worldMod = null; throw e; }));
   // Scores waiting to post. Kept in localStorage so games played offline post later. The server allows
   // one post per player every 10 s, so the queue sends one at a time and retries a few times.
-  // Entry: { id, g: game, n: initials, s: score, all: post to the all-time board, d: daily date or null }.
+  // Entry: { id, g: game, n: initials, s: score, all: post to the all-time board, d: daily date or null, w: tournament week or null }.
   const outbox = () => { try { const q = JSON.parse(store.get('arcade:outbox')); return Array.isArray(q) ? q : []; } catch (e) { return []; } };
   const saveOutbox = q => store.set('arcade:outbox', JSON.stringify(q));
   let flushing = false;
   function flush() {
     const q = outbox(); if (flushing || !q.length) return;
     flushing = true; const e = q[0];
-    A.world().then(w => e.k === 'win' ? w.addWin(e.n) : w.post(e.g, e.n, e.s, { all: e.all !== false, day: e.d || null })).then(() => {
+    A.world().then(w => e.k === 'win' ? w.addWin(e.n) : w.post(e.g, e.n, e.s, { all: e.all !== false, day: e.d || null, week: e.w || null })).then(() => {
       saveOutbox(outbox().filter(x => x.id !== e.id)); flushing = false;
       if (e.g === A.id && shown && overlayOpen()) loadWorld();
       if (outbox().length) setTimeout(flush, 11000);
@@ -53,9 +57,9 @@
     });
   }
   addEventListener('online', flush);
-  const queuePost = (n, s, all, d) => {
-    if (A.id === 'game' || (!all && !d)) return;
-    saveOutbox([...outbox(), { id: Date.now() + '-' + Math.random().toString(36).slice(2, 7), g: A.id, n, s, all, d }]); flush();
+  const queuePost = (n, s, all, d, w) => {
+    if (A.id === 'game' || (!all && !d && !w)) return;
+    saveOutbox([...outbox(), { id: Date.now() + '-' + Math.random().toString(36).slice(2, 7), g: A.id, n, s, all, d, w }]); flush();
   };
   /** Count one more win on the world wins board (Blip Sports). The server allows one per player per minute. */
   A.postWin = n => { if (!/^[A-Z]{3}$/.test(n)) return; saveOutbox([...outbox(), { id: Date.now() + '-' + Math.random().toString(36).slice(2, 7), k: 'win', n }]); flush(); };
@@ -99,20 +103,24 @@
     catch (e) { prompt('Copy your score:', `${text} ${url}`); }
   }
 
-  // Online boards shown in score tables: all-time ('world') and, for daily challenges, today's ('today').
-  const boards = { world: { state: 'idle', list: [] }, today: { state: 'idle', list: [] } }; // state: idle | loading | ok | off
+  // Online boards shown in score tables: all-time ('world'), today's for daily challenges ('today') and this week's
+  // when the game is the featured tournament game ('week').
+  const boards = { world: { state: 'idle', list: [] }, today: { state: 'idle', list: [] }, week: { state: 'idle', list: [] } }; // state: idle | loading | ok | off
   let hsTab = 'world', lastSaved = null, dailyDay = null; // dailyDay: date of the TODAY tab, or null when it isn't shown
   function loadWorld() {
-    const want = dailyDay ? ['world', 'today'] : ['world'];
-    want.forEach(k => { if (boards[k].state !== 'ok' || k === 'today') boards[k].state = 'loading'; });
+    const want = onlineTabs();
+    want.forEach(k => { if (boards[k].state !== 'ok' || k !== 'world') boards[k].state = 'loading'; });
     renderHS();
-    A.world().then(w => want.forEach(k => w.top(A.id, 10, k === 'today' ? dailyDay : null)
+    A.world().then(w => want.forEach(k => w.top(A.id, 10, k === 'today' ? dailyDay : null, k === 'week' ? A.week() : null)
       .then(t => { boards[k] = { state: 'ok', list: t }; renderHS(); }, () => { boards[k].state = 'off'; renderHS(); })),
     () => { want.forEach(k => boards[k].state = 'off'); renderHS(); });
   }
 
   let lastResult = null; // read by the next A.overlay call, which shows initials entry and the table
-  /** Save a finished game. Pass daily=true for a daily-challenge run. Returns true on a new record. */
+  /**
+   * Save a finished game. Pass daily=true for a daily-challenge run. Returns true on a new record.
+   * On the week's featured game, a run that beats this device's best this week also goes to the tournament board.
+   */
   A.submit = (s, daily) => {
     s = Math.floor(s);
     store.set('arcade:plays:' + A.id, (+store.get('arcade:plays:' + A.id) || 0) + 1);
@@ -128,7 +136,14 @@
       if (improved) { db = { d, s }; store.set('arcade:daily:' + A.id, JSON.stringify(db)); }
       day = { ...(db && db.d === d ? db : { d, s }), improved }; // improved: today's best on this device, so it goes to the daily board
     }
-    lastResult = { s, rank, top, day };
+    let week = null;
+    if (A.featured()) {
+      const w = A.week(); let wb = null; try { wb = JSON.parse(store.get('arcade:week:' + A.id)); } catch (e) {}
+      const improved = s > 0 && (!wb || wb.w !== w || s > wb.s);
+      if (improved) { wb = { w, s }; store.set('arcade:week:' + A.id, JSON.stringify(wb)); }
+      week = { ...(wb && wb.w === w ? wb : { w, s }), improved };
+    }
+    lastResult = { s, rank, top, day, week };
     return rec;
   };
 
@@ -243,6 +258,7 @@
         A.unlock();
         if (overlayOpen() && (i === 0 || i === 9)) { gpSwallow.add(i); overlayGo(); }
         else if (overlayOpen() && i === 3 && altFn && !entry) { gpSwallow.add(i); overlayAlt(); } // Y = second overlay button
+        else if (overlayOpen() && i === 2 && alt2Fn && !entry) { gpSwallow.add(i); overlayAlt2(); } // X = third
       }
       if (!gpSwallow.has(i) && padMap[i]) codes.add(padMap[i]);
     });
@@ -287,18 +303,20 @@
   const overlayGo = () => { if (entry) return saveEntry(); const f = goFn; if (!f) return; A.hideOverlay(); f(); };
   const music = () => window.Chip; // shared/chip.js, when the page loads it
   const overlayAlt = () => { const f = altFn; if (!f) return; A.hideOverlay(); f(); };
+  let alt2Fn = null;
+  const overlayAlt2 = () => { const f = alt2Fn; if (!f) return; A.hideOverlay(); f(); };
   /**
-   * Show the overlay. alt: { btn, onGo } adds a second button (gamepad Y). scores: true lists the top 10 (title screens),
+   * Show the overlay. alt: { btn, onGo } adds a second button (gamepad Y), alt2 a third (gamepad X). scores: true lists the top 10 (title screens),
    * and daily: true adds today's daily-challenge board to it. Called right after A.submit, it also asks for initials
    * when the score made the top 10 or is the player's best daily run today.
    */
-  A.overlay = ({ title, sub = '', big = '', btn = 'Play', onGo, alt, scores, daily }) => {
+  A.overlay = ({ title, sub = '', big = '', btn = 'Play', onGo, alt, alt2, scores, daily }) => {
     const o = $('ov'), res = lastResult; lastResult = null;
     const canShare = res && res.s > 0, isTitle = scores && !res;
     clearInterval(contT);
-    o.innerHTML = `<h2></h2>${big ? '<div class="big"></div>' : ''}${sub ? '<p></p>' : ''}<div class="hs"></div>` +
+    o.innerHTML = (isTitle && A.featured() ? `<div class="weekly">★ WEEKLY TOURNAMENT · ENDS IN ${WK.leftText()}</div>` : '') + `<h2></h2>${big ? '<div class="big"></div>' : ''}${sub ? '<p></p>' : ''}<div class="hs"></div>` +
       (isTitle ? '<div class="push">PUSH START</div>' : '') + (res ? '<div class="cont" hidden></div>' : '') +
-      `<div class="btns"><button class="go"></button>${alt ? '<button class="go2"></button>' : ''}</div>` +
+      `<div class="btns"><button class="go"></button>${alt ? '<button class="go2"></button>' : ''}${alt2 ? '<button class="go2 go3"></button>' : ''}</div>` +
       (canShare ? '<button class="share">Share score</button>' : '') + (isTitle ? '<div class="credit">FREE PLAY · CREDIT 99</div>' : '');
     if (canShare) { const sb = o.querySelector('.share'); sb.addEventListener('click', () => shareScore(res.s, res.day && res.day.d, sb)); }
     o.querySelector('h2').textContent = title;
@@ -306,6 +324,7 @@
     if (sub) o.querySelector('p').innerHTML = sub;
     o.querySelector('.go').addEventListener('click', () => { A.unlock(); overlayGo(); });
     if (alt) { const b2 = o.querySelector('.go2'); b2.textContent = alt.btn; b2.addEventListener('click', () => { A.unlock(); overlayAlt(); }); }
+    if (alt2) { const b3 = o.querySelector('.go3'); b3.textContent = alt2.btn; b3.addEventListener('click', () => { A.unlock(); overlayAlt2(); }); }
     const hs = o.querySelector('.hs');
     hs.addEventListener('mousedown', e => { if (e.target.closest('button')) e.preventDefault(); }); // keep focus off the ▲▼ buttons
     hs.addEventListener('click', e => {
@@ -313,13 +332,13 @@
       const b = e.target.closest('[data-slot]'); if (!b || !entry) return;
       entry.pos = +b.dataset.slot; if (b.dataset.dir) entryKey(b.dataset.dir); else renderHS();
     });
-    goFn = onGo; altFn = alt ? alt.onGo : null; goLabel = btn; entry = null; shown = null; lastSaved = null;
+    goFn = onGo; altFn = alt ? alt.onGo : null; alt2Fn = alt2 ? alt2.onGo : null; goLabel = btn; entry = null; shown = null; lastSaved = null;
     dailyDay = res && res.day ? res.day.d : daily ? A.today() : null;
     if (res) {
-      shown = { top: res.top, hi: -1, day: res.day };
-      if (res.rank >= 0 || (res.day && res.day.improved)) entry = { res, pos: 0, letters: [...(/^[A-Z]{3}$/.test(store.get('arcade:initials')) ? store.get('arcade:initials') : 'AAA')] };
+      shown = { top: res.top, hi: -1, day: res.day, week: res.week };
+      if (res.rank >= 0 || (res.day && res.day.improved) || (res.week && res.week.improved)) entry = { res, pos: 0, letters: [...(/^[A-Z]{3}$/.test(store.get('arcade:initials')) ? store.get('arcade:initials') : 'AAA')] };
     } else if (scores) shown = { top: A.top(), hi: -1, day: null };
-    if (res && res.day) hsTab = 'today'; else if (!tabs().includes(hsTab)) hsTab = 'world';
+    if (res && res.day) hsTab = 'today'; else if (res && res.week) hsTab = 'week'; else if (!tabs().includes(hsTab)) hsTab = 'world';
     renderHS(); o.hidden = false;
     if (res && !entry) startContinue();
     if (shown) loadWorld();
@@ -357,28 +376,29 @@
     const { res } = entry, n = entry.letters.join(''), placed = res.rank >= 0;
     const top = res.top.slice(); if (placed) { top.splice(res.rank, 0, { n, s: res.s }); top.length = Math.min(top.length, 10); store.set(topKey, JSON.stringify(top)); }
     store.set('arcade:initials', n);
-    shown = { top, hi: res.rank, day: shown && shown.day }; entry = null; lastSaved = { n, s: res.s };
+    shown = { top, hi: res.rank, day: shown && shown.day, week: shown && shown.week }; entry = null; lastSaved = { n, s: res.s };
     A.jingle([784, 988, 1175], 0.06); renderHS(); startContinue();
-    queuePost(n, res.s, placed, res.day && res.day.improved ? res.day.d : null);
+    queuePost(n, res.s, placed, res.day && res.day.improved ? res.day.d : null, res.week && res.week.improved ? res.week.w : null);
     const go = $('ov').querySelector('.go'); if (go) go.focus();
   }
   function renderHS() {
     const o = $('ov'), hs = o && o.querySelector('.hs'); if (!hs) return;
-    const go = o.querySelector('.go'), b2 = o.querySelector('.go2');
-    go.textContent = entry ? 'Save' : goLabel; if (b2) b2.hidden = !!entry;
+    const go = o.querySelector('.go');
+    go.textContent = entry ? 'Save' : goLabel; o.querySelectorAll('.go2').forEach(b => { b.hidden = !!entry; });
+    const wk = o.querySelector('.weekly'); if (wk) wk.hidden = !!entry;
     const sb = o.querySelector('.share'); if (sb) sb.hidden = !!entry;
     if (entry) {
       const slots = entry.letters.map((ch, i) => `<div class="slot${i === entry.pos ? ' cur' : ''}">` +
         `<button tabindex="-1" data-slot="${i}" data-dir="ArrowUp" aria-label="Next letter">▲</button>` +
         `<button tabindex="-1" data-slot="${i}" class="ch">${ch}</button>` +
         `<button tabindex="-1" data-slot="${i}" data-dir="ArrowDown" aria-label="Previous letter">▼</button></div>`).join('');
-      const head = entry.res.rank >= 0 ? `RANK ${entry.res.rank + 1}` : `TODAY'S BEST`;
+      const r = entry.res, head = r.rank >= 0 ? `RANK ${r.rank + 1}` : r.day && r.day.improved ? `TODAY'S BEST` : `THIS WEEK'S BEST`;
       hs.innerHTML = `<div class="hs-head">${head} · ENTER YOUR INITIALS</div><div class="ini">${slots}</div>` +
         `<div class="hs-hint">Type, or ↑↓ to change and ←→ to move</div>`;
       return;
     }
     if (!shown) { hs.innerHTML = ''; return; }
-    const LABEL = { world: 'WORLD', today: 'TODAY', local: 'THIS DEVICE', badges: `BADGES ${A.badgesGot().length}/${A.badgeList().length}` };
+    const LABEL = { world: 'WORLD', today: 'TODAY', week: 'THIS WEEK', local: 'THIS DEVICE', badges: `BADGES ${A.badgesGot().length}/${A.badgeList().length}` };
     const tab = id => `<button tabindex="-1" data-tab="${id}"${hsTab === id ? ' class="on"' : ''}>${LABEL[id]}</button>`;
     const note = t => `<div class="hs-note">${t}</div>`;
     const local = shown.top.length ? table(shown.top, shown.hi) : note('No scores on this device yet');
@@ -389,18 +409,20 @@
       body = `<div class="hs-badges">${A.badgeList().map(b => `<div class="badge${got.includes(b.id) ? ' got' : ''}">` +
         `<span>${got.includes(b.id) ? '★' : '☆'}</span><b>${b.name}</b><small>${b.desc}</small></div>`).join('')}</div>`;
     } else {
-      const b = boards[hsTab], what = hsTab === 'today' ? `today's daily scores` : 'world scores';
+      const b = boards[hsTab], what = hsTab === 'today' ? `today's daily scores` : hsTab === 'week' ? `tournament scores this week` : 'world scores';
       if (b.state === 'ok') body = b.list.length ? table(b.list, lastSaved ? b.list.findIndex(e => e.n === lastSaved.n && e.s === lastSaved.s) : -1) : note(`No ${what} yet. Be the first!`);
       else if (b.state === 'off') body = note(`${what[0].toUpperCase() + what.slice(1)} are offline · showing this device`) + local;
       else body = note(`Loading ${what}…`);
     }
-    hs.innerHTML = `<div class="hs-tabs">${tabs().map(tab).join('')}</div>${body}${shown.day ? dayLine(shown.day) : ''}`;
+    hs.innerHTML = `<div class="hs-tabs">${tabs().map(tab).join('')}</div>${body}${shown.day ? dayLine(shown.day) : ''}${shown.week ? weekLine(shown.week) : ''}`;
   }
-  const tabs = () => [...(dailyDay ? ['world', 'today'] : ['world']), 'local', ...(A.badgeList().length ? ['badges'] : [])];
+  const onlineTabs = () => ['world', ...(dailyDay ? ['today'] : []), ...(A.featured() ? ['week'] : [])];
+  const tabs = () => [...onlineTabs(), 'local', ...(A.badgeList().length ? ['badges'] : [])];
   // Names are checked against 3 capital letters before display: world scores come from other players.
   const ORD = ['1ST', '2ND', '3RD'];
   const table = (list, hi) => `<div class="hs-table">${list.map((e, i) => `<div class="row${i < 3 ? ' r' + (i + 1) : ''}${i === hi ? ' me' : ''}"><span>${ORD[i] || (i + 1) + 'TH'}</span>` +
     `<span>${/^[A-Z?]{3}$/.test(e.n) ? e.n : '???'}</span><span>${(+e.s || 0).toLocaleString()}</span></div>`).join('')}</div>`;
+  const weekLine = w => `<div class="hs-day">TOURNAMENT · YOUR BEST THIS WEEK ${w.s.toLocaleString()}</div>`;
   const dayLine = d => `<div class="hs-day">DAILY ${d.d} · TODAY'S BEST ${d.s.toLocaleString()}</div>`;
 
   /* ---------- misc ---------- */

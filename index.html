@@ -48,6 +48,25 @@ body{display:block;overflow-x:hidden;
 .cab-world b{color:var(--c);font-weight:400;font-size:13px}
 .cab-foot .bd{margin-left:auto;margin-right:10px;color:#ffd23d}
 .play{background:var(--c);color:#120a1c;border-radius:7px;padding:5px 10px;font-size:11px}
+.cab-top .chip{float:right;margin-top:2px;font-family:var(--f-pixel);font-size:10px;letter-spacing:.08em;color:var(--c);border:1px solid var(--c);border-radius:5px;padding:1px 5px}
+/* the weekly tournament: a banner above the floor, and a ribbon on the featured cabinet */
+.cab.feat{border-color:#ffd23d;box-shadow:0 0 0 1px #ffd23d,0 0 26px rgba(255,210,61,.28)}
+.cab.feat::before{content:"★ THIS WEEK";position:absolute;z-index:2;top:12px;right:-30px;transform:rotate(35deg);width:130px;text-align:center;padding:3px 0;
+  font-family:var(--f-pixel);font-size:10px;letter-spacing:.08em;color:#1a0f00;background:linear-gradient(90deg,#ffd23d,#ff9a3d)}
+.tourney{--c:#ffd23d;display:grid;grid-template-columns:auto 1fr auto;gap:14px 20px;align-items:center;margin:0 auto 26px;max-width:900px;padding:16px 20px;
+  border:2px solid #ffd23d;border-radius:16px;background:linear-gradient(135deg,rgba(255,210,61,.14),rgba(255,154,61,.05) 60%,transparent),var(--bg2);
+  box-shadow:0 0 30px rgba(255,210,61,.18);text-decoration:none;color:var(--ink)}
+.tourney canvas{width:96px;height:64px;image-rendering:pixelated;background:#05040c;border-radius:8px;border:1px solid var(--line);padding:6px}
+.tourney .t-head{font-family:var(--f-pixel);font-size:11px;letter-spacing:.14em;color:#ffd23d}
+.tourney h2{font-family:var(--f-marquee);font-weight:400;font-size:24px;margin:2px 0 4px;color:var(--c);text-shadow:0 0 12px color-mix(in srgb,var(--c) 55%,transparent)}
+.tourney .t-meta{font-family:var(--f-pixel);font-size:11px;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 16px}
+.tourney .t-meta b{color:var(--ink);font-weight:400}
+.tourney ol{list-style:none;margin:0;padding:0;font-family:var(--f-pixel);font-size:12px;min-width:150px}
+.tourney li{display:flex;justify-content:space-between;gap:12px;color:var(--muted)}
+.tourney li b{color:var(--ink);font-weight:400}
+.tourney li:first-child b{color:#ffd23d}
+.tourney .play{grid-column:3;justify-self:end;font-family:var(--f-pixel)}
+@media (max-width:640px){.tourney{grid-template-columns:auto 1fr}.tourney ol{grid-column:1/-1}.tourney .play{grid-column:1/-1;justify-self:stretch;text-align:center;padding:9px}}
 footer{margin-top:44px;text-align:center;color:var(--muted);font-size:13px}
 footer p{margin:4px 0}
 .reset{border:1px solid var(--line);background:transparent;border-radius:8px;padding:6px 10px;font-family:var(--f-pixel);font-size:11px;color:var(--muted);margin-top:10px}
@@ -153,6 +172,12 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
     <div class="coin" aria-hidden="true">▶ PICK A CABINET ◀</div>
     <div class="stats" id="stats"></div>
   </header>
+  <a class="tourney" id="tourney" hidden>
+    <canvas width="12" height="8"></canvas>
+    <div><div class="t-head">★ WEEKLY TOURNAMENT</div><h2></h2><div class="t-meta"><span>ENDS IN <b class="t-left"></b></span><span>YOUR BEST <b class="t-mine">—</b></span></div></div>
+    <ol class="t-top"><li><span>WORLD TOP 3</span><span>…</span></li></ol>
+    <span class="play">PLAY THIS WEEK ▶</span>
+  </a>
   <main class="floor" id="floor"></main>
   <footer>
     <p>Works with a keyboard or touch, and most games with a game controller. High scores are saved in this browser.</p>
@@ -221,13 +246,13 @@ const GAMES = [
   { slug: 'light-trail', name: 'Light Trail', kind: 'Light-cycle duel · 2P', c: '#22e0ff', blurb: 'Your bike leaves a wall. Make your rival hit one first.',
     px: ['ZZZZZZZZZ...', '........Z...', '..OOOOW.Z...', '..O.....Z...', '..O.....ZZW.', '..O.........', 'OOO.........', '............'],
     px2: ['ZZZZZZZZZ...', '........Z...', '..OOOOOW....', '..O.....Z...', '..O.....ZZZW', '..O.........', 'OOO.........', '............'] },
-  { slug: 'wing-duel', name: 'Wing Duel', kind: 'Flying joust · 2P', c: '#ffa630', blurb: 'Flap high and come down lance-first on rival riders.',
+  { slug: 'wing-duel', daily: true, name: 'Wing Duel', kind: 'Flying joust · 2P', c: '#ffa630', blurb: 'Flap high and come down lance-first on rival riders.',
     px: ['............', '...Y........', '..YYY..R....', '...O..RRR...', '............', 'AAAA....AAAA', '............', 'OROROROROROR'],
     px2: ['...Y........', '..YYY.......', '...O...R....', '......RRR...', '............', 'AAAA....AAAA', '............', 'RORORORORORO'] },
-  { slug: 'twin-blast', name: 'Twin Blast', kind: 'Twin-stick arena', c: '#ff4fd1', blurb: 'Move with one stick, shoot with the other. Save the crew.',
+  { slug: 'twin-blast', daily: true, name: 'Twin Blast', kind: 'Twin-stick arena', c: '#ff4fd1', blurb: 'Move with one stick, shoot with the other. Save the crew.',
     px: ['R.........R.', '............', '....W.......', '....W.XX....', '......XX.WW.', '............', '.G.........R', '............'],
     px2: ['.R.......R..', '....W.......', '............', '......XX.WW.', '....W.XX....', '............', '..G.......R.', '............'] },
-  { slug: 'mole-patrol', name: 'Mole Patrol', kind: 'Dig and trap', c: '#d9a066', blurb: 'Tunnel after garden pests and bubble them till they pop.',
+  { slug: 'mole-patrol', daily: true, name: 'Mole Patrol', kind: 'Dig and trap', c: '#d9a066', blurb: 'Tunnel after garden pests and bubble them till they pop.',
     px: ['CCCCCCCCCCCC', 'GGGGGGGGGGGG', 'DDDDDdDDDDDD', 'DDDDDdDDDDDD', 'DDDDDdddYDDD', 'DDDDDDDDDDDD', 'DdRdDDDDDDDD', 'DDDDDDDDDDDD'],
     px2: ['CCCCCCCCCCCC', 'GGGGGGGGGGGG', 'DDDDDdDDDDDD', 'DDDDDdDDDDDD', 'DDDDDddddYDD', 'DDDDDDDDDDDD', 'DRddDDDDDDDD', 'DDDDDDDDDDDD'] },
   { slug: 'blip-sports', name: 'Blip Sports', kind: 'LED football + baseball', c: '#ff3a22', blurb: 'The 1978 handheld feel. Pick your team, beat the CPU.', label: 'WINS',
@@ -254,11 +279,32 @@ GAMES.forEach(g => {
   a.innerHTML = `<div class="cab-top"><h2></h2><span></span></div><div class="cab-screen"><canvas width="12" height="8"></canvas></div>
     <div class="cab-body"><p></p><div class="cab-foot"><span>${g.label || 'BEST'} <b>${who ? who + ' ' : ''}${best ? best.toLocaleString() : '—'}</b></span><span class="bd" title="Badges">★ ${bd.got}/${bd.all}</span><span class="play">PLAY ▶</span></div></div>`;
   a.querySelector('h2').textContent = g.name; a.querySelector('.cab-top span').textContent = g.kind.toUpperCase(); a.querySelector('p').textContent = g.blurb;
+  if (g.daily) { const chip = document.createElement('b'); chip.className = 'chip'; chip.textContent = 'DAILY'; chip.title = 'Has a daily challenge'; a.querySelector('.cab-top').prepend(chip); }
+  if (window.WEEKLY && WEEKLY.game() === g.slug) a.classList.add('feat');
   const cx = a.querySelector('canvas').getContext('2d');
   paint(cx, g.px); screens.push({ cx, g, f: 0 });
   floor.appendChild(a);
   g.el = a;
 });
+// The weekly tournament banner (shared/badges.js picks the game): countdown, this device's best this week, world top 3.
+const feat = window.WEEKLY && GAMES.find(g => g.slug === WEEKLY.game()), tourney = document.getElementById('tourney');
+if (feat) {
+  tourney.hidden = false; tourney.href = `games/${feat.slug}/`; tourney.style.setProperty('--c', feat.c);
+  tourney.querySelector('h2').textContent = feat.name; paint(tourney.querySelector('canvas').getContext('2d'), feat.px);
+  const tick = () => { tourney.querySelector('.t-left').textContent = WEEKLY.leftText(); };
+  tick(); setInterval(tick, 30000);
+  try { const mine = JSON.parse(get('arcade:week:' + feat.slug)); if (mine && mine.w === WEEKLY.key()) tourney.querySelector('.t-mine').textContent = mine.s.toLocaleString(); } catch (e) {}
+}
+const showTop3 = list => {
+  const ol = tourney.querySelector('.t-top'); ol.textContent = '';
+  const head = document.createElement('li'); head.innerHTML = '<span>WORLD TOP 3</span>'; ol.append(head);
+  if (!list.length) { const li = document.createElement('li'); li.textContent = 'No scores yet. Be the first!'; ol.append(li); return; }
+  list.filter(e => /^[A-Z]{3}$/.test(e.n)).forEach((e, i) => {
+    const li = document.createElement('li'), b = document.createElement('b');
+    li.textContent = `${['1ST', '2ND', '3RD'][i]} ${e.n}`; b.textContent = (+e.s || 0).toLocaleString(); li.append(b); ol.append(li);
+  });
+};
+function topOffline() { if (feat) tourney.querySelector('.t-top').innerHTML = '<li><span>WORLD TOP 3</span></li><li>Offline right now</li>'; }
 // World #1 for each cabinet from the online leaderboard, plus today's #1 for daily-challenge games.
 // The lobby works the same without it.
 const d = new Date(), today = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
@@ -274,9 +320,10 @@ import('./shared/world.js').then(w => {
     w.top(g.slug, 1).then(([e]) => leaderRow(g, 'WORLD #1', e), () => {});
     if (g.daily) w.top(g.slug, 1, today).then(([e]) => leaderRow(g, 'TODAY #1', e), () => {});
   });
+  if (feat) w.top(feat.slug, 3, null, WEEKLY.key()).then(showTop3, topOffline);
   const blip = GAMES.find(g => g.slug === 'blip-sports');
   w.topWins(1).then(([e]) => leaderRow(blip, 'WORLD #1', e, e && e.s === 1 ? ' win' : ' wins'), () => {});
-}, () => {});
+}, topOffline);
 // Attract mode: each cabinet flips between its two frames, out of step with its neighbours.
 if (!matchMedia('(prefers-reduced-motion: reduce)').matches) setInterval(() => {
   if (document.hidden) return;
@@ -296,7 +343,7 @@ if (!standalone && (/iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.p
 const reset = document.getElementById('reset');
 reset.addEventListener('click', () => {
   if (reset.dataset.armed !== 'true') { reset.dataset.armed = 'true'; reset.textContent = 'Click again to erase every score'; setTimeout(() => { reset.dataset.armed = 'false'; reset.textContent = 'Reset all high scores'; }, 4000); return; }
-  try { Object.keys(localStorage).filter(k => /^arcade:(best|plays|top|daily):/.test(k)).forEach(k => localStorage.removeItem(k)); } catch (e) {}
+  try { Object.keys(localStorage).filter(k => /^arcade:(best|plays|top|daily|week):/.test(k)).forEach(k => localStorage.removeItem(k)); } catch (e) {}
   location.reload();
 });
 })();

@@ -44,18 +44,21 @@ const KIND = {
   drone: { r: 9, hp: 1, pts: 100 }, brute: { r: 14, hp: 6, pts: 300 }, spawner: { r: 12, hp: 3, pts: 500 },
   spark: { r: 6, hp: 1, pts: 150 }, mine: { r: 7, hp: 1, pts: 25 } };
 const CREW_COLS = ['#ffd23d', '#3dff8f', '#6fb7ff', '#ff9a3d'];
-let state = 'title', hero = null, foes = [], shots = [], crew = [], parts = [], pops = [], score = 0, lives = 3, wave = 0, nextLife = 25000;
+let state = 'title', daily = false, rnd = Math.random, hero = null, foes = [], shots = [], crew = [], parts = [], pops = [], score = 0, lives = 3, wave = 0, nextLife = 25000;
 let fireT = 0, clearT = 0, saved = 0, lost = 0, msg = '', msgT = 0, shake = 0;
 const sticks = { move: null, aim: null };
 
 function say(t) { msg = t; msgT = 2; }
 function pop(x, y, txt) { pops.push({ x, y, t: 1, txt }); }
 function boom(x, y, c, n = 16, s = 200) { for (let i = 0; i < n; i++) { const a = Math.random() * 6.28, v = A.rand(30, s); parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, t: A.rand(0.3, 0.8), c }); } }
-function newGame() {
+// Daily challenge: where the robots, mines and crew start comes from a seed of today's date (the robots' moves don't),
+// so every player gets the same waves today.
+function newGame(isDaily = false) {
+  daily = isDaily; rnd = daily ? A.seeded('twin-blast:' + A.today()) : Math.random;
   score = 0; lives = 3; wave = 0; nextLife = 25000; parts = []; pops = []; A.setScore(0); state = 'play';
   hero = { x: CX, y: CY, face: 1, inv: 2, dead: 0, walk: 0, ax: 1, ay: 0 }; nextWave();
 }
-function spot(min) { for (let k = 0; k < 50; k++) { const x = A.rand(X0 + 20, X1 - 20), y = A.rand(Y0 + 20, Y1 - 20); if (Math.hypot(x - hero.x, y - hero.y) > min) return [x, y]; } return [X0 + 30, Y0 + 30]; }
+function spot(min) { for (let k = 0; k < 50; k++) { const x = X0 + 20 + rnd() * (X1 - X0 - 40), y = Y0 + 20 + rnd() * (Y1 - Y0 - 40); if (Math.hypot(x - hero.x, y - hero.y) > min) return [x, y]; } return [X0 + 30, Y0 + 30]; }
 function add(kind, x, y, extra) { const k = KIND[kind]; foes.push({ kind, x, y, vx: 0, vy: 0, hp: k.hp, r: k.r, t: Math.random() * 3, spawn: 0.6, wob: Math.random() * 6.28, ...extra }); }
 function nextWave() {
   wave++; foes = []; shots = []; crew = []; saved = 0; lost = 0; clearT = 0;
@@ -110,8 +113,9 @@ function respawn() {
   for (const f of foes) { const d = Math.hypot(f.x - CX, f.y - CY); if (d < 150) { const k = d ? 150 / d : 0; f.x = A.clamp(CX + (f.x - CX) * k + (d ? 0 : 150), X0 + f.r, X1 - f.r); f.y = A.clamp(CY + (f.y - CY) * k, Y0 + f.r, Y1 - f.r); } }
 }
 function finish() {
-  state = 'over'; A.setScore(score); const rec = A.submit(score);
-  A.overlay({ title: 'GAME OVER', big: `SCORE ${score} · WAVE ${wave}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, btn: 'Play again', onGo: newGame });
+  state = 'over'; A.setScore(score); const rec = A.submit(score, daily);
+  A.overlay({ title: 'GAME OVER', big: `SCORE ${score} · WAVE ${wave}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, daily: true,
+    btn: daily ? 'Retry daily' : 'Play again', onGo: () => newGame(daily), alt: { btn: daily ? 'Normal game' : 'Daily', onGo: () => newGame(!daily) } });
 }
 function kill(f) {
   foes.splice(foes.indexOf(f), 1); const k = KIND[f.kind]; score += k.pts;
@@ -206,7 +210,7 @@ A.loop(dt => {
   ctx.restore();
   if (state !== 'title') {
     for (let i = 0; i < Math.min(lives, 8); i++) { ctx.fillStyle = '#0a0612'; ctx.fillRect(12 + i * 14, 9, 10, 13); ctx.fillStyle = '#ff4fd1'; ctx.fillRect(14 + i * 14, 15, 6, 5); ctx.fillStyle = '#e8f4ff'; ctx.fillRect(14 + i * 14, 11, 6, 4); }
-    ctx.font = '13px Silkscreen, monospace'; ctx.textAlign = 'right'; ctx.fillStyle = '#ff4fd1'; ctx.fillText(`WAVE ${wave}`, W - 12, 21);
+    ctx.font = '13px Silkscreen, monospace'; ctx.textAlign = 'right'; ctx.fillStyle = '#ff4fd1'; ctx.fillText(`${daily ? 'DAILY · ' : ''}WAVE ${wave}`, W - 12, 21);
     ctx.textAlign = 'center'; ctx.fillStyle = '#9fe8ff'; ctx.fillText(`CREW ${crew.length}`, W / 2, 21);
   }
   if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '26px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.shadowColor = '#ff4fd1'; ctx.shadowBlur = 16; ctx.fillText(msg, W / 2, CY - 40); ctx.shadowBlur = 0; ctx.globalAlpha = 1; }
@@ -302,7 +306,7 @@ const demo = Array.from({ length: 10 }, (_, i) => ({ kind: i < 6 ? 'drone' : i <
 function drawTitle(t) { // attract: robots circling an empty arena
   for (const d of demo) { const a = d.a + t / 3000; d.x = CX + Math.cos(a) * 230; d.y = CY + Math.sin(a) * 150; drawFoe(d, t); }
 }
-A.overlay({ title: 'TWIN BLAST', sub: 'Robots are flooding the arena. Move with one stick, blast with the other, and pick up the stranded crew before the big green brutes reach them. Mines don’t need clearing, just avoiding.', btn: 'Start', scores: true, onGo: newGame });
+A.overlay({ title: 'TWIN BLAST', sub: 'Robots are flooding the arena. Move with one stick, blast with the other, and pick up the stranded crew before the big green brutes reach them. Mines don’t need clearing, just avoiding. <b>Daily</b> gives everyone the same waves today.', btn: 'Start', scores: true, daily: true, onGo: () => newGame(false), alt: { btn: 'Daily', onGo: () => newGame(true) } });
 })();
 </script>
 </body>

@@ -40,10 +40,21 @@ service cloud.firestore {
     function dayStart(day) { return timestamp.date(int(day[0:4]), int(day[5:7]), int(day[8:10])); }
     match /daily/{game}/days/{day}/scores/{id} {
       allow read: if true;
-      allow create: if game in ['stackdown', 'wallbuster']
+      allow create: if game in ['stackdown', 'wallbuster', 'twin-blast', 'mole-patrol', 'wing-duel']
         && day.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
         && request.time > dayStart(day) - duration.value(14, 'h')
         && request.time < dayStart(day) + duration.value(36, 'h')
+        && validScore(game);
+      allow update, delete: if false;
+    }
+
+    // Weekly tournament boards, one per game per week (keyed by the week's Monday, UTC). A score is only accepted
+    // during that week (with an hour's grace either side for clocks).
+    match /weekly/{game}/weeks/{week}/scores/{id} {
+      allow read: if true;
+      allow create: if week.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && request.time > dayStart(week) - duration.value(1, 'h')
+        && request.time < dayStart(week) + duration.value(169, 'h')
         && validScore(game);
       allow update, delete: if false;
     }

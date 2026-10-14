@@ -39,7 +39,7 @@ const TIERS = [{ name: 'GRUNT', rider: '#ff3d5a', bird: '#9a7450', max: 130, thi
   { name: 'ACE', rider: '#3dd6ff', bird: '#2f5478', max: 205, think: 0.18, pts: 1500, aim: 1 }];
 const PCOL = [{ rider: '#ffa630', bird: '#ffd23d' }, { rider: '#3d8bff', bird: '#9be0ff' }];
 const FLAP_KEYS = ['Space', 'ArrowUp', 'KeyW', 'KeyK'];
-let state = 'title', two = false, players = [], foes = [], eggs = [], parts = [], pops = [], queue = [];
+let state = 'title', two = false, daily = false, rnd = Math.random, players = [], foes = [], eggs = [], parts = [], pops = [], queue = [];
 let score = 0, lives = 3, wave = 0, waveDeaths = 0, clearT = 0, queueT = 0, nextLife = 20000, wins = [0, 0], eggChain = 0, msg = '', msgT = 0;
 
 const rider = (x, y, cols, extra) => ({ x, y, vx: 0, vy: 0, face: 1, ground: null, wing: 0, run: 0, cols, inv: 0, bump: 0, cd: 0, ...extra });
@@ -50,8 +50,9 @@ function say(t) { msg = t; msgT = 2; }
 function pop(x, y, txt) { pops.push({ x, y, t: 1, txt }); }
 function feathers(x, y, c, n = 18) { for (let i = 0; i < n; i++) { const a = Math.random() * 6.28, s = A.rand(40, 200); parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 60, t: A.rand(0.5, 1.1), c, g: 120 }); } }
 
-function newGame(isTwo) {
-  two = isTwo; score = 0; lives = 3; wave = 0; nextLife = 20000; wins = [0, 0]; eggChain = 0; clearT = 0;
+// Daily challenge (1 player): which riders each wave brings and where they appear come from a seed of today's date.
+function newGame(isTwo, isDaily = false) {
+  two = isTwo; daily = !two && isDaily; rnd = daily ? A.seeded('wing-duel:' + A.today()) : Math.random; score = 0; lives = 3; wave = 0; nextLife = 20000; wins = [0, 0]; eggChain = 0; clearT = 0;
   foes = []; eggs = []; parts = []; pops = []; queue = []; A.setScore(0);
   players = two ? [spawnPlayer(0), spawnPlayer(1)] : [spawnPlayer(0)];
   state = 'play';
@@ -61,12 +62,12 @@ function spawnPlayer(i) { return two ? rider(i ? 580 : 60, 330, PCOL[i], { pid: 
 function nextWave() {
   wave++; waveDeaths = 0; queue = []; queueT = 1;
   const n = Math.min(3 + wave, 9), p2 = A.clamp((wave - 3) * 0.1, 0, 0.5), p1 = A.clamp((wave - 1) * 0.15, 0, 0.6);
-  for (let i = 0; i < n; i++) { const r = Math.random(); queue.push(r < p2 ? 2 : r < p2 + p1 ? 1 : 0); }
+  for (let i = 0; i < n; i++) { const r = rnd(); queue.push(r < p2 ? 2 : r < p2 + p1 ? 1 : 0); }
   say(`WAVE ${wave}`);
 }
 function spawnFoe(tier) {
   const me = players[0], far = SPAWNS.slice().sort((a, b) => Math.hypot(b[0] - me.x, b[1] - me.y) - Math.hypot(a[0] - me.x, a[1] - me.y));
-  const [x, y] = far[Math.floor(Math.random() * 3)];
+  const [x, y] = far[Math.floor(rnd() * 3)];
   foes.push(rider(x, y, TIERS[tier], { tier, spawnT: 0.8, thinkT: 0, dir: Math.random() < 0.5 ? -1 : 1, ty: 300, face: x > 320 ? -1 : 1 }));
   A.tone(220, 0.4, 'sine', 0.03, 0, 660);
 }
@@ -163,12 +164,13 @@ function hatch(e) {
   A.tone(880, 0.06, 'square', 0.03); A.tone(1320, 0.08, 'square', 0.03, 0.06);
 }
 function finish() {
-  state = 'over'; A.setScore(score); const rec = A.submit(score);
-  A.overlay({ title: 'GAME OVER', big: `SCORE ${score} · WAVE ${wave}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, btn: 'Fly again', onGo: () => newGame(false), alt: { btn: '2 Players', onGo: () => newGame(true) } });
+  state = 'over'; A.setScore(score); const rec = A.submit(score, daily);
+  A.overlay({ title: 'GAME OVER', big: `SCORE ${score} · WAVE ${wave}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, daily: true,
+    btn: daily ? 'Retry daily' : 'Fly again', onGo: () => newGame(false, daily), alt: { btn: daily ? 'Normal game' : 'Daily', onGo: () => newGame(false, !daily) }, alt2: { btn: '2 Players', onGo: () => newGame(true) } });
 }
 function duelOver() {
   A.jingle([523, 659, 784, 1047], 0.1);
-  A.overlay({ title: wins[0] > wins[1] ? 'GOLD WINS' : 'BLUE WINS', big: `${wins[0]} – ${wins[1]}`, btn: 'Rematch', onGo: () => newGame(true), alt: { btn: '1 Player', onGo: () => newGame(false) } });
+  A.overlay({ title: wins[0] > wins[1] ? 'GOLD WINS' : 'BLUE WINS', big: `${wins[0]} – ${wins[1]}`, btn: 'Rematch', onGo: () => newGame(true), alt: { btn: '1 Player', onGo: () => newGame(false) }, alt2: { btn: 'Daily', onGo: () => newGame(false, true) } });
 }
 
 A.loop(dt => {
@@ -231,7 +233,7 @@ A.loop(dt => {
       for (let i = 0; i < WIN; i++) { ctx.fillStyle = i < wins[0] ? PCOL[0].bird : 'rgba(255,210,61,.2)'; ctx.fillRect(14 + i * 14, 14, 10, 8); ctx.fillStyle = i < wins[1] ? PCOL[1].bird : 'rgba(155,224,255,.2)'; ctx.fillRect(W - 24 - i * 14, 14, 10, 8); }
     } else {
       for (let i = 0; i < Math.min(lives, 8); i++) { ctx.fillStyle = '#0a0612'; ctx.fillRect(12 + i * 16, 10, 12, 12); ctx.fillStyle = '#d8dce6'; ctx.fillRect(14 + i * 16, 12, 8, 8); ctx.fillStyle = PCOL[0].rider; ctx.fillRect(14 + i * 16, 10, 5, 3); }
-      ctx.textAlign = 'right'; ctx.fillStyle = '#ffa630'; ctx.fillText(`WAVE ${wave}`, W - 12, 22);
+      ctx.textAlign = 'right'; ctx.fillStyle = '#ffa630'; ctx.fillText(`${daily ? 'DAILY · ' : ''}WAVE ${wave}`, W - 12, 22);
     }
   }
   if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '26px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.shadowColor = '#ffa630'; ctx.shadowBlur = 16; ctx.fillText(msg, W / 2, 230); ctx.shadowBlur = 0; ctx.globalAlpha = 1; }
@@ -319,7 +321,7 @@ function drawRiderAt(r, x, y) {
   ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.fillRect(-3, -53, 4, 2);                                     // helmet shine
   ctx.restore();
 }
-A.overlay({ title: 'WING DUEL', sub: 'Flap to climb and steer around the ledges. When riders meet, the <b>higher lance</b> wins. Unseated rivals drop eggs: grab them before they hatch into something tougher. Mind the lava!', btn: '1 Player', scores: true, onGo: () => newGame(false), alt: { btn: '2 Players', onGo: () => newGame(true) } });
+A.overlay({ title: 'WING DUEL', sub: 'Flap to climb and steer around the ledges. When riders meet, the <b>higher lance</b> wins. Unseated rivals drop eggs: grab them before they hatch into something tougher. Mind the lava! <b>Daily</b> gives everyone the same waves today.', btn: '1 Player', scores: true, daily: true, onGo: () => newGame(false), alt: { btn: 'Daily', onGo: () => newGame(false, true) }, alt2: { btn: '2 Players', onGo: () => newGame(true) } });
 })();
 </script>
 </body>
