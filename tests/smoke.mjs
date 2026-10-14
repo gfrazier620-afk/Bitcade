@@ -64,6 +64,9 @@ console.log('\nLobby');
   const tag = (await page.textContent('.tag')).trim();
   const WORDS = ['ZERO', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE', 'TEN', 'ELEVEN', 'TWELVE', 'THIRTEEN', 'FOURTEEN', 'FIFTEEN', 'SIXTEEN', 'SEVENTEEN', 'EIGHTEEN', 'NINETEEN', 'TWENTY'];
   check(tag.startsWith(WORDS[slugs.length] + ' '), `lobby tagline says ${WORDS[slugs.length]} games ("${tag}")`);
+  // the lobby header once picked up the game cabinet's .marquee styles (a short, clipped box) and cut the logo off
+  const logo = await page.evaluate(() => { const L = document.querySelector('.logo'), H = document.querySelector('.lobby > header'), l = L.getBoundingClientRect(), h = H.getBoundingClientRect(); return { top: l.top, headerTall: h.height > l.height, clipped: getComputedStyle(H).overflow === 'hidden' }; });
+  check(logo.top >= 0 && logo.headerTall && !logo.clipped, 'the BITCADE logo is fully visible (not clipped by game-page styles)');
   await wait(1200); // let the cabinet animation tick
   check(!errors.length, `lobby has no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
   await close();

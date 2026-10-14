@@ -119,13 +119,13 @@ kbd{font-family:var(--f-pixel);font-size:11px;border:1px solid var(--line);borde
 .cabinet{display:flex;flex-direction:column;align-items:center;width:calc(var(--sw) + 2 * var(--bz));max-width:100%;
   filter:drop-shadow(0 18px 40px rgba(0,0,0,.6))}
 /* the backlit marquee */
-.marquee{position:relative;width:100%;height:52px;display:flex;align-items:center;justify-content:center;overflow:hidden;
+.cabinet .marquee{position:relative;width:100%;height:52px;display:flex;align-items:center;justify-content:center;overflow:hidden;
   border-radius:14px 14px 0 0;background:linear-gradient(180deg,#221b40,#120e26);border:2px solid #2d2556;border-bottom:0}
-.marquee::before{content:"";position:absolute;inset:7px 9px;border-radius:7px;
+.cabinet .marquee::before{content:"";position:absolute;inset:7px 9px;border-radius:7px;
   background:repeating-linear-gradient(90deg,rgba(255,255,255,.05) 0 2px,transparent 2px 46px),
     radial-gradient(ellipse at 50% 50%,color-mix(in srgb,var(--game) 50%,#140a26) 0%,color-mix(in srgb,var(--game) 14%,#0a0716) 75%);
   box-shadow:inset 0 0 18px rgba(0,0,0,.65),0 0 24px color-mix(in srgb,var(--game) 35%,transparent);animation:marquee-hum 7s steps(1) infinite}
-.marquee span{position:relative;max-width:96%;white-space:nowrap;/* no overflow clipping: it would box in the glow */
+.cabinet .marquee span{position:relative;max-width:96%;white-space:nowrap;/* no overflow clipping: it would box in the glow */
   font-family:var(--f-marquee);font-size:clamp(17px,3.6vw,30px);letter-spacing:.06em;color:#fff;
   text-shadow:0 0 4px #fff,0 0 12px var(--game),0 0 26px var(--game),0 2px 0 rgba(0,0,0,.45)}
 @keyframes marquee-hum{0%,100%{opacity:1}41%{opacity:.82}42%{opacity:1}43%{opacity:.9}44%{opacity:1}}
@@ -160,8 +160,8 @@ kbd{font-family:var(--f-pixel);font-size:11px;border:1px solid var(--line);borde
 /* phones and narrow windows: a slimmer cabinet, and the touch pad instead of the panel */
 @media (pointer:coarse),(max-width:620px){
   .cab-on{--bz:8px;--cab-chrome:calc(var(--chrome,190px) + 80px)}
-  .marquee{height:44px}
-  .marquee::before{inset:5px 7px}
+  .cabinet .marquee{height:44px}
+  .cabinet .marquee::before{inset:5px 7px}
   .cpanel{display:none}
   .bezel{padding-bottom:var(--bz);border-bottom:2px solid #2d2556;border-radius:0 0 12px 12px}
   .cab-on .pad{margin-top:14px}
