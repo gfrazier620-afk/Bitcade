@@ -15,7 +15,7 @@ A GitHub Pages arcade site: a lobby page plus 18 classic-style browser games. Pl
   - a Share score link on game-over screens (share sheet, or copy to the clipboard)
   - sound (`tone`, `noise`, `jingle`)
   - MUSIC and CRT header toggles (`arcade:music`, `arcade:crt`). Music is on by default: each game's theme from `shared/chip.js` plays from the title screen right through the game (quieter during play) until MUSIC is turned off
-  - CRT: `body.crt` adds scanlines, rounded glass and a vignette to `.screen`
+  - CRT: the button cycles LITE (the default, `body.crt-lite`: faint scanlines and glow), FULL (`body.crt`: strong scanlines, vignette, flicker) and OFF. `arcade:crt` stores 'lite', '1' or '0'
   - keyboard, touch and gamepad input (`held`, `onPress`, `swipe`, `[data-k]` pad buttons). Inside an element marked `data-keys-native`, keys are left to the page
   - a header PAUSE button for touch, added automatically unless the pad already has a `KeyP` button
   - canvas sizing
@@ -52,6 +52,7 @@ All names, characters and art are original. Keep it that way: no trademarked gam
 - Every game works on keyboard and touch. Every game also works on a gamepad. Touch pads appear only on coarse pointers.
 - Pages need `[hidden]{display:none!important}` (it's in arcade.css), because the overlay uses `display:flex`.
 - No text selection, long-press copy menu or double-tap zoom on game pages (`user-select:none`, `-webkit-touch-callout:none`, `touch-action:manipulation` on body, in arcade.css and Blip Sports). Inputs stay selectable.
+- Character sprites (Back Alley Brawl fighters, the Highrise handyman, Nitro Lane cars) are drawn as a dark outline pass, then shaded fills lit from above (a `shade(hex, k)` helper), then details. Keep that style for new characters.
 - Initialise arrays used by draw/update at declaration. The loop runs on the title screen before a game starts.
 - Play locally by running `python3 -m http.server` in the repo root and opening http://localhost:8000. Pick another port, such as 5173, if 8000 is blocked, which it is on Windows here.
 - Run the smoke tests with `npm install` then `npm test`. `tests/smoke.mjs` serves the repo and opens the lobby and every game in headless Chromium. It checks cabinets and folders match, start, pause and resume, that the canvas draws, the top-10 table, the phone layout, and that there are no errors. New games are picked up automatically from `games/`. Locally it uses installed Chrome or Edge. `package.json` is dev tooling only; the site still has no dependencies.

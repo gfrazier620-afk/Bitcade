@@ -435,16 +435,19 @@
     if (m) {
       const label = () => { m.textContent = A.muted ? 'SOUND OFF' : 'SOUND ON'; m.setAttribute('aria-pressed', String(!A.muted)); };
       label(); m.addEventListener('click', () => { A.muted = !A.muted; store.set('arcade:muted', A.muted ? '1' : '0'); A.unlock(); label(); if (music()) music().refresh(); });
-      // MUSIC (title themes) and CRT (scanline look) toggles, both remembered
+      // MUSIC and CRT (scanline look) buttons, both remembered
       const toggle = (id, text, isOn, flip) => {
         const b = document.createElement('button'); b.className = 'mute'; b.id = id;
         const set = () => { b.textContent = `${text} ${isOn() ? 'ON' : 'OFF'}`; b.setAttribute('aria-pressed', String(isOn())); };
         b.addEventListener('click', () => { flip(); set(); }); set(); return b;
       };
-      const crtOn = () => store.get('arcade:crt') === '1';
-      document.body.classList.toggle('crt', crtOn());
-      const crt = toggle('crt', 'CRT', crtOn, () => { store.set('arcade:crt', crtOn() ? '0' : '1'); document.body.classList.toggle('crt', crtOn()); });
-      m.after(crt);
+      // CRT has three settings: LITE (the default: faint scanlines and glow), FULL and OFF. Stored as 'lite' | '1' | '0'.
+      const CRT = ['lite', '1', '0'], CRT_LABEL = { lite: 'CRT LITE', 1: 'CRT FULL', 0: 'CRT OFF' };
+      const crtMode = () => CRT.includes(store.get('arcade:crt')) ? store.get('arcade:crt') : 'lite';
+      const crt = document.createElement('button'); crt.className = 'mute'; crt.id = 'crt';
+      const crtSet = () => { const mode = crtMode(); document.body.classList.toggle('crt', mode === '1'); document.body.classList.toggle('crt-lite', mode === 'lite'); crt.textContent = CRT_LABEL[mode]; crt.setAttribute('aria-pressed', String(mode !== '0')); };
+      crt.addEventListener('click', () => { store.set('arcade:crt', CRT[(CRT.indexOf(crtMode()) + 1) % CRT.length]); crtSet(); });
+      crtSet(); m.after(crt);
       if (music()) m.after(toggle('music', 'MUSIC', () => music().enabled, () => { music().enabled = !music().enabled; }));
       // keep the header buttons together, so they wrap as one row on narrow screens
       const group = document.createElement('div'); group.className = 'toggles'; m.before(group);

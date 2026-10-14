@@ -117,17 +117,55 @@ function gameOver(why) {
   if (state !== 'play') return; state = 'over'; const rec = A.submit(score);
   A.overlay({ title: why, big: `SCORE ${score} · ${(dist / 1000).toFixed(1)} KM`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, btn: 'Race again', onGo: () => { bonus = 0; newGame(); } });
 }
+/** Lighten (k > 0) or darken (k < 0) a #rgb / #rrggbb colour. */
+function shade(hex, k) {
+  let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join('');
+  const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+/*
+ * A car seen from above, front pointing up: headlight beams ahead and taillights behind (it's night), a dark outline,
+ * a body shaded round across its width, windshield with a reflection, roof, mirrors and wheels. Long ones are trucks.
+ */
 function drawCar(x, y, col, len, rot, player) {
   ctx.save(); ctx.translate(x, y); ctx.rotate(rot || 0);
-  const w = 32, h = len;
-  ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fillRect(-w / 2 + 3, -h / 2 + 5, w, h);
-  ctx.fillStyle = '#111'; [[-w / 2 - 2, -h / 2 + 7], [w / 2 - 4, -h / 2 + 7], [-w / 2 - 2, h / 2 - 17], [w / 2 - 4, h / 2 - 17]].forEach(([a, b]) => ctx.fillRect(a, b, 6, 11));
-  ctx.fillStyle = col; ctx.beginPath(); ctx.roundRect(-w / 2, -h / 2, w, h, 7); ctx.fill();
-  if (player) { ctx.shadowColor = col; ctx.shadowBlur = 16; ctx.fill(); ctx.shadowBlur = 0; }
-  ctx.fillStyle = 'rgba(20,20,40,.85)'; ctx.fillRect(-w / 2 + 5, -h / 2 + (player ? 12 : h - 22), w - 10, 9); ctx.fillRect(-w / 2 + 6, player ? h / 2 - 16 : -h / 2 + 8, w - 12, 6);
-  if (player) { ctx.fillStyle = '#fff'; ctx.fillRect(-w / 2 + 14, -h / 2 + 2, 4, h - 6); }
-  if (len > 60) { ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.fillRect(-w / 2, -h / 2 + 26, w, 2); }
-  ctx.fillStyle = player ? '#fff6c2' : '#ff2a2a'; ctx.fillRect(-w / 2 + 3, player ? -h / 2 : h / 2 - 3, 6, 3); ctx.fillRect(w / 2 - 9, player ? -h / 2 : h / 2 - 3, 6, 3);
+  const w = 32, h = len, top = -h / 2, bot = h / 2, truck = len > 60;
+  // headlight beams and taillight glow
+  const beam = ctx.createLinearGradient(0, top, 0, top - (player ? 110 : 70));
+  beam.addColorStop(0, `rgba(255,246,194,${player ? 0.28 : 0.14})`); beam.addColorStop(1, 'rgba(255,246,194,0)');
+  ctx.fillStyle = beam; ctx.beginPath(); ctx.moveTo(-w / 2 + 3, top); ctx.lineTo(w / 2 - 3, top); ctx.lineTo(w / 2 + 16, top - (player ? 110 : 70)); ctx.lineTo(-w / 2 - 16, top - (player ? 110 : 70)); ctx.fill();
+  ctx.fillStyle = 'rgba(255,42,42,.22)'; ctx.beginPath(); ctx.ellipse(0, bot + 4, w * 0.6, 8, 0, 0, Math.PI * 2); ctx.fill();
+  // shadow, wheels, outline
+  ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.beginPath(); ctx.roundRect(-w / 2 + 3, top + 6, w, h, 8); ctx.fill();
+  const axles = truck ? [top + 8, top + 30, bot - 18] : [top + 7, bot - 17];
+  for (const a of axles) for (const sx of [-w / 2 - 3, w / 2 - 3]) { ctx.fillStyle = '#07050d'; ctx.fillRect(sx, a, 6, 12); ctx.fillStyle = '#5a5866'; ctx.fillRect(sx + 2, a + 3, 2, 6); }
+  ctx.fillStyle = '#07050d'; ctx.beginPath(); ctx.roundRect(-w / 2 - 2, top - 2, w + 4, h + 4, 9); ctx.fill();
+  // body, shaded round across its width
+  const body = ctx.createLinearGradient(-w / 2, 0, w / 2, 0);
+  body.addColorStop(0, shade(col, -0.45)); body.addColorStop(0.22, col); body.addColorStop(0.5, shade(col, 0.22)); body.addColorStop(0.78, col); body.addColorStop(1, shade(col, -0.45));
+  if (truck) {
+    const trailer = '#d8d2e8', tg = ctx.createLinearGradient(-w / 2, 0, w / 2, 0);
+    tg.addColorStop(0, shade(trailer, -0.4)); tg.addColorStop(0.5, shade(trailer, 0.15)); tg.addColorStop(1, shade(trailer, -0.4));
+    ctx.fillStyle = body; ctx.beginPath(); ctx.roundRect(-w / 2, top, w, 22, [7, 7, 2, 2]); ctx.fill();          // cab
+    ctx.fillStyle = 'rgba(14,18,40,.92)'; ctx.fillRect(-w / 2 + 5, top + 5, w - 10, 7);                           // cab windshield
+    ctx.fillStyle = 'rgba(255,255,255,.4)'; ctx.fillRect(-w / 2 + 7, top + 6, 8, 2);
+    ctx.fillStyle = tg; ctx.fillRect(-w / 2, top + 24, w, h - 24);                                                 // trailer
+    ctx.fillStyle = 'rgba(0,0,0,.14)'; for (let ry = top + 30; ry < bot - 2; ry += 7) ctx.fillRect(-w / 2 + 2, ry, w - 4, 1.5);
+    ctx.fillStyle = shade(col, -0.2); ctx.fillRect(-w / 2 + 2, top + 26, w - 4, 3);                               // company stripe
+  } else {
+    if (player) { ctx.shadowColor = col; ctx.shadowBlur = 16; }
+    ctx.fillStyle = body; ctx.beginPath(); ctx.roundRect(-w / 2, top, w, h, 7); ctx.fill(); ctx.shadowBlur = 0;
+    const ws = top + 12, roofEnd = bot - 13;
+    ctx.fillStyle = 'rgba(14,18,40,.92)'; ctx.beginPath(); ctx.moveTo(-w / 2 + 4, ws + 8); ctx.lineTo(-w / 2 + 7, ws); ctx.lineTo(w / 2 - 7, ws); ctx.lineTo(w / 2 - 4, ws + 8); ctx.fill(); // windshield
+    ctx.fillStyle = 'rgba(255,255,255,.45)'; ctx.beginPath(); ctx.moveTo(-w / 2 + 8, ws + 6); ctx.lineTo(-w / 2 + 11, ws + 1); ctx.lineTo(-w / 2 + 15, ws + 1); ctx.lineTo(-w / 2 + 12, ws + 6); ctx.fill(); // reflection
+    ctx.fillStyle = shade(col, 0.1); ctx.fillRect(-w / 2 + 6, ws + 9, w - 12, roofEnd - ws - 12);                // roof
+    ctx.fillStyle = 'rgba(14,18,40,.85)'; ctx.fillRect(-w / 2 + 7, roofEnd - 3, w - 14, 5);                        // rear window
+    ctx.fillStyle = shade(col, -0.35); ctx.fillRect(-w / 2 - 3, ws + 2, 3, 4); ctx.fillRect(w / 2, ws + 2, 3, 4);   // mirrors
+    if (player) { ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fillRect(-4, top + 2, 3, h - 6); ctx.fillRect(2, top + 2, 3, h - 6); } // racing stripes
+  }
+  // lights
+  ctx.fillStyle = '#fff6c2'; ctx.fillRect(-w / 2 + 3, top, 6, 3); ctx.fillRect(w / 2 - 9, top, 6, 3);
+  ctx.fillStyle = '#ff2a2a'; ctx.shadowColor = '#ff2a2a'; ctx.shadowBlur = 8; ctx.fillRect(-w / 2 + 3, bot - 3, 6, 3); ctx.fillRect(w / 2 - 9, bot - 3, 6, 3); ctx.shadowBlur = 0;
   ctx.restore();
 }
 function draw(t) {

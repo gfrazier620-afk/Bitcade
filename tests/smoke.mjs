@@ -135,6 +135,7 @@ console.log('\nMusic and CRT');
   });
   check(themes.same && themes.differ && themes.notes > 20, `each game has its own theme, the same every time (${themes.notes} melody notes at ${themes.bpm} bpm)`);
   check(await page.isVisible('#music') && await page.isVisible('#crt'), 'MUSIC and CRT buttons sit next to SOUND');
+  check(await page.evaluate(() => document.body.classList.contains('crt-lite')) && (await page.textContent('#crt')) === 'CRT LITE', 'the light CRT look is on by default');
   await page.keyboard.press('KeyM'); // a key press lets the browser start sound
   check(await page.waitForFunction(() => Chip.playing, null, { timeout: 3000 }).then(() => true, () => false), 'the title screen plays its theme');
   await page.click('#ov .go');
@@ -143,9 +144,11 @@ console.log('\nMusic and CRT');
   await page.keyboard.press('KeyP'); await page.click('#music');
   check((await page.textContent('#music')) === 'MUSIC OFF' && (await page.evaluate(() => localStorage.getItem('arcade:music'))) === '0', 'MUSIC OFF is remembered');
   await page.click('#crt');
-  check(await page.evaluate(() => document.body.classList.contains('crt')), 'CRT ON turns on the scanline look');
+  check(await page.evaluate(() => document.body.classList.contains('crt')) && (await page.textContent('#crt')) === 'CRT FULL', 'CRT goes from LITE to FULL');
   await page.reload();
-  check(await page.evaluate(() => document.body.classList.contains('crt')) && (await page.textContent('#crt')) === 'CRT ON', 'CRT is remembered');
+  check(await page.evaluate(() => document.body.classList.contains('crt')) && (await page.textContent('#crt')) === 'CRT FULL', 'CRT is remembered');
+  await page.click('#crt');
+  check(await page.evaluate(() => !document.body.classList.contains('crt') && !document.body.classList.contains('crt-lite')) && (await page.textContent('#crt')) === 'CRT OFF', 'and then OFF');
   check(!errors.length, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
   await close();
 }

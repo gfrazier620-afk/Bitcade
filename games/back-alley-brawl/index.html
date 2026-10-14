@@ -230,39 +230,93 @@ function drawStage(t) {
   ctx.fillStyle = 'rgba(255,255,255,.06)'; ctx.fillRect(0, GROUND, W, 2);
 }
 function R(x, y, w, h, c) { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); }
+/** Lighten (k > 0) or darken (k < 0) a #rgb / #rrggbb colour. */
+function shade(hex, k) {
+  let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join('');
+  const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+/*
+ * Fighters, drawn like 90s arcade sprites: every body part is queued, then painted as one dark outline pass and a
+ * shaded fill pass (lit from above, darker below and along the back), then the small details on top. A hit flash
+ * turns the whole fighter white. Poses match the hit boxes in MOVES; only the look changed.
+ */
 function drawF(f, t) {
-  const d = f.def;
+  const d = f.def, flash = f.flash > 0;
   ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.beginPath(); ctx.ellipse(f.x, GROUND + 4, 26 - Math.min(f.y, 120) / 10, 5, 0, 0, Math.PI * 2); ctx.fill();
   ctx.save(); ctx.translate(Math.round(f.x), Math.round(GROUND - f.y)); ctx.scale(f.face, 1);
-  const wht = f.flash > 0 ? '#fff' : null, gi = wht || d.gi, trim = wht || d.trim, skin = wht || d.skin, hair = wht || d.hair, band = wht || d.band, foot = wht || '#1a1214';
   const lying = f.st === 'ko' && f.y <= 0 || f.st === 'down';
   if (lying) { ctx.rotate(-Math.PI / 2); ctx.translate(-6, -40); }
   if (f.st === 'hit' || (f.st === 'ko' && f.y > 0)) ctx.rotate(-0.25);
   const m = f.st === 'attack' ? f.mv : null, mm = m && MOVES[m];
   const ext = mm ? (f.t < mm.start ? 0.4 : f.t < mm.start + mm.act + 0.04 ? 1 : 0.5) : 0;
   const crouch = (f.crouch && grounded(f) && !m) || m === 'sweep' || (f.st === 'block' && f.crouch);
-  const air = f.y > 0;
-  const oy = crouch ? 24 : 0;
+  const air = f.y > 0, oy = crouch ? 24 : 0, hurt = f.st === 'hit' || f.st === 'ko' || lying;
+  const gi = d.gi, pants = shade(d.gi, -0.12), trim = d.trim, skin = d.skin, foot = '#2a1c18';
+  const parts = [], P = (x, y, w, h, c, flat) => parts.push({ x, y, w, h, c, flat });
   // legs
-  if (m === 'kick') { R(-12, -40, 10, 40, gi); R(-14, -4, 13, 5, foot); R(2, -54, 18 + 30 * ext, 11, gi); R(18 + 30 * ext, -56, 9, 13, skin); }
-  else if (m === 'sweep') { R(-14, -18, 11, 18, gi); R(-16, -4, 13, 5, foot); R(0, -13, 20 + 34 * ext, 10, gi); R(18 + 34 * ext, -14, 10, 12, skin); }
-  else if (air && m === 'jkick') { R(-12, -36, 10, 20, gi); R(2, -44, 20 + 26 * ext, 11, gi); R(20 + 26 * ext, -46, 9, 13, skin); }
-  else if (air) { R(-12, -40, 10, 22, gi); R(2, -40, 10, 22, gi); R(-13, -20, 12, 5, foot); R(1, -20, 12, 5, foot); }
-  else if (crouch) { R(-16, -22, 12, 22, gi); R(4, -22, 12, 22, gi); R(-18, -4, 14, 5, foot); R(3, -4, 14, 5, foot); }
-  else { const s = f.st === 'walk' ? Math.sin(f.walk) * 6 : 0; R(-12 + s, -40, 10, 40, gi); R(3 - s, -40, 10, 40, gi); R(-14 + s, -4, 13, 5, foot); R(2 - s, -4, 13, 5, foot); }
-  // torso + belt
-  const lean = m === 'kick' ? -4 : 0;
-  R(-13 + lean, -76 + oy, 26, 34, gi); R(-13 + lean, -48 + oy, 26, 5, trim); R(-2 + lean, -76 + oy, 4, 28, trim);
+  if (m === 'kick') { P(-12, -40, 10, 34, pants); P(-14, -6, 13, 6, foot); P(2, -54, 18 + 30 * ext, 11, pants); P(18 + 30 * ext, -56, 10, 13, skin); }
+  else if (m === 'sweep') { P(-14, -18, 11, 13, pants); P(-16, -6, 13, 6, foot); P(0, -13, 20 + 34 * ext, 10, pants); P(18 + 34 * ext, -14, 11, 12, skin); }
+  else if (air && m === 'jkick') { P(-12, -36, 10, 16, pants); P(-13, -21, 12, 5, foot); P(2, -44, 20 + 26 * ext, 11, pants); P(20 + 26 * ext, -46, 10, 13, skin); }
+  else if (air) { P(-12, -40, 10, 19, pants); P(2, -40, 10, 19, pants); P(-13, -22, 12, 5, foot); P(1, -22, 12, 5, foot); }
+  else if (crouch) { P(-16, -22, 12, 17, pants); P(4, -22, 12, 17, pants); P(-18, -6, 14, 6, foot); P(3, -6, 14, 6, foot); }
+  else {
+    const s = f.st === 'walk' ? Math.sin(f.walk) * 6 : 0;
+    P(-12 + s, -40, 10, 30, pants); P(-13 + s, -13, 12, 8, pants); P(3 - s, -40, 10, 30, pants); P(2 - s, -13, 12, 8, pants); // legs with flared cuffs
+    P(-14 + s, -6, 13, 6, foot); P(2 - s, -6, 13, 6, foot);
+  }
+  // body
+  const lean = m === 'kick' ? -4 : 0, bob = f.st === 'idle' ? Math.round(Math.sin(t / 220)) : 0, ty = -76 + oy + bob;
+  P(-13 + lean, ty, 26, 30, gi); P(-14 + lean, ty + 22, 28, 8, gi);   // jacket, flaring at the hem
+  P(-13 + lean, ty + 25, 26, 5, trim, true);                          // belt
   // head
-  const hx = -9 + lean, hy = -96 + oy;
-  R(hx, hy, 18, 19, skin); R(hx - 1, hy - 3, 20, 7, hair); R(hx - 1, hy + 4, 20, 4, band); R(hx - 9, hy + 4 + Math.sin(t / 120) * 1.5, 8, 3, band);
-  R(hx + 13, hy + 9, 3, 3, wht || '#120a0a');
+  const hx = -9 + lean, hy = -96 + oy + bob;
+  P(hx - 2, hy + 7, 3, 5, skin, true);                                  // ear
+  P(hx, hy, 18, 19, skin);
+  P(hx + 1, hy - 6, 4, 4, d.hair, true); P(hx + 7, hy - 7, 4, 5, d.hair, true); P(hx + 13, hy - 5, 4, 4, d.hair, true); // spikes
+  P(hx - 1, hy - 3, 20, 7, d.hair);
+  P(hx - 1, hy + 4, 20, 4, d.band, true);
+  P(hx - 9, hy + 4 + Math.round(Math.sin(t / 120) * 1.5), 8, 3, d.band, true); // headband tail
   // arms
-  if (m === 'punch') { R(-6, -72 + oy, 8, 18, gi); R(6, -72 + oy, 12 + 26 * ext, 9, gi); R(16 + 26 * ext, -74 + oy, 11, 12, skin); }
-  else if (m === 'special') { R(6, -74 + oy, 10 + 18 * ext, 8, gi); R(6, -64 + oy, 10 + 18 * ext, 8, gi); R(14 + 18 * ext, -76 + oy, 10, 20, skin); }
-  else if (f.st === 'block' || (f.block && grounded(f) && !m && f.st !== 'hit')) { R(6, -86 + oy, 10, 30, gi); R(10, -90 + oy, 10, 9, skin); R(-2, -80 + oy, 10, 24, trim); }
-  else if (f.st === 'hit' || f.st === 'ko' || lying) { R(-18, -80 + oy, 8, 20, gi); R(10, -82 + oy, 8, 20, gi); }
-  else { const bob = f.st === 'idle' ? Math.sin(t / 200) * 1.5 : 0; R(-8, -72 + oy, 8, 20, gi); R(6, -70 + oy + bob, 8, 14, gi); R(9, -80 + oy + bob, 10, 10, skin); }
+  const ay = -72 + oy + bob;
+  if (m === 'punch') { P(-6, ay, 8, 16, gi); P(6, ay, 12 + 26 * ext, 9, gi); P(16 + 26 * ext, ay - 2, 12, 12, skin); }
+  else if (m === 'special') { P(6, ay - 2, 10 + 18 * ext, 8, gi); P(6, ay + 8, 10 + 18 * ext, 8, gi); P(14 + 18 * ext, ay - 4, 11, 20, skin); }
+  else if (f.st === 'block' || (f.block && grounded(f) && !m && f.st !== 'hit')) { P(-2, ay - 8, 10, 24, gi); P(6, ay - 14, 10, 30, gi); P(10, ay - 18, 11, 10, skin); }
+  else if (hurt) { P(-18, ay - 8, 8, 20, gi); P(10, ay - 10, 8, 20, gi); P(-19, ay + 10, 9, 8, skin); P(10, ay + 9, 9, 8, skin); }
+  else { P(-8, ay, 8, 17, gi); P(-9, ay + 15, 9, 8, skin); P(6, ay + 2, 8, 12, gi); P(9, ay - 8, 11, 10, skin); } // guard up
+  // paint: outline pass, then shaded fills
+  ctx.fillStyle = '#0a0612';
+  for (const q of parts) ctx.fillRect(q.x - 2, q.y - 2, q.w + 4, q.h + 4);
+  for (const q of parts) {
+    ctx.fillStyle = flash ? '#fff' : q.c; ctx.fillRect(q.x, q.y, q.w, q.h);
+    if (flash || q.flat || q.w < 6 || q.h < 6) continue;
+    const e = Math.max(1, Math.round(Math.min(q.w, q.h) * 0.22));
+    ctx.fillStyle = shade(q.c, 0.3); ctx.fillRect(q.x, q.y, q.w, e);
+    ctx.fillStyle = shade(q.c, -0.32); ctx.fillRect(q.x, q.y + q.h - e, q.w, e);
+    ctx.fillStyle = shade(q.c, -0.16); ctx.fillRect(q.x, q.y + e, Math.max(1, Math.round(q.w * 0.2)), q.h - 2 * e);
+  }
+  if (!flash) {
+    // gi lapels over a dark undershirt
+    ctx.fillStyle = shade(gi, -0.45); ctx.beginPath(); ctx.moveTo(lean - 5, ty); ctx.lineTo(lean + 5, ty); ctx.lineTo(lean, ty + 13); ctx.fill();
+    ctx.strokeStyle = trim; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(lean - 8, ty + 1); ctx.lineTo(lean + 1, ty + 18); ctx.moveTo(lean + 8, ty + 1); ctx.lineTo(lean - 1, ty + 18); ctx.stroke();
+    // belt knot and tails
+    const sway = Math.round(Math.sin(t / 160 + f.x) * 1.5);
+    ctx.fillStyle = shade(trim, -0.25); ctx.fillRect(lean - 3, ty + 24, 6, 7);
+    ctx.fillStyle = trim; ctx.fillRect(lean - 4 + sway, ty + 30, 3, 8); ctx.fillRect(lean + 1 + sway, ty + 30, 3, 7);
+    // face
+    ctx.fillStyle = '#fff'; ctx.fillRect(hx + 11, hy + 8, 5, 4);
+    ctx.fillStyle = '#120a0a'; ctx.fillRect(hx + (hurt ? 12 : 14), hy + 9, 2, 3);
+    ctx.fillStyle = d.hair; ctx.fillRect(hx + 10, hy + 6, 7, 2);
+    ctx.fillStyle = '#5a2418'; if (hurt) ctx.fillRect(hx + 12, hy + 14, 4, 3); else ctx.fillRect(hx + 12, hy + 15, 4, 1.5);
+    // knuckle lines on the leading fist
+    if (m === 'punch') { ctx.fillStyle = shade(skin, -0.35); ctx.fillRect(25 + 26 * ext, ay + 1, 1.5, 7); }
+    // the special charging up
+    if (m === 'special' && f.t < mm.start + 0.05) {
+      const r = 5 + 10 * Math.min(1, f.t / mm.start), cx = 26 + 18 * ext, cy = ay + 6, c = d.band === '#111' ? '#3dff8f' : d.band;
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 1.8); g.addColorStop(0, '#fff'); g.addColorStop(0.4, c); g.addColorStop(1, 'transparent');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r * 1.8, 0, Math.PI * 2); ctx.fill();
+    }
+  }
   ctx.restore();
 }
 function drawHUD(t) {

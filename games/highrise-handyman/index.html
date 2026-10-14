@@ -138,20 +138,48 @@ function drawWindow(x, y, d, t) {
   ctx.strokeStyle = 'rgba(220,240,255,.7)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x + 4, y + 18); ctx.lineTo(x + 14, y + 8); ctx.moveTo(x + 4, y + 18); ctx.lineTo(x - 4, y + 30); ctx.stroke();
   R(x - 1, y, 2, 58, '#3a2a40');
 }
+/** Lighten (k > 0) or darken (k < 0) a #rgb / #rrggbb colour. */
+function shade(hex, k) {
+  let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join('');
+  const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+/* The handyman: parts are painted as a dark outline pass, then shaded fills (lit from above), then details. */
 function drawHero(t) {
   if (!hero || hero.dead && Math.floor(t / 90) % 2) return;
   if (hero.inv > 0 && Math.floor(t / 100) % 2) return;
   const x = Math.round(hero.x), y = Math.round(hero.y), f = hero.face;
+  const climbing = hero.moveT > 0 && hero.from && hero.from.y !== floorBase(hero.f), step = hero.moveT > 0 ? Math.floor(hero.moveT * 30) % 2 : 0;
   if (hero.coffee > 0) { ctx.shadowColor = '#ffc23d'; ctx.shadowBlur = 20; }
   ctx.save(); ctx.translate(x, y); ctx.scale(f, 1);
-  const climbing = hero.moveT > 0 && hero.from && hero.from.y !== floorBase(hero.f);
-  R(-9, -22, 7, 22, '#1f6f78'); R(2, -22, 7, 22, '#1f6f78'); R(-11, -3, 9, 3, '#2a1a10'); R(1, -3, 9, 3, '#2a1a10');
-  R(-11, -46, 22, 26, '#24a3a8'); R(-11, -30, 22, 4, '#6b4a2a'); R(-6, -46, 3, 16, '#ffc23d'); R(3, -46, 3, 16, '#ffc23d');
-  R(-8, -62, 16, 16, '#e3a877'); R(-10, -68, 20, 7, '#ff8a1f'); R(-12, -62, 24, 3, '#ff8a1f'); R(4, -56, 2, 2, '#1a1010');
+  const parts = [], P = (px, py, w, h, c, flat) => parts.push({ x: px, y: py, w, h, c, flat });
+  P(-9, -22 - step * 2, 7, 18, '#1f6f78'); P(2, -22 - (1 - step) * 2, 7, 18, '#1f6f78');   // jeans
+  P(-11, -6, 10, 6, '#3a2414'); P(1, -6, 10, 6, '#3a2414');                                 // boots
+  P(-11, -46, 22, 26, '#24a3a8');                                                           // shirt
+  P(-12, -30, 24, 5, '#6b4a2a', true);                                                      // tool belt
+  P(-8, -62, 16, 16, '#e3a877');                                                            // head
+  P(-12, -62, 24, 3, '#ff8a1f', true); P(-10, -69, 20, 8, '#ff8a1f');                       // hard hat and brim
+  ctx.fillStyle = '#1a0e14'; for (const q of parts) ctx.fillRect(q.x - 2, q.y - 2, q.w + 4, q.h + 4);
+  ctx.shadowBlur = 0;
+  for (const q of parts) {
+    ctx.fillStyle = q.c; ctx.fillRect(q.x, q.y, q.w, q.h);
+    if (q.flat || q.w < 6 || q.h < 6) continue;
+    const e = Math.max(1, Math.round(Math.min(q.w, q.h) * 0.22));
+    ctx.fillStyle = shade(q.c, 0.3); ctx.fillRect(q.x, q.y, q.w, e);
+    ctx.fillStyle = shade(q.c, -0.3); ctx.fillRect(q.x, q.y + q.h - e, q.w, e);
+  }
+  ctx.fillStyle = '#ffc23d'; ctx.fillRect(-7, -46, 3, 16); ctx.fillRect(4, -46, 3, 16);       // suspenders
+  ctx.fillStyle = '#4a3018'; ctx.fillRect(3, -31, 6, 7); ctx.fillStyle = '#c0c6d0'; ctx.fillRect(-9, -31, 2, 6); // pouch and a screwdriver
+  ctx.fillStyle = '#fff'; ctx.fillRect(2, -58, 4, 3); ctx.fillStyle = '#1a1010'; ctx.fillRect(4, -58, 2, 3); // eye
+  ctx.fillStyle = '#7a3a1a'; ctx.fillRect(1, -51, 5, 1.5);                                   // mouth
+  ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.fillRect(-6, -68, 6, 2);                      // shine on the hat
+  // the arm and hammer, outlined too
   const sw = hero.swing > 0 ? hero.swing / 0.2 : 0;
-  ctx.save(); ctx.translate(8, -40); ctx.rotate(climbing ? -2.6 : -0.4 - sw * 1.6 + (1 - sw) * 0);
-  R(0, -3, 14, 6, '#24a3a8'); R(12, -2, 4, 4, '#e3a877'); R(14, -12, 3, 22, '#8a5a2a'); R(10, -16, 11, 7, '#c0c6d0');
-  ctx.restore(); ctx.restore(); ctx.shadowBlur = 0;
+  ctx.save(); ctx.translate(8, -40); ctx.rotate(climbing ? -2.6 : -0.4 - sw * 1.6);
+  ctx.fillStyle = '#1a0e14'; ctx.fillRect(-2, -5, 18, 10); ctx.fillRect(12, -14, 7, 26); ctx.fillRect(8, -18, 15, 11);
+  ctx.fillStyle = '#24a3a8'; ctx.fillRect(0, -3, 14, 6); ctx.fillStyle = '#e3a877'; ctx.fillRect(12, -2, 4, 4);
+  ctx.fillStyle = '#8a5a2a'; ctx.fillRect(14, -12, 3, 22); ctx.fillStyle = '#c0c6d0'; ctx.fillRect(10, -16, 11, 7); ctx.fillStyle = '#eef0f4'; ctx.fillRect(10, -16, 11, 2);
+  ctx.restore(); ctx.restore();
 }
 function drawWrecker(t) {
   const x = wreck ? wreck.x : W / 2 + Math.sin(t / 900) * 100, base = ROOF;

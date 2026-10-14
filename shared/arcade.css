@@ -101,6 +101,12 @@ kbd{font-family:var(--f-pixel);font-size:11px;border:1px solid var(--line);borde
   box-shadow:inset 0 0 70px rgba(0,0,0,.65),inset 0 0 10px rgba(255,255,255,.1);animation:crt-flicker 5s steps(1) infinite}
 .crt .screen canvas{filter:saturate(1.25) contrast(1.08) brightness(1.08)}
 @keyframes crt-flicker{0%,100%{opacity:1}47%{opacity:.9}48%{opacity:1}81%{opacity:.95}82%{opacity:1}}
+/* CRT LITE, the default: a hint of scanlines, soft glass corners and a little glow, no flicker */
+.crt-lite .screen{border-radius:16px}
+.crt-lite .screen::after{content:"";position:absolute;inset:0;z-index:3;pointer-events:none;border-radius:inherit;
+  background:repeating-linear-gradient(0deg,rgba(0,0,0,.14) 0 1px,transparent 1px 3px),radial-gradient(ellipse at center,transparent 66%,rgba(0,0,0,.32) 100%);
+  box-shadow:inset 0 0 36px rgba(0,0,0,.4),inset 0 0 6px rgba(255,255,255,.06)}
+.crt-lite .screen canvas{filter:saturate(1.1) contrast(1.03) brightness(1.04)}
 
 /* ---------- the cabinet (built around .screen by arcade.js): lit marquee, bezel, control panel ----------
    --sw is the screen width: it fits the window's width and its height minus everything around the screen
