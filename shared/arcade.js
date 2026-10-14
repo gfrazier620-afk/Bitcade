@@ -79,7 +79,8 @@
     const def = A.badgeList().find(b => b.id === id);
     if (!def) return;
     gotCache = [...got, id]; store.set(badgeKey, JSON.stringify(gotCache));
-    toast(`★ BADGE · ${def.name}`); A.jingle([659, 880, 1175, 1568], 0.07, 'triangle');
+    if (window.TICKETS) TICKETS.add(10);
+    toast(`★ BADGE · ${def.name} · +10 TICKETS`); A.jingle([659, 880, 1175, 1568], 0.07, 'triangle');
     if (shown && overlayOpen()) renderHS();
   };
   /** A short message at the top of the screen. Styled inline so pages without arcade.css (Blip Sports) get it too. */
@@ -125,7 +126,7 @@
     s = Math.floor(s);
     store.set('arcade:plays:' + A.id, (+store.get('arcade:plays:' + A.id) || 0) + 1);
     const top = A.top(); // read before updating the best, which A.top() falls back to when there's no table yet
-    const rec = s > A.best();
+    const prevBest = A.best(), rec = s > prevBest;
     if (rec) { store.set('arcade:best:' + A.id, s); A.showBest(); }
     let rank = -1;
     if (s > 0) { rank = top.findIndex(e => s > e.s); if (rank < 0 && top.length < 10) rank = top.length; }
@@ -143,7 +144,15 @@
       if (improved) { wb = { w, s }; store.set('arcade:week:' + A.id, JSON.stringify(wb)); }
       week = { ...(wb && wb.w === w ? wb : { w, s }), improved };
     }
-    lastResult = { s, rank, top, day, week };
+    // Tickets for the prize counter: 1 for a scoring game, +3 for the top 10 (+2 more for a new #1), +5 for beating
+    // an earlier record, +2 for a daily run, all doubled on the weekly tournament game.
+    let tix = 0;
+    if (s > 0) {
+      tix = 1 + (rank >= 0 ? 3 : 0) + (rank === 0 && top.length ? 2 : 0) + (rec && prevBest > 0 ? 5 : 0) + (daily ? 2 : 0);
+      if (A.featured()) tix *= 2;
+      if (window.TICKETS) TICKETS.add(tix); else tix = 0;
+    }
+    lastResult = { s, rank, top, day, week, tix };
     return rec;
   };
 
@@ -314,7 +323,8 @@
     const o = $('ov'), res = lastResult; lastResult = null;
     const canShare = res && res.s > 0, isTitle = scores && !res;
     clearInterval(contT);
-    o.innerHTML = (isTitle && A.featured() ? `<div class="weekly">★ WEEKLY TOURNAMENT · ENDS IN ${WK.leftText()}</div>` : '') + `<h2></h2>${big ? '<div class="big"></div>' : ''}${sub ? '<p></p>' : ''}<div class="hs"></div>` +
+    o.innerHTML = (isTitle && A.featured() ? `<div class="weekly">★ WEEKLY TOURNAMENT · ENDS IN ${WK.leftText()}</div>` : '') + `<h2></h2>${big ? '<div class="big"></div>' : ''}${sub ? '<p></p>' : ''}` +
+      (res && res.tix ? `<div class="tix">+${res.tix} TICKETS${A.featured() ? ' · DOUBLE THIS WEEK' : ''} · ${TICKETS.balance()} TOTAL</div>` : '') + `<div class="hs"></div>` +
       (isTitle ? '<div class="push">PUSH START</div>' : '') + (res ? '<div class="cont" hidden></div>' : '') +
       `<div class="btns"><button class="go"></button>${alt ? '<button class="go2"></button>' : ''}${alt2 ? '<button class="go2 go3"></button>' : ''}</div>` +
       (canShare ? '<button class="share">Share score</button>' : '') + (isTitle ? '<div class="credit">FREE PLAY · CREDIT 99</div>' : '');
@@ -455,6 +465,8 @@
       const p = document.createElement('button'); p.className = 'mute pause'; p.dataset.k = 'KeyP'; p.textContent = 'PAUSE'; m.before(p);
     }
     bindPads();
+    // Prizes from the lobby's prize counter (shared/prizes.js): a screen tint and a cabinet finish, as body classes.
+    try { const eq = JSON.parse(store.get('arcade:equip')) || {}; ['tint', 'skin'].forEach(k => { if (/^[a-z]+$/.test(eq[k] || '')) document.body.classList.add(`${k}-${eq[k]}`); }); } catch (e) {}
     if (outbox().length) flush(); // scores saved while offline
     // Offline play: the service worker (sw.js, at the site root) caches the lobby and every game.
     if ('serviceWorker' in navigator) navigator.serviceWorker.register(new URL('../sw.js', KIT_URL).href).catch(() => {});

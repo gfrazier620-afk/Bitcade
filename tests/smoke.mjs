@@ -53,6 +53,11 @@ async function open(path, opts = {}) {
   return { page, errors, close: () => ctx.close() };
 }
 const wait = ms => new Promise(r => setTimeout(r, ms));
+/** Get past the lobby's boot sequence: a key skips the BIOS part, another leaves the title. */
+async function skipBoot(page) {
+  for (let i = 0; i < 4 && await page.isVisible('#boot'); i++) { await page.keyboard.press('KeyX'); await wait(350); }
+  await page.waitForSelector('#boot', { state: 'hidden' });
+}
 
 /* ---------- lobby ---------- */
 const dirs = (await readdir(join(ROOT, 'games'), { withFileTypes: true })).filter(d => d.isDirectory()).map(d => d.name).sort();
@@ -295,6 +300,73 @@ console.log('\nWeekly tournament');
   check(true, 'with the world board offline, the banner says so');
   check(!lobby.errors.length, `no errors${lobby.errors.length ? ': ' + lobby.errors.join(' | ') : ''}`);
   await lobby.close();
+}
+
+/* ---------- tickets, prize counter and the arcade floor ---------- */
+console.log('\nTickets and prizes');
+{
+  const { page, errors, close } = await open('/games/neon-noodle/');
+  check(await page.evaluate(() => TICKETS.balance()) === 20, 'a new player starts with 20 tickets');
+  await page.evaluate(() => { Arcade.submit(300); Arcade.overlay({ title: 'GAME OVER', btn: 'Play again', onGo: () => {} }); });
+  check(/\+4 TICKETS/.test(await page.textContent('#ov .tix')) && await page.evaluate(() => TICKETS.balance()) === 24, 'a first top-10 score pays 4 tickets, shown on game over');
+  await page.keyboard.press('Enter');
+  await page.evaluate(() => { Arcade.submit(900); Arcade.overlay({ title: 'GAME OVER', btn: 'Play again', onGo: () => {} }); });
+  check(await page.evaluate(() => TICKETS.balance()) === 24 + 11, 'a new #1 and a new record pay 11');
+  await page.keyboard.press('Enter');
+  await page.evaluate(() => Arcade.badge('gem'));
+  check(await page.evaluate(() => TICKETS.balance()) === 45, 'a badge pays 10 tickets');
+  check(!errors.length, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
+  await close();
+  const wk = await open('/games/neon-noodle/?feature=neon-noodle');
+  await wk.page.evaluate(() => { Arcade.submit(300); Arcade.overlay({ title: 'GAME OVER', btn: 'Play again', onGo: () => {} }); });
+  check(/\+8 TICKETS · DOUBLE THIS WEEK/.test(await wk.page.textContent('#ov .tix')), 'tickets are doubled on the weekly tournament game');
+  await wk.close();
+
+  const lobby = await open('/');
+  await skipBoot(lobby.page);
+  check((await lobby.page.textContent('#tixN')) === '20', 'the lobby shows the ticket balance');
+  await lobby.page.click('#vPrize');
+  check(await lobby.page.isVisible('.pc') && await lobby.page.isDisabled('.pc-item[data-id="gold"] button'), 'the prize counter opens, and prizes you can\'t afford are greyed out');
+  check(await lobby.page.isDisabled('.pc-item[data-id="cap"] button') && await lobby.page.evaluate(() => !Prizes.buy('cap') && TICKETS.balance() === 20), 'buying needs enough tickets');
+  await lobby.page.evaluate(() => TICKETS.add(200)); await lobby.page.keyboard.press('Escape'); await lobby.page.click('#vPrize');
+  await lobby.page.click('.pc-item[data-id="amber"] button');
+  check(await lobby.page.evaluate(() => Prizes.has('amber') && Prizes.equipped().tint === 'amber' && TICKETS.balance() === 160), 'buying a prize spends its tickets and puts it on');
+  check((await lobby.page.textContent('#tixN')) === '160', 'the lobby balance updates');
+  await lobby.page.click('.pc-item[data-id="amber"] button');
+  check(await lobby.page.evaluate(() => !Prizes.equipped().tint), 'pressing WEARING takes it off again');
+  await lobby.page.click('.pc-item[data-id="amber"] button'); await lobby.page.keyboard.press('Escape');
+  check(!(await lobby.page.isVisible('.pc')), 'Escape closes the counter');
+  check(!lobby.errors.length, `no errors${lobby.errors.length ? ': ' + lobby.errors.join(' | ') : ''}`);
+  // the tint follows you into the games
+  await lobby.page.goto(BASE + '/games/rock-rift/?feature=none');
+  check(await lobby.page.evaluate(() => document.body.classList.contains('tint-amber')), 'a game page wears the tint bought at the counter');
+  await lobby.close();
+}
+
+console.log('\nArcade floor');
+{
+  const { page, errors, close } = await open('/');
+  await skipBoot(page);
+  check(await page.isVisible('#floor') && !(await page.isVisible('#arcadeFloor')), 'the lobby opens on the cabinets grid');
+  await page.click('#vFloor');
+  check(await page.isVisible('#arcadeFloor') && !(await page.isVisible('#floor')), 'WALK THE ARCADE shows the floor');
+  const y0 = await page.evaluate(() => Floor.state().y);
+  await page.keyboard.down('ArrowUp'); await wait(400); await page.keyboard.up('ArrowUp');
+  check(await page.evaluate(() => Floor.state().y) < y0 - 20, 'the arrow keys walk');
+  const dirsOnFloor = await page.evaluate(() => { const s = []; for (const g of ['neon-noodle', 'blip-sports', 'mole-patrol']) { Floor.goTo(g); s.push(g); } return s; });
+  await page.evaluate(() => Floor.goTo('hedge-hop')); await wait(150);
+  check((await page.evaluate(() => Floor.state().near)) === 'hedge-hop' && /Hedge Hop/.test(await page.textContent('#floorCard')), 'standing at a cabinet shows its card');
+  await page.evaluate(() => Floor.goTo('counter')); await wait(150);
+  await page.keyboard.press('Enter');
+  check(await page.isVisible('.pc'), 'Enter at the prize counter opens it');
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => Floor.goTo('crater-lander')); await wait(150);
+  await Promise.all([page.waitForURL(/games\/crater-lander\//), page.keyboard.press('Enter')]);
+  check(true, 'Enter at a cabinet opens that game');
+  await page.goto(BASE + '/?feature=none');
+  check(await page.isVisible('#arcadeFloor'), 'the floor view is remembered');
+  check(!errors.length && dirsOnFloor.length === 3, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
+  await close();
 }
 
 /* ---------- install + offline ---------- */

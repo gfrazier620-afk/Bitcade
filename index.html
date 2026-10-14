@@ -66,6 +66,45 @@ body{display:block;overflow-x:hidden;
 .tourney li b{color:var(--ink);font-weight:400}
 .tourney li:first-child b{color:#ffd23d}
 .tourney .play{grid-column:3;justify-self:end;font-family:var(--f-pixel)}
+[hidden]{display:none!important}
+/* view switch: cabinets grid or the walkable arcade floor (shared/floor.js), and the prize counter (shared/prizes.js) */
+.viewbar{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin:0 auto 22px}
+.viewbar button{font-family:var(--f-pixel);font-size:12px;letter-spacing:.06em;color:var(--muted);background:var(--bg2);border:1px solid var(--line);border-radius:999px;padding:8px 14px;cursor:pointer}
+.viewbar button[aria-pressed="true"]{color:#120a1c;background:#5ee7ff;border-color:#5ee7ff}
+.viewbar .prize{color:#1a0f00;background:linear-gradient(90deg,#ffd23d,#ff9a3d);border-color:#ffd23d}
+.viewbar .prize b{font-weight:400}
+.arcadefloor{max-width:1100px;margin:0 auto 26px}
+.arcadefloor canvas:focus{outline:none}
+.arcadefloor canvas{display:block;width:100%;aspect-ratio:960/600;border-radius:14px;border:2px solid #2d2556;background:#140c24;touch-action:none;cursor:pointer;image-rendering:pixelated}
+.fl-card{--c:#5ee7ff;display:flex;align-items:center;justify-content:space-between;gap:14px;min-height:56px;margin-top:10px;padding:10px 14px;border-radius:12px;background:var(--bg2);border:1px solid var(--line);border-left:4px solid var(--c)}
+.fl-card b{display:block;font-family:var(--f-marquee);font-weight:400;font-size:18px;color:var(--c)}
+.fl-card small{font-family:var(--f-pixel);font-size:11px;color:var(--muted)}
+.fl-card button{flex:none;font-family:var(--f-pixel);font-size:13px;color:#120a1c;background:var(--c);border:0;border-radius:8px;padding:9px 16px;cursor:pointer}
+.fl-tip,.fl-help{font-family:var(--f-pixel);font-size:11px;color:var(--muted)}
+.fl-help{text-align:center;margin:8px 0 0}
+.pc{position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(5,3,12,.78);backdrop-filter:blur(3px)}
+.pc-open body{overflow:hidden}
+.pc-panel{width:min(980px,100%);max-height:calc(100dvh - 32px);display:flex;flex-direction:column;border-radius:16px;border:2px solid #ffd23d;background:var(--bg2);box-shadow:0 0 40px rgba(255,210,61,.25)}
+.pc-head{display:flex;align-items:flex-start;gap:16px;padding:16px 18px;border-bottom:1px solid var(--line)}
+.pc-head>div:first-child{flex:1}
+.pc-title{font-family:var(--f-marquee);font-size:26px;color:#ffd23d;text-shadow:0 0 14px rgba(255,210,61,.5)}
+.pc-how{font-size:13px;color:var(--muted);margin-top:4px;max-width:560px}
+.pc-bal{flex:none;font-family:var(--f-pixel);font-size:12px;color:#1a0f00;background:linear-gradient(90deg,#ffd23d,#ff9a3d);border-radius:6px;padding:6px 12px}
+.pc-bal b{font-weight:400;font-size:16px}
+.pc-x{flex:none;font-size:18px;color:var(--ink);background:none;border:1px solid var(--line);border-radius:8px;width:36px;height:36px;cursor:pointer}
+.pc-body{overflow:auto;padding:4px 18px 18px}
+.pc-body h3{font-family:var(--f-pixel);font-weight:400;font-size:12px;letter-spacing:.12em;color:#5ee7ff;margin:18px 0 10px}
+.pc-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px}
+.pc-item{display:flex;flex-direction:column;gap:6px;padding:10px;border-radius:12px;background:#120e26;border:1px solid var(--line)}
+.pc-item.on{border-color:#3dff8f;box-shadow:0 0 0 1px #3dff8f}
+.pc-item canvas{width:100%;height:auto;aspect-ratio:3/2;border-radius:8px;image-rendering:pixelated;background:#05040c}
+.pc-item b{font-family:var(--f-pixel);font-weight:400;font-size:13px;color:var(--ink)}
+.pc-item small{font-size:12px;color:var(--muted);flex:1}
+.pc-item button{font-family:var(--f-pixel);font-size:12px;border:0;border-radius:7px;padding:7px;cursor:pointer;color:#1a0f00;background:#ffd23d}
+.pc-item button:disabled{cursor:default;color:var(--muted);background:#221c40}
+.pc-item.own button{background:#5ee7ff}
+.pc-item.on button{background:#3dff8f}
+.pc-item.own button:disabled{color:#3dff8f;background:#14321e}
 @media (max-width:640px){.tourney{grid-template-columns:auto 1fr}.tourney ol{grid-column:1/-1}.tourney .play{grid-column:1/-1;justify-self:stretch;text-align:center;padding:9px}}
 footer{margin-top:44px;text-align:center;color:var(--muted);font-size:13px}
 footer p{margin:4px 0}
@@ -172,12 +211,20 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
     <div class="coin" aria-hidden="true">▶ PICK A CABINET ◀</div>
     <div class="stats" id="stats"></div>
   </header>
+  <div class="viewbar" role="group" aria-label="View">
+    <button id="vGrid" aria-pressed="true">▦ CABINETS</button><button id="vFloor" aria-pressed="false">⌂ WALK THE ARCADE</button><button class="prize" id="vPrize">PRIZE COUNTER · <b id="tixN">0</b> TICKETS</button>
+  </div>
   <a class="tourney" id="tourney" hidden>
     <canvas width="12" height="8"></canvas>
     <div><div class="t-head">★ WEEKLY TOURNAMENT</div><h2></h2><div class="t-meta"><span>ENDS IN <b class="t-left"></b></span><span>YOUR BEST <b class="t-mine">—</b></span></div></div>
     <ol class="t-top"><li><span>WORLD TOP 3</span><span>…</span></li></ol>
     <span class="play">PLAY THIS WEEK ▶</span>
   </a>
+  <section class="arcadefloor" id="arcadeFloor" hidden>
+    <canvas id="floorCv" tabindex="0" aria-label="The arcade floor: walk to a cabinet to play it"></canvas>
+    <div class="fl-card" id="floorCard"></div>
+    <p class="fl-help">←↑↓→ or WASD to walk · Enter to play · or tap where to go · controllers work too</p>
+  </section>
   <main class="floor" id="floor"></main>
   <footer>
     <p>Works with a keyboard or touch, and most games with a game controller. High scores are saved in this browser.</p>
@@ -189,6 +236,8 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
 </div>
 <script src="shared/chip.js"></script>
 <script src="shared/badges.js"></script>
+<script src="shared/prizes.js"></script>
+<script src="shared/floor.js"></script>
 <script>
 (() => {
 const GAMES = [
@@ -330,7 +379,29 @@ if (!matchMedia('(prefers-reduced-motion: reduce)').matches) setInterval(() => {
   const now = performance.now();
   screens.forEach((s, i) => { const f = Math.floor((now + i * 170) / 520) % 2; if (f !== s.f) { s.f = f; paint(s.cx, f ? s.g.px2 : s.g.px); } });
 }, 60);
-document.getElementById('stats').innerHTML = `<span>CABINETS <b>${GAMES.length}</b></span><span>TRIED <b>${played}</b></span><span>GAMES PLAYED <b>${total}</b></span><span>BADGES <b>${badgesGot}/${badgesAll}</b></span>`;
+document.getElementById('stats').innerHTML = `<span>CABINETS <b>${GAMES.length}</b></span><span>TRIED <b>${played}</b></span><span>GAMES PLAYED <b>${total}</b></span><span>BADGES <b>${badgesGot}/${badgesAll}</b></span><span>TICKETS <b id="tixStat"></b></span>`;
+// Tickets and the prize counter (shared/prizes.js), and the walkable arcade floor (shared/floor.js).
+const tixShow = () => { const n = TICKETS.balance().toLocaleString(); document.getElementById('tixN').textContent = n; document.getElementById('tixStat').textContent = n; };
+tixShow(); Prizes.onChange(tixShow);
+document.getElementById('vPrize').addEventListener('click', () => Prizes.open());
+const floorView = document.getElementById('arcadeFloor'), vGrid = document.getElementById('vGrid'), vFloor = document.getElementById('vFloor');
+Floor.init({
+  canvas: document.getElementById('floorCv'), card: document.getElementById('floorCard'), games: GAMES, pal: PAL,
+  featured: window.WEEKLY ? WEEKLY.game() : null,
+  info: g => { const b = badges(g.slug); return { label: g.label || 'BEST', best: +get('arcade:best:' + g.slug) || 0, got: b.got, all: b.all }; },
+  onPlay: g => { location.href = `games/${g.slug}/`; },
+  onCounter: () => Prizes.open()
+});
+function setView(v) {
+  const walk = v === 'floor';
+  floorView.hidden = !walk; floor.hidden = walk;
+  vGrid.setAttribute('aria-pressed', String(!walk)); vFloor.setAttribute('aria-pressed', String(walk));
+  if (walk) Floor.start(); else Floor.stop();
+  try { localStorage.setItem('bitcade:view', v); } catch (e) {}
+}
+vGrid.addEventListener('click', () => setView('grid'));
+vFloor.addEventListener('click', () => { setView('floor'); document.getElementById('floorCv').focus({ preventScroll: true }); }); // so Enter plays, not re-presses this button
+setView(get('bitcade:view') === 'floor' ? 'floor' : 'grid');
 /* Install: the service worker caches the lobby and every game. Browsers that support an install prompt get a button;
    iPhones and iPads install from the Share menu, so they get a hint instead. */
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

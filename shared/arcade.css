@@ -184,3 +184,27 @@ kbd{font-family:var(--f-pixel);font-size:11px;border:1px solid var(--line);borde
 .hs-table .r1 span:not(:last-child){color:#ffd23d}
 .hs-table .r2 span:not(:last-child){color:#d6dbe6}
 .hs-table .r3 span:not(:last-child){color:#e0915a}
+
+/* ---------- tickets and prizes (bought at the lobby's prize counter, shared/prizes.js) ---------- */
+.tix{font-family:var(--f-pixel);font-size:12px;letter-spacing:.08em;color:#1a0f00;background:repeating-linear-gradient(90deg,#ffd23d 0 10px,#ffc21a 10px 12px);
+  padding:4px 12px;border-radius:4px;box-shadow:0 0 12px rgba(255,210,61,.45);clip-path:polygon(6px 0,calc(100% - 6px) 0,100% 50%,calc(100% - 6px) 100%,6px 100%,0 50%)}
+/* screen tints: one-colour phosphor looks */
+body.tint-amber .screen canvas{filter:grayscale(1) sepia(1) saturate(4.5) hue-rotate(-12deg) brightness(1.08) contrast(1.1)}
+body.tint-green .screen canvas{filter:grayscale(1) sepia(1) saturate(6) hue-rotate(68deg) brightness(1.05) contrast(1.15)}
+body.tint-ice .screen canvas{filter:grayscale(1) sepia(1) saturate(3.5) hue-rotate(165deg) brightness(1.1) contrast(1.1)}
+body.tint-sunset .screen canvas{filter:sepia(.45) saturate(1.6) hue-rotate(-25deg) contrast(1.05)}
+/* cabinet finishes */
+body.skin-wood .cabinet .marquee,body.skin-wood .bezel{border-color:#3a2412;
+  background:repeating-linear-gradient(92deg,#5a3418 0 7px,#6b4020 7px 9px,#4e2c14 9px 15px,#61391b 15px 22px)}
+body.skin-wood .cpanel{background:linear-gradient(180deg,#8a5a2a 0 3px,#4e2c14 3px,#3a2010 100%)}
+body.skin-chrome .cabinet .marquee,body.skin-chrome .bezel{border-color:#9aa0b0;
+  background:linear-gradient(90deg,#4a4e5c,#c8ccd8 18%,#6a6e7c 40%,#e8ecf4 62%,#5a5e6c 85%,#a8acb8)}
+body.skin-chrome .cpanel{background:linear-gradient(180deg,#e8ecf4 0 3px,#8a8e9c 3px,#4a4e5c 100%)}
+body.skin-chrome .bezel-top{color:#1a1830}
+body.skin-gold .cabinet .marquee,body.skin-gold .bezel{border-color:#c89a2a;
+  background:linear-gradient(90deg,#7a5410,#ffd23d 20%,#b8860b 42%,#fff0a8 60%,#a07010 82%,#e8b830)}
+body.skin-gold .cpanel{background:linear-gradient(180deg,#fff0a8 0 3px,#c89a2a 3px,#7a5410 100%)}
+body.skin-gold .bezel-top{color:#2a1a00}
+body.skin-neon .cabinet .marquee,body.skin-neon .bezel{border-color:#ff4fd1;background:#0a0716;
+  box-shadow:inset 0 0 0 2px #22e0ff,0 0 18px rgba(255,79,209,.55),inset 0 0 22px rgba(34,224,255,.25)}
+body.skin-neon .cpanel{background:linear-gradient(180deg,#22e0ff 0 3px,#140a26 3px,#0a0716 100%)}

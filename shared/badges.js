@@ -1,6 +1,6 @@
 /*
- * Badges for every game, and the weekly tournament rotation (at the end). Games unlock badges with Arcade.badge(id);
- * the lobby shows how many each player has.
+ * Progression shared by the lobby and every game: badges, then the weekly tournament rotation and tickets (at the end).
+ * Games unlock badges with Arcade.badge(id); the lobby shows how many each player has.
  * Loaded before arcade.js on every game page, and by the lobby. Ids must match the Arcade.badge calls in the games.
  */
 window.BADGES = {
@@ -121,5 +121,37 @@ window.WEEKLY = (() => {
       const m = Math.max(0, Math.floor(this.left(now) / 6e4)), d = Math.floor(m / 1440), h = Math.floor(m / 60) % 24;
       return d ? `${d}D ${String(h).padStart(2, '0')}H` : `${h}H ${String(m % 60).padStart(2, '0')}M`;
     }
+  };
+})();
+
+/*
+ * Tickets: earned in every game (shared/arcade.js: a few per finished game, more for records, 10 per badge,
+ * double on the weekly tournament game) and spent at the lobby's prize counter (shared/prizes.js) on cosmetics.
+ * arcade:tickets is the balance, arcade:tickets:earned the lifetime total.
+ */
+window.TICKETS = (() => {
+  const get = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  const set = (k, v) => { try { localStorage.setItem(k, String(v)); } catch (e) { /* private mode: tickets just don't stick */ } };
+  function balance() {
+    const b = get('arcade:tickets');
+    if (b !== null) return +b || 0;
+    // First visit since tickets arrived: 20 to start, plus back pay for badges already earned and games played.
+    let start = 20;
+    try {
+      Object.keys(localStorage).forEach(k => {
+        if (k.startsWith('arcade:badges:')) { const l = JSON.parse(get(k)); start += 10 * (Array.isArray(l) ? l.length : 0); }
+        else if (k.startsWith('arcade:plays:')) start += Math.min(+get(k) || 0, 50);
+      });
+    } catch (e) {}
+    set('arcade:tickets', start); set('arcade:tickets:earned', start);
+    return start;
+  }
+  return {
+    balance,
+    earned: () => { balance(); return +get('arcade:tickets:earned') || 0; },
+    /** Add n tickets; returns the new balance. */
+    add(n) { const b = balance() + n; set('arcade:tickets', b); set('arcade:tickets:earned', (+get('arcade:tickets:earned') || 0) + n); return b; },
+    /** Spend n tickets if there are enough; returns true when spent. */
+    spend(n) { const b = balance(); if (b < n) return false; set('arcade:tickets', b - n); return true; }
   };
 })();
