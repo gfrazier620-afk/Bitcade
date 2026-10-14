@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Wing Duel</title>
+<link rel="manifest" href="../../manifest.json">
+<meta name="theme-color" content="#0f0c1f">
+<link rel="icon" type="image/png" href="../../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../../icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Rubik:wght@400;500;700&family=Silkscreen&display=swap">
+<link rel="stylesheet" href="../../shared/arcade.css">
+</head>
+<body data-game="wing-duel" style="--game:#ffa630">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>WING DUEL</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <div class="pad">
+    <div class="ab"><button data-k="KeyA" aria-label="Left">◀</button><button class="sm" data-k="KeyW">FLAP</button><button data-k="KeyD" aria-label="Right">▶</button></div>
+    <div class="ab"><button data-k="ArrowLeft" aria-label="Left">◀</button><button class="sm" data-k="ArrowUp">FLAP</button><button data-k="ArrowRight" aria-label="Right">▶</button></div>
+  </div>
+  <p class="help"><kbd>←</kbd><kbd>→</kbd> fly · <kbd>Space</kbd> or <kbd>↑</kbd> flap · 2 players: <kbd>A</kbd><kbd>D</kbd><kbd>W</kbd> vs <kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd> · <kbd>P</kbd> pause</p>
+</main>
+<script src="../../shared/chip.js"></script>
+<script src="../../shared/badges.js"></script>
+<script src="../../shared/arcade.js"></script>
+<script>
+(() => {
+const A = Arcade, cv = document.getElementById('cv');
+const W = 640, H = 480, ctx = A.canvas(cv, W, H), G = 430, ACC = 420, LAVA = 462, WIN = 5, PH = 16;
+const PLATS = [{ x: 120, y: 440, w: 400 }, { x: 0, y: 330, w: 130 }, { x: 510, y: 330, w: 130 }, { x: 235, y: 285, w: 170 }, { x: 40, y: 185, w: 150 }, { x: 450, y: 185, w: 150 }, { x: 255, y: 112, w: 130 }];
+const SPAWNS = [[320, 440], [60, 330], [580, 330], [320, 285], [115, 185], [525, 185]];
+// rival riders: max = top speed, think = seconds between decisions, aim = how often they hunt you instead of wandering
+const TIERS = [{ name: 'GRUNT', rider: '#ff3d5a', bird: '#9a7450', max: 130, think: 0.4, pts: 500, aim: 0.25 },
+  { name: 'HUNTER', rider: '#c8ccd8', bird: '#7a52a0', max: 165, think: 0.28, pts: 750, aim: 0.7 },
+  { name: 'ACE', rider: '#3dd6ff', bird: '#2f5478', max: 205, think: 0.18, pts: 1500, aim: 1 }];
+const PCOL = [{ rider: '#ffa630', bird: '#ffd23d' }, { rider: '#3d8bff', bird: '#9be0ff' }];
+const FLAP_KEYS = ['Space', 'ArrowUp', 'KeyW', 'KeyK'];
+let state = 'title', two = false, players = [], foes = [], eggs = [], parts = [], pops = [], queue = [];
+let score = 0, lives = 3, wave = 0, waveDeaths = 0, clearT = 0, queueT = 0, nextLife = 20000, wins = [0, 0], eggChain = 0, msg = '', msgT = 0;
+
+const rider = (x, y, cols, extra) => ({ x, y, vx: 0, vy: 0, face: 1, ground: null, wing: 0, run: 0, cols, inv: 0, bump: 0, cd: 0, ...extra });
+const demo = [rider(200, 250, PCOL[0]), rider(440, 220, TIERS[0], { face: -1 })];
+const wrapDx = (a, b) => ((b - a + W * 1.5) % W) - W / 2;
+const isFoe = r => r.tier !== undefined;
+function say(t) { msg = t; msgT = 2; }
+function pop(x, y, txt) { pops.push({ x, y, t: 1, txt }); }
+function feathers(x, y, c, n = 18) { for (let i = 0; i < n; i++) { const a = Math.random() * 6.28, s = A.rand(40, 200); parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 60, t: A.rand(0.5, 1.1), c, g: 120 }); } }
+
+function newGame(isTwo) {
+  two = isTwo; score = 0; lives = 3; wave = 0; nextLife = 20000; wins = [0, 0]; eggChain = 0; clearT = 0;
+  foes = []; eggs = []; parts = []; pops = []; queue = []; A.setScore(0);
+  players = two ? [spawnPlayer(0), spawnPlayer(1)] : [spawnPlayer(0)];
+  state = 'play';
+  if (two) say(`FIRST TO ${WIN}`); else nextWave();
+}
+function spawnPlayer(i) { return two ? rider(i ? 580 : 60, 330, PCOL[i], { pid: i, inv: 2, face: i ? -1 : 1 }) : rider(320, 440, PCOL[0], { pid: 0, inv: 2 }); }
+function nextWave() {
+  wave++; waveDeaths = 0; queue = []; queueT = 1;
+  const n = Math.min(3 + wave, 9), p2 = A.clamp((wave - 3) * 0.1, 0, 0.5), p1 = A.clamp((wave - 1) * 0.15, 0, 0.6);
+  for (let i = 0; i < n; i++) { const r = Math.random(); queue.push(r < p2 ? 2 : r < p2 + p1 ? 1 : 0); }
+  say(`WAVE ${wave}`);
+}
+function spawnFoe(tier) {
+  const me = players[0], far = SPAWNS.slice().sort((a, b) => Math.hypot(b[0] - me.x, b[1] - me.y) - Math.hypot(a[0] - me.x, a[1] - me.y));
+  const [x, y] = far[Math.floor(Math.random() * 3)];
+  foes.push(rider(x, y, TIERS[tier], { tier, spawnT: 0.8, thinkT: 0, dir: Math.random() < 0.5 ? -1 : 1, ty: 300, face: x > 320 ? -1 : 1 }));
+  A.tone(220, 0.4, 'sine', 0.03, 0, 660);
+}
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+function flap(r) {
+  if (r.out || r.spawnT > 0) return;
+  r.vy = Math.max(r.vy - 200, -230); r.ground = null; r.wing = 0.2; r.cd = 0.14;
+  if (!isFoe(r)) A.tone(280 + Math.random() * 40, 0.05, 'triangle', 0.035, 0, 420);
+}
+A.onPress(c => {
+  if (c === 'KeyP' || c === 'Escape') return pause();
+  if (state !== 'play') return;
+  if (two) { if (c === 'KeyW' || c === 'Space') flap(players[0]); if (c === 'ArrowUp') flap(players[1]); }
+  else if (FLAP_KEYS.includes(c)) flap(players[0]);
+});
+A.onHide(pause);
+cv.addEventListener('pointerdown', () => { A.unlock(); if (state === 'play' && !two) flap(players[0]); });
+
+/* flying: thrust left/right, gravity, wrap round the sides, land on ledges from above and bump them from below */
+function physics(r, dt, left, right, max) {
+  if (left) { r.vx -= ACC * dt; r.face = -1; }
+  if (right) { r.vx += ACC * dt; r.face = 1; }
+  if (!left && !right) r.vx *= Math.pow(r.ground ? 0.02 : 0.7, dt);
+  r.vx = A.clamp(r.vx, -max, max);
+  r.vy = Math.min(r.vy + G * dt, 320);
+  const py = r.y; r.x = (r.x + r.vx * dt + W) % W; r.y += r.vy * dt;
+  r.wing -= dt; r.bump -= dt; r.cd -= dt; r.inv = Math.max(0, r.inv - dt);
+  const over = p => r.x > p.x - 8 && r.x < p.x + p.w + 8;
+  if (r.ground) { if (r.vy < 0 || !over(r.ground)) r.ground = null; else { r.y = r.ground.y; r.vy = 0; r.run += Math.abs(r.vx) * dt * 0.09; } }
+  if (!r.ground) for (const p of PLATS) {
+    if (!over(p)) continue;
+    if (r.vy >= 0 && py <= p.y && r.y >= p.y) { r.y = p.y; r.vy = 0; r.ground = p; break; }
+    if (r.vy < 0 && py - 46 >= p.y + PH && r.y - 46 < p.y + PH) { r.y = p.y + PH + 46; r.vy = 40; }
+  }
+  if (r.y < 62) { r.y = 62; r.vy = Math.max(r.vy, 30); }
+}
+function ai(f, dt) {
+  const T = TIERS[f.tier], live = players.filter(p => !p.out);
+  const tgt = live.sort((a, b) => Math.abs(wrapDx(f.x, a.x)) - Math.abs(wrapDx(f.x, b.x)))[0];
+  f.thinkT -= dt;
+  if (f.thinkT <= 0) {
+    f.thinkT = T.think * A.rand(0.6, 1.4);
+    if (tgt && Math.random() < T.aim) { f.dir = wrapDx(f.x, tgt.x) > 0 ? 1 : -1; f.ty = tgt.y - 30 - f.tier * 12; }
+    else { if (Math.random() < 0.3) f.dir = -f.dir; f.ty = A.rand(120, 400); }
+    if (f.y > f.ty || (f.ground && Math.random() < 0.6)) flap(f);
+  }
+  if (f.y > 405 && !f.ground && f.vy > 30 && f.cd <= 0) flap(f); // keep out of the lava
+  f.L = f.dir < 0; f.R = f.dir > 0;
+}
+/* jousts: the higher rider unseats the lower one; level riders bounce off each other */
+function combat() {
+  const all = [...players.filter(p => !p.out), ...foes.filter(f => !(f.spawnT > 0))];
+  for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) {
+    const a = all[i], b = all[j];
+    if (isFoe(a) && isFoe(b)) continue;
+    if (a.dead || b.dead) continue;
+    const dx = wrapDx(a.x, b.x), dy = b.y - a.y;
+    if (Math.abs(dx) > 26 || Math.abs(dy) > 30 || a.bump > 0 || b.bump > 0) continue;
+    if (dy > 6) hit(a, b, dx); else if (dy < -6) hit(b, a, -dx); else clank(a, b, dx);
+  }
+}
+function clank(a, b, dx) {
+  const s = dx > 0 ? 1 : -1; a.vx = -s * 170; b.vx = s * 170; a.vy = Math.min(a.vy, -60); b.vy = Math.min(b.vy, -60); a.bump = b.bump = 0.25;
+  A.tone(1200, 0.04, 'square', 0.04); A.tone(700, 0.06, 'square', 0.03, 0.03);
+  for (let k = 0; k < 6; k++) parts.push({ x: a.x + dx / 2, y: (a.y + b.y) / 2 - 30, vx: A.rand(-120, 120), vy: A.rand(-120, 40), t: 0.3, c: '#fff6c2', g: 0 });
+}
+function hit(w, l, dx) {
+  if (l.inv > 0) return clank(w, l, dx);
+  w.vy = Math.min(w.vy, -90); w.bump = 0.2;
+  if (isFoe(l)) killFoe(l); else killPlayer(l);
+}
+function killFoe(f) {
+  foes.splice(foes.indexOf(f), 1); f.dead = true;
+  const pts = TIERS[f.tier].pts; score += pts; pop(f.x, f.y - 50, pts); A.badge('first');
+  eggs.push({ x: f.x, y: f.y - 12, vx: f.vx * 0.6, vy: -90, tier: f.tier, hatchT: A.rand(6, 8), ground: null });
+  feathers(f.x, f.y - 22, f.cols.bird); A.noise(0.15, 0.06); A.tone(660, 0.12, 'square', 0.04, 0, 1320);
+}
+function killPlayer(p) {
+  if (p.out) return;
+  p.out = true; p.respawn = 1.6; eggChain = 0; feathers(p.x, p.y - 22, p.cols.bird, 26);
+  A.noise(0.4, 0.08); A.tone(330, 0.5, 'sawtooth', 0.05, 0, 80);
+  if (two) { wins[1 - p.pid]++; if (wins[1 - p.pid] >= WIN) { state = 'over'; setTimeout(duelOver, 900); } }
+  else { lives--; waveDeaths++; }
+}
+function burn(r) {
+  for (let k = 0; k < 20; k++) parts.push({ x: r.x, y: LAVA, vx: A.rand(-80, 80), vy: A.rand(-260, -60), t: A.rand(0.4, 0.9), c: Math.random() < 0.5 ? '#ff6a1f' : '#ffd23d', g: 500 });
+  if (isFoe(r)) { foes.splice(foes.indexOf(r), 1); score += 250; pop(r.x, LAVA - 30, 'SCORCHED 250'); A.noise(0.3, 0.06); }
+  else killPlayer(r);
+}
+function hatch(e) {
+  eggs.splice(eggs.indexOf(e), 1);
+  const tier = Math.min(e.tier + 1, 2);
+  foes.push(rider(e.x, e.y, TIERS[tier], { tier, spawnT: 0.3, thinkT: 0.3, dir: Math.random() < 0.5 ? -1 : 1, ty: 200, vy: -150 }));
+  A.tone(880, 0.06, 'square', 0.03); A.tone(1320, 0.08, 'square', 0.03, 0.06);
+}
+function finish() {
+  state = 'over'; A.setScore(score); const rec = A.submit(score);
+  A.overlay({ title: 'GAME OVER', big: `SCORE ${score} · WAVE ${wave}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, btn: 'Fly again', onGo: () => newGame(false), alt: { btn: '2 Players', onGo: () => newGame(true) } });
+}
+function duelOver() {
+  A.jingle([523, 659, 784, 1047], 0.1);
+  A.overlay({ title: wins[0] > wins[1] ? 'GOLD WINS' : 'BLUE WINS', big: `${wins[0]} – ${wins[1]}`, btn: 'Rematch', onGo: () => newGame(true), alt: { btn: '1 Player', onGo: () => newGame(false) } });
+}
+
+A.loop(dt => {
+  parts.forEach(q => { q.x += q.vx * dt; q.y += q.vy * dt; q.vy += q.g * dt; q.vx *= 0.97; q.t -= dt; }); parts = parts.filter(q => q.t > 0);
+  pops.forEach(q => { q.y -= 30 * dt; q.t -= dt; }); pops = pops.filter(q => q.t > 0);
+  if (msgT > 0) msgT -= dt;
+  if (state !== 'play') return;
+  players.forEach((p, i) => {
+    if (p.out) {
+      p.respawn -= dt;
+      if (p.respawn <= 0) { if (!two && lives <= 0) return finish(); players[i] = spawnPlayer(i); }
+      return;
+    }
+    const L = two ? A.held(i ? 'ArrowLeft' : 'KeyA') : A.held('ArrowLeft', 'KeyA'), R = two ? A.held(i ? 'ArrowRight' : 'KeyD') : A.held('ArrowRight', 'KeyD');
+    physics(p, dt, L, R, 200);
+    if (p.y > LAVA) burn(p);
+  });
+  if (state !== 'play') return;
+  for (const f of foes.slice()) {
+    if (f.spawnT > 0) { f.spawnT -= dt; continue; }
+    ai(f, dt); physics(f, dt, f.L, f.R, TIERS[f.tier].max);
+    if (f.y > LAVA) burn(f);
+  }
+  for (const e of eggs.slice()) {
+    e.vy = Math.min(e.vy + G * dt, 320); const py = e.y; e.x = (e.x + e.vx * dt + W) % W; e.y += e.vy * dt;
+    if (!e.ground) for (const p of PLATS) if (e.vy >= 0 && py <= p.y && e.y >= p.y && e.x > p.x - 4 && e.x < p.x + p.w + 4) { e.y = p.y; e.vy = 0; e.ground = p; }
+    if (e.ground) { e.vx *= Math.pow(0.01, dt); if (e.x < e.ground.x - 4 || e.x > e.ground.x + e.ground.w + 4) e.ground = null; else { e.y = e.ground.y; e.vy = 0; } e.hatchT -= dt; if (e.hatchT <= 0) { hatch(e); continue; } }
+    if (e.y > LAVA) { eggs.splice(eggs.indexOf(e), 1); continue; }
+    for (const p of players) if (!p.out && Math.abs(wrapDx(p.x, e.x)) < 20 && e.y > p.y - 46 && e.y < p.y + 8) {
+      eggs.splice(eggs.indexOf(e), 1); eggChain++;
+      let v = Math.min(eggChain, 4) * 250; if (!e.ground) { v += 500; A.badge('egg'); }
+      score += v; pop(e.x, e.y - 20, e.ground ? v : `AIR CATCH ${v}`); A.jingle([784, 1047], 0.05); break;
+    }
+  }
+  combat();
+  if (!two) {
+    queueT -= dt; if (queue.length && queueT <= 0) { spawnFoe(queue.shift()); queueT = 0.7; }
+    if (clearT > 0) { clearT -= dt; if (clearT <= 0) { clearT = 0; nextWave(); } }
+    else if (!queue.length && !foes.length && !eggs.length && !players[0].out) {
+      clearT = 2.4; const b = 1000 * wave + (waveDeaths ? 0 : 2000); score += b;
+      say(waveDeaths ? `WAVE ${wave} CLEAR +${b}` : `FLAWLESS +${b}`); A.jingle([523, 659, 784, 1047], 0.09);
+      if (wave >= 5) A.badge('wave5');
+    }
+    if (score >= nextLife) { lives++; nextLife += 20000; say('EXTRA RIDER'); A.jingle([659, 880, 1319], 0.08); }
+    A.setScore(score);
+  }
+}, t => {
+  ctx.drawImage(bg, 0, 0);
+  drawLava(t);
+  PLATS.forEach(drawPlat);
+  eggs.forEach(e => drawEgg(e, t));
+  if (state === 'title') demo.forEach((d, i) => { d.y = 240 + Math.sin(t / 400 + i * 2) * 30 - i * 20; d.wing = Math.sin(t / 120 + i) > 0.3 ? 0.15 : -1; drawRider(d, t); });
+  else { foes.forEach(f => drawRider(f, t)); players.forEach(p => { if (!p.out) drawRider(p, t); }); }
+  parts.forEach(q => { ctx.globalAlpha = Math.min(1, q.t * 2); ctx.fillStyle = q.c; ctx.fillRect(q.x - 2, q.y - 2, 4, 3); }); ctx.globalAlpha = 1;
+  ctx.font = '12px Silkscreen, monospace'; ctx.textAlign = 'center';
+  pops.forEach(q => { ctx.globalAlpha = Math.min(1, q.t * 2); ctx.fillStyle = '#fff6c2'; ctx.fillText(q.txt, q.x, q.y); }); ctx.globalAlpha = 1;
+  if (state !== 'title') {
+    ctx.font = '13px Silkscreen, monospace';
+    if (two) {
+      for (let i = 0; i < WIN; i++) { ctx.fillStyle = i < wins[0] ? PCOL[0].bird : 'rgba(255,210,61,.2)'; ctx.fillRect(14 + i * 14, 14, 10, 8); ctx.fillStyle = i < wins[1] ? PCOL[1].bird : 'rgba(155,224,255,.2)'; ctx.fillRect(W - 24 - i * 14, 14, 10, 8); }
+    } else {
+      for (let i = 0; i < Math.min(lives, 8); i++) { ctx.fillStyle = '#0a0612'; ctx.fillRect(12 + i * 16, 10, 12, 12); ctx.fillStyle = '#d8dce6'; ctx.fillRect(14 + i * 16, 12, 8, 8); ctx.fillStyle = PCOL[0].rider; ctx.fillRect(14 + i * 16, 10, 5, 3); }
+      ctx.textAlign = 'right'; ctx.fillStyle = '#ffa630'; ctx.fillText(`WAVE ${wave}`, W - 12, 22);
+    }
+  }
+  if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '26px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.shadowColor = '#ffa630'; ctx.shadowBlur = 16; ctx.fillText(msg, W / 2, 230); ctx.shadowBlur = 0; ctx.globalAlpha = 1; }
+});
+
+/* ---------- art ---------- */
+/** Lighten (k > 0) or darken (k < 0) a #rgb / #rrggbb colour. */
+function shade(hex, k) {
+  let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join('');
+  const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+const bg = (() => {
+  const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
+  const g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#07051a'); g.addColorStop(0.6, '#1a0c34'); g.addColorStop(1, '#4a1424'); x.fillStyle = g; x.fillRect(0, 0, W, H);
+  for (let i = 0; i < 90; i++) { x.fillStyle = `rgba(255,255,255,${Math.random() * 0.6 + 0.2})`; x.fillRect(Math.random() * W, Math.random() * 300, Math.random() < 0.1 ? 2 : 1, Math.random() < 0.1 ? 2 : 1); }
+  x.fillStyle = '#f4ecd8'; x.beginPath(); x.arc(520, 80, 34, 0, 6.29); x.fill(); x.fillStyle = '#07051a'; x.beginPath(); x.arc(536, 72, 30, 0, 6.29); x.fill(); // crescent moon
+  const ridge = (base, amp, col, seed) => { x.fillStyle = col; x.beginPath(); x.moveTo(0, H); for (let i = 0; i <= W; i += 16) x.lineTo(i, base - Math.abs(Math.sin(i * 0.013 + seed) * amp + Math.sin(i * 0.05 + seed * 3) * amp * 0.3)); x.lineTo(W, H); x.fill(); };
+  ridge(360, 90, '#1e1236', 1); ridge(410, 60, '#140c26', 4);
+  return c;
+})();
+function drawLava(t) {
+  const g = ctx.createLinearGradient(0, LAVA - 6, 0, H); g.addColorStop(0, '#ffd23d'); g.addColorStop(0.25, '#ff6a1f'); g.addColorStop(1, '#8a1010');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(0, H);
+  for (let x = 0; x <= W; x += 8) ctx.lineTo(x, LAVA - 2 + Math.sin(x * 0.05 + t / 300) * 3);
+  ctx.lineTo(W, H); ctx.fill();
+  ctx.fillStyle = 'rgba(255,106,31,.18)'; ctx.fillRect(0, LAVA - 40, W, 40);
+  // the rock the base ledge stands on
+  ctx.fillStyle = '#0a0612'; ctx.fillRect(138, 440, 364, H - 440); ctx.fillStyle = '#2a2038'; ctx.fillRect(140, 440, 360, H - 440);
+}
+function drawPlat(p) {
+  ctx.fillStyle = '#0a0612'; ctx.fillRect(p.x - 2, p.y - 2, p.w + 4, PH + 4);
+  ctx.fillStyle = '#5a4a6e'; ctx.fillRect(p.x, p.y, p.w, PH);
+  ctx.fillStyle = '#a48ec4'; ctx.fillRect(p.x, p.y, p.w, 4);
+  ctx.fillStyle = '#3a2e4a'; ctx.fillRect(p.x, p.y + PH - 4, p.w, 4);
+  ctx.fillStyle = '#2e2440'; for (let i = p.x + 18; i < p.x + p.w - 8; i += 26) { ctx.fillRect(i, p.y + 5, 2, 7); ctx.fillRect(i + 9, p.y + 8, 2, 5); }
+  ctx.fillStyle = '#6fd88a'; for (let i = p.x + 6; i < p.x + p.w - 4; i += 34) ctx.fillRect(i, p.y - 2, 6, 2); // moss
+}
+function drawEgg(e, t) {
+  const shake = e.ground && e.hatchT < 1.5 ? Math.sin(t / 30) * 2 : 0, x = Math.round(e.x + shake), y = Math.round(e.y);
+  ctx.fillStyle = '#0a0612'; ctx.beginPath(); ctx.ellipse(x, y - 8, 9, 11, 0, 0, 6.29); ctx.fill();
+  ctx.fillStyle = '#e8dcc0'; ctx.beginPath(); ctx.ellipse(x, y - 8, 7, 9, 0, 0, 6.29); ctx.fill();
+  ctx.fillStyle = '#b8a888'; ctx.beginPath(); ctx.ellipse(x + 1, y - 5, 6, 5, 0, 0, Math.PI); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.fillRect(x - 4, y - 14, 3, 4);
+  ctx.fillStyle = TIERS[e.tier].rider; ctx.fillRect(x - 2, y - 9, 2, 2); ctx.fillRect(x + 2, y - 6, 2, 2);
+}
+/* a rider on a big flightless-looking bird that flies anyway: outline pass, shaded fills, then lance and face details */
+function drawRider(r, t) {
+  if (r.inv > 0 && Math.floor(t / 90) % 2) return;
+  for (const off of [0, -W, W]) {
+    const x = r.x + off; if (x < -40 || x > W + 40) continue;
+    if (r.spawnT > 0) { ctx.fillStyle = `rgba(255,246,194,${0.3 * r.spawnT})`; ctx.fillRect(x - 14, 0, 28, r.y); ctx.globalAlpha = 1 - r.spawnT / 0.8; }
+    drawRiderAt(r, Math.round(x), Math.round(r.y)); ctx.globalAlpha = 1;
+  }
+}
+function drawRiderAt(r, x, y) {
+  const b = r.cols.bird, rc = r.cols.rider, leg = '#e8902a', wingC = shade(b, -0.2);
+  ctx.save(); ctx.translate(x, y); ctx.scale(r.face, 1);
+  const parts = [], P = (px, py, w, h, c, flat) => parts.push({ x: px, y: py, w, h, c, flat });
+  if (r.ground) { const s = Math.abs(r.vx) > 20 ? Math.round(Math.sin(r.run) * 4) : 0; P(-5 + s, -11, 3, 11, leg, true); P(3 - s, -11, 3, 11, leg, true); P(-7 + s, -2, 7, 2, leg, true); P(1 - s, -2, 7, 2, leg, true); }
+  else P(-7, -14, 11, 3, leg, true);
+  P(-19, -26, 8, 6, shade(b, -0.25));         // tail
+  P(-13, -25, 26, 14, b);                      // body
+  P(9, -34, 6, 12, b); P(10, -41, 11, 9, b);   // neck, head
+  P(21, -38, 7, 3, '#ffc23d', true);           // beak
+  const wing = r.wing > 0.1 ? 'down' : r.wing > 0 || r.ground ? 'mid' : 'up';
+  if (wing === 'down') P(-9, -20, 16, 12, wingC); else if (wing === 'up') P(-11, -42, 16, 13, wingC); else P(-12, -29, 21, 7, wingC);
+  P(-4, -30, 7, 6, shade(rc, -0.25));          // rider's leg
+  P(-6, -44, 11, 15, rc);                      // tunic
+  P(-5, -54, 10, 10, '#d8dce6');               // helmet
+  P(-9, -58, 7, 4, rc, true);                  // plume
+  ctx.fillStyle = '#0a0612'; for (const q of parts) ctx.fillRect(q.x - 2, q.y - 2, q.w + 4, q.h + 4);
+  ctx.fillRect(2, -38, 28, 5);                 // lance outline
+  for (const q of parts) {
+    ctx.fillStyle = q.c; ctx.fillRect(q.x, q.y, q.w, q.h);
+    if (q.flat || q.w < 6 || q.h < 6) continue;
+    const e = Math.max(1, Math.round(Math.min(q.w, q.h) * 0.22));
+    ctx.fillStyle = shade(q.c, 0.3); ctx.fillRect(q.x, q.y, q.w, e);
+    ctx.fillStyle = shade(q.c, -0.32); ctx.fillRect(q.x, q.y + q.h - e, q.w, e);
+    ctx.fillStyle = shade(q.c, -0.16); ctx.fillRect(q.x, q.y + e, Math.max(1, Math.round(q.w * 0.2)), q.h - 2 * e);
+  }
+  ctx.fillStyle = '#e8e0c8'; ctx.fillRect(3, -37, 24, 3); ctx.fillStyle = '#fff'; ctx.fillRect(27, -37, 3, 3); // lance
+  ctx.fillStyle = '#0a0612'; ctx.fillRect(0, -50, 5, 3);                                                   // visor
+  ctx.fillStyle = '#fff'; ctx.fillRect(15, -39, 3, 3); ctx.fillStyle = '#0a0612'; ctx.fillRect(16, -38, 2, 2); // bird's eye
+  ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.fillRect(-3, -53, 4, 2);                                     // helmet shine
+  ctx.restore();
+}
+A.overlay({ title: 'WING DUEL', sub: 'Flap to climb and steer around the ledges. When riders meet, the <b>higher lance</b> wins. Unseated rivals drop eggs: grab them before they hatch into something tougher. Mind the lava!', btn: '1 Player', scores: true, onGo: () => newGame(false), alt: { btn: '2 Players', onGo: () => newGame(true) } });
+})();
+</script>
+</body>
+</html>

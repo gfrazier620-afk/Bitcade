@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Mole Patrol</title>
+<link rel="manifest" href="../../manifest.json">
+<meta name="theme-color" content="#0f0c1f">
+<link rel="icon" type="image/png" href="../../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../../icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Rubik:wght@400;500;700&family=Silkscreen&display=swap">
+<link rel="stylesheet" href="../../shared/arcade.css">
+</head>
+<body data-game="mole-patrol" style="--game:#d9a066">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>MOLE PATROL</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <div class="pad">
+    <div class="dp"><button class="u" data-k="ArrowUp" aria-label="Up">▲</button><button class="l" data-k="ArrowLeft" aria-label="Left">◀</button><button class="r" data-k="ArrowRight" aria-label="Right">▶</button><button class="d" data-k="ArrowDown" aria-label="Down">▼</button></div>
+    <div class="ab"><button data-k="Space">BUBBLE</button></div>
+  </div>
+  <p class="help"><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> dig · <kbd>Space</kbd> bubble (tap again to pump) · <kbd>P</kbd> pause</p>
+</main>
+<script src="../../shared/chip.js"></script>
+<script src="../../shared/badges.js"></script>
+<script src="../../shared/arcade.js"></script>
+<script>
+(() => {
+const A = Arcade, cv = document.getElementById('cv');
+const C = 32, COLS = 20, ROWS = 15, W = COLS * C, H = ROWS * C, ctx = A.canvas(cv, W, H);
+const DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }, OPP = { up: 'down', down: 'up', left: 'right', right: 'left' };
+const KEYS = { ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right' };
+const ROCK_PTS = [0, 1000, 2500, 4000, 6000, 8000, 10000, 12000, 15000];
+const STRATA = ['#e0a458', '#c4803e', '#a05c34', '#7a3c2a'];
+const band = r => r < 5 ? 0 : r < 8 ? 1 : r < 11 ? 2 : 3;
+const cx = c => c * C + 16, cy = r => r * C + 16;
+let state = 'title', level = 1, score = 0, lives = 3, nextLife = 20000, dug = new Uint8Array(COLS * ROWS), rocks = [], pests = [], parts = [], pops = [];
+let mole = null, ray = null, veg = null, dropped = 0, clearT = 0, dieT = 0, msg = '', msgT = 0;
+
+const inside = (c, r) => c >= 0 && c < COLS && r >= 1 && r < ROWS;
+const isDug = (c, r) => inside(c, r) && dug[r * COLS + c] === 1;
+const rockAt = (c, r) => rocks.some(k => k.state !== 'fall' && k.c === c && k.r === r);
+const ent = (c, r, extra) => ({ c, r, tc: c, tr: r, x: cx(c), y: cy(r), dir: 'right', ...extra });
+function say(t) { msg = t; msgT = 2; }
+function pop(x, y, txt) { pops.push({ x, y, t: 1.1, txt }); }
+function burst(x, y, c, n = 14) { for (let i = 0; i < n; i++) { const a = Math.random() * 6.28, s = A.rand(30, 160); parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, t: A.rand(0.3, 0.7), c }); } }
+
+/* a level: a surface path, the mole's shaft down the middle, a pocket of tunnel for each pest, and loose rocks */
+function buildLevel() {
+  dug = new Uint8Array(COLS * ROWS); rocks = []; pests = []; veg = null; dropped = 0; ray = null; clearT = 0;
+  for (let c = 0; c < COLS; c++) dug[COLS + c] = 1;
+  for (let r = 1; r <= 7; r++) dug[r * COLS + 10] = 1;
+  const taken = new Set(), mark = (c, r) => { for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) taken.add((r + j) * COLS + c + i); };
+  for (let r = 1; r <= 8; r++) mark(10, r);
+  const n = Math.min(3 + level, 8);
+  for (let i = 0; i < n; i++) {
+    for (let k = 0; k < 80; k++) {
+      const horiz = Math.random() < 0.5, len = 3 + (Math.random() < 0.5 ? 1 : 0), c0 = Math.floor(A.rand(1, COLS - (horiz ? len : 1) - 1)), r0 = Math.floor(A.rand(3, ROWS - (horiz ? 1 : len) - 1));
+      const cells = Array.from({ length: len }, (_, j) => horiz ? [c0 + j, r0] : [c0, r0 + j]);
+      if (cells.some(([c, r]) => taken.has(r * COLS + c))) continue;
+      cells.forEach(([c, r]) => { dug[r * COLS + c] = 1; mark(c, r); });
+      const [hc, hr] = cells[1];
+      pests.push(ent(hc, hr, { kind: level > 1 && i % 3 === 2 ? 'newt' : 'beetle', home: [hc, hr], ghost: false, ghostT: A.rand(6, 12), bub: 0, bubT: 0, spit: 0, breath: 0, spitCD: 2, walk: Math.random() * 6 }));
+      break;
+    }
+  }
+  for (let i = 0; i < 4; i++) for (let k = 0; k < 80; k++) {
+    const c = Math.floor(A.rand(1, COLS - 1)), r = Math.floor(A.rand(3, ROWS - 3));
+    if (taken.has(r * COLS + c) || taken.has((r + 1) * COLS + c) || dug[r * COLS + c] || dug[(r + 1) * COLS + c]) continue;
+    rocks.push({ c, r, y: cy(r), state: 'still', t: 0, kills: 0 }); mark(c, r); break;
+  }
+  mole = ent(10, 1, { dir: 'down', walk: 0, inv: 0 });
+  dirt = paintDirt();
+}
+function newGame() { level = 1; score = 0; lives = 3; nextLife = 20000; parts = []; pops = []; A.setScore(0); buildLevel(); state = 'play'; say('LEVEL 1'); }
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+A.onPress(c => {
+  if (c === 'KeyP' || c === 'Escape') return pause();
+  if (state === 'play' && (c === 'Space' || c === 'KeyK') && !dieT) bubble();
+});
+A.onHide(pause);
+A.swipe(cv, d => { if (state === 'play' && d === 'tap' && !dieT) bubble(); });
+
+/* grid movement: an entity walks from cell centre to cell centre; choose() picks the next direction at each centre */
+function step(e, speed, dt, choose) {
+  if (e.x === cx(e.tc) && e.y === cy(e.tr)) {
+    e.c = e.tc; e.r = e.tr; const d = choose(e);
+    if (d) { e.dir = d; e.tc = e.c + DIRS[d][0]; e.tr = e.r + DIRS[d][1]; } else return false;
+  }
+  const tx = cx(e.tc), ty = cy(e.tr), dx = tx - e.x, dy = ty - e.y, dist = Math.abs(dx) + Math.abs(dy), mv = speed * dt;
+  if (dist <= mv) { e.x = tx; e.y = ty; } else { e.x += Math.sign(dx) * mv; e.y += Math.sign(dy) * mv; }
+  return true;
+}
+const heldDirs = () => ['up', 'down', 'left', 'right'].filter(d => Object.keys(KEYS).some(k => KEYS[k] === d && A.held(k)));
+function moleChoose(m) {
+  const want = heldDirs(), ok = d => inside(m.c + DIRS[d][0], m.r + DIRS[d][1]) && !rockAt(m.c + DIRS[d][0], m.r + DIRS[d][1]);
+  const turn = want.find(d => d !== m.dir && ok(d)), d = turn || (want.includes(m.dir) && ok(m.dir) ? m.dir : want.find(ok));
+  if (!d) return null;
+  const nc = m.c + DIRS[d][0], nr = m.r + DIRS[d][1];
+  m.digging = !isDug(nc, nr); dug[nr * COLS + nc] = 1;
+  return d;
+}
+function pestChoose(p) {
+  if (p.kind === 'newt' && p.spitCD <= 0 && p.r === mole.r && Math.abs(mole.c - p.c) <= 4 && !dieT) { p.spit = 0.6; p.dir = mole.c > p.c ? 'right' : 'left'; return null; }
+  const opts = Object.keys(DIRS).filter(d => { const c = p.c + DIRS[d][0], r = p.r + DIRS[d][1]; return isDug(c, r) && !rockAt(c, r); });
+  if (!opts.length) return null;
+  const fwd = opts.length > 1 ? opts.filter(d => d !== OPP[p.dir]) : opts;
+  if (Math.random() < Math.min(0.55 + level * 0.04, 0.85)) {
+    const dist = d => Math.abs(p.c + DIRS[d][0] - mole.c) + Math.abs(p.r + DIRS[d][1] - mole.r);
+    return fwd.sort((a, b) => dist(a) - dist(b))[0];
+  }
+  return A.pick(fwd);
+}
+/* the bubble wand: a stream along open tunnel (3 cells); a pest it reaches is trapped, and each tap pumps the bubble up */
+function bubble() {
+  if (ray && ray.pest) {
+    const p = ray.pest; p.bub++; p.bubT = 0.8; ray.t = 0.3; A.tone(300 + p.bub * 120, 0.08, 'triangle', 0.04, 0, 500 + p.bub * 120);
+    if (p.bub >= 4) popPest(p);
+    return;
+  }
+  const [dx, dy] = DIRS[mole.dir]; let c = Math.round((mole.x - 16) / C), r = Math.round((mole.y - 16) / C), len = 0, hitP = null;
+  for (let i = 1; i <= 3; i++) {
+    const nc = c + dx * i, nr = r + dy * i; if (!isDug(nc, nr) || rockAt(nc, nr)) break; len = i;
+    hitP = pests.find(p => !p.ghost && Math.abs(p.x - cx(nc)) < 22 && Math.abs(p.y - cy(nr)) < 22); if (hitP) break;
+  }
+  ray = { len: hitP ? Math.hypot(hitP.x - mole.x, hitP.y - mole.y) / C : Math.max(len, 0.6), t: 0.3, pest: hitP, dir: mole.dir };
+  A.tone(700, 0.06, 'sine', 0.03, 0, 1100);
+  if (hitP) { hitP.bub = Math.max(1, hitP.bub); hitP.bubT = 0.8; hitP.spit = 0; hitP.breath = 0; }
+}
+function popPest(p) {
+  pests.splice(pests.indexOf(p), 1); ray = null;
+  let v = [200, 300, 400, 500][band(p.r)]; if (p.kind === 'newt' && (mole.dir === 'left' || mole.dir === 'right')) v *= 2;
+  score += v; pop(p.x, p.y - 18, v); burst(p.x, p.y, '#bfefff', 18); burst(p.x, p.y, p.kind === 'newt' ? '#5ad870' : '#ff3d5a', 8);
+  A.noise(0.12, 0.06); A.tone(900, 0.1, 'square', 0.04, 0, 1800);
+}
+function die() {
+  if (dieT || mole.inv > 0) return;
+  dieT = 1.5; ray = null; pests.forEach(p => { p.bub = 0; }); A.noise(0.3, 0.06); A.jingle([523, 392, 330, 262, 196], 0.1, 'triangle');
+}
+function respawn() {
+  lives--; if (lives <= 0) return finish();
+  mole = ent(10, 1, { dir: 'down', walk: 0, inv: 2 });
+  for (const p of pests) if (Math.abs(p.c - 10) + Math.abs(p.r - 1) < 7 || p.ghost) Object.assign(p, ent(p.home[0], p.home[1]), { ghost: false, ghostT: A.rand(6, 12), spit: 0, breath: 0 });
+}
+function finish() {
+  state = 'over'; A.setScore(score); const rec = A.submit(score);
+  A.overlay({ title: 'GAME OVER', big: `SCORE ${score} · LEVEL ${level}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, btn: 'Dig again', onGo: newGame });
+}
+
+A.loop(dt => {
+  parts.forEach(q => { q.x += q.vx * dt; q.y += q.vy * dt; q.vx *= 0.93; q.vy *= 0.93; q.t -= dt; }); parts = parts.filter(q => q.t > 0);
+  pops.forEach(q => { q.y -= 26 * dt; q.t -= dt; }); pops = pops.filter(q => q.t > 0);
+  if (msgT > 0) msgT -= dt;
+  if (state !== 'play') return;
+  if (dieT) { dieT -= dt; if (dieT <= 0) { dieT = 0; respawn(); } return; }
+  if (clearT) { clearT -= dt; if (clearT <= 0) { clearT = 0; level++; buildLevel(); say(`LEVEL ${level}`); } return; }
+  mole.inv = Math.max(0, mole.inv - dt);
+  // the mole: moving lets go of a trapped pest; reversing works mid-step
+  const want = heldDirs();
+  if (want.length && ray && ray.pest) ray = null;
+  if (ray && !ray.pest) { ray.t -= dt; if (ray.t <= 0) ray = null; }
+  if (!ray) {
+    if (want.includes(OPP[mole.dir]) && (mole.x !== cx(mole.tc) || mole.y !== cy(mole.tr))) { [mole.c, mole.tc, mole.r, mole.tr] = [mole.tc, mole.c, mole.tr, mole.r]; mole.dir = OPP[mole.dir]; }
+    if (want.length || mole.x !== cx(mole.tc) || mole.y !== cy(mole.tr)) {
+      const moved = step(mole, mole.digging ? 72 : 100, dt, moleChoose);
+      if (moved) { mole.walk += dt * 14; if (mole.digging && Math.random() < 0.4) parts.push({ x: mole.x + DIRS[mole.dir][0] * 12, y: mole.y + DIRS[mole.dir][1] * 12, vx: A.rand(-60, 60), vy: A.rand(-80, 0), t: 0.3, c: STRATA[band(mole.r)] }); }
+    }
+  }
+  // pests
+  for (const p of pests.slice()) {
+    p.walk += dt * 8; p.spitCD -= dt;
+    if (p.bub > 0) { p.bubT -= dt; if (p.bubT <= 0) { p.bub--; p.bubT = 0.8; if (!p.bub && ray && ray.pest === p) ray = null; } continue; }
+    if (p.spit > 0) { p.spit -= dt; if (p.spit <= 0) { p.breath = 0.9; A.noise(0.5, 0.03); } continue; }
+    if (p.breath > 0) {
+      p.breath -= dt; if (p.breath <= 0) p.spitCD = A.rand(3, 5);
+      const s = p.dir === 'right' ? 1 : -1, mc = Math.round((mole.x - 16) / C), mr = Math.round((mole.y - 16) / C);
+      if (mr === p.r && (mc === p.c + s || mc === p.c + 2 * s)) die();
+      continue;
+    }
+    if (p.ghost) { // drifting through the dirt as a pair of eyes, then surfacing in the nearest tunnel
+      p.gt += dt; const tc = Math.round((p.x - 16) / C), tr = Math.round((p.y - 16) / C);
+      if (p.gt > 1.5 && isDug(tc, tr) && !rockAt(tc, tr)) {
+        const dx = cx(tc) - p.x, dy = cy(tr) - p.y, d = Math.hypot(dx, dy), mv = 60 * dt;
+        if (d <= mv) Object.assign(p, ent(tc, tr), { ghost: false, ghostT: A.rand(6, 12) - level * 0.4, dir: p.dir }); else { p.x += dx / d * mv; p.y += dy / d * mv; }
+      } else { const dx = mole.x - p.x, dy = mole.y - p.y, d = Math.hypot(dx, dy) || 1; p.x += dx / d * 42 * dt; p.y += dy / d * 42 * dt; }
+      continue;
+    }
+    p.ghostT -= dt;
+    const atCentre = p.x === cx(p.tc) && p.y === cy(p.tr);
+    if (atCentre && p.ghostT <= 0) { p.ghost = true; p.gt = 0; continue; }
+    if (!step(p, Math.min(62 + level * 4, 92), dt, pestChoose) && atCentre) p.ghostT -= dt * 2; // boxed in: go ghost sooner
+    if (!mole.inv && Math.hypot(p.x - mole.x, p.y - mole.y) < 22) die();
+  }
+  // rocks: wobble once the dirt under them is gone (and the mole has moved out from under), then fall
+  for (const k of rocks.slice()) {
+    if (k.state === 'still' && isDug(k.c, k.r + 1) && !(mole.c === k.c && mole.r === k.r + 1) && !(mole.tc === k.c && mole.tr === k.r + 1)) { k.state = 'wobble'; k.t = 0.6; }
+    else if (k.state === 'wobble') { k.t -= dt; if (k.t <= 0) { k.state = 'fall'; A.tone(200, 0.3, 'triangle', 0.04, 0, 90); } }
+    else if (k.state === 'fall') {
+      k.y += 230 * dt; const r = Math.floor((k.y + 16) / C);
+      for (const p of pests.slice()) if (!p.ghost && Math.abs(p.x - cx(k.c)) < 20 && p.y > k.y - 8 && p.y < k.y + 28) { pests.splice(pests.indexOf(p), 1); k.kills++; burst(p.x, p.y, '#ff3d5a', 8); if (ray && ray.pest === p) ray = null; }
+      if (!mole.inv && Math.abs(mole.x - cx(k.c)) < 20 && mole.y > k.y - 4 && mole.y < k.y + 28) die();
+      if (!isDug(k.c, r) || rockAt(k.c, r)) {
+        k.state = 'crumble'; k.t = 0.5; k.y = cy(r - 1); A.noise(0.25, 0.08);
+        if (k.kills) { const v = ROCK_PTS[Math.min(k.kills, 8)]; score += v; pop(cx(k.c), k.y - 20, v); A.jingle([523, 784, 1047], 0.06); if (k.kills >= 2) A.badge('rock'); }
+        if (++dropped === 2) { veg = { c: 10, r: 7, t: 10 }; A.jingle([784, 988, 1175], 0.07); }
+      }
+    } else if (k.state === 'crumble') { k.t -= dt; if (k.t <= 0) { rocks.splice(rocks.indexOf(k), 1); burst(cx(k.c), k.y, '#8a8094', 12); } }
+  }
+  if (veg) { veg.t -= dt; if (veg.t <= 0) veg = null; else if (Math.hypot(mole.x - cx(veg.c), mole.y - cy(veg.r)) < 20) { const v = Math.min(level, 8) * 500; score += v; pop(cx(veg.c), cy(veg.r) - 20, v); veg = null; A.badge('veg'); A.jingle([659, 784, 1047, 1319], 0.06); } }
+  if (!pests.length && !dieT && !rocks.some(k => k.state !== 'still')) { clearT = 2.2; say('PATCH CLEAR!'); A.jingle([523, 659, 784, 1047], 0.09); if (level >= 5) A.badge('level5'); }
+  if (score >= nextLife) { lives++; nextLife += 20000; say('EXTRA MOLE'); }
+  A.setScore(score);
+}, t => {
+  ctx.drawImage(dirt, 0, 0);
+  // tunnels
+  for (let r = 1; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (dug[r * COLS + c] && r > 1) {
+    ctx.fillStyle = '#140a0e'; ctx.fillRect(c * C, r * C, C, C);
+    if (!isDug(c, r - 1) || r === 2) { ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(c * C, r * C, C, 4); }
+    if (!isDug(c - 1, r)) { ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fillRect(c * C, r * C, 3, C); }
+  }
+  for (const k of rocks) drawRock(k, t);
+  if (veg) drawVeg(cx(veg.c), cy(veg.r), t, veg.t);
+  if (ray) drawRay();
+  for (const p of pests) drawPest(p, t);
+  if (mole && !(mole.inv > 0 && Math.floor(t / 90) % 2)) drawMole(mole, t);
+  parts.forEach(q => { ctx.globalAlpha = Math.min(1, q.t * 3); ctx.fillStyle = q.c; ctx.fillRect(q.x - 2, q.y - 2, 4, 4); }); ctx.globalAlpha = 1;
+  ctx.font = '12px Silkscreen, monospace'; ctx.textAlign = 'center';
+  pops.forEach(q => { ctx.globalAlpha = Math.min(1, q.t * 2); ctx.fillStyle = '#fff6c2'; ctx.fillText(q.txt, q.x, q.y); }); ctx.globalAlpha = 1;
+  // HUD in the sky: spare moles on the left, a flower for each level on the right
+  for (let i = 0; i < Math.min(lives - 1, 6); i++) { ctx.fillStyle = '#0a0612'; ctx.fillRect(10 + i * 18, 8, 14, 12); ctx.fillStyle = '#ffd23d'; ctx.fillRect(12 + i * 18, 10, 10, 4); ctx.fillStyle = '#6a5848'; ctx.fillRect(12 + i * 18, 14, 10, 4); }
+  for (let i = 0; i < Math.min(level, 12); i++) { const fx = W - 16 - i * 16; ctx.fillStyle = '#3dbb5a'; ctx.fillRect(fx, 18, 2, 12); ctx.fillStyle = i % 2 ? '#ff7ab8' : '#fff'; ctx.fillRect(fx - 3, 12, 8, 6); ctx.fillStyle = '#ffd23d'; ctx.fillRect(fx - 1, 14, 4, 2); }
+  if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '26px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.shadowColor = '#d9a066'; ctx.shadowBlur = 16; ctx.fillText(msg, W / 2, H / 2 - 30); ctx.shadowBlur = 0; ctx.globalAlpha = 1; }
+});
+
+/* ---------- art ---------- */
+/** Lighten (k > 0) or darken (k < 0) a #rgb / #rrggbb colour. */
+function shade(hex, k) {
+  let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join('');
+  const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+/** Paint queued boxes the house way: one dark outline pass, then fills lit from above (flat ones skip the shading). */
+function paint(list) {
+  ctx.fillStyle = '#0a0612'; for (const q of list) ctx.fillRect(q[0] - 2, q[1] - 2, q[2] + 4, q[3] + 4);
+  for (const [x, y, w, h, c, flat] of list) {
+    ctx.fillStyle = c; ctx.fillRect(x, y, w, h);
+    if (flat || w < 5 || h < 5) continue;
+    const e = Math.max(1, Math.round(Math.min(w, h) * 0.22));
+    ctx.fillStyle = shade(c, 0.3); ctx.fillRect(x, y, w, e);
+    ctx.fillStyle = shade(c, -0.32); ctx.fillRect(x, y + h - e, w, e);
+  }
+}
+let dirt = null;
+function paintDirt() {
+  const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
+  const sky = x.createLinearGradient(0, 0, 0, 2 * C); sky.addColorStop(0, '#3a6ad8'); sky.addColorStop(1, '#9fd0ff'); x.fillStyle = sky; x.fillRect(0, 0, W, 2 * C);
+  x.fillStyle = 'rgba(255,255,255,.85)'; [[90, 18], [300, 12], [470, 24]].forEach(([a, b]) => { x.fillRect(a, b, 40, 8); x.fillRect(a + 8, b - 5, 22, 6); });
+  for (let r = 2; r < ROWS; r++) { x.fillStyle = STRATA[band(r)]; x.fillRect(0, r * C, W, C); }
+  let s = level * 977; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < 520; i++) { const px = rnd() * W, py = 2 * C + rnd() * (H - 2 * C), b = band(Math.floor(py / C)); x.fillStyle = rnd() < 0.5 ? shade(STRATA[b], -0.25) : shade(STRATA[b], 0.2); x.fillRect(Math.round(px), Math.round(py), 3, 2); }
+  for (let b = 1; b < 4; b++) { x.fillStyle = 'rgba(0,0,0,.18)'; x.fillRect(0, [5, 8, 11][b - 1] * C, W, 2); }
+  x.fillStyle = '#2f9a48'; x.fillRect(0, 2 * C - 4, W, 6); x.fillStyle = '#5ad870'; x.fillRect(0, 2 * C - 4, W, 2);
+  for (let i = 0; i < W; i += 7) { x.fillStyle = '#3dbb5a'; x.fillRect(i, 2 * C - 7, 2, 4); }
+  return c;
+}
+function drawMole(m, t) {
+  ctx.save(); ctx.translate(Math.round(m.x), Math.round(m.y));
+  if (dieT) { ctx.rotate((1.5 - dieT) * 8); ctx.scale(dieT / 1.5 + 0.2, dieT / 1.5 + 0.2); }
+  const flip = m.dir === 'left' ? -1 : 1; if (m.dir === 'up') ctx.rotate(-Math.PI / 2); if (m.dir === 'down') ctx.rotate(Math.PI / 2); ctx.scale(flip, 1);
+  const s = Math.sin(m.walk) > 0 ? 1 : 0;
+  paint([[-9 + s, 7, 6, 4, '#3a2c22', true], [1 - s, 7, 6, 4, '#3a2c22', true], [-12, -7, 21, 15, '#6a5848'], [-7, 1, 12, 6, '#a08870', true],
+    [8, -3, 5, 5, '#ff9ab0'], [-9, -14, 16, 7, '#ffd23d'], [-11, -8, 20, 2, '#d8a820', true], [5, 3 + s, 7, 4, '#f0d0b0', true]]);
+  ctx.fillStyle = '#fff6c2'; ctx.fillRect(5, -13, 3, 3); ctx.fillStyle = 'rgba(255,246,194,.25)'; ctx.beginPath(); ctx.moveTo(8, -12); ctx.lineTo(24, -18); ctx.lineTo(24, -6); ctx.fill(); // hat lamp
+  ctx.fillStyle = '#0a0612'; ctx.fillRect(3, -4, 2, 2); ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.fillRect(-6, -13, 5, 1.5);
+  ctx.restore();
+}
+function drawPest(p, t) {
+  const x = Math.round(p.x), y = Math.round(p.y);
+  if (p.ghost) { // only the eyes show while it burrows
+    if (Math.floor(t / 120) % 4 === 0) return;
+    ctx.fillStyle = '#0a0612'; ctx.fillRect(x - 9, y - 5, 18, 9); ctx.fillStyle = '#fff'; ctx.fillRect(x - 7, y - 3, 6, 5); ctx.fillRect(x + 1, y - 3, 6, 5);
+    const lx = Math.sign(mole.x - p.x) * 1.5; ctx.fillStyle = '#ff3d5a'; ctx.fillRect(x - 5 + lx, y - 2, 2, 3); ctx.fillRect(x + 3 + lx, y - 2, 2, 3); return;
+  }
+  ctx.save(); ctx.translate(x, y);
+  const grow = 1 + p.bub * 0.12; ctx.scale(grow, grow);
+  ctx.save(); if (p.dir === 'left') ctx.scale(-1, 1);
+  const s = Math.sin(p.walk) > 0 ? 1 : 0, warn = p.spit > 0 && Math.floor(t / 80) % 2;
+  if (p.kind === 'beetle') {
+    paint([[-9, 7, 3, 3 + s, '#2a1a2a', true], [-2, 7, 3, 4 - s, '#2a1a2a', true], [5, 7, 3, 3 + s, '#2a1a2a', true], [-11, -9, 19, 17, '#ff3d5a'], [7, -6, 7, 11, '#3a2440']]);
+    ctx.fillStyle = '#0a0612'; ctx.fillRect(-2, -9, 2, 17); ctx.fillStyle = '#ffd0d8'; ctx.fillRect(-8, -5, 3, 3); ctx.fillRect(2, 0, 3, 3);
+    ctx.fillStyle = '#fff'; ctx.fillRect(10, -4, 3, 3); ctx.fillStyle = '#0a0612'; ctx.fillRect(12, -3, 1.5, 2);
+    ctx.fillStyle = '#3a2440'; ctx.fillRect(12, -12, 2, 6); ctx.fillRect(14, -14, 3, 2);
+  } else {
+    paint([[-17, -1, 8, 4, '#2f9a48'], [-6, 5, 3, 4 + s, '#2f9a48', true], [4, 5, 3, 5 - s, '#2f9a48', true], [-11, -6, 20, 11, warn ? '#ffd23d' : '#3dbb5a'], [7, -9, 10, 11, '#5ad870']]);
+    ctx.fillStyle = '#ffd23d'; ctx.fillRect(10, -8, 5, 4); ctx.fillStyle = '#0a0612'; ctx.fillRect(13, -7, 2, 3);
+    ctx.fillStyle = '#1f6a32'; for (let i = -8; i < 6; i += 5) ctx.fillRect(i, -5, 2, 2);
+  }
+  ctx.restore();
+  if (p.breath > 0) { // a cloud of spores, two cells long
+    const dir = p.dir === 'right' ? 1 : -1;
+    for (let i = 0; i < 7; i++) { const k = (i / 6) * 2 * C / grow, wob = Math.sin(t / 60 + i) * 3; ctx.fillStyle = i % 2 ? 'rgba(160,255,120,.75)' : 'rgba(90,216,112,.8)'; ctx.beginPath(); ctx.arc(dir * (16 + k), wob, 6 + (i % 3), 0, 6.29); ctx.fill(); }
+  }
+  if (p.bub > 0) { // trapped in a bubble
+    ctx.strokeStyle = 'rgba(191,239,255,.9)'; ctx.fillStyle = 'rgba(191,239,255,.22)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0, 0, 14 + p.bub * 2, 0, 6.29); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,.8)'; ctx.fillRect(-8 - p.bub, -10 - p.bub, 5, 3);
+  }
+  ctx.restore();
+}
+function drawRay() {
+  const [dx, dy] = DIRS[ray.dir], n = Math.max(2, Math.round(ray.len * 4));
+  for (let i = 1; i <= n; i++) { const k = (i / n) * ray.len * C, r = 2 + (i % 3); ctx.strokeStyle = 'rgba(191,239,255,.85)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(mole.x + dx * k, mole.y + dy * k + Math.sin(i + performance.now() / 80) * 2 * (dx ? 1 : 0), r, 0, 6.29); ctx.stroke(); }
+}
+function drawRock(k, t) {
+  const x = cx(k.c) + (k.state === 'wobble' ? Math.sin(t / 25) * 2 : 0), y = k.y;
+  if (k.state === 'crumble') { ctx.globalAlpha = k.t / 0.5; }
+  ctx.fillStyle = '#0a0612'; ctx.beginPath(); ctx.roundRect(x - 15, y - 14, 30, 29, 9); ctx.fill();
+  const g = ctx.createLinearGradient(0, y - 12, 0, y + 13); g.addColorStop(0, '#c4bccf'); g.addColorStop(0.4, '#8a8094'); g.addColorStop(1, '#4a4258');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.roundRect(x - 13, y - 12, 26, 25, 8); ctx.fill();
+  ctx.fillStyle = '#5a5268'; ctx.fillRect(x - 4, y - 2, 8, 2); ctx.fillRect(x + 3, y + 4, 6, 2); ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.fillRect(x - 8, y - 9, 6, 3);
+  ctx.globalAlpha = 1;
+}
+function drawVeg(x, y, t, left) {
+  if (left < 2 && Math.floor(t / 100) % 2) return;
+  ctx.save(); ctx.translate(x, y + Math.sin(t / 200) * 2);
+  paint([[-3, -16, 3, 8, '#3dbb5a', true], [1, -18, 3, 10, '#5ad870', true], [-8, -9, 16, 14, '#e8d8ff'], [-6, -9, 12, 5, '#b86bd8', true], [-2, 5, 4, 5, '#e8d8ff', true]]);
+  ctx.restore();
+}
+buildLevel(); mole.inv = 0;
+A.overlay({ title: 'MOLE PATROL', sub: 'Pests are tunnelling under the garden. Dig after them and trap them in bubbles: <b>tap again to pump</b> until they pop. Dig under a rock to drop it on them. Watch for newts’ spore clouds!', btn: 'Start', scores: true, onGo: newGame });
+})();
+</script>
+</body>
+</html>

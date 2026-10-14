@@ -10,7 +10,8 @@ service cloud.firestore {
         'neon-noodle': 100000, 'wallbuster': 500000, 'star-siege': 500000, 'rock-rift': 1000000,
         'stackdown': 2000000, 'back-alley-brawl': 100000, 'circuit-chase': 1000000, 'highrise-handyman': 1000000,
         'nitro-lane': 500000, 'volley-duel': 200000, 'crater-lander': 500000, 'sky-shield': 2000000, 'hedge-hop': 500000,
-        'scaffold-scramble': 500000, 'swarm-strike': 1000000, 'garden-gunner': 1000000, 'cube-hopper': 500000
+        'scaffold-scramble': 500000, 'swarm-strike': 1000000, 'garden-gunner': 1000000, 'cube-hopper': 500000,
+        'light-trail': 200000, 'wing-duel': 1000000, 'twin-blast': 2000000, 'mole-patrol': 1000000
       };
     }
 

@@ -71,6 +71,22 @@ window.BADGES = {
     { id: 'round', name: 'Colour Me In', desc: 'Finish a round' },
     { id: 'lure', name: 'Spring Trap', desc: 'Lure the spring off the pyramid' },
     { id: 'r5', name: 'Pyramid Pro', desc: 'Reach round 5' }],
+  'light-trail': [
+    { id: 'round', name: 'Boxed In', desc: 'Win a round against a CPU rider' },
+    { id: 'match', name: 'Grid Runner', desc: 'Win a match against a CPU rider' },
+    { id: 'champ', name: 'Grid Champion', desc: 'Beat FLUX, the last rider' }],
+  'wing-duel': [
+    { id: 'first', name: 'Unseated', desc: 'Knock a rival rider off their bird' },
+    { id: 'egg', name: 'Air Catch', desc: 'Catch an egg before it lands' },
+    { id: 'wave5', name: 'Sky Marshal', desc: 'Clear wave 5' }],
+  'twin-blast': [
+    { id: 'brute', name: 'Big Game', desc: 'Take down a brute' },
+    { id: 'crew', name: 'Nobody Left Behind', desc: 'Clear a wave with all the crew saved' },
+    { id: 'wave5', name: 'Arena Veteran', desc: 'Reach wave 5' }],
+  'mole-patrol': [
+    { id: 'rock', name: 'Rockslide', desc: 'Crush two pests with one rock' },
+    { id: 'veg', name: 'Green Thumb', desc: 'Grab the bonus veggie' },
+    { id: 'level5', name: 'Deep Digger', desc: 'Clear level 5' }],
   'blip-sports': [
     { id: 'fbwin', name: 'Gridiron Win', desc: 'Win a football game' },
     { id: 'bbwin', name: 'Ballpark Win', desc: 'Win a baseball game' },

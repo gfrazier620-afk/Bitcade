@@ -1,6 +1,6 @@
 # Bitcade
 
-Eighteen classic-style arcade games that run in your browser, on phone or keyboard.
+Twenty-two classic-style arcade games that run in your browser, on phone or keyboard.
 
 **Play:** https://gfrazier620-afk.github.io/Bitcade/
 
@@ -23,6 +23,10 @@ Eighteen classic-style arcade games that run in your browser, on phone or keyboa
 | Swarm Strike | Dive-bomb shooter |
 | Garden Gunner | Caterpillar shooter |
 | Cube Hopper | Pyramid hopper |
+| Light Trail | Light-cycle duel, 1P vs CPU ladder or 2P |
+| Wing Duel | Flying joust, 1P waves or 2P duel |
+| Twin Blast | Twin-stick arena shooter |
+| Mole Patrol | Dig and trap |
 | Blip Sports | LED football + baseball |
 
 Top-10 score tables with your initials save in your browser and post to a world leaderboard (Firebase). Stackdown and Wallbuster have a daily challenge that gives every player the same pieces or walls, with its own world board each day. Every game has three badges to earn, and finished games can be shared. Blip Sports keeps a world board of wins. Every title screen has its own chiptune, there's an optional CRT filter, and the lobby has a boot sequence and an attract mode. Install it from the lobby (or Share → Add to Home Screen on iPhone) and it plays offline. To run it locally, use `python3 -m http.server` in this folder, then open http://localhost:8000.

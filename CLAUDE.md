@@ -1,6 +1,6 @@
 # Bitcade
 
-A GitHub Pages arcade site: a lobby page plus 18 classic-style browser games. Plain HTML, CSS and canvas JavaScript. No build step, no frameworks. The only outside dependencies are Google Fonts and the Firebase SDK, loaded from gstatic only for the world leaderboard.
+A GitHub Pages arcade site: a lobby page plus 22 classic-style browser games. Plain HTML, CSS and canvas JavaScript. No build step, no frameworks. The only outside dependencies are Google Fonts and the Firebase SDK, loaded from gstatic only for the world leaderboard.
 
 ## Layout
 
@@ -27,11 +27,12 @@ A GitHub Pages arcade site: a lobby page plus 18 classic-style browser games. Pl
   - `body data-game="<slug>"` sets the score key.
   - `style="--game:#hex"` sets the accent colour.
   - `data-pad="0:KeyK 2:KeyJ"` maps gamepad buttons (standard mapping index) to key codes. The defaults are d-pad and left stick → arrows, A (0) → Space, Start (9) → KeyP. A or Start also presses the overlay button.
+  - `data-sticks="wasd arrows"` makes the left stick press WASD and the right stick the arrows (Twin Blast's twin-stick controls). The default is the left stick as arrows.
 - `games/blip-sports/`: the exception. It's an LED handheld (football and baseball) with its own shell and styles, not the kit's overlay or arcade.css. It does load arcade.js for keys, gamepad, badges and the world wins board (`A.postWin`, `wins/{uid}` in Firestore). Its own pause freezes game time. It tracks local wins in `arcade:best:blip-sports`.
 
 ## Games
 
-neon-noodle (snake), wallbuster (brick breaker), star-siege (alien shooter), rock-rift (asteroids), stackdown (falling blocks), back-alley-brawl (1v1 fighter vs CPU ladder), circuit-chase (maze chase), highrise-handyman (fix-it climber), nitro-lane (racing), volley-duel (paddle duel, 1P vs CPU ladder or 2P on one keyboard/tablet), crater-lander (lunar lander), sky-shield (missile defense), hedge-hop (road crossing), scaffold-scramble (girder climber), swarm-strike (dive-bomb shooter), garden-gunner (caterpillar shooter), cube-hopper (pyramid hopper), blip-sports (LED football + baseball).
+neon-noodle (snake), wallbuster (brick breaker), star-siege (alien shooter), rock-rift (asteroids), stackdown (falling blocks), back-alley-brawl (1v1 fighter vs CPU ladder), circuit-chase (maze chase), highrise-handyman (fix-it climber), nitro-lane (racing), volley-duel (paddle duel, 1P vs CPU ladder or 2P on one keyboard/tablet), crater-lander (lunar lander), sky-shield (missile defense), hedge-hop (road crossing), scaffold-scramble (girder climber), swarm-strike (dive-bomb shooter), garden-gunner (caterpillar shooter), cube-hopper (pyramid hopper), light-trail (light-cycle duel, 1P vs CPU ladder or 2P), wing-duel (flying joust, 1P waves or 2P duel), twin-blast (twin-stick arena shooter), mole-patrol (dig and trap), blip-sports (LED football + baseball).
 
 All names, characters and art are original. Keep it that way: no trademarked game names, characters or sprites.
 
@@ -41,7 +42,7 @@ All names, characters and art are original. Keep it that way: no trademarked gam
 ## Adding a game
 
 1. `games/<slug>/index.html`, using the kit (copy the head tags, including the manifest and icon links, and the chip.js / badges.js / arcade.js script tags from another game).
-2. A cabinet in the lobby's `GAMES` array, and the count word in its tagline ("EIGHTEEN CLASSIC-STYLE GAMES").
+2. A cabinet in the lobby's `GAMES` array, and the count word in its tagline ("TWENTY-TWO CLASSIC-STYLE GAMES").
 3. The slug in `sw.js` `GAMES`, then bump `VERSION`.
 4. Its badges in `shared/badges.js`, with matching `A.badge('id')` calls in the game.
 5. The slug and a max score in `firestore.rules` `maxScore()`, then publish the rules in the Firebase console.

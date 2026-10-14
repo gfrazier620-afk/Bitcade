@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#0f0c1f">
 <link rel="icon" type="image/png" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<meta name="description" content="Eighteen classic-style arcade games in your browser. Free, no installs, works on phone and keyboard.">
+<meta name="description" content="Twenty-two classic-style arcade games in your browser. Free, no installs, works on phone and keyboard.">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Bungee+Shade&family=Rubik:wght@400;500;700&family=Silkscreen&display=swap">
 <link rel="stylesheet" href="shared/arcade.css">
@@ -149,7 +149,7 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
 <div class="lobby">
   <header class="marquee">
     <h1 class="logo">BITCADE</h1>
-    <p class="tag">EIGHTEEN CLASSIC-STYLE GAMES · NO QUARTERS REQUIRED</p>
+    <p class="tag">TWENTY-TWO CLASSIC-STYLE GAMES · NO QUARTERS REQUIRED</p>
     <div class="coin" aria-hidden="true">▶ PICK A CABINET ◀</div>
     <div class="stats" id="stats"></div>
   </header>
@@ -218,11 +218,23 @@ const GAMES = [
   { slug: 'cube-hopper', name: 'Cube Hopper', kind: 'Pyramid hopper', c: '#6fb7ff', blurb: 'Hop every cube to a new colour and dodge the spring.',
     px: ['.....Q......', '.....YY.....', '....NNNN....', '....MMYY....', '...NNNNNN...', '..YYMMYYMM..', '..NNNNNNNN..', '..R.........'],
     px2: ['............', '.....YY.....', '....NNNNQ...', '....MMYY....', '...NNNNNN...', '..YYMMYYMM..', '..NNNNNNNN..', '.R..........'] },
+  { slug: 'light-trail', name: 'Light Trail', kind: 'Light-cycle duel · 2P', c: '#22e0ff', blurb: 'Your bike leaves a wall. Make your rival hit one first.',
+    px: ['ZZZZZZZZZ...', '........Z...', '..OOOOW.Z...', '..O.....Z...', '..O.....ZZW.', '..O.........', 'OOO.........', '............'],
+    px2: ['ZZZZZZZZZ...', '........Z...', '..OOOOOW....', '..O.....Z...', '..O.....ZZZW', '..O.........', 'OOO.........', '............'] },
+  { slug: 'wing-duel', name: 'Wing Duel', kind: 'Flying joust · 2P', c: '#ffa630', blurb: 'Flap high and come down lance-first on rival riders.',
+    px: ['............', '...Y........', '..YYY..R....', '...O..RRR...', '............', 'AAAA....AAAA', '............', 'OROROROROROR'],
+    px2: ['...Y........', '..YYY.......', '...O...R....', '......RRR...', '............', 'AAAA....AAAA', '............', 'RORORORORORO'] },
+  { slug: 'twin-blast', name: 'Twin Blast', kind: 'Twin-stick arena', c: '#ff4fd1', blurb: 'Move with one stick, shoot with the other. Save the crew.',
+    px: ['R.........R.', '............', '....W.......', '....W.XX....', '......XX.WW.', '............', '.G.........R', '............'],
+    px2: ['.R.......R..', '....W.......', '............', '......XX.WW.', '....W.XX....', '............', '..G.......R.', '............'] },
+  { slug: 'mole-patrol', name: 'Mole Patrol', kind: 'Dig and trap', c: '#d9a066', blurb: 'Tunnel after garden pests and bubble them till they pop.',
+    px: ['CCCCCCCCCCCC', 'GGGGGGGGGGGG', 'DDDDDdDDDDDD', 'DDDDDdDDDDDD', 'DDDDDdddYDDD', 'DDDDDDDDDDDD', 'DdRdDDDDDDDD', 'DDDDDDDDDDDD'],
+    px2: ['CCCCCCCCCCCC', 'GGGGGGGGGGGG', 'DDDDDdDDDDDD', 'DDDDDdDDDDDD', 'DDDDDddddYDD', 'DDDDDDDDDDDD', 'DRddDDDDDDDD', 'DDDDDDDDDDDD'] },
   { slug: 'blip-sports', name: 'Blip Sports', kind: 'LED football + baseball', c: '#ff3a22', blurb: 'The 1978 handheld feel. Pick your team, beat the CPU.', label: 'WINS',
     px: ['............', '.RR..RR..RR.', '............', '.RR..WW..RR.', '............', '.RR..RR..RR.', '............', '............'],
     px2: ['............', '.RR..RR..RR.', '............', '.RR..RWW.RR.', '............', '.RR..RR..RR.', '............', '............'] }
 ];
-const PAL = { G: '#3dff8f', W: '#ffffff', P: '#ff4fa3', R: '#ff4f6d', O: '#ff8a3d', Y: '#ffd23d', C: '#5ee7ff', L: '#c6ff3d', V: '#b48cff', B: '#3d7bff', S: '#e2a978', K: '#222', N: '#4f6bff', A: '#8a92a8', y: '#ffa23d', M: '#ff7bf0', E: '#9fb4ff', T: '#7a4a24', H: '#ffb27a', Q: '#6fb7ff' };
+const PAL = { G: '#3dff8f', W: '#ffffff', P: '#ff4fa3', R: '#ff4f6d', O: '#ff8a3d', Y: '#ffd23d', C: '#5ee7ff', L: '#c6ff3d', V: '#b48cff', B: '#3d7bff', S: '#e2a978', K: '#222', N: '#4f6bff', A: '#8a92a8', y: '#ffa23d', M: '#ff7bf0', E: '#9fb4ff', T: '#7a4a24', H: '#ffb27a', Q: '#6fb7ff', Z: '#22e0ff', X: '#ff4fd1', D: '#c4803e', d: '#140a0e' };
 const get = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 const floor = document.getElementById('floor');
 const paint = (cx, px) => { cx.clearRect(0, 0, 12, 8); px.forEach((row, y) => [...row].forEach((ch, x) => { if (PAL[ch]) { cx.fillStyle = PAL[ch]; cx.fillRect(x, y, 1, 1); } })); };

@@ -220,6 +220,10 @@
   // Standard mapping: d-pad and left stick → arrows, A → Space, Start → pause. A page adds or overrides
   // buttons with body data-pad="0:KeyK 2:KeyJ" (button index:key code). Buttons feed the same press/held path as keys.
   const padMap = { 0: 'Space', 9: 'KeyP', 12: 'ArrowUp', 13: 'ArrowDown', 14: 'ArrowLeft', 15: 'ArrowRight' };
+  // Sticks: the left stick acts as the arrows unless body data-sticks says otherwise, e.g. data-sticks="wasd arrows"
+  // (twin-stick: left moves with WASD, right aims with the arrows).
+  const KEYSETS = { arrows: ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'], wasd: ['KeyA', 'KeyD', 'KeyW', 'KeyS'] };
+  const [leftKeys, rightKeys] = (document.body.dataset.sticks || 'arrows').split(/\s+/).map(k => KEYSETS[k]);
   (document.body.dataset.pad || '').split(/\s+/).forEach(p => { const [i, code] = p.split(':'); if (code) padMap[i] = code; });
   let gpHeld = new Set(), gpButtons = new Set(), gpPolling = false;
   const gpSwallow = new Set(); // A/Start presses that went to the overlay; ignored until released
@@ -230,9 +234,9 @@
     const codes = new Set(), buttons = new Set();
     pads.forEach(gp => {
       gp.buttons.forEach((b, i) => { if (b.pressed) buttons.add(i); });
-      const x = gp.axes[0] || 0, y = gp.axes[1] || 0;
-      if (x < -0.5) codes.add('ArrowLeft'); if (x > 0.5) codes.add('ArrowRight');
-      if (y < -0.5) codes.add('ArrowUp'); if (y > 0.5) codes.add('ArrowDown');
+      const stick = (keys, x, y) => { if (!keys) return; if (x < -0.5) codes.add(keys[0]); if (x > 0.5) codes.add(keys[1]); if (y < -0.5) codes.add(keys[2]); if (y > 0.5) codes.add(keys[3]); };
+      stick(leftKeys, gp.axes[0] || 0, gp.axes[1] || 0);
+      stick(rightKeys, gp.axes[2] || 0, gp.axes[3] || 0);
     });
     buttons.forEach(i => {
       if (!gpButtons.has(i)) {

@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Light Trail</title>
+<link rel="manifest" href="../../manifest.json">
+<meta name="theme-color" content="#0f0c1f">
+<link rel="icon" type="image/png" href="../../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../../icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Rubik:wght@400;500;700&family=Silkscreen&display=swap">
+<link rel="stylesheet" href="../../shared/arcade.css">
+</head>
+<body data-game="light-trail" style="--game:#22e0ff">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>LIGHT TRAIL</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <div class="pad">
+    <div class="dp"><button class="u" data-k="ArrowUp" aria-label="Up">▲</button><button class="l" data-k="ArrowLeft" aria-label="Left">◀</button><button class="r" data-k="ArrowRight" aria-label="Right">▶</button><button class="d" data-k="ArrowDown" aria-label="Down">▼</button></div>
+    <div class="ab"><button class="sm" data-k="KeyP">PAUSE</button></div>
+  </div>
+  <p class="help"><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> or <kbd>WASD</kbd> steer · 2 players: <kbd>WASD</kbd> vs <kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> · <kbd>P</kbd> pause · swipe on phones</p>
+</main>
+<script src="../../shared/chip.js"></script>
+<script src="../../shared/badges.js"></script>
+<script src="../../shared/arcade.js"></script>
+<script>
+(() => {
+const A = Arcade, cv = document.getElementById('cv');
+const W = 640, H = 480, C = 8, GW = W / C, GH = H / C, WIN = 3, ctx = A.canvas(cv, W, H);
+const DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }, LEFT = { up: 'left', left: 'down', down: 'right', right: 'up' }, RIGHT = { up: 'right', right: 'down', down: 'left', left: 'up' };
+const OPP = { up: 'down', down: 'up', left: 'right', right: 'left' };
+const KEYS1 = { KeyW: 'up', KeyS: 'down', KeyA: 'left', KeyD: 'right' }, KEYS2 = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
+// CPU riders: look = how far ahead they watch, slip = how often they misjudge, grip = how hard they chase you
+const CPUS = [{ name: 'SPARK', look: 3, slip: 0.08, grip: 0, step: 0.05 }, { name: 'VOLT', look: 5, slip: 0.05, grip: 0.3, step: 0.046 }, { name: 'NEON', look: 8, slip: 0.03, grip: 0.6, step: 0.042 }, { name: 'FLUX', look: 12, slip: 0.01, grip: 1, step: 0.038 }];
+let state = 'title', two = false, grid = new Uint8Array(GW * GH), riders = [], score = 0, opp = 0, wins = [0, 0], stepT = 0, countT = 0, msg = '', msgT = 0, parts = [], phaseT = 0;
+const gridBg = (() => { const g = document.createElement('canvas'); g.width = W; g.height = H; const x = g.getContext('2d'); x.strokeStyle = 'rgba(34,224,255,.07)'; x.lineWidth = 1; for (let i = 0; i <= W; i += 32) { x.beginPath(); x.moveTo(i + .5, 0); x.lineTo(i + .5, H); x.stroke(); } for (let j = 0; j <= H; j += 32) { x.beginPath(); x.moveTo(0, j + .5); x.lineTo(W, j + .5); x.stroke(); } return g; })();
+
+const cell = (x, y) => x < 0 || y < 0 || x >= GW || y >= GH ? 9 : grid[y * GW + x];
+function newGame(isTwo) { two = isTwo; score = 0; opp = 0; A.setScore(0); wins = [0, 0]; startRound(); }
+function startRound() {
+  grid = new Uint8Array(GW * GH); parts = [];
+  riders = [
+    { id: 1, x: 18, y: 30, dir: 'right', queue: [], col: '#ff9a3d', alive: true, pts: [[18, 30]] },
+    { id: 2, x: 61, y: 30, dir: 'left', queue: [], col: '#22e0ff', alive: true, pts: [[61, 30]], cpu: !two }];
+  riders.forEach(r => grid[r.y * GW + r.x] = r.id);
+  stepT = 0; countT = 1.8; state = 'play'; say(two ? `ROUND ${wins[0] + wins[1] + 1}` : `VS ${CPUS[opp].name}`);
+}
+function say(t) { msg = t; msgT = 1.6; }
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+function turn(r, d) { if (!r || !r.alive || r.cpu) return; const last = r.queue.length ? r.queue[r.queue.length - 1] : r.dir; if (d !== last && d !== OPP[last] && r.queue.length < 2) r.queue.push(d); }
+A.onPress(c => {
+  if (c === 'KeyP' || c === 'Escape') return pause();
+  if (state !== 'play') return;
+  if (two) { if (KEYS1[c]) turn(riders[0], KEYS1[c]); if (KEYS2[c]) turn(riders[1], KEYS2[c]); }
+  else { const d = KEYS1[c] || KEYS2[c]; if (d) turn(riders[0], d); }
+});
+A.onHide(pause);
+// touch: swipe; with two players, each swipes on their own half of the screen
+let sw = null;
+cv.addEventListener('pointerdown', e => { A.unlock(); sw = { ...A.pointer(cv, e) }; });
+cv.addEventListener('pointerup', e => {
+  if (!sw || state !== 'play') return; const p = A.pointer(cv, e), dx = p.x - sw.x, dy = p.y - sw.y, who = two && sw.x > W / 2 ? riders[1] : riders[0]; sw = null;
+  if (Math.hypot(dx, dy) < 14) return;
+  turn(who, Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up'));
+});
+
+/* CPU: score straight, left and right by open space (flood fill), run length and how close it gets to you */
+function flood(sx, sy, cap) {
+  if (cell(sx, sy)) return 0;
+  const seen = new Set([sy * GW + sx]), q = [[sx, sy]]; let n = 0;
+  while (q.length && n < cap) { const [x, y] = q.shift(); n++; for (const [dx, dy] of Object.values(DIRS)) { const nx = x + dx, ny = y + dy, k = ny * GW + nx; if (!cell(nx, ny) && !seen.has(k)) { seen.add(k); q.push([nx, ny]); } } }
+  return n;
+}
+function think(r, you) {
+  const c = CPUS[opp], [dx, dy] = DIRS[r.dir];
+  let ahead = 0; while (ahead < c.look && !cell(r.x + dx * (ahead + 1), r.y + dy * (ahead + 1))) ahead++;
+  if (ahead >= c.look && Math.random() > 0.04) return;           // clear road: keep going
+  if (Math.random() < c.slip) return;                              // misjudged it
+  let best = r.dir, bs = -1e9;
+  for (const d of [r.dir, LEFT[r.dir], RIGHT[r.dir]]) {
+    const [ex, ey] = DIRS[d], nx = r.x + ex, ny = r.y + ey; if (cell(nx, ny)) continue;
+    let run = 0; while (run < 20 && !cell(nx + ex * (run + 1), ny + ey * (run + 1))) run++;
+    const sc = flood(nx, ny, 360) + run * 2 - c.grip * Math.hypot(nx - you.x - DIRS[you.dir][0] * 4, ny - you.y - DIRS[you.dir][1] * 4) + Math.random() * 4;
+    if (sc > bs) { bs = sc; best = d; }
+  }
+  r.dir = best;
+}
+function step() {
+  if (!two) think(riders[1], riders[0]);
+  const next = riders.map(r => { if (!r.alive) return null; if (r.queue.length) r.dir = r.queue.shift(); const [dx, dy] = DIRS[r.dir]; return [r.x + dx, r.y + dy]; });
+  riders.forEach((r, i) => {
+    if (!r.alive) return; const [nx, ny] = next[i];
+    const other = next[1 - i], headOn = other && other[0] === nx && other[1] === ny;
+    if (cell(nx, ny) || headOn) { crash(r); return; }
+    const turned = r.pts.length > 1 && (r.pts[r.pts.length - 1][0] - r.pts[r.pts.length - 2][0]) * (ny - r.y) !== (r.pts[r.pts.length - 1][1] - r.pts[r.pts.length - 2][1]) * (nx - r.x);
+    r.x = nx; r.y = ny; grid[ny * GW + nx] = r.id;
+    if (r.pts.length < 2 || turned) r.pts.push([nx, ny]); else r.pts[r.pts.length - 1] = [nx, ny];
+  });
+  if (!two && riders[0].alive) score += 1;
+  const alive = riders.filter(r => r.alive);
+  if (alive.length < 2) endRound(alive[0]);
+}
+function crash(r) {
+  r.alive = false; A.noise(0.5, 0.08); A.tone(220, 0.5, 'sawtooth', 0.05, 0, 60);
+  for (let i = 0; i < 26; i++) { const a = Math.random() * 6.28, s = A.rand(40, 220); parts.push({ x: r.x * C + 4, y: r.y * C + 4, vx: Math.cos(a) * s, vy: Math.sin(a) * s, t: A.rand(0.3, 0.9), c: r.col }); }
+}
+function endRound(winner) {
+  state = 'round'; phaseT = 2.2;
+  if (!winner) { say('DRAW!'); return; }
+  wins[winner.id - 1]++;
+  if (winner.id === 1 && !two) { score += 500 * (opp + 1); A.badge('round'); A.jingle([523, 659, 784], 0.08); }
+  else A.jingle(two ? [523, 659, 784] : [392, 330, 262], 0.12);
+  say(two ? `${winner.id === 1 ? 'ORANGE' : 'BLUE'} TAKES IT` : winner.id === 1 ? 'YOU TAKE IT' : `${CPUS[opp].name} TAKES IT`);
+}
+function afterRound() {
+  const done = wins.findIndex(w => w >= WIN);
+  if (done < 0) return startRound();
+  if (two) {
+    state = 'over'; A.jingle([523, 659, 784, 1047], 0.1);
+    return A.overlay({ title: done === 0 ? 'ORANGE WINS' : 'BLUE WINS', big: `${wins[0]} – ${wins[1]}`, btn: 'Rematch', onGo: () => newGame(true), alt: { btn: '1 Player', onGo: () => newGame(false) } });
+  }
+  if (done === 1) return finish(false);
+  score += 2000; A.badge('match');
+  if (opp === CPUS.length - 1) { score += 5000; A.badge('champ'); return finish(true); }
+  opp++; wins = [0, 0]; A.jingle([523, 659, 784, 1047], 0.1); startRound();
+}
+function finish(champ) {
+  state = 'over'; A.setScore(score); const rec = A.submit(score);
+  A.overlay({ title: champ ? 'GRID CHAMPION' : 'WIPED OUT', big: `SCORE ${score} · BEAT ${champ ? CPUS.length : opp} OF ${CPUS.length}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, btn: 'Ride again', onGo: () => newGame(false), alt: { btn: '2 Players', onGo: () => newGame(true) } });
+}
+
+A.loop(dt => {
+  parts.forEach(q => { q.x += q.vx * dt; q.y += q.vy * dt; q.vx *= 0.96; q.vy *= 0.96; q.t -= dt; }); parts = parts.filter(q => q.t > 0);
+  if (msgT > 0) msgT -= dt;
+  if (state === 'round') { phaseT -= dt; if (phaseT <= 0) afterRound(); return; }
+  if (state !== 'play') return;
+  if (countT > 0) { const before = Math.ceil(countT / 0.6); countT -= dt; if (Math.ceil(countT / 0.6) !== before && countT > 0) A.tone(440, 0.08); if (countT <= 0) A.tone(880, 0.15); return; }
+  const every = two ? 0.045 : CPUS[opp].step;
+  stepT += dt; while (stepT >= every && state === 'play') { stepT -= every; step(); }
+  A.setScore(score);
+}, t => {
+  ctx.fillStyle = '#03050c'; ctx.fillRect(0, 0, W, H); ctx.drawImage(gridBg, 0, 0);
+  if (state === 'title') { // attract: two riders weaving
+    const k = t / 1000;
+    [['#ff9a3d', 0], ['#22e0ff', Math.PI]].forEach(([c, o]) => { ctx.strokeStyle = c; ctx.lineWidth = 3; ctx.shadowColor = c; ctx.shadowBlur = 12; ctx.beginPath(); for (let i = 0; i < 60; i++) { const a = k - i * 0.05 + o; const x = W / 2 + Math.round(Math.cos(a) * 220 / 16) * 16, y = H / 2 + Math.round(Math.sin(a * 2) * 140 / 16) * 16; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); } ctx.stroke(); ctx.shadowBlur = 0; });
+  }
+  for (const r of riders) {
+    const fade = r.alive ? 1 : Math.max(0, phaseT / 2.2);
+    ctx.globalAlpha = fade; ctx.strokeStyle = r.col; ctx.lineJoin = 'miter'; ctx.lineCap = 'square';
+    ctx.shadowColor = r.col; ctx.shadowBlur = 14; ctx.lineWidth = 5; ctx.beginPath();
+    r.pts.forEach(([x, y], i) => { const px = x * C + 4, py = y * C + 4; i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); });
+    ctx.stroke(); ctx.shadowBlur = 0; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.globalAlpha = 1;
+    if (r.alive) drawBike(r.x * C + 4, r.y * C + 4, r.dir, r.col);
+  }
+  parts.forEach(q => { ctx.globalAlpha = Math.min(1, q.t * 2); ctx.fillStyle = q.c; ctx.fillRect(q.x - 2, q.y - 2, 4, 4); }); ctx.globalAlpha = 1;
+  if (state !== 'title') {
+    ctx.font = '13px Silkscreen, monospace'; ctx.textAlign = 'left'; ctx.fillStyle = '#ff9a3d'; ctx.fillText(two ? 'ORANGE' : 'YOU', 12, 20);
+    ctx.textAlign = 'right'; ctx.fillStyle = '#22e0ff'; ctx.fillText(two ? 'BLUE' : CPUS[opp].name, W - 12, 20);
+    for (let i = 0; i < WIN; i++) { ctx.fillStyle = i < wins[0] ? '#ff9a3d' : 'rgba(255,154,61,.2)'; ctx.fillRect(12 + i * 14, 28, 10, 6); ctx.fillStyle = i < wins[1] ? '#22e0ff' : 'rgba(34,224,255,.2)'; ctx.fillRect(W - 22 - i * 14, 28, 10, 6); }
+    if (state === 'play' && countT > 0) { ctx.font = '48px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.shadowColor = '#22e0ff'; ctx.shadowBlur = 20; ctx.fillText(Math.ceil(countT / 0.6), W / 2, H / 2 - 40); ctx.shadowBlur = 0; }
+  }
+  if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '26px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.shadowColor = '#22e0ff'; ctx.shadowBlur = 16; ctx.fillText(msg, W / 2, H / 2 + 60); ctx.shadowBlur = 0; ctx.globalAlpha = 1; }
+});
+/* a light-cycle from above: outlined, shaded body, a dark canopy and glowing wheel rims */
+function drawBike(x, y, dir, col) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate({ right: 0, down: Math.PI / 2, left: Math.PI, up: -Math.PI / 2 }[dir]);
+  ctx.fillStyle = '#02030a'; ctx.beginPath(); ctx.roundRect(-11, -6, 22, 12, 6); ctx.fill();
+  const g = ctx.createLinearGradient(0, -5, 0, 5); g.addColorStop(0, '#fff'); g.addColorStop(0.35, col); g.addColorStop(1, '#0a1a2a');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.roundRect(-9, -4, 18, 8, 4); ctx.fill();
+  ctx.fillStyle = '#05070f'; ctx.beginPath(); ctx.roundRect(-2, -2.5, 7, 5, 2.5); ctx.fill();
+  ctx.shadowColor = col; ctx.shadowBlur = 10; ctx.fillStyle = col; ctx.fillRect(-10, -5, 4, 10); ctx.fillRect(6, -5, 4, 10); ctx.shadowBlur = 0;
+  ctx.restore();
+}
+A.overlay({ title: 'LIGHT TRAIL', sub: 'Your light-cycle leaves a wall behind it. Box your rival in so they crash into a wall first. First to 3 rounds wins. <b>1 Player</b> races four CPU riders; <b>2 Players</b> share a keyboard or a tablet.', btn: '1 Player', scores: true, onGo: () => newGame(false), alt: { btn: '2 Players', onGo: () => newGame(true) } });
+})();
+</script>
+</body>
+</html>
