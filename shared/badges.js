@@ -132,26 +132,29 @@ window.WEEKLY = (() => {
 window.TICKETS = (() => {
   const get = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
   const set = (k, v) => { try { localStorage.setItem(k, String(v)); } catch (e) { /* private mode: tickets just don't stick */ } };
-  function balance() {
-    const b = get('arcade:tickets');
-    if (b !== null) return +b || 0;
-    // First visit since tickets arrived: 20 to start, plus back pay for badges already earned and games played.
-    let start = 20;
-    try {
-      Object.keys(localStorage).forEach(k => {
-        if (k.startsWith('arcade:badges:')) { const l = JSON.parse(get(k)); start += 10 * (Array.isArray(l) ? l.length : 0); }
-        else if (k.startsWith('arcade:plays:')) start += Math.min(+get(k) || 0, 50);
-      });
-    } catch (e) {}
-    set('arcade:tickets', start); set('arcade:tickets:earned', start);
-    return start;
+  // Kept as two running totals (earned, spent) so cloud save can merge devices; arcade:tickets caches the balance.
+  function totals() {
+    let e = get('arcade:tickets:earned'), sp = get('arcade:tickets:spent');
+    if (e === null) {
+      // First visit since tickets arrived: 20 to start, plus back pay for badges already earned and games played.
+      let start = 20;
+      try {
+        Object.keys(localStorage).forEach(k => {
+          if (k.startsWith('arcade:badges:')) { const l = JSON.parse(get(k)); start += 10 * (Array.isArray(l) ? l.length : 0); }
+          else if (k.startsWith('arcade:plays:')) start += Math.min(+get(k) || 0, 50);
+        });
+      } catch (err) {}
+      e = start; sp = 0; set('arcade:tickets:earned', e); set('arcade:tickets:spent', 0); set('arcade:tickets', e);
+    } else if (sp === null) { sp = Math.max(0, (+e || 0) - (+get('arcade:tickets') || 0)); set('arcade:tickets:spent', sp); } // from the balance-only days
+    return { e: +e || 0, s: +sp || 0 };
   }
+  const balance = () => { const t = totals(); return Math.max(0, t.e - t.s); };
   return {
     balance,
-    earned: () => { balance(); return +get('arcade:tickets:earned') || 0; },
+    earned: () => totals().e,
     /** Add n tickets; returns the new balance. */
-    add(n) { const b = balance() + n; set('arcade:tickets', b); set('arcade:tickets:earned', (+get('arcade:tickets:earned') || 0) + n); return b; },
+    add(n) { const t = totals(); set('arcade:tickets:earned', t.e + n); set('arcade:tickets', Math.max(0, t.e + n - t.s)); return balance(); },
     /** Spend n tickets if there are enough; returns true when spent. */
-    spend(n) { const b = balance(); if (b < n) return false; set('arcade:tickets', b - n); return true; }
+    spend(n) { const t = totals(); if (t.e - t.s < n) return false; set('arcade:tickets:spent', t.s + n); set('arcade:tickets', t.e - t.s - n); return true; }
   };
 })();

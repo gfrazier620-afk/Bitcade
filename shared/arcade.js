@@ -309,14 +309,18 @@
     let last = performance.now(), acc = 0; const dt = 1 / 60;
     const f = t => {
       acc += Math.min(0.1, (t - last) / 1000) * (A.easy && !A.demo ? 0.7 : 1); last = t;
-      while (acc >= dt) { if (A.demo) demoTick(dt); else if (A.easy && !overlayOpen()) runEasy = true; update(dt); acc -= dt; }
+      while (acc >= dt) { if (A.demo) demoTick(dt); else if (!overlayOpen()) { playT += dt; if (A.easy) runEasy = true; } update(dt); acc -= dt; }
       draw(t); requestAnimationFrame(f);
     };
     requestAnimationFrame(f);
   };
+  // Play time per game (arcade:time:<slug>, seconds) for the lobby's profile page: game time with no screen up.
+  let playT = 0;
+  const saveTime = () => { if (playT >= 1 && A.id !== 'game') { store.set('arcade:time:' + A.id, Math.round((+store.get('arcade:time:' + A.id) || 0) + playT)); playT = 0; } };
+  setInterval(saveTime, 10000); addEventListener('pagehide', saveTime);
   const hideFns = [];
   A.onHide = fn => hideFns.push(fn);
-  document.addEventListener('visibilitychange', () => { if (document.hidden) { A.down.clear(); gpHeld.clear(); hideFns.forEach(f => f()); } });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { A.down.clear(); gpHeld.clear(); saveTime(); hideFns.forEach(f => f()); } });
 
   /* ---------- overlay ---------- */
   let goFn = null, altFn = null, goLabel = '', entry = null, shown = null; // shown: { top, hi, day } for the table
@@ -369,6 +373,7 @@
     renderHS(); o.hidden = false;
     if (res && !entry) startContinue();
     if (shown) loadWorld();
+    if (res && !res.easy) cloudSync();
     armDemo(isTitle);
     // the game's theme plays from the title screen right through the game: full volume on screens like this, quieter in play
     if (music()) { music().play(music().theme(A.id)); music().volume(0.5); }
@@ -388,6 +393,12 @@
     }, 1000);
   }
   A.overlayOpen = overlayOpen;
+  /** Cloud save (shared/save.js), when the player has turned it on: sync a few seconds after each game over. */
+  let syncT = 0;
+  function cloudSync() {
+    if (!store.get('bitcade:sync') || A.id === 'game') return;
+    clearTimeout(syncT); syncT = setTimeout(() => { saveTime(); import(new URL('save.js', KIT_URL).href).then(m => m.sync()).catch(() => {}); }, 3000);
+  }
 
   /*
    * Attract-mode demos. A game registers A.attract({ start, stop, bot }): start() begins a game, stop() puts it back
@@ -452,7 +463,7 @@
     const top = res.top.slice(); if (placed) { top.splice(res.rank, 0, { n, s: res.s }); top.length = Math.min(top.length, 10); store.set(topKey, JSON.stringify(top)); }
     store.set('arcade:initials', n);
     shown = { top, hi: res.rank, day: shown && shown.day, week: shown && shown.week }; entry = null; lastSaved = { n, s: res.s };
-    A.jingle([784, 988, 1175], 0.06); renderHS(); startContinue();
+    A.jingle([784, 988, 1175], 0.06); renderHS(); startContinue(); cloudSync();
     queuePost(n, res.s, placed, res.day && res.day.improved ? res.day.d : null, res.week && res.week.improved ? res.week.w : null);
     const go = $('ov').querySelector('.go'); if (go) go.focus();
   }

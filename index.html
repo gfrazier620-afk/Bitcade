@@ -105,6 +105,47 @@ body{display:block;overflow-x:hidden;
 .pc-item.own button{background:#5ee7ff}
 .pc-item.on button{background:#3dff8f}
 .pc-item.own button:disabled{color:#3dff8f;background:#14321e}
+/* the player profile (shared/profile.js) */
+.profile{max-width:1100px;margin:0 auto 26px}
+.pf-card{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:18px;padding:18px 20px;border-radius:16px;border:2px solid #5ee7ff;
+  background:linear-gradient(135deg,rgba(94,231,255,.12),transparent 60%),var(--bg2);box-shadow:0 0 28px rgba(94,231,255,.15)}
+.pf-id{display:flex;align-items:center;gap:16px}
+.pf-ini input{width:150px;font-family:var(--f-marquee);font-size:52px;line-height:1;letter-spacing:.08em;text-align:center;color:#ffe36a;background:#0a0716;border:2px solid #2d2556;border-radius:12px;padding:6px 4px;
+  text-shadow:0 0 14px rgba(255,227,106,.6);user-select:text;-webkit-user-select:text}
+.pf-ini input:focus{outline:none;border-color:#ffe36a}
+.pf-ini input.ok{border-color:#3dff8f}
+.pf-rank{font-family:var(--f-marquee);font-size:24px;color:#5ee7ff;text-shadow:0 0 12px rgba(94,231,255,.5)}
+.pf-next{font-family:var(--f-pixel);font-size:11px;color:var(--muted);margin-top:4px}
+.pf-stats{display:grid;grid-template-columns:repeat(3,minmax(110px,auto));gap:10px 22px}
+.pf-stats span{font-family:var(--f-pixel);font-size:10px;letter-spacing:.08em;color:var(--muted);display:flex;flex-direction:column;gap:2px}
+.pf-stats b{font-weight:400;font-size:17px;color:var(--ink)}
+.pf-cloud{margin-top:14px;padding:14px 18px;border-radius:14px;background:var(--bg2);border:1px solid var(--line)}
+.pf-cloud>b{font-family:var(--f-pixel);font-weight:400;font-size:12px;letter-spacing:.12em;color:#3dff8f}
+.pf-cloud p{margin:8px 0;font-size:14px;color:var(--muted);max-width:720px}
+.pf-cloud .pf-msg{color:#ffe36a}
+.pf-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:8px}
+.pf-code{font-family:var(--f-pixel);font-size:22px;letter-spacing:.14em;color:#ffe36a;background:#0a0716;border:1px solid #2d2556;border-radius:8px;padding:6px 12px;user-select:all;-webkit-user-select:all}
+.pf-row input{font-family:var(--f-pixel);font-size:16px;letter-spacing:.12em;text-transform:uppercase;color:#ffe36a;background:#0a0716;border:1px solid #2d2556;border-radius:8px;padding:8px 10px;width:220px;user-select:text;-webkit-user-select:text}
+.pf-btn{font-family:var(--f-pixel);font-size:12px;letter-spacing:.06em;color:var(--ink);background:#221c40;border:1px solid var(--line);border-radius:8px;padding:8px 12px;cursor:pointer}
+.pf-btn.hot{color:#04161c;background:#3dff8f;border-color:#3dff8f}
+.pf-btn:disabled{opacity:.6;cursor:default}
+.pf-when{font-family:var(--f-pixel);font-size:11px;color:var(--muted)}
+.pf-h{font-family:var(--f-pixel);font-weight:400;font-size:13px;letter-spacing:.14em;color:#ffd23d;margin:24px 0 10px}
+.pf-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+.pf-game{--c:#fff;display:flex;gap:12px;align-items:flex-start;padding:12px;border-radius:12px;background:var(--bg2);border:1px solid var(--line);border-left:4px solid var(--c);text-decoration:none;color:var(--ink)}
+.pf-game:hover,.pf-game:focus-visible{border-color:var(--c);outline:none}
+.pf-game canvas{flex:none;width:60px;height:40px;image-rendering:pixelated;background:#05040c;border-radius:6px;padding:4px}
+.pf-g{min-width:0}
+.pf-g b{font-family:var(--f-marquee);font-weight:400;font-size:16px;color:var(--c)}
+.pf-g small{display:block;font-family:var(--f-pixel);font-size:10px;color:var(--muted);margin:3px 0 6px}
+.pf-g small i{font-style:normal;color:var(--ink)}
+.pf-badges{display:flex;flex-wrap:wrap;gap:4px}
+.pf-badges span{font-family:var(--f-pixel);font-size:10px;color:#5a5478;border:1px solid #2d2556;border-radius:5px;padding:2px 6px}
+.pf-badges span.got{color:#1a0f00;background:#ffd23d;border-color:#ffd23d}
+.pf-prizes{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.pf-prizes span{font-family:var(--f-pixel);font-size:11px;color:#04161c;background:#5ee7ff;border-radius:6px;padding:5px 9px}
+.pf-prizes em{font-size:14px;color:var(--muted)}
+@media (max-width:640px){.pf-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.pf-grid{grid-template-columns:1fr}.pf-ini input{width:120px;font-size:42px}}
 @media (max-width:640px){.tourney{grid-template-columns:auto 1fr}.tourney ol{grid-column:1/-1}.tourney .play{grid-column:1/-1;justify-self:stretch;text-align:center;padding:9px}}
 footer{margin-top:44px;text-align:center;color:var(--muted);font-size:13px}
 footer p{margin:4px 0}
@@ -212,7 +253,7 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
     <div class="stats" id="stats"></div>
   </header>
   <div class="viewbar" role="group" aria-label="View">
-    <button id="vGrid" aria-pressed="true">▦ CABINETS</button><button id="vFloor" aria-pressed="false">⌂ WALK THE ARCADE</button><button class="prize" id="vPrize">PRIZE COUNTER · <b id="tixN">0</b> TICKETS</button>
+    <button id="vGrid" aria-pressed="true">▦ CABINETS</button><button id="vFloor" aria-pressed="false">⌂ WALK THE ARCADE</button><button id="vProfile" aria-pressed="false">★ PROFILE</button><button class="prize" id="vPrize">PRIZE COUNTER · <b id="tixN">0</b> TICKETS</button>
   </div>
   <a class="tourney" id="tourney" hidden>
     <canvas width="12" height="8"></canvas>
@@ -225,6 +266,7 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
     <div class="fl-card" id="floorCard"></div>
     <p class="fl-help">←↑↓→ or WASD to walk · Enter to play · or tap where to go · controllers work too</p>
   </section>
+  <section class="profile" id="profileView" hidden></section>
   <main class="floor" id="floor"></main>
   <footer>
     <p>Works with a keyboard or touch, and most games with a game controller. High scores are saved in this browser.</p>
@@ -238,6 +280,7 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
 <script src="shared/badges.js"></script>
 <script src="shared/prizes.js"></script>
 <script src="shared/floor.js"></script>
+<script src="shared/profile.js"></script>
 <script>
 (() => {
 const GAMES = [
@@ -392,16 +435,25 @@ Floor.init({
   onPlay: g => { location.href = `games/${g.slug}/`; },
   onCounter: () => Prizes.open()
 });
+// The player profile and cloud save (shared/profile.js, shared/save.js).
+const profileView = document.getElementById('profileView'), vProfile = document.getElementById('vProfile');
+const prices = Object.fromEntries(Prizes.LIST.map(p => [p.id, p.price]));
+Profile.init({ el: profileView, games: GAMES, paint, prices, onSynced: changed => { if (changed) location.replace('?view=profile'); } });
 function setView(v) {
-  const walk = v === 'floor';
-  floorView.hidden = !walk; floor.hidden = walk;
-  vGrid.setAttribute('aria-pressed', String(!walk)); vFloor.setAttribute('aria-pressed', String(walk));
+  const walk = v === 'floor', prof = v === 'profile';
+  floorView.hidden = !walk; floor.hidden = walk || prof; profileView.hidden = !prof;
+  if (feat) tourney.hidden = prof;
+  vGrid.setAttribute('aria-pressed', String(!walk && !prof)); vFloor.setAttribute('aria-pressed', String(walk)); vProfile.setAttribute('aria-pressed', String(prof));
   if (walk) Floor.start(); else Floor.stop();
-  try { localStorage.setItem('bitcade:view', v); } catch (e) {}
+  if (prof) Profile.render();
+  try { if (!prof) localStorage.setItem('bitcade:view', v); } catch (e) {}
 }
+vProfile.addEventListener('click', () => setView('profile'));
+// Cloud save: sync quietly on every visit; anything new from another device shows on the next visit (or right away on the profile).
+Profile.autoSync().then(r => { if (r.state === 'ok' && r.changed) { tixShow(); if (!profileView.hidden) Profile.render(); } });
 vGrid.addEventListener('click', () => setView('grid'));
 vFloor.addEventListener('click', () => { setView('floor'); document.getElementById('floorCv').focus({ preventScroll: true }); }); // so Enter plays, not re-presses this button
-setView(get('bitcade:view') === 'floor' ? 'floor' : 'grid');
+setView(/[?&]view=profile\b/.test(location.search) ? 'profile' : get('bitcade:view') === 'floor' ? 'floor' : 'grid');
 /* Install: the service worker caches the lobby and every game. Browsers that support an install prompt get a button;
    iPhones and iPads install from the Share menu, so they get a hint instead. */
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

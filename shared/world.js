@@ -7,6 +7,7 @@
  *       weekly/{game}/weeks/{YYYY-MM-DD}/scores/{id} = same shape        weekly tournament board (the week's Monday, UTC)
  *       players/{uid} = { last }                                          post cooldown
  *       wins/{uid} = { n, s: total wins, t }                              Blip Sports world wins, +1 per win
+ *       saves/{sha256 of a sync code} = { d: JSON, t }                    cloud save (shared/save.js)
  * The config below only identifies the project. firestore.rules (published in the Firebase console) protects the data.
  */
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
@@ -68,4 +69,17 @@ export async function topWins(n = 10) {
 export async function addWin(name) {
   const u = await signIn(), ref = doc(db, 'wins', u.uid), cur = await getDoc(ref);
   await setDoc(ref, { n: name, s: (cur.exists() ? cur.get('s') : 0) + 1, t: serverTimestamp() });
+}
+
+/*
+ * Cloud saves (shared/save.js): saves/{id} = { d: progress as JSON, t }. The id is a SHA-256 of the player's sync code,
+ * so only someone with the code can find the save. Rules allow fetching one by id, never listing them.
+ */
+export async function loadSave(id) {
+  const snap = await getDoc(doc(db, 'saves', id));
+  return snap.exists() ? snap.get('d') : null;
+}
+export async function storeSave(id, data) {
+  await signIn();
+  await setDoc(doc(db, 'saves', id), { d: data, t: serverTimestamp() });
 }

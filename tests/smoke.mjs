@@ -415,6 +415,46 @@ console.log('\nAttract demos');
   await close();
 }
 
+/* ---------- profile and cloud save ---------- */
+console.log('\nProfile and cloud save');
+{
+  // the merge rules, straight from shared/save.js
+  globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
+  const S = await import(new URL('../shared/save.js', import.meta.url));
+  delete globalThis.localStorage;
+  const code = S.newCode();
+  check(/^[2-9A-Z]{4}-[2-9A-Z]{4}-[2-9A-Z]{4}$/.test(code) && S.normalize(code.toLowerCase().replace(/-/g, ' ')) === code && S.normalize('abc') === null, `sync codes look like ${code} and can be typed loosely`);
+  const a = { 'arcade:best:x': '50', 'arcade:plays:x': '4', 'arcade:top:x': JSON.stringify([{ n: 'AAA', s: 50 }]), 'arcade:badges:x': '["a"]', 'arcade:tickets:earned': '100', 'arcade:prizes': '["amber"]', 'arcade:initials': 'AAA', 'arcade:daily:x': JSON.stringify({ d: '2026-10-12', s: 9 }) };
+  const b = { 'arcade:best:x': '80', 'arcade:plays:x': '6', 'arcade:top:x': JSON.stringify([{ n: 'BBB', s: 80 }, { n: 'AAA', s: 50 }]), 'arcade:badges:x': '["b"]', 'arcade:tickets:earned': '120', 'arcade:prizes': '["wood"]', 'arcade:initials': 'BBB', 'arcade:daily:x': JSON.stringify({ d: '2026-10-13', s: 5 }) };
+  const prices = { amber: 60, wood: 90 }, m = S.merge(a, b, prices), j = S.merge(a, b, prices, true);
+  check(m['arcade:best:x'] === '80' && JSON.parse(m['arcade:top:x']).map(e => e.n).join() === 'BBB,AAA' && JSON.parse(m['arcade:badges:x']).join() === 'a,b', 'merging keeps the higher best, combines the top 10 and unions badges');
+  check(JSON.parse(m['arcade:daily:x']).d === '2026-10-13' && m['arcade:initials'] === 'AAA', 'the newer daily best wins, and this device keeps its initials');
+  check(m['arcade:tickets:spent'] === '150' && m['arcade:tickets'] === '0' && m['arcade:plays:x'] === '6', 'tickets spent come from the combined prizes; counters take the higher value');
+  check(j['arcade:tickets:earned'] === '220' && j['arcade:tickets'] === '70' && j['arcade:plays:x'] === '10', 'when a device first joins, play counts and tickets earned add up');
+
+  const { page, errors, close } = await open('/');
+  await skipBoot(page);
+  await page.click('#vProfile');
+  check(await page.isVisible('#profileView .pf-card') && !(await page.isVisible('#floor')) && /ROOKIE/.test(await page.textContent('.pf-rank')), 'PROFILE shows the player card with a rank');
+  check((await page.$$('.pf-game')).length === dirs.length, 'the trophy case has every cabinet');
+  await page.fill('#pfIni', 'qz');
+  await page.type('#pfIni', 'x');
+  check(await page.evaluate(() => localStorage.getItem('arcade:initials')) === 'QZX', 'typing initials on the profile saves them');
+  await page.click('#pfOn');
+  await page.waitForFunction(() => /Couldn.t reach the cloud/.test(document.getElementById('pfCloud').textContent));
+  check(await page.evaluate(() => !localStorage.getItem('bitcade:sync')), 'offline, turning on cloud save says so and leaves it off');
+  await page.click('#pfHave'); await page.fill('#pfCode', 'nope'); await page.click('#pfJoin');
+  check(await page.waitForFunction(() => /doesn.t look like a code/.test(document.getElementById('pfCloud').textContent), null, { timeout: 3000 }).then(() => true, () => false), 'a mistyped code is caught');
+  check(!errors.length, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
+  await close();
+
+  const g = await open('/games/rock-rift/');
+  await g.page.click('#ov .go'); await wait(1600);
+  await g.page.evaluate(() => dispatchEvent(new Event('pagehide')));
+  check(+(await g.page.evaluate(() => localStorage.getItem('arcade:time:rock-rift'))) >= 1, 'games keep track of play time for the profile');
+  await g.close();
+}
+
 /* ---------- install + offline ---------- */
 console.log('\nInstall and offline');
 {

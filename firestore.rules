@@ -75,6 +75,18 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Cloud saves (shared/save.js): one per sync code, at the SHA-256 of the code. Anyone with the id (so, the code)
+    // can fetch it; nobody can list them. Signed-in players write them, as one JSON string of up to 200 KB.
+    match /saves/{id} {
+      allow get: if id.matches('^[0-9a-f]{64}$');
+      allow list: if false;
+      allow create, update: if request.auth != null && id.matches('^[0-9a-f]{64}$')
+        && request.resource.data.keys().hasOnly(['d', 't']) && request.resource.data.keys().hasAll(['d', 't'])
+        && request.resource.data.d is string && request.resource.data.d.size() < 200000
+        && request.resource.data.t == request.time;
+      allow delete: if false;
+    }
+
     // Cooldown stamp: one score post every 10 seconds per player.
     match /players/{uid} {
       allow read: if false;
