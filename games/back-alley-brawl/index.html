@@ -343,6 +343,21 @@ function drawTitle(t) {
 }
 function pickerHTML() { return `<span class="pick">${HEROES.map((h, i) => `<button data-f="${i}" aria-pressed="${i === heroIdx}">${h.name}<small>${h.desc}</small></button>`).join('')}</span>`; }
 function bindPicker() { document.querySelectorAll('#ov [data-f]').forEach(b => b.addEventListener('click', () => { heroIdx = +b.dataset.f; document.querySelectorAll('#ov [data-f]').forEach(x => x.setAttribute('aria-pressed', x === b)); A.tone(660, 0.05); })); }
+/* Attract demo: your fighter borrows the CPU's fighting brain. */
+A.attract({
+  start: newGame,
+  stop: () => { state = 'title'; },
+  bot: dt => {
+    if (state !== 'fight' || !P || !C) return [];
+    if (!P.ai) P.ai = { next: 0.2, hold: {} };
+    const def = P.def; P.def = { ...def, ai: { aggr: 0.5, block: 0.35, react: 0.26 } };
+    const i = aiIntent(P, C, dt); P.def = def;
+    const keys = [];
+    if (i.l) keys.push('ArrowLeft'); if (i.r) keys.push('ArrowRight'); if (i.u) keys.push('ArrowUp'); if (i.d) keys.push('ArrowDown');
+    if (i.p) keys.push('!KeyJ'); if (i.k) keys.push('!KeyK'); if (i.s) keys.push('!KeyL');
+    return keys;
+  }
+});
 A.overlay({ title: 'BACK ALLEY BRAWL', sub: 'Beat four street fighters, best of three rounds each. Hold back to block, duck under high punches. Pick your fighter: ' + pickerHTML(), btn: 'Fight', scores: true, onGo: newGame });
 bindPicker();
 })();

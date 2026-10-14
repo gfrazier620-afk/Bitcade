@@ -58,7 +58,7 @@ function setupRound() {
   say({ single: 'ONE HOP CHANGES A CUBE', double: 'TWO HOPS PER CUBE', toggle: 'HOPS FLIP CUBES BACK' }[mode()]);
 }
 setupRound(); me = null; msgT = 0; // scenery for the title screen
-function newGame() { score = 0; lives = 3; round = 1; nextLife = 8000; A.setScore(0); setupRound(); state = 'play'; A.jingle([392, 523, 659, 784], 0.08); }
+function newGame() { score = 0; lives = A.easy ? 5 : 3; round = 1; nextLife = 8000; A.setScore(0); setupRound(); state = 'play'; A.jingle([392, 523, 659, 784], 0.08); }
 function say(t) { msg = t; msgT = 1.8; }
 function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
 A.onPress(c => { if (c === 'KeyP' || c === 'Escape') return pause(); if (KEYS[c]) hop(KEYS[c]); });
@@ -247,6 +247,28 @@ function drawFoe(f, x, y, t) {
   ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, y - 8, 8, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.beginPath(); ctx.arc(x - 3, y - 11, 2.5, 0, Math.PI * 2); ctx.fill();
 }
+/* Attract demo: hop to cubes that still need colour, away from the bouncing foes. */
+let demoCD = 0;
+A.attract({
+  start: newGame,
+  stop: () => { state = 'title'; },
+  bot: dt => {
+    demoCD -= dt;
+    if (state !== 'play' || !me || me.hop || me.ride || me.fall || demoCD > 0) return [];
+    const KEY = { ur: 'ArrowUp', dr: 'ArrowRight', dl: 'ArrowDown', ul: 'ArrowLeft' };
+    const foeAt = (r, c) => foes.some(f => (f.r === r && f.c === c) || (f.hop && f.hop.tr === r && f.hop.tc === c));
+    let best = null, bs = -1e9;
+    for (const d of Object.keys(KEY)) {
+      const [dr, dc] = MOVES[d], r = me.r + dr, c = me.c + dc;
+      if (!onPyramid(r, c) || foeAt(r, c)) continue;
+      const cube = cubes.find(q => q.r === r && q.c === c);
+      const sc = (cube && cube.s < goal() ? 10 : 0) - foes.reduce((m, f) => m + (Math.abs(f.r - r) + Math.abs(f.c - c) < 2 ? 6 : 0), 0) + Math.random() * 3;
+      if (sc > bs) { bs = sc; best = d; }
+    }
+    demoCD = 0.12;
+    return best ? ['!' + KEY[best]] : [];
+  }
+});
 A.overlay({ title: 'CUBE HOPPER', sub: 'Hop on every cube to change it to the target colour. Dodge the red balls and the spring that hatches from the purple one. Green balls freeze everything. Ride a spinning disc back to the top, and the spring may jump after you.', btn: 'Start', scores: true, onGo: newGame });
 })();
 </script>

@@ -60,6 +60,7 @@ function pause() {
 function die() {
   state = 'dying'; deathT = 0.9; A.noise(0.5, 0.08); A.tone(300, 0.5, 'sawtooth', 0.05, 0, 60);
   setTimeout(() => {
+    if (state !== 'dying') return; // a demo that was stopped mid-crash
     state = 'over';
     const rec = A.submit(score);
     A.overlay({ title: 'GAME OVER', big: `SCORE ${score} · LENGTH ${snake.length}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, btn: 'Play again', onGo: start });
@@ -134,6 +135,27 @@ function seg(x, y, a, head, dead) {
     for (let k = 0; k < 2; k++) { ctx.beginPath(); ctx.arc(px + CS / 2 + ex[k], py + CS / 2 + ey[k], 2.2, 0, Math.PI * 2); ctx.fill(); }
   }
 }
+const DEMO_KEYS = { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' };
+/* Attract demo: head for the pellet (or the gem), never into a wall or the tail, keeping the most room to move. */
+let demoHead = null;
+A.attract({
+  start: () => { demoHead = null; start(); },
+  stop: () => { state = 'title'; deathT = 0; },
+  bot: () => {
+    if (state !== 'play' || queue.length) return [];
+    const h = snake[0]; if (demoHead && demoHead.x === h.x && demoHead.y === h.y) return []; demoHead = { ...h };
+    const blocked = (x, y) => x < 0 || y < 0 || x >= N || y >= N || snake.slice(0, -1).some(s => s.x === x && s.y === y);
+    const room = (x, y) => { const seen = new Set([x + ',' + y]), q = [[x, y]]; let n = 0; while (q.length && n < 120) { const [a, b] = q.shift(); n++; for (const v of Object.values(DV)) { const k = (a + v.x) + ',' + (b + v.y); if (!seen.has(k) && !blocked(a + v.x, b + v.y)) { seen.add(k); q.push([a + v.x, b + v.y]); } } } return n; };
+    let best = null, bs = -1e9;
+    for (const [name, v] of Object.entries(DV)) {
+      if (v.x === -dir.x && v.y === -dir.y) continue;
+      const x = h.x + v.x, y = h.y + v.y; if (blocked(x, y)) continue;
+      const goal = bonus || food, sc = Math.min(room(x, y), snake.length + 10) * 10 - (Math.abs(goal.x - x) + Math.abs(goal.y - y));
+      if (sc > bs) { bs = sc; best = name; }
+    }
+    return best && DV[best] !== dir ? ['!' + DEMO_KEYS[best]] : [];
+  }
+});
 A.overlay({ title: 'NEON NOODLE', sub: 'Eat the pink pellets to grow. Grab gold gems before they fade. Don’t hit the walls or your own tail.', btn: 'Start', scores: true, onGo: start });
 })();
 </script>

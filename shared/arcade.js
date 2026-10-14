@@ -74,6 +74,7 @@
   };
   /** Unlock a badge once, with a toast and a jingle. Unknown ids are ignored. */
   A.badge = id => {
+    if (A.demo || runEasy) return;
     const got = A.badgesGot();
     if (got.includes(id)) return;
     const def = A.badgeList().find(b => b.id === id);
@@ -117,6 +118,14 @@
     () => { want.forEach(k => boards[k].state = 'off'); renderHS(); });
   }
 
+  /*
+   * Easy mode (the EASY header button, arcade:easy): games run at 70% speed and give extra lives where they have them.
+   * A run that had easy mode on at any point counts for nothing: no scores, tables, daily or weekly boards, world
+   * posts, badges or tickets. runEasy is set when a run starts from the title or game-over screen, and by any tick
+   * played in easy mode, so switching it on mid-run (from the pause screen) taints that run too.
+   */
+  A.easy = store.get('arcade:easy') === '1';
+  let runEasy = false;
   let lastResult = null; // read by the next A.overlay call, which shows initials entry and the table
   /**
    * Save a finished game. Pass daily=true for a daily-challenge run. Returns true on a new record.
@@ -124,6 +133,8 @@
    */
   A.submit = (s, daily) => {
     s = Math.floor(s);
+    if (A.demo) return false;
+    if (runEasy) { lastResult = { s, rank: -1, top: A.top(), day: null, week: null, tix: 0, easy: true }; return false; }
     store.set('arcade:plays:' + A.id, (+store.get('arcade:plays:' + A.id) || 0) + 1);
     const top = A.top(); // read before updating the best, which A.top() falls back to when there's no table yet
     const prevBest = A.best(), rec = s > prevBest;
@@ -164,7 +175,7 @@
     if (ac && ac.state === 'suspended') ac.resume();
   };
   A.tone = (f, d = 0.06, type = 'square', v = 0.04, when = 0, slideTo) => {
-    if (A.muted || !ac) return;
+    if (A.muted || !ac || A.demo) return;
     const t = ac.currentTime + when, o = ac.createOscillator(), g = ac.createGain();
     o.type = type; o.frequency.setValueAtTime(f, t);
     if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + d);
@@ -172,7 +183,7 @@
     o.connect(g).connect(ac.destination); o.start(t); o.stop(t + d + 0.03);
   };
   A.noise = (d = 0.2, v = 0.06, when = 0) => {
-    if (A.muted || !ac) return;
+    if (A.muted || !ac || A.demo) return;
     const len = Math.floor(ac.sampleRate * d), buf = ac.createBuffer(1, len, ac.sampleRate), ch = buf.getChannelData(0);
     for (let i = 0; i < len; i++) ch[i] = (Math.random() * 2 - 1) * (1 - i / len);
     const s = ac.createBufferSource(), g = ac.createGain(); s.buffer = buf; g.gain.value = v;
@@ -262,6 +273,7 @@
       stick(leftKeys, gp.axes[0] || 0, gp.axes[1] || 0);
       stick(rightKeys, gp.axes[2] || 0, gp.axes[3] || 0);
     });
+    if (A.demo && (buttons.size || codes.size)) { endDemo(); gpButtons = buttons; buttons.forEach(i => gpSwallow.add(i)); requestAnimationFrame(pollPads); return; }
     buttons.forEach(i => {
       if (!gpButtons.has(i)) {
         A.unlock();
@@ -296,8 +308,8 @@
   A.loop = (update, draw) => {
     let last = performance.now(), acc = 0; const dt = 1 / 60;
     const f = t => {
-      acc += Math.min(0.1, (t - last) / 1000); last = t;
-      while (acc >= dt) { update(dt); acc -= dt; }
+      acc += Math.min(0.1, (t - last) / 1000) * (A.easy && !A.demo ? 0.7 : 1); last = t;
+      while (acc >= dt) { if (A.demo) demoTick(dt); else if (A.easy && !overlayOpen()) runEasy = true; update(dt); acc -= dt; }
       draw(t); requestAnimationFrame(f);
     };
     requestAnimationFrame(f);
@@ -309,21 +321,26 @@
   /* ---------- overlay ---------- */
   let goFn = null, altFn = null, goLabel = '', entry = null, shown = null; // shown: { top, hi, day } for the table
   const overlayOpen = () => { const o = $('ov'); return o && !o.hidden; };
-  const overlayGo = () => { if (entry) return saveEntry(); const f = goFn; if (!f) return; A.hideOverlay(); f(); };
+  const startsRun = () => !!shown; // title and game-over screens list scores; the pause screen doesn't
+  const overlayGo = () => { if (entry) return saveEntry(); const f = goFn; if (!f) return; if (startsRun()) runEasy = A.easy; A.hideOverlay(); f(); };
   const music = () => window.Chip; // shared/chip.js, when the page loads it
-  const overlayAlt = () => { const f = altFn; if (!f) return; A.hideOverlay(); f(); };
+  const overlayAlt = () => { const f = altFn; if (!f) return; if (startsRun()) runEasy = A.easy; A.hideOverlay(); f(); };
   let alt2Fn = null;
-  const overlayAlt2 = () => { const f = alt2Fn; if (!f) return; A.hideOverlay(); f(); };
+  const overlayAlt2 = () => { const f = alt2Fn; if (!f) return; if (startsRun()) runEasy = A.easy; A.hideOverlay(); f(); };
   /**
    * Show the overlay. alt: { btn, onGo } adds a second button (gamepad Y), alt2 a third (gamepad X). scores: true lists the top 10 (title screens),
    * and daily: true adds today's daily-challenge board to it. Called right after A.submit, it also asks for initials
    * when the score made the top 10 or is the player's best daily run today.
    */
-  A.overlay = ({ title, sub = '', big = '', btn = 'Play', onGo, alt, alt2, scores, daily }) => {
+  A.overlay = args => {
+    if (A.demo) return endDemo(); // the demo ran into a pause or game-over screen: back to the title instead
+    const { title, sub = '', big = '', btn = 'Play', onGo, alt, alt2, scores, daily } = args;
     const o = $('ov'), res = lastResult; lastResult = null;
-    const canShare = res && res.s > 0, isTitle = scores && !res;
+    const canShare = res && res.s > 0 && !res.easy, isTitle = scores && !res;
+    if (isTitle) titleArgs = args;
     clearInterval(contT);
     o.innerHTML = (isTitle && A.featured() ? `<div class="weekly">★ WEEKLY TOURNAMENT · ENDS IN ${WK.leftText()}</div>` : '') + `<h2></h2>${big ? '<div class="big"></div>' : ''}${sub ? '<p></p>' : ''}` +
+      (res && res.easy ? '<div class="tix easy">EASY MODE · SCORE NOT RECORDED</div>' : isTitle && A.easy ? '<div class="tix easy">EASY MODE ON · SCORES WON\u2019T COUNT</div>' : '') +
       (res && res.tix ? `<div class="tix">+${res.tix} TICKETS${A.featured() ? ' · DOUBLE THIS WEEK' : ''} · ${TICKETS.balance()} TOTAL</div>` : '') + `<div class="hs"></div>` +
       (isTitle ? '<div class="push">PUSH START</div>' : '') + (res ? '<div class="cont" hidden></div>' : '') +
       `<div class="btns"><button class="go"></button>${alt ? '<button class="go2"></button>' : ''}${alt2 ? '<button class="go2 go3"></button>' : ''}</div>` +
@@ -352,10 +369,11 @@
     renderHS(); o.hidden = false;
     if (res && !entry) startContinue();
     if (shown) loadWorld();
+    armDemo(isTitle);
     // the game's theme plays from the title screen right through the game: full volume on screens like this, quieter in play
     if (music()) { music().play(music().theme(A.id)); music().volume(0.5); }
   };
-  A.hideOverlay = () => { const o = $('ov'); if (o) o.hidden = true; entry = null; clearInterval(contT); if (music()) music().volume(0.3); };
+  A.hideOverlay = () => { const o = $('ov'); if (o) o.hidden = true; entry = null; clearInterval(contT); clearTimeout(demoT); if (music()) music().volume(0.3); };
   /** Game over, arcade style: CONTINUE? counts down 9 to 0 with a beep each second (starting a new game any time). */
   let contT = 0;
   function startContinue() {
@@ -365,11 +383,58 @@
     contT = setInterval(() => {
       if (!c.isConnected || !overlayOpen()) return clearInterval(contT);
       n--;
-      if (n < 0) { clearInterval(contT); c.textContent = 'THANKS FOR PLAYING'; c.classList.add('done'); return; }
+      if (n < 0) { clearInterval(contT); c.textContent = 'THANKS FOR PLAYING'; c.classList.add('done'); afterThanks(); return; }
       c.textContent = 'CONTINUE? ' + n; A.tone(n ? 880 : 440, 0.07, 'square', 0.03);
     }, 1000);
   }
   A.overlayOpen = overlayOpen;
+
+  /*
+   * Attract-mode demos. A game registers A.attract({ start, stop, bot }): start() begins a game, stop() puts it back
+   * in its title state, and bot(dt) returns the key codes to hold this tick ('!Code' taps a key: pressed now, released
+   * next tick). Left alone on the title screen for a while, the game plays itself (silently, scoring nothing) with a
+   * DEMO banner, then returns to the title. Any key, tap, click or controller button ends it straight away.
+   * Game-over screens drift back to the title once CONTINUE? runs out, like a real cabinet.
+   */
+  const DEMO_WAIT = (+new URLSearchParams(location.search).get('demo') || 12) * 1000, DEMO_LEN = 32000; // ?demo=2 for testing
+  let demoCfg = null, titleArgs = null, demoT = 0, demoUntil = 0, demoHeld = new Set(), demoTaps = [];
+  A.demo = false;
+  A.attract = cfg => { demoCfg = cfg; if (titleArgs && overlayOpen()) armDemo(true); };
+  function armDemo(isTitle) { clearTimeout(demoT); if (isTitle && demoCfg) demoT = setTimeout(startDemo, DEMO_WAIT); }
+  function startDemo() {
+    if (!demoCfg || !overlayOpen() || entry || document.hidden) return;
+    A.hideOverlay(); A.demo = true; demoUntil = performance.now() + DEMO_LEN; demoHeld = new Set(); demoTaps = [];
+    const scr = document.querySelector('.screen'); if (scr && !$('demoTag')) { const d = document.createElement('div'); d.id = 'demoTag'; d.className = 'demo-tag'; d.textContent = 'DEMO · PRESS START'; scr.append(d); }
+    try { demoCfg.start(); } catch (e) { endDemo(); }
+  }
+  function demoTick(dt) {
+    if (performance.now() > demoUntil) return endDemo();
+    demoTaps.forEach(c => { A.down.delete(c); }); demoTaps = [];
+    let want = []; try { want = demoCfg.bot(dt) || []; } catch (e) { want = []; }
+    const hold = new Set(want.filter(c => c[0] !== '!'));
+    demoHeld.forEach(c => { if (!hold.has(c)) ku(c); });
+    hold.forEach(c => { if (!demoHeld.has(c)) kd(c); });
+    demoHeld = hold;
+    want.filter(c => c[0] === '!').forEach(c => { const code = c.slice(1); A.down.delete(code); kd(code); demoTaps.push(code); });
+  }
+  function endDemo() {
+    if (!A.demo) return;
+    A.demo = false; demoHeld.forEach(ku); demoHeld.clear(); demoTaps.forEach(ku); demoTaps = []; A.down.clear();
+    const tag = $('demoTag'); if (tag) tag.remove();
+    try { demoCfg.stop(); } catch (e) {}
+    A.setScore(0); lastResult = null;
+    if (titleArgs) A.overlay(titleArgs);
+  }
+  function afterThanks() {
+    if (!demoCfg || !titleArgs) return;
+    const o = $('ov'); clearTimeout(demoT);
+    demoT = setTimeout(() => { if (overlayOpen() && !entry && o.querySelector('.cont.done')) { try { demoCfg.stop(); } catch (e) {} A.setScore(0); A.overlay(titleArgs); } }, 4000);
+  }
+  // A real key, tap or click ends a demo (and doesn't reach the game); so does any controller input (in pollPads).
+  addEventListener('keydown', e => { if (A.demo && e.isTrusted) { e.preventDefault(); e.stopImmediatePropagation(); endDemo(); } }, true);
+  addEventListener('pointerdown', e => { if (A.demo && e.isTrusted) { e.preventDefault(); e.stopImmediatePropagation(); endDemo(); } }, true);
+  ['keydown', 'pointerdown', 'pointermove'].forEach(ev => addEventListener(ev, e => { if (!A.demo && e.isTrusted && titleArgs && overlayOpen() && demoT && shown && !entry && titleShown()) armDemo(true); }, { passive: true }));
+  const titleShown = () => !!$('ov').querySelector('.push');
 
   /* ---------- initials + top-10 table ---------- */
   const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -486,10 +551,17 @@
       const crtSet = () => { const mode = crtMode(); document.body.classList.toggle('crt', mode === '1'); document.body.classList.toggle('crt-lite', mode === 'lite'); crt.textContent = CRT_LABEL[mode]; crt.setAttribute('aria-pressed', String(mode !== '0')); };
       crt.addEventListener('click', () => { store.set('arcade:crt', CRT[(CRT.indexOf(crtMode()) + 1) % CRT.length]); crtSet(); });
       crtSet(); m.after(crt);
+      // EASY: slower games and extra lives; scores don't count (see runEasy). Turning it on mid-run taints the run.
+      const easy = document.createElement('button'); easy.className = 'mute easy'; easy.id = 'easy';
+      const easySet = () => { easy.textContent = A.easy ? 'EASY ON' : 'EASY OFF'; easy.setAttribute('aria-pressed', String(A.easy)); document.body.classList.toggle('easy-on', A.easy); };
+      easy.title = 'Easy mode: slower, with extra lives. Scores, challenges and badges don\u2019t count.';
+      easy.addEventListener('click', () => { A.easy = !A.easy; store.set('arcade:easy', A.easy ? '1' : '0'); if (A.easy && !overlayOpen()) runEasy = true; easySet();
+        if (titleArgs && overlayOpen() && titleShown()) A.overlay(titleArgs); }); // redraw the title's EASY MODE note
+      easySet(); crt.after(easy);
       if (music()) m.after(toggle('music', 'MUSIC', () => music().enabled, () => { music().enabled = !music().enabled; }));
       // keep the header buttons together, so they wrap as one row on narrow screens
       const group = document.createElement('div'); group.className = 'toggles'; m.before(group);
-      [document.querySelector('.bar .pause'), m, $('music'), crt].filter(Boolean).forEach(b => group.append(b));
+      [document.querySelector('.bar .pause'), m, $('music'), crt, easy].filter(Boolean).forEach(b => group.append(b));
     }
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();

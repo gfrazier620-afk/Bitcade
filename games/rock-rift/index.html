@@ -40,7 +40,7 @@ function rock(x, y, size) {
   for (let i = 0; i < n; i++) pts.push(s.r * A.rand(0.7, 1.1));
   return { x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, size, r: s.r, pts, rot: 0, spin: A.rand(-1, 1) };
 }
-function newGame() { score = 0; lives = 3; wave = 0; nextLife = 10000; A.setScore(0); parts = []; resetShip(); nextWave(); state = 'play'; }
+function newGame() { score = 0; lives = A.easy ? 5 : 3; wave = 0; nextLife = 10000; A.setScore(0); parts = []; resetShip(); nextWave(); state = 'play'; }
 function resetShip() { ship = { x: W / 2, y: H / 2, a: -Math.PI / 2, vx: 0, vy: 0, inv: 2.5, dead: 0, cool: 0, thrust: false }; bullets = []; }
 function nextWave() {
   wave++; if (wave > 1) A.badge('wave'); rocks = []; waveT = 2; saucer = null; saucerT = A.rand(15, 25); sbullets = [];
@@ -156,6 +156,23 @@ function draw(t) {
   if (waveT > 0) { ctx.globalAlpha = Math.min(1, waveT); ctx.fillStyle = '#c6ff3d'; ctx.font = '30px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('WAVE ' + wave, W / 2, H / 2 - 60); ctx.globalAlpha = 1; }
 }
 A.loop(update, draw);
+/* Attract demo: turn to lead the nearest rock and fire; thrust away when one gets too close. */
+A.attract({
+  start: newGame,
+  stop: () => { state = 'title'; },
+  bot: () => {
+    if (state !== 'play' || !ship || ship.dead > 0 || !rocks.length) return [];
+    const near = rocks.reduce((a, r) => Math.hypot(r.x - ship.x, r.y - ship.y) < Math.hypot(a.x - ship.x, a.y - ship.y) ? r : a);
+    const d = Math.hypot(near.x - ship.x, near.y - ship.y), t = d / 560;
+    const want = Math.atan2(near.y + near.vy * t - ship.y, near.x + near.vx * t - ship.x);
+    let diff = want - ship.a; diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+    const keys = [];
+    if (Math.abs(diff) > 0.08) keys.push(diff > 0 ? 'ArrowRight' : 'ArrowLeft');
+    if (Math.abs(diff) < 0.3) keys.push('Space');
+    if (d < near.r + 70 && Math.abs(diff) > 2.2) keys.push('ArrowUp');
+    return keys;
+  }
+});
 A.overlay({ title: 'ROCK RIFT', sub: 'Big rocks split into smaller, faster rocks. Clear the field to warp to the next wave. Watch out for the pink saucer.', btn: 'Start', scores: true, onGo: newGame });
 })();
 </script>

@@ -208,3 +208,20 @@ body.skin-gold .bezel-top{color:#2a1a00}
 body.skin-neon .cabinet .marquee,body.skin-neon .bezel{border-color:#ff4fd1;background:#0a0716;
   box-shadow:inset 0 0 0 2px #22e0ff,0 0 18px rgba(255,79,209,.55),inset 0 0 22px rgba(34,224,255,.25)}
 body.skin-neon .cpanel{background:linear-gradient(180deg,#22e0ff 0 3px,#140a26 3px,#0a0716 100%)}
+
+/* ---------- easy mode, attract demos, and polish ---------- */
+.tix.easy{color:#04161c;background:repeating-linear-gradient(90deg,#5ee7ff 0 10px,#3dd0f0 10px 12px);box-shadow:0 0 12px rgba(94,231,255,.4)}
+.mute.easy[aria-pressed="true"]{color:#04161c;background:#5ee7ff;border-color:#5ee7ff}
+.demo-tag{position:absolute;left:50%;bottom:7%;transform:translateX(-50%);z-index:3;pointer-events:none;white-space:nowrap;
+  font-family:var(--f-pixel);font-size:clamp(12px,2.4vw,18px);letter-spacing:.16em;color:#ffe36a;text-shadow:0 0 10px rgba(255,227,106,.8),0 2px 0 #000;
+  animation:demo-blink 1.2s steps(1) infinite}
+@keyframes demo-blink{0%,64%{visibility:visible}65%,100%{visibility:hidden}}
+/* keyboard users can see where they are */
+.overlay button:focus-visible,.bar button:focus-visible,.bar a:focus-visible,.pad button:focus-visible{outline:2px solid #ffe36a;outline-offset:2px}
+/* reduced motion: no flicker, blinking or humming lights */
+@media (prefers-reduced-motion:reduce){
+  .push,.freeplay,.demo-tag,.cabinet .marquee::before{animation:none!important}
+  body.crt .screen::before,body.crt .screen::after,body.crt-lite .screen::before,body.crt-lite .screen::after{animation:none!important}
+}
+/* phones: five header buttons on one row */
+@media (max-width:440px){.toggles{gap:4px}.toggles .mute{padding:4px 5px;font-size:9.5px;letter-spacing:0}.bar .back{font-size:11px}}

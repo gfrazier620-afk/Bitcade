@@ -67,7 +67,7 @@ function buildStage() {
   }));
   diveT = 2; say(`STAGE ${stage}`);
 }
-function newGame() { score = 0; lives = 3; stage = 1; nextLife = 20000; A.setScore(0); player = { x: W / 2, alive: true, dual: false, inv: 1.5, cool: 0, respawnT: 0 }; rescue = null; pendingDual = false; buildStage(); state = 'play'; A.jingle([392, 523, 659, 784, 1047], 0.09); }
+function newGame() { score = 0; lives = A.easy ? 5 : 3; stage = 1; nextLife = 20000; A.setScore(0); player = { x: W / 2, alive: true, dual: false, inv: 1.5, cool: 0, respawnT: 0 }; rescue = null; pendingDual = false; buildStage(); state = 'play'; A.jingle([392, 523, 659, 784, 1047], 0.09); }
 function say(t) { msg = t; msgT = 1.8; }
 function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
 A.onPress(c => { if (c === 'KeyP' || c === 'Escape') pause(); });
@@ -250,6 +250,22 @@ function drawShip(x, y, c, flip, spin) {
   ctx.fillStyle = '#5ee7ff'; ctx.fillRect(-1.5, -9, 3, 5);
   ctx.restore();
 }
+/* Attract demo: keep firing under the nearest bug (divers first), sidestepping bombs and dive-bombers. */
+A.attract({
+  start: newGame,
+  stop: () => { state = 'title'; },
+  bot: () => {
+    if (state !== 'play' || !player.alive) return [];
+    const keys = ['Space'];
+    const threat = bombs.find(b => b.y > PY - 150 && b.y < PY && Math.abs(b.x - player.x) < 26) || enemies.find(e => e.diving && e.y > PY - 120 && Math.abs(e.x - player.x) < 40);
+    let tx = W / 2;
+    if (threat) tx = player.x + (threat.x > player.x ? -70 : 70);
+    else { const t = enemies.filter(e => !e.captive).sort((a, b) => (b.diving - a.diving) || (Math.abs(a.x - player.x) - Math.abs(b.x - player.x)))[0]; if (t) tx = t.x; }
+    tx = A.clamp(tx, 30, W - 30);
+    if (Math.abs(tx - player.x) > 6) keys.push(tx > player.x ? 'ArrowRight' : 'ArrowLeft');
+    return keys;
+  }
+});
 A.overlay({ title: 'SWARM STRIKE', sub: 'The swarm swoops in, lines up, then dive-bombs you. Commanders take two hits and can beam your ship away. Shoot a commander holding your ship to win it back and fly two ships at once.', btn: 'Start', scores: true, onGo: newGame });
 })();
 </script>

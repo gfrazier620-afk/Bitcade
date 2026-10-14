@@ -369,6 +369,52 @@ console.log('\nArcade floor');
   await close();
 }
 
+/* ---------- easy mode and attract demos ---------- */
+console.log('\nEasy mode');
+{
+  const { page, errors, close } = await open('/games/star-siege/');
+  check((await page.textContent('#easy')) === 'EASY OFF', 'the header has an EASY button, off by default');
+  await page.click('#easy');
+  check(/EASY MODE ON/.test(await page.textContent('#ov')), 'the title screen says scores won\'t count');
+  await page.click('#ov .go');
+  check(await page.evaluate(() => Arcade.easy) && /lives = A\.easy \? 5 : 3/.test(await readFile(join(ROOT, 'games/star-siege/index.html'), 'utf8')), 'easy mode is on, and games with lives start with 5');
+  await wait(300);
+  await page.evaluate(() => { Arcade.badge('wave'); Arcade.submit(5000); Arcade.overlay({ title: 'GAME OVER', btn: 'Again', onGo: () => {} }); });
+  check(/SCORE NOT RECORDED/.test(await page.textContent('#ov')) && !(await page.isVisible('#ov .ini')), 'an easy run asks for no initials and says it isn\'t recorded');
+  check(await page.evaluate(() => !localStorage.getItem('arcade:top:star-siege') && !localStorage.getItem('arcade:outbox') && !localStorage.getItem('arcade:badges:star-siege') && TICKETS.balance() === 20 && Arcade.best() === 0),
+    'easy runs save no score, post nothing, and earn no badges or tickets');
+  await page.click('#easy'); // off again
+  await page.click('#ov .go'); await wait(300);
+  await page.keyboard.press('KeyP'); await page.click('#easy'); await page.click('#ov .go'); await wait(300); // a moment played in easy mode
+  await page.keyboard.press('KeyP'); await page.click('#easy'); await page.click('#ov .go'); await wait(200);
+  await page.evaluate(() => { Arcade.submit(700); Arcade.overlay({ title: 'GAME OVER', btn: 'Again', onGo: () => {} }); });
+  check(/SCORE NOT RECORDED/.test(await page.textContent('#ov')), 'switching easy mode on mid-run (even briefly) means that run doesn\'t count');
+  await page.click('#ov .go'); await wait(300);
+  await page.evaluate(() => { Arcade.submit(600); Arcade.overlay({ title: 'GAME OVER', btn: 'Again', onGo: () => {} }); });
+  check(await page.isVisible('#ov .ini'), 'the next normal run counts again');
+  check(!errors.length, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
+  await close();
+}
+
+console.log('\nAttract demos');
+{
+  const kitGames = dirs.filter(d => d !== 'blip-sports'), noDemo = [];
+  for (const d of kitGames) if (!/A\.attract\(\{/.test(await readFile(join(ROOT, 'games', d, 'index.html'), 'utf8'))) noDemo.push(d);
+  check(!noDemo.length, `every kit game has an attract demo${noDemo.length ? ' (missing: ' + noDemo.join(', ') + ')' : ''}`);
+  const { page, errors, close } = await open('/games/rock-rift/?demo=1');
+  await page.waitForFunction(() => Arcade.demo, null, { timeout: 4000 });
+  check(await page.isVisible('#demoTag') && await page.isHidden('#ov'), 'left alone, the title screen plays a demo');
+  await wait(2500);
+  check(await page.evaluate(() => Arcade.demo && +document.getElementById('score').textContent >= 0), 'the demo keeps playing');
+  await page.keyboard.press('KeyQ');
+  check(await page.evaluate(() => !Arcade.demo) && await page.isVisible('#ov .push'), 'any key ends the demo and brings the title back');
+  check(await page.evaluate(() => !localStorage.getItem('arcade:top:rock-rift') && !localStorage.getItem('arcade:tickets')), 'a demo records nothing');
+  await page.click('#ov .go');
+  check(await page.isHidden('#ov') && await page.evaluate(() => !Arcade.demo), 'and the player can start a real game');
+  check(!errors.length, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
+  await close();
+}
+
 /* ---------- install + offline ---------- */
 console.log('\nInstall and offline');
 {

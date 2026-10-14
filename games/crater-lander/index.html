@@ -58,7 +58,7 @@ function groundY(x) {
   return ground[ground.length - 1].y;
 }
 level = 1; makeTerrain(); // scenery for the title screen
-function newGame() { score = 0; lives = 3; level = 1; A.setScore(0); parts = []; startLevel(true); }
+function newGame() { score = 0; lives = A.easy ? 5 : 3; level = 1; A.setScore(0); parts = []; startLevel(true); }
 function startLevel(fresh) {
   if (fresh) makeTerrain();
   tank = Math.max(50, 100 - (level - 1) * 6); fuel = tank;
@@ -152,6 +152,24 @@ function drawHUD(t) {
   ctx.textAlign = 'right'; ctx.fillStyle = '#f4effd'; ctx.fillText('LEVEL ' + level, W - 12, 22);
   for (let i = 0; i < lives; i++) { ctx.strokeStyle = '#9fb4ff'; ctx.beginPath(); ctx.arc(W - 20 - i * 20, 40, 5, Math.PI, 0); ctx.lineTo(W - 14 - i * 20, 46); ctx.lineTo(W - 26 - i * 20, 46); ctx.closePath(); ctx.stroke(); }
 }
+/* Attract demo: drift over the nearest pad clear of the hills, then come straight down, gently. */
+A.attract({
+  start: newGame,
+  stop: () => { state = 'title'; },
+  bot: () => {
+    if (state !== 'play' || !ship || !pads.length) return [];
+    const pad = pads.reduce((a, p) => Math.abs((p.x0 + p.x1) / 2 - ship.x) < Math.abs((a.x0 + a.x1) / 2 - ship.x) ? p : a);
+    const dx = (pad.x0 + pad.x1) / 2 - ship.x, over = Math.abs(dx) < (pad.x1 - pad.x0) / 2 - 8;
+    const h = (over ? pad.y : Math.min(...[-40, 0, 40, ship.vx].map(o => groundY(A.clamp(ship.x + o, 0, W - 1))))) - ship.y;
+    const vxT = over ? 0 : A.clamp(dx * 0.35, -55, 55);
+    const aT = over && h < 50 ? 0 : A.clamp((vxT - ship.vx) * 0.025, -0.6, 0.6);
+    const vyT = over ? A.clamp(h * 0.3, 14, 48) : h < 110 ? -25 : 30;
+    const keys = [];
+    if (ship.a < aT - 0.04) keys.push('ArrowRight'); else if (ship.a > aT + 0.04) keys.push('ArrowLeft');
+    if (ship.vy > vyT) keys.push('ArrowUp');
+    return keys;
+  }
+});
 A.overlay({ title: 'CRATER LANDER', sub: 'Touch down on a lit pad. Keep the HUD green: slow, upright, and level. Narrow pads pay more, and leftover fuel adds a bonus.', btn: 'Start', scores: true, onGo: newGame });
 })();
 </script>

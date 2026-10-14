@@ -175,6 +175,20 @@ function drawBike(x, y, dir, col) {
   ctx.shadowColor = col; ctx.shadowBlur = 10; ctx.fillStyle = col; ctx.fillRect(-10, -5, 4, 10); ctx.fillRect(6, -5, 4, 10); ctx.shadowBlur = 0;
   ctx.restore();
 }
+const DEMO_KEYS = { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' };
+/* Attract demo: your rider uses the same brain as the CPU riders. */
+let demoAt = '';
+A.attract({
+  start: () => { demoAt = ''; newGame(false); },
+  stop: () => { state = 'title'; riders = []; parts = []; msgT = 0; },
+  bot: () => {
+    const me = riders[0];
+    if (state !== 'play' || countT > 0 || !me || !me.alive || me.queue.length) return [];
+    const at = me.x + ',' + me.y; if (at === demoAt) return []; demoAt = at;
+    const ghost = { ...me }; think(ghost, riders[1]);
+    return ghost.dir !== me.dir ? ['!' + DEMO_KEYS[ghost.dir]] : [];
+  }
+});
 A.overlay({ title: 'LIGHT TRAIL', sub: 'Your light-cycle leaves a wall behind it. Box your rival in so they crash into a wall first. First to 3 rounds wins. <b>1 Player</b> races four CPU riders; <b>2 Players</b> share a keyboard or a tablet.', btn: '1 Player', scores: true, onGo: () => newGame(false), alt: { btn: '2 Players', onGo: () => newGame(true) } });
 })();
 </script>

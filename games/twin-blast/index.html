@@ -55,7 +55,7 @@ function boom(x, y, c, n = 16, s = 200) { for (let i = 0; i < n; i++) { const a 
 // so every player gets the same waves today.
 function newGame(isDaily = false) {
   daily = isDaily; rnd = daily ? A.seeded('twin-blast:' + A.today()) : Math.random;
-  score = 0; lives = 3; wave = 0; nextLife = 25000; parts = []; pops = []; A.setScore(0); state = 'play';
+  score = 0; lives = A.easy ? 5 : 3; wave = 0; nextLife = 25000; parts = []; pops = []; A.setScore(0); state = 'play';
   hero = { x: CX, y: CY, face: 1, inv: 2, dead: 0, walk: 0, ax: 1, ay: 0 }; nextWave();
 }
 function spot(min) { for (let k = 0; k < 50; k++) { const x = X0 + 20 + rnd() * (X1 - X0 - 40), y = Y0 + 20 + rnd() * (Y1 - Y0 - 40); if (Math.hypot(x - hero.x, y - hero.y) > min) return [x, y]; } return [X0 + 30, Y0 + 30]; }
@@ -306,6 +306,23 @@ const demo = Array.from({ length: 10 }, (_, i) => ({ kind: i < 6 ? 'drone' : i <
 function drawTitle(t) { // attract: robots circling an empty arena
   for (const d of demo) { const a = d.a + t / 3000; d.x = CX + Math.cos(a) * 230; d.y = CY + Math.sin(a) * 150; drawFoe(d, t); }
 }
+/* Attract demo: shoot the nearest robot, back away from anything close, and pick up crew when it's quiet. */
+A.attract({
+  start: () => newGame(false),
+  stop: () => { state = 'title'; foes = []; shots = []; crew = []; msgT = 0; },
+  bot: () => {
+    if (state !== 'play' || !hero || hero.dead) return [];
+    const live = foes.filter(f => !(f.spawn > 0)), keys = [], dist = f => Math.hypot(f.x - hero.x, f.y - hero.y);
+    const t = live.filter(f => f.kind !== 'mine').sort((a, b) => dist(a) - dist(b))[0];
+    if (t) { const dx = t.x - hero.x, dy = t.y - hero.y; if (Math.abs(dx) > Math.abs(dy) * 0.4) keys.push(dx > 0 ? 'ArrowRight' : 'ArrowLeft'); if (Math.abs(dy) > Math.abs(dx) * 0.4) keys.push(dy > 0 ? 'ArrowDown' : 'ArrowUp'); }
+    let mx = (CX - hero.x) * 0.15, my = (CY - hero.y) * 0.15;
+    for (const f of live) { const d = dist(f) || 1; if (d < 110) { mx += (hero.x - f.x) / d * (110 - d) * 2; my += (hero.y - f.y) / d * (110 - d) * 2; } }
+    const c = crew.slice().sort((a, b) => dist(a) - dist(b))[0];
+    if (c && Math.hypot(mx, my) < 40) { mx += c.x - hero.x; my += c.y - hero.y; }
+    if (Math.abs(mx) > 8) keys.push(mx > 0 ? 'KeyD' : 'KeyA'); if (Math.abs(my) > 8) keys.push(my > 0 ? 'KeyS' : 'KeyW');
+    return keys;
+  }
+});
 A.overlay({ title: 'TWIN BLAST', sub: 'Robots are flooding the arena. Move with one stick, blast with the other, and pick up the stranded crew before the big green brutes reach them. Mines don’t need clearing, just avoiding. <b>Daily</b> gives everyone the same waves today.', btn: 'Start', scores: true, daily: true, onGo: () => newGame(false), alt: { btn: 'Daily', onGo: () => newGame(true) } });
 })();
 </script>

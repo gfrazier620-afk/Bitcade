@@ -55,7 +55,7 @@ let state = 'title', score, lives, wave, player, shots, bombs, aliens, fleet, bu
 stars = Array.from({ length: 90 }, () => ({ x: Math.random() * W, y: Math.random() * H, s: Math.random() * 1.6 + 0.3, v: Math.random() * 14 + 4 }));
 parts = [];
 
-function newGame() { score = 0; lives = 3; wave = 1; extraGiven = false; A.setScore(0); buildBunkers(); startWave(); state = 'play'; }
+function newGame() { score = 0; lives = A.easy ? 5 : 3; wave = 1; extraGiven = false; A.setScore(0); buildBunkers(); startWave(); state = 'play'; }
 function startWave() {
   player = { x: W / 2, y: 596, cool: 0, dead: 0, inv: 1.2 }; shots = []; bombs = []; parts = []; ufo = null; ufoT = A.rand(14, 24); frame = 0;
   aliens = [];
@@ -175,6 +175,21 @@ function draw(t) {
   if (bannerT > 0) { ctx.globalAlpha = Math.min(1, bannerT); ctx.fillStyle = '#5ee7ff'; ctx.font = '30px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('WAVE ' + wave, W / 2, 440); ctx.globalAlpha = 1; }
 }
 A.loop(update, draw);
+/* Attract demo: fire away under the nearest alien, stepping aside from bombs. */
+A.attract({
+  start: newGame,
+  stop: () => { state = 'title'; },
+  bot: () => {
+    if (state !== 'play' || !player || player.dead > 0) return [];
+    const keys = ['Space'], live = aliens.filter(a => a.alive);
+    const threat = bombs.find(b => b.y > player.y - 140 && b.y < player.y && Math.abs(b.x - player.x) < 22);
+    let tx = player.x;
+    if (threat) tx = player.x + (threat.x > player.x ? -60 : 60);
+    else if (live.length) { const t = live.reduce((a, c) => Math.abs(apos(c).x - player.x) < Math.abs(apos(a).x - player.x) ? c : a); tx = apos(t).x + AW / 2; }
+    if (Math.abs(tx - player.x) > 6) keys.push(tx > player.x ? 'ArrowRight' : 'ArrowLeft');
+    return keys;
+  }
+});
 A.overlay({ title: 'STAR SIEGE', sub: 'The fleet is marching down. Shoot them before they land. Hide behind your shields, and tag the gold saucer for bonus points.', btn: 'Start', scores: true, onGo: newGame });
 })();
 </script>

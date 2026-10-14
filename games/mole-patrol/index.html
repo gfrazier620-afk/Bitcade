@@ -79,7 +79,7 @@ function buildLevel() {
   mole = ent(10, 1, { dir: 'down', walk: 0, inv: 0 });
   dirt = paintDirt();
 }
-function newGame(isDaily = false) { daily = isDaily; rnd = daily ? A.seeded('mole-patrol:' + A.today()) : Math.random; level = 1; score = 0; lives = 3; nextLife = 20000; parts = []; pops = []; A.setScore(0); buildLevel(); state = 'play'; say('LEVEL 1'); }
+function newGame(isDaily = false) { daily = isDaily; rnd = daily ? A.seeded('mole-patrol:' + A.today()) : Math.random; level = 1; score = 0; lives = A.easy ? 5 : 3; nextLife = 20000; parts = []; pops = []; A.setScore(0); buildLevel(); state = 'play'; say('LEVEL 1'); }
 function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
 A.onPress(c => {
   if (c === 'KeyP' || c === 'Escape') return pause();
@@ -336,6 +336,31 @@ function drawVeg(x, y, t, left) {
   ctx.restore();
 }
 buildLevel(); mole.inv = 0;
+const DEMO_KEYS = { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' };
+/* Attract demo: dig toward the nearest pest, and bubble it (tap, tap, tap) once it's in line down an open tunnel. */
+let demoShot = 0, demoStuck = 0, demoPos = '', demoAxis = 0;
+A.attract({
+  start: () => { demoAxis = 0; newGame(false); },
+  stop: () => { state = 'title'; ray = null; msgT = 0; },
+  bot: dt => {
+    if (state !== 'play' || dieT || clearT || !mole) return [];
+    demoShot -= dt;
+    if (ray && ray.pest) return demoShot <= 0 ? (demoShot = 0.2, ['!Space']) : [];
+    const mc = Math.round((mole.x - 16) / C), mr = Math.round((mole.y - 16) / C);
+    const t = pests.filter(q => !q.ghost).sort((a, b) => Math.hypot(a.x - mole.x, a.y - mole.y) - Math.hypot(b.x - mole.x, b.y - mole.y))[0];
+    if (!t) return [];
+    const pc = Math.round((t.x - 16) / C), pr = Math.round((t.y - 16) / C), gap = Math.abs(pc - mc) + Math.abs(pr - mr);
+    const d = pc > mc && pr === mr ? 'right' : pc < mc && pr === mr ? 'left' : pr > mr ? 'down' : 'up';
+    if ((pc === mc || pr === mr) && gap <= 3 && mole.dir === d) {
+      const [dx, dy] = DIRS[d]; let open = true; for (let i = 1; i < gap; i++) if (!isDug(mc + dx * i, mr + dy * i)) open = false;
+      if (open) return demoShot <= 0 ? (demoShot = 0.25, ['!Space']) : [];
+    }
+    const at = mc + ',' + mr; if (at === demoPos) demoStuck += dt; else { demoStuck = 0; demoPos = at; }
+    if (demoStuck > 0.8) { demoAxis = 1 - demoAxis; demoStuck = 0; }
+    const vert = demoAxis ? pc === mc : pr !== mr;
+    return [DEMO_KEYS[vert ? (pr > mr ? 'down' : 'up') : (pc > mc ? 'right' : 'left')]];
+  }
+});
 A.overlay({ title: 'MOLE PATROL', sub: 'Pests are tunnelling under the garden. Dig after them and trap them in bubbles: <b>tap again to pump</b> until they pop. Dig under a rock to drop it on them. Watch for newts’ spore clouds! <b>Daily</b> gives everyone the same gardens today.', btn: 'Start', scores: true, daily: true, onGo: () => newGame(false), alt: { btn: 'Daily', onGo: () => newGame(true) } });
 })();
 </script>

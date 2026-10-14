@@ -166,6 +166,36 @@ function mini(k, x, y, a) {
 }
 function label(t, x, y) { ctx.fillStyle = '#a39bc4'; ctx.font = '12px Silkscreen, monospace'; ctx.textAlign = 'left'; ctx.fillText(t, x, y); }
 function big(t, x, y) { ctx.fillStyle = '#f4effd'; ctx.font = '24px Silkscreen, monospace'; ctx.textAlign = 'left'; ctx.fillText(t, x, y); }
+/* Attract demo: for each new piece, try every turn and column and pick the spot that leaves the flattest stack. */
+let plan = null, planFor = null, actT = 0;
+function bestSpot() {
+  let best = null, m = cur.m;
+  for (let r = 0; r < 4; r++, m = rot(m)) for (let x = -2; x < CW; x++) {
+    if (collide(m, x, cur.y)) continue;
+    let y = cur.y; while (!collide(m, x, y + 1)) y++;
+    const g = grid.map(row => row.slice());
+    m.forEach((row, i) => row.forEach((v, j) => { if (v && y + i >= 0) g[y + i][x + j] = 1; }));
+    const rest = g.filter(row => !row.every(Boolean)), lines = g.length - rest.length, hs = [];
+    let holes = 0;
+    for (let c = 0; c < CW; c++) { let top = -1; for (let rr = 0; rr < rest.length; rr++) { if (rest[rr][c]) { if (top < 0) top = rr; } else if (top >= 0) holes++; } hs.push(top < 0 ? 0 : rest.length - top); }
+    let bump = 0; for (let c = 1; c < CW; c++) bump += Math.abs(hs[c] - hs[c - 1]);
+    const sc = 0.76 * lines - 0.51 * hs.reduce((a, b) => a + b, 0) - 0.36 * holes * 10 - 0.18 * bump;
+    if (!best || sc > best.sc) best = { sc, r, x };
+  }
+  return best;
+}
+A.attract({
+  start: () => { plan = null; planFor = null; newGame(false); },
+  stop: () => { state = 'title'; cur = null; },
+  bot: dt => {
+    if (state !== 'play' || !cur || clearing) return [];
+    if (planFor !== cur) { planFor = cur; plan = bestSpot(); actT = 0.25; }
+    actT -= dt; if (actT > 0 || !plan) return []; actT = 0.09;
+    if (plan.r > 0) { plan.r--; return ['!ArrowUp']; }
+    if (cur.x < plan.x) return ['!ArrowRight']; if (cur.x > plan.x) return ['!ArrowLeft'];
+    plan = null; return ['!Space'];
+  }
+});
 A.overlay({ title: 'STACKDOWN', sub: 'Fit the falling blocks together. Fill a whole row to clear it. Clear four rows at once for the big bonus. <b>Daily</b> gives everyone the same pieces today.', btn: 'Start', scores: true, daily: true, onGo: () => newGame(false), alt: { btn: 'Daily', onGo: () => newGame(true) } });
 })();
 </script>

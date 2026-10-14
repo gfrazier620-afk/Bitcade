@@ -37,7 +37,7 @@ let state = 'title', wins, hero, wreck, bricks, debris, coffee, coffeeT, score, 
 clouds = Array.from({ length: 5 }, (_, i) => ({ x: i * 110, y: 20 + A.rnd(50), w: 60 + A.rnd(50) }));
 debris = [];
 
-function newGame() { score = 0; lives = 3; level = 1; A.setScore(0); setupLevel(); state = 'play'; }
+function newGame() { score = 0; lives = A.easy ? 5 : 3; level = 1; A.setScore(0); setupLevel(); state = 'play'; }
 function setupLevel() {
   const maxD = Math.min(3, 1 + Math.floor(level / 2));
   wins = Array.from({ length: FLOORS }, (_, f) => Array.from({ length: COLS }, () => {
@@ -225,6 +225,24 @@ function draw(t) {
   if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT); ctx.font = '22px Bungee, sans-serif'; ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.shadowColor = '#000'; ctx.shadowBlur = 8; ctx.fillText(msg, W / 2, GROUND + 26); ctx.shadowBlur = 0; ctx.globalAlpha = 1; }
 }
 A.loop(update, draw);
+/* Attract demo: dodge falling bricks, otherwise go to the nearest broken window and hammer it. */
+let demoT = 0;
+A.attract({
+  start: newGame,
+  stop: () => { state = 'title'; },
+  bot: dt => {
+    if (state !== 'play' || !hero || hero.dead || hero.moveT > 0) return [];
+    demoT -= dt; if (demoT > 0) return []; demoT = 0.16;
+    const above = c => bricks.some(b => Math.abs(b.x - colX(c)) < 30 && b.y < floorBase(hero.f) - 20 && b.y > floorBase(hero.f) - 260);
+    if (above(hero.c)) return [hero.c > 0 && !above(hero.c - 1) ? '!ArrowLeft' : '!ArrowRight'];
+    if (wins[hero.f][hero.c] > 0) return ['!Space'];
+    let best = null, bd = 1e9;
+    wins.forEach((row, f) => row.forEach((w, c) => { if (w > 0) { const d = Math.abs(f - hero.f) * 3 + Math.abs(c - hero.c); if (d < bd) { bd = d; best = { f, c }; } } }));
+    if (!best) return [];
+    if (best.f !== hero.f) return [best.f > hero.f ? '!ArrowUp' : '!ArrowDown'];
+    return [best.c > hero.c ? '!ArrowRight' : '!ArrowLeft'];
+  }
+});
 A.overlay({ title: 'HIGHRISE HANDYMAN', sub: 'A rock giant is wrecking the building. Climb between floors and hammer every broken window back together. Dodge the falling bricks. Grab coffee for double points, and bricks bounce off you while it lasts.', btn: 'Start', scores: true, onGo: newGame });
 })();
 </script>

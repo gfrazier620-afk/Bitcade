@@ -49,7 +49,7 @@ function resetRun() {
   cans = []; pops = []; throwT = 1.4; bonus = 5000; bonusT = 0;
   hammers = HAMMER_SPOTS.map(([g, x]) => ({ g, x, taken: false }));
 }
-function newGame() { score = 0; lives = 3; level = 1; nextLife = 20000; A.setScore(0); resetRun(); state = 'play'; say('CLIMB TO THE FLAG!'); A.jingle([392, 523, 659, 784], 0.09); }
+function newGame() { score = 0; lives = A.easy ? 5 : 3; level = 1; nextLife = 20000; A.setScore(0); resetRun(); state = 'play'; say('CLIMB TO THE FLAG!'); A.jingle([392, 523, 659, 784], 0.09); }
 function say(t) { msg = t; msgT = 1.8; }
 function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
 A.onPress(c => {
@@ -241,6 +241,22 @@ function drawWorker(t) {
   else { ctx.fillStyle = '#e3a877'; ctx.fillRect(5, -19 + (climb ? -6 * step : 0), 4, 4); }
   ctx.restore();
 }
+/* Attract demo: walk to the next good ladder and climb, jumping cans that roll your way. */
+A.attract({
+  start: newGame,
+  stop: () => { state = 'title'; },
+  bot: () => {
+    if (state !== 'play' || !p) return [];
+    if (p.st === 'climb') return ['ArrowUp'];
+    if (p.st !== 'walk') return [];
+    const L = LADDERS.filter(l => l.i === p.g && !l.broken).sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0];
+    if (!L) return [];
+    const dx = L.x - p.x, dir = dx > 0 ? 'ArrowRight' : 'ArrowLeft';
+    const can = cans.find(c => c.g === p.g && c.st === 'roll' && Math.abs(c.x - p.x) < 46 && Math.sign(p.x - c.x) === downhill(c.g));
+    if (can && !p.hammer) return [dir, '!Space'];
+    return Math.abs(dx) < 4 ? ['ArrowUp'] : [dir];
+  }
+});
 A.overlay({ title: 'SCAFFOLD SCRAMBLE', sub: 'A runaway crane is rolling paint cans down the building site. Climb the ladders to the finish flag. Jump the cans for points, and grab a hammer to smash them. Broken ladders only go halfway.', btn: 'Clock in', scores: true, onGo: newGame });
 })();
 </script>

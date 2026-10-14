@@ -38,7 +38,7 @@ let state = 'title', car, traffic, items, parts, score, dist, lives, fuel, nitro
 
 function newGame() {
   car = { x: laneX(1.5), y: 520, speed: 260, spin: 0, inv: 1.5, boost: 0 };
-  traffic = []; items = []; parts = []; score = 0; dist = 0; lives = 3; fuel = 100; nitro = 2; scroll = 0; spawnT = 0.8; itemT = 4; overT = 0;
+  traffic = []; items = []; parts = []; score = 0; dist = 0; lives = A.easy ? 5 : 3; fuel = 100; nitro = 2; scroll = 0; spawnT = 0.8; itemT = 4; overT = 0;
   A.setScore(0); state = 'play'; say('GO!'); A.jingle([392, 392, 784], 0.18);
 }
 function say(t) { msg = t; msgT = 1.3; }
@@ -202,6 +202,24 @@ function draw(t) {
   if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '24px Bungee, sans-serif'; ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.shadowColor = '#ff3d7f'; ctx.shadowBlur = 14; ctx.fillText(msg, W / 2, 260); ctx.shadowBlur = 0; ctx.globalAlpha = 1; }
 }
 A.loop(update, draw);
+/* Attract demo: pick the lane with the most road ahead (fuel cans welcome), brake if boxed in. */
+A.attract({
+  start: () => { bonus = 0; newGame(); },
+  stop: () => { state = 'title'; },
+  bot: () => {
+    if (state !== 'play' || !car) return [];
+    const clear = l => { const x = laneX(l); let d = 1e9; for (const t of traffic) if (Math.abs(t.x - x) < 34 && t.y < car.y + 40) d = Math.min(d, car.y - t.y); return d; };
+    let best = 0, bv = -1e9;
+    for (let l = 0; l < LANES; l++) {
+      const v = Math.min(clear(l), 600) - Math.abs(laneX(l) - car.x) * 0.5 + (items.some(i => Math.abs(i.x - laneX(l)) < 20 && i.y < car.y && i.y > car.y - 300) ? 120 : 0);
+      if (v > bv) { bv = v; best = l; }
+    }
+    const keys = [], dx = laneX(best) - car.x;
+    if (Math.abs(dx) > 8) keys.push(dx > 0 ? 'ArrowRight' : 'ArrowLeft');
+    keys.push(clear(A.clamp(Math.round((car.x - RL) / LW - 0.5), 0, LANES - 1)) < 170 ? 'ArrowDown' : 'ArrowUp');
+    return keys;
+  }
+});
 A.overlay({ title: 'NITRO LANE', sub: 'Weave through night traffic as far as you can. Grab red fuel cans before the tank runs dry. Blue diamonds are nitro: hit Space (or tap NITRO) for a burst.', btn: 'Start', scores: true, onGo: () => { bonus = 0; newGame(); } });
 })();
 </script>

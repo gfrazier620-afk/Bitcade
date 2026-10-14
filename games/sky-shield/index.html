@@ -160,6 +160,25 @@ function drawBase(b) {
   ctx.fillStyle = '#ffe14d'; for (let i = 0; i < b.ammo; i++) ctx.fillRect(b.x - 11 + (i % 5) * 5, GROUND - 13 + Math.floor(i / 5) * 5, 3, 3);
   if (state === 'play' && b.ammo <= 2) { ctx.fillStyle = '#ff4f6d'; ctx.font = '10px Silkscreen, monospace'; ctx.textAlign = 'center'; ctx.fillText(b.ammo ? 'LOW' : 'OUT', b.x, GROUND + 16); }
 }
+/* Attract demo: slide the crosshair ahead of the lowest missile and fire, one shot per missile. */
+let demoAim = null, demoCD = 0;
+const demoDone = new Set();
+A.attract({
+  start: () => { demoAim = null; demoDone.clear(); newGame(); },
+  stop: () => { state = 'title'; },
+  bot: dt => {
+    demoCD -= dt;
+    if (state !== 'play') return [];
+    if (!demoAim || !foes.includes(demoAim)) demoAim = foes.filter(f => !demoDone.has(f)).sort((a, b) => b.y - a.y)[0] || null;
+    if (!demoAim) return [];
+    const t = 0.6, tx = demoAim.x + demoAim.vx * t, ty = Math.min(demoAim.y + demoAim.vy * t, GROUND - 40);
+    const keys = [], dx = tx - cross.x, dy = ty - cross.y;
+    if (Math.abs(dx) > 6) keys.push(dx > 0 ? 'ArrowRight' : 'ArrowLeft');
+    if (Math.abs(dy) > 6) keys.push(dy > 0 ? 'ArrowDown' : 'ArrowUp');
+    if (!keys.length && demoCD <= 0) { demoCD = 0.3; demoDone.add(demoAim); demoAim = null; keys.push('!Space'); }
+    return keys;
+  }
+});
 A.overlay({ title: 'SKY SHIELD', sub: 'Missiles are falling on your six cities. Fire interceptors ahead of them: each one bursts where you aimed and wipes out anything in the blast. Three bases, ten shots each per wave.', btn: 'Start', scores: true, onGo: newGame });
 })();
 </script>

@@ -51,7 +51,7 @@ function hatch(n) {
   for (let i = 0; i < n; i++) { const s = { c: 12 - i, r: 0, pc: 12 - i, pr: 0, dir: 1, vdir: 1, ahead }; segs.push(s); ahead = s; }
   for (let i = 0; i < Math.min(wave - 1, 5); i++) { const c = A.rnd(COLS); segs.push({ c, r: 0, pc: c, pr: 0, dir: Math.random() < 0.5 ? 1 : -1, vdir: 1, ahead: null }); }
 }
-function newGame() { score = 0; lives = 3; wave = 1; cleared = 0; nextLife = 12000; A.setScore(0); plantGarden(); hatch(12); pl = { x: W / 2, y: H - 30 }; shot = null; spider = null; beetle = null; spiderT = 6; state = 'play'; say('PROTECT THE GARDEN!'); A.jingle([523, 659, 784], 0.08); }
+function newGame() { score = 0; lives = A.easy ? 5 : 3; wave = 1; cleared = 0; nextLife = 12000; A.setScore(0); plantGarden(); hatch(12); pl = { x: W / 2, y: H - 30 }; shot = null; spider = null; beetle = null; spiderT = 6; state = 'play'; say('PROTECT THE GARDEN!'); A.jingle([523, 659, 784], 0.08); }
 function say(t) { msg = t; msgT = 1.6; }
 function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
 A.onPress(c => { if (c === 'KeyP' || c === 'Escape') pause(); });
@@ -202,6 +202,21 @@ function drawSprayer(x, y) {
   ctx.fillStyle = '#2ee6c5'; ctx.beginPath(); ctx.arc(x, y + 2, 8, Math.PI, 0); ctx.fill(); ctx.fillRect(x - 8, y + 2, 16, 5);
   ctx.fillStyle = '#c8fff4'; ctx.fillRect(x - 2, y - 10, 4, 8); ctx.fillStyle = '#0d3a33'; ctx.fillRect(x - 4, y, 3, 3); ctx.fillRect(x + 1, y, 3, 3);
 }
+/* Attract demo: spray at the lowest part of the caterpillar, and back away from the spider. */
+A.attract({
+  start: newGame,
+  stop: () => { state = 'title'; },
+  bot: () => {
+    if (state !== 'play') return [];
+    const keys = ['Space'];
+    let tx = W / 2;
+    if (spider && Math.hypot(spider.x - pl.x, spider.y - pl.y) < 90) tx = pl.x + (spider.x > pl.x ? -80 : 80);
+    else if (segs.length) { const s = segs.reduce((a, b) => b.r > a.r ? b : a); tx = s.c * CELL + CELL / 2 + s.dir * CELL; }
+    if (Math.abs(tx - pl.x) > 5) keys.push(tx > pl.x ? 'ArrowRight' : 'ArrowLeft');
+    if (pl.y < H - 30) keys.push('ArrowDown');
+    return keys;
+  }
+});
 A.overlay({ title: 'GARDEN GUNNER', sub: 'A caterpillar is winding down through the flower bed. Spray it to pieces: every segment you hit becomes a flower, and the piece behind grows a new head. Watch out for the spider in your patch.', btn: 'Start', scores: true, onGo: newGame });
 })();
 </script>

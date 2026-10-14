@@ -153,6 +153,16 @@ A.loop(dt => {
   }
   if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '26px Bungee, sans-serif'; ctx.fillStyle = '#ff7bf0'; ctx.fillText(msg, W / 2, H / 2 + 70); ctx.globalAlpha = 1; }
 });
+/* Attract demo: the left paddle follows the ball when it's coming, and drifts back to the middle when it isn't. */
+A.attract({
+  start: () => newGame(false),
+  stop: () => { state = 'title'; ball = null; },
+  bot: () => {
+    if (!ball) return [];
+    const d = (ball.vx < 0 ? ball.y : H / 2) - L.y;
+    return Math.abs(d) < 14 ? [] : [d > 0 ? 'ArrowDown' : 'ArrowUp'];
+  }
+});
 A.overlay({ title: 'VOLLEY DUEL', sub: 'Bat the ball past your rival. First to 7 wins. <b>1 Player</b> climbs a ladder of five CPU rivals. <b>2 Players</b> share one keyboard or one tablet.',
   btn: '1 Player', scores: true, onGo: () => newGame(false), alt: { btn: '2 Players', onGo: () => newGame(true) } });
 })();

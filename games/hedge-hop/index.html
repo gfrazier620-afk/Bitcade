@@ -50,7 +50,7 @@ function buildLanes() {
 }
 buildLanes(); // scenery for the title screen
 const speed = l => l.sp * (1 + (level - 1) * 0.12);
-function newGame() { score = 0; lives = 3; level = 1; nextLife = 10000; A.setScore(0); homes = BURROWS.map(() => false); buildLanes(); respawn(); state = 'play'; say('GET HOME!'); A.jingle([392, 523, 659, 784], 0.08); }
+function newGame() { score = 0; lives = A.easy ? 5 : 3; level = 1; nextLife = 10000; A.setScore(0); homes = BURROWS.map(() => false); buildLanes(); respawn(); state = 'play'; say('GET HOME!'); A.jingle([392, 523, 659, 784], 0.08); }
 function respawn() { hog = { ...START, hop: 0, fx: START.x, fy: START.y, face: 'up' }; timeLeft = TIME; best = START.y; }
 function say(t) { msg = t; msgT = 1.6; }
 function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
@@ -164,6 +164,37 @@ function drawHog(x, y, face, s) {
   ctx.fillStyle = '#1a0e08'; ctx.fillRect(-5, -9, 3, 3); ctx.fillRect(2, -9, 3, 3); ctx.beginPath(); ctx.arc(0, -14, 2.5, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
 }
+const DEMO_KEYS = { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' };
+/* Attract demo: hop up whenever the next row is safe, line up under a free burrow, and dodge when the ground goes bad. */
+let demoHop = 0;
+A.attract({
+  start: newGame,
+  stop: () => { state = 'title'; },
+  bot: dt => {
+    demoHop -= dt;
+    if (state !== 'play' || hog.hop > 0 || demoHop > 0) return [];
+    // the game's own rules (hog.x is its left edge), with a safety margin: cars squash, logs and leaves carry (leaves dip)
+    const ox = (o, t) => o.x + o.l.dir * speed(o.l) * t;
+    const car = (y, x, t) => objs.some(o => o.l.row === y && x + 1.1 > ox(o, t) + 0.05 && x - 0.1 < ox(o, t) + o.l.len - 0.05);
+    const raft = (y, x, t) => objs.some(o => o.l.row === y && !submerged(o, clock + t) && x + 0.5 >= ox(o, t) + 0.3 && x + 0.5 <= ox(o, t) + o.l.len - 0.3);
+    const ok = (x, y) => {
+      if (y === 0) { const i = BURROWS.indexOf(Math.round(x)); return i >= 0 && !homes[i] && Math.abs(x - Math.round(x)) < 0.35; }
+      if (isStream(y)) return raft(y, x, 0.15) && raft(y, x, 0.6);
+      if (isRoad(y)) return !car(y, x, 0) && !car(y, x, 0.15) && !car(y, x, 0.35);
+      return true;
+    };
+    const go = (d, nx, ny) => { if (nx < 0 || nx > COLS - 1 || ny > ROWS - 1 || !ok(isStream(ny) ? nx : Math.round(nx), ny)) return null; demoHop = 0.05; return ['!' + DEMO_KEYS[d]]; };
+    const x = hog.x, y = hog.y;
+    if (y === 1) {
+      const free = BURROWS.filter((b, i) => !homes[i]); if (!free.length) return [];
+      const bx = free.reduce((a, b) => Math.abs(b - x) < Math.abs(a - x) ? b : a, free[0]);
+      if (Math.abs(bx - x) < 0.35) { const r = go('up', x, 0); if (r) return r; }
+      else if (Math.abs(bx - x) > 0.9) { demoHop = 0.15; const r = go(bx > x ? 'right' : 'left', x + (bx > x ? 1 : -1), 1); if (r) return r; }
+    } else { const r = go('up', x, y - 1); if (r) return r; }
+    if (!ok(x, y)) for (const [d, nx, ny] of [['left', x - 1, y], ['right', x + 1, y], ['down', x, y + 1]]) { const r = go(d, nx, ny); if (r) return r; }
+    return [];
+  }
+});
 A.overlay({ title: 'HEDGE HOP', sub: 'Guide the hedgehog across the road and the stream into an empty burrow. Ride logs and leaves (some leaves sink!). Fill all five burrows to level up. Grab berries for a bonus.', btn: 'Start', scores: true, onGo: newGame });
 })();
 </script>

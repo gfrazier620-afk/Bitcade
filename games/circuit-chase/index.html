@@ -98,7 +98,7 @@ function resetActors() {
   if (viruses[0].dir !== ZERO) { viruses[0].nx = 9; viruses[0].ny = 7; }
   modeIdx = 0; modeT = SCHEDULE[0][1]; frightT = 0; bonus = null; freezeT = 0; pops = [];
 }
-function newGame() { score = 0; lives = 3; level = 1; nextLife = 10000; A.setScore(0); resetDots(); resetActors(); ready(); }
+function newGame() { score = 0; lives = A.easy ? 5 : 3; level = 1; nextLife = 10000; A.setScore(0); resetDots(); resetActors(); ready(); }
 function ready() { state = 'ready'; phaseT = 1.8; A.jingle([523, 659, 784, 659, 1047], 0.1); }
 function pause() { if (state !== 'play' && state !== 'ready') return; const prev = state; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = prev }); }
 function want(d) {
@@ -257,6 +257,29 @@ function drawAttract(t) {
   ctx.shadowColor = '#4fd8ff'; ctx.shadowBlur = 14; ctx.fillStyle = '#c8f6ff'; ctx.beginPath(); ctx.arc(k * T + T / 2, 13 * T + T / 2, 9, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
 }
 function gameOver() { state = 'over'; const rec = A.submit(score); A.overlay({ title: 'SYSTEM CRASH', big: `SCORE ${score} · LEVEL ${level}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, btn: 'Play again', onGo: newGame }); }
+const DEMO_KEYS = { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' };
+/* Attract demo: path to the nearest data bit, steering clear of hunting viruses; run if cornered. */
+let demoTile = '';
+A.attract({
+  start: () => { demoTile = ''; newGame(); },
+  stop: () => { state = 'title'; },
+  bot: () => {
+    if (state !== 'play' || !player) return [];
+    const k0 = player.nx + ',' + player.ny + ',' + player.dir.x + ',' + player.dir.y; if (k0 === demoTile) return []; demoTile = k0;
+    const sx = player.nx, sy = player.ny, wrap = x => (x + CN) % CN;
+    const danger = (x, y) => viruses.some(v => !v.fright && !v.eaten && !v.home && Math.abs(v.tx - x) + Math.abs(v.ty - y) <= 2);
+    const seen = new Map([[sx + ',' + sy, null]]), q = [[sx, sy]]; let goal = null;
+    while (q.length) {
+      const [x, y] = q.shift();
+      if (dots[y] && dots[y][x] && !(x === sx && y === sy)) { goal = [x, y]; break; }
+      for (const [name, d] of Object.entries(DIRS)) { const nx = wrap(x + d.x), ny = y + d.y, k = nx + ',' + ny; if (seen.has(k) || !passable(nx, ny) || danger(nx, ny)) continue; seen.set(k, [x, y, name]); q.push([nx, ny]); }
+    }
+    let first = null;
+    if (goal) for (let k = goal[0] + ',' + goal[1]; ;) { const prev = seen.get(k); if (!prev) break; if (prev[0] === sx && prev[1] === sy) { first = prev[2]; break; } k = prev[0] + ',' + prev[1]; }
+    if (!first) { let bs = -1; for (const [name, d] of Object.entries(DIRS)) { const nx = wrap(sx + d.x), ny = sy + d.y; if (!passable(nx, ny)) continue; const s = Math.min(...viruses.map(v => Math.abs(v.tx - nx) + Math.abs(v.ty - ny))); if (s > bs) { bs = s; first = name; } } }
+    return first ? ['!' + DEMO_KEYS[first]] : [];
+  }
+});
 A.overlay({ title: 'CIRCUIT CHASE', sub: 'Collect every data bit in the circuit. The four viruses hunt you down. Grab a glowing hex to turn the tables and zap them.', btn: 'Start', scores: true, onGo: newGame });
 })();
 </script>

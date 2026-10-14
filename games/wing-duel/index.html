@@ -52,7 +52,7 @@ function feathers(x, y, c, n = 18) { for (let i = 0; i < n; i++) { const a = Mat
 
 // Daily challenge (1 player): which riders each wave brings and where they appear come from a seed of today's date.
 function newGame(isTwo, isDaily = false) {
-  two = isTwo; daily = !two && isDaily; rnd = daily ? A.seeded('wing-duel:' + A.today()) : Math.random; score = 0; lives = 3; wave = 0; nextLife = 20000; wins = [0, 0]; eggChain = 0; clearT = 0;
+  two = isTwo; daily = !two && isDaily; rnd = daily ? A.seeded('wing-duel:' + A.today()) : Math.random; score = 0; lives = A.easy ? 5 : 3; wave = 0; nextLife = 20000; wins = [0, 0]; eggChain = 0; clearT = 0;
   foes = []; eggs = []; parts = []; pops = []; queue = []; A.setScore(0);
   players = two ? [spawnPlayer(0), spawnPlayer(1)] : [spawnPlayer(0)];
   state = 'play';
@@ -321,6 +321,22 @@ function drawRiderAt(r, x, y) {
   ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.fillRect(-3, -53, 4, 2);                                     // helmet shine
   ctx.restore();
 }
+/* Attract demo: chase eggs and get above the nearest rider, flapping to hold height and keep out of the lava. */
+A.attract({
+  start: () => newGame(false),
+  stop: () => { state = 'title'; players = []; foes = []; eggs = []; queue = []; msgT = 0; },
+  bot: () => {
+    const p = players[0];
+    if (state !== 'play' || !p || p.out) return [];
+    const foe = foes.filter(f => !(f.spawnT > 0)).sort((a, b) => Math.abs(wrapDx(p.x, a.x)) - Math.abs(wrapDx(p.x, b.x)))[0];
+    let tx = p.x, ty = 220;
+    if (eggs.length) { tx = eggs[0].x; ty = eggs[0].y - 10; } else if (foe) { tx = foe.x; ty = foe.y - 40; }
+    const keys = [], dx = wrapDx(p.x, tx);
+    if (Math.abs(dx) > 12) keys.push(dx > 0 ? 'ArrowRight' : 'ArrowLeft');
+    if (p.cd <= 0 && ((p.y > ty && p.vy > -60) || (p.y > 400 && p.vy > 0))) keys.push('!Space');
+    return keys;
+  }
+});
 A.overlay({ title: 'WING DUEL', sub: 'Flap to climb and steer around the ledges. When riders meet, the <b>higher lance</b> wins. Unseated rivals drop eggs: grab them before they hatch into something tougher. Mind the lava! <b>Daily</b> gives everyone the same waves today.', btn: '1 Player', scores: true, daily: true, onGo: () => newGame(false), alt: { btn: 'Daily', onGo: () => newGame(false, true) }, alt2: { btn: '2 Players', onGo: () => newGame(true) } });
 })();
 </script>
