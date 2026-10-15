@@ -1,6 +1,6 @@
 # Bitcade
 
-Twenty-two classic-style arcade games that run in your browser, on phone or keyboard.
+Twenty-five classic-style arcade games that run in your browser, on phone or keyboard.
 
 **Play:** https://gfrazier620-afk.github.io/Bitcade/
 
@@ -27,6 +27,9 @@ Twenty-two classic-style arcade games that run in your browser, on phone or keyb
 | Wing Duel | Flying joust, 1P waves or 2P duel |
 | Twin Blast | Twin-stick arena shooter |
 | Mole Patrol | Dig and trap |
+| Turbo Tour | Cross-country racer |
+| Raptor Ridge | Dino ride shooter |
+| Marsh Marksman | Bird hunt |
 | Blip Sports | LED football + baseball |
 
 Top-10 score tables with your initials save in your browser and post to a world leaderboard (Firebase). Stackdown, Wallbuster, Twin Blast, Mole Patrol and Wing Duel have a daily challenge that gives every player the same layout, with its own world board each day. Each week one game is the featured tournament game, with a world board that starts fresh every Monday. Every game pays tickets, which buy screen tints, cabinet finishes, outfits and decorations at the prize counter, and the lobby can be walked as an arcade floor. Left on its title screen, every game plays a demo of itself. Every title screen has its own animated logo, and the lobby's cabinets show footage of their games. Picking a cabinet drops a coin and switches the screen over like an old CRT, and earning all three badges in a game turns its cabinet gold. The ★ PROFILE view shows your player card, trophy case and prizes, and cloud save carries your progress to another device with a sync code (no account needed). EASY mode (in the header) slows games down and adds lives, but easy runs don't count for scores, challenges, badges or tickets. Every game has three badges to earn, and finished games can be shared. Blip Sports keeps a world board of wins. Every title screen has its own chiptune, there's an optional CRT filter, and the lobby has a boot sequence and an attract mode. Install it from the lobby (or Share → Add to Home Screen on iPhone) and it plays offline. To run it locally, use `python3 -m http.server` in this folder, then open http://localhost:8000.

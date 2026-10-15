@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Raptor Ridge</title>
+<link rel="manifest" href="../../manifest.json">
+<meta name="theme-color" content="#0f0c1f">
+<link rel="icon" type="image/png" href="../../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../../icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Rubik:wght@400;500;700&family=Silkscreen&display=swap">
+<link rel="stylesheet" href="../../shared/arcade.css">
+</head>
+<body data-game="raptor-ridge" data-pad="1:KeyR" style="--game:#7dd63d">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>RAPTOR RIDGE</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <div class="pad">
+    <div class="ab"><button class="sm" data-k="KeyR">RELOAD</button></div>
+  </div>
+  <p class="help">Aim with the mouse and click to fire · or <kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> aim, <kbd>Space</kbd> fire · <kbd>R</kbd> reload · <kbd>P</kbd> pause · tap to shoot on touch screens</p>
+</main>
+<script src="../../shared/chip.js"></script>
+<script src="../../shared/badges.js"></script>
+<script src="../../shared/arcade.js"></script>
+<script>
+(() => {
+const A = Arcade, cv = document.getElementById('cv');
+const W = 640, H = 400, ctx = A.canvas(cv, W, H), OUT = '#0a0612';
+// A simple 3D: things sit at (x, z) on the ground ahead of the jeep and are projected with F / z.
+const HZ = 168, F = 320, CAMH = 1.6, CLIP = 8;
+/** Lighten (k > 0) or darken (k < 0) a #rgb / #rrggbb colour. */
+function shade(hex, k) {
+  let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join('');
+  const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+const sprite = (w, h, fn) => { const c = document.createElement('canvas'); c.width = w; c.height = h; fn(c.getContext('2d'), w, h); return c; };
+/** Draw a shape twice: a dark outline (thicker), then filled with a vertical gradient lit from above. */
+function blob(x, path, top, bot, col, pad = 4) {
+  x.save(); path(); x.lineWidth = pad * 2; x.lineJoin = 'round'; x.strokeStyle = OUT; x.stroke(); x.restore();
+  const g = x.createLinearGradient(0, top, 0, bot); g.addColorStop(0, shade(col, 0.35)); g.addColorStop(0.55, col); g.addColorStop(1, shade(col, -0.4));
+  path(); x.fillStyle = g; x.fill();
+}
+
+/* ---------- dinosaurs: side views facing left, two running frames each (drawn once) ---------- */
+function raptorFrame(f, col, stripe, small) {
+  return sprite(200, 140, (x) => {
+    const legA = f ? [[86, 92], [70, 128]] : [[92, 92], [104, 128]], legB = f ? [[110, 92], [124, 128]] : [[104, 92], [86, 128]];
+    for (const [[hx, hy], [fx, fy]] of [legB, legA]) { x.strokeStyle = OUT; x.lineWidth = 14; x.lineCap = 'round'; x.beginPath(); x.moveTo(hx, hy); x.lineTo((hx + fx) / 2 + 6, hy + 18); x.lineTo(fx, fy); x.stroke(); x.strokeStyle = shade(col, -0.2); x.lineWidth = 8; x.stroke(); x.fillStyle = OUT; x.fillRect(fx - 10, fy - 3, 16, 6); }
+    blob(x, () => { x.beginPath(); x.moveTo(196, 58); x.quadraticCurveTo(150, 54, 120, 70); x.lineTo(124, 90); x.quadraticCurveTo(160, 80, 196, 66); x.closePath(); }, 54, 90, col);  // tail
+    blob(x, () => { x.beginPath(); x.ellipse(100, 82, 34, 20, -0.15, 0, 6.29); }, 62, 102, col); // body
+    blob(x, () => { x.beginPath(); x.moveTo(78, 74); x.quadraticCurveTo(64, 50, 52, 40); x.lineTo(66, 34); x.quadraticCurveTo(82, 52, 96, 70); x.closePath(); }, 34, 74, col); // neck
+    blob(x, () => { x.beginPath(); x.moveTo(70, 30); x.quadraticCurveTo(52, 22, 20, 34); x.lineTo(18, 42); x.quadraticCurveTo(40, 44, 58, 50); x.quadraticCurveTo(72, 48, 76, 38); x.closePath(); }, 22, 50, col); // head
+    x.fillStyle = shade(col, -0.45); for (let i = 0; i < 4; i++) { x.beginPath(); x.moveTo(90 + i * 12, 66); x.lineTo(96 + i * 12, 66); x.lineTo(92 + i * 12, 84); x.fill(); } // stripes
+    x.fillStyle = stripe; x.fillRect(30, 41, 22, 3);
+    x.fillStyle = '#fff'; x.fillRect(22, 40, 6, 2); x.fillRect(30, 40, 4, 2); // teeth
+    x.fillStyle = '#ffd23d'; x.beginPath(); x.arc(56, 34, 4, 0, 6.29); x.fill(); x.fillStyle = OUT; x.fillRect(55, 31, 2, 6);
+    x.strokeStyle = OUT; x.lineWidth = 6; x.beginPath(); x.moveTo(74, 84); x.lineTo(62, 96); x.lineTo(56, 92); x.stroke(); x.strokeStyle = shade(col, -0.2); x.lineWidth = 3; x.stroke(); // arm and claw
+    if (small) { x.fillStyle = 'rgba(255,255,255,.25)'; x.beginPath(); x.ellipse(98, 72, 18, 5, -0.2, 0, 6.29); x.fill(); }
+  });
+}
+function diloFrame(open) {
+  const col = '#4fb8a0';
+  return sprite(200, 150, (x) => {
+    for (const [hx, fx] of [[110, 124], [92, 84]]) { x.strokeStyle = OUT; x.lineWidth = 16; x.lineCap = 'round'; x.beginPath(); x.moveTo(hx, 98); x.lineTo(hx + 6, 118); x.lineTo(fx, 138); x.stroke(); x.strokeStyle = shade(col, -0.25); x.lineWidth = 9; x.stroke(); }
+    blob(x, () => { x.beginPath(); x.moveTo(196, 70); x.quadraticCurveTo(150, 62, 122, 80); x.lineTo(126, 100); x.quadraticCurveTo(162, 88, 196, 78); x.closePath(); }, 62, 100, col);
+    blob(x, () => { x.beginPath(); x.ellipse(102, 92, 38, 24, -0.1, 0, 6.29); }, 68, 116, col);
+    blob(x, () => { x.beginPath(); x.moveTo(80, 82); x.quadraticCurveTo(66, 60, 58, 46); x.lineTo(72, 40); x.quadraticCurveTo(86, 60, 98, 78); x.closePath(); }, 40, 82, col);
+    if (open) { // the frill fans out
+      x.fillStyle = OUT; x.beginPath(); x.arc(64, 44, 34, 0, 6.29); x.fill();
+      const g = x.createRadialGradient(64, 44, 6, 64, 44, 32); g.addColorStop(0, '#ffd23d'); g.addColorStop(0.6, '#ff4f6d'); g.addColorStop(1, '#8a1a4a'); x.fillStyle = g; x.beginPath(); x.arc(64, 44, 30, 0, 6.29); x.fill();
+      x.strokeStyle = 'rgba(10,6,18,.4)'; x.lineWidth = 2; for (let a = 0; a < 6.28; a += 0.5) { x.beginPath(); x.moveTo(64, 44); x.lineTo(64 + Math.cos(a) * 30, 44 + Math.sin(a) * 30); x.stroke(); }
+    }
+    blob(x, () => { x.beginPath(); x.moveTo(74, 36); x.quadraticCurveTo(52, 26, 28, 38); x.lineTo(28, 48); x.quadraticCurveTo(48, 50, 64, 54); x.quadraticCurveTo(78, 52, 80, 42); x.closePath(); }, 26, 54, col);
+    x.fillStyle = '#ff4f6d'; x.beginPath(); x.moveTo(44, 30); x.lineTo(54, 18); x.lineTo(60, 30); x.moveTo(56, 30); x.lineTo(66, 16); x.lineTo(72, 32); x.fill(); // crests
+    x.fillStyle = OUT; x.fillRect(28, 44, 26, open ? 6 : 2);
+    x.fillStyle = '#ffd23d'; x.beginPath(); x.arc(58, 38, 4, 0, 6.29); x.fill(); x.fillStyle = OUT; x.fillRect(57, 35, 2, 6);
+    x.fillStyle = shade(col, -0.45); for (let i = 0; i < 5; i++) x.fillRect(84 + i * 10, 74, 5, 14);
+  });
+}
+function pteroFrame(up) {
+  const col = '#c8805a';
+  return sprite(220, 120, (x) => {
+    const wing = s => { x.beginPath(); x.moveTo(110, 60); x.quadraticCurveTo(110 + s * 50, up ? -10 : 70, 110 + s * 104, up ? 10 : 100); x.quadraticCurveTo(110 + s * 60, up ? 40 : 74, 110, 74); x.closePath(); };
+    blob(x, () => wing(-1), 0, 100, '#a05a3a'); blob(x, () => wing(1), 0, 100, '#a05a3a');
+    blob(x, () => { x.beginPath(); x.ellipse(110, 66, 16, 12, 0, 0, 6.29); }, 54, 78, col);
+    blob(x, () => { x.beginPath(); x.moveTo(98, 60); x.lineTo(56, 70); x.lineTo(98, 72); x.closePath(); }, 60, 72, '#ffd23d', 3); // beak
+    blob(x, () => { x.beginPath(); x.moveTo(110, 56); x.lineTo(140, 36); x.lineTo(118, 60); x.closePath(); }, 36, 60, col, 3);   // crest
+    x.fillStyle = '#ffd23d'; x.fillRect(100, 60, 4, 4); x.fillStyle = OUT; x.fillRect(101, 61, 2, 2);
+  });
+}
+function rexFrame(open) {
+  const col = '#7a6a4a';
+  return sprite(300, 300, (x) => {
+    for (const lx of [100, 200]) blob(x, () => { x.beginPath(); x.roundRect(lx - 26, 190, 52, 96, 18); }, 190, 290, col);
+    x.fillStyle = OUT; for (const lx of [100, 200]) x.fillRect(lx - 32, 280, 64, 16); x.fillStyle = '#e8dcc0'; for (const lx of [100, 200]) for (let k = 0; k < 3; k++) x.fillRect(lx - 26 + k * 20, 286, 10, 8);
+    blob(x, () => { x.beginPath(); x.ellipse(150, 190, 92, 74, 0, 0, 6.29); }, 116, 264, col);
+    x.fillStyle = '#c8b890'; x.beginPath(); x.ellipse(150, 210, 54, 50, 0, 0, 6.29); x.fill(); // belly
+    x.strokeStyle = 'rgba(80,60,30,.35)'; x.lineWidth = 3; for (let i = 0; i < 4; i++) { x.beginPath(); x.moveTo(108, 184 + i * 18); x.quadraticCurveTo(150, 196 + i * 18, 192, 184 + i * 18); x.stroke(); }
+    for (const s of [-1, 1]) { x.strokeStyle = OUT; x.lineWidth = 12; x.lineCap = 'round'; x.beginPath(); x.moveTo(150 + s * 48, 168); x.lineTo(150 + s * 62, 196); x.stroke(); x.strokeStyle = col; x.lineWidth = 6; x.stroke(); }
+    const jaw = open ? 46 : 14;
+    blob(x, () => { x.beginPath(); x.roundRect(86, 46 + jaw, 128, 46, 18); }, 46 + jaw, 92 + jaw, shade(col, -0.1)); // lower jaw
+    if (open) { x.fillStyle = '#5a1a2a'; x.fillRect(96, 74, 108, jaw + 20); x.fillStyle = '#ff6a7a'; x.beginPath(); x.ellipse(150, 76 + jaw, 30, 10, 0, 0, 6.29); x.fill(); }
+    blob(x, () => { x.beginPath(); x.roundRect(76, 12, 148, 70, 26); }, 12, 82, col); // head
+    x.fillStyle = '#f4f0e8'; for (let i = 0; i < 9; i++) { x.beginPath(); x.moveTo(92 + i * 13, 78); x.lineTo(98 + i * 13, 92); x.lineTo(104 + i * 13, 78); x.fill(); }
+    if (open) for (let i = 0; i < 8; i++) { x.beginPath(); x.moveTo(98 + i * 13, 46 + jaw + 8); x.lineTo(104 + i * 13, 46 + jaw - 6); x.lineTo(110 + i * 13, 46 + jaw + 8); x.fill(); }
+    for (const s of [-1, 1]) { x.fillStyle = OUT; x.beginPath(); x.ellipse(150 + s * 46, 36, 14, 11, 0, 0, 6.29); x.fill(); x.fillStyle = '#ffd23d'; x.beginPath(); x.ellipse(150 + s * 46, 36, 10, 8, 0, 0, 6.29); x.fill(); x.fillStyle = OUT; x.fillRect(148 + s * 46, 28, 4, 16); }
+    x.fillStyle = shade(col, -0.35); x.fillRect(120, 20, 60, 6); x.fillStyle = 'rgba(255,255,255,.25)'; x.fillRect(96, 18, 30, 5);
+    x.fillStyle = OUT; x.beginPath(); x.arc(134, 58, 3, 0, 6.29); x.arc(166, 58, 3, 0, 6.29); x.fill(); // nostrils
+  });
+}
+const SPR = {
+  compy: [raptorFrame(0, '#7dd63d', '#2a6a1a', true), raptorFrame(1, '#7dd63d', '#2a6a1a', true)],
+  raptor: [raptorFrame(0, '#c8904a', '#ff4f6d'), raptorFrame(1, '#c8904a', '#ff4f6d')],
+  dilo: [diloFrame(false), diloFrame(true)],
+  ptero: [pteroFrame(true), pteroFrame(false)],
+  rex: [rexFrame(false), rexFrame(true)]
+};
+// what each kind is like: h = height in world units, hp, speed toward you, points
+const KIND = {
+  compy: { h: 1.05, hp: 1, v: 6.5, pts: 100 }, raptor: { h: 2.6, hp: 2, v: 8, pts: 300 }, dilo: { h: 2.6, hp: 3, v: 4.5, pts: 500 },
+  ptero: { h: 1.7, hp: 1, v: 6, pts: 400 }, rex: { h: 6.4, hp: 24, v: 1.2, pts: 5000 }
+};
+
+/* ---------- scenery ---------- */
+const TREE = {
+  palm: sprite(160, 260, (x) => {
+    x.lineCap = 'round'; for (const [c, w] of [[OUT, 22], ['#6a4a2a', 14]]) { x.strokeStyle = c; x.lineWidth = w; x.beginPath(); x.moveTo(80, 258); x.quadraticCurveTo(66, 150, 84, 60); x.stroke(); }
+    for (const [c, k] of [[OUT, 1.08], ['#2f9a48', 1], ['#5ad870', 0.6]]) for (let i = 0; i < 7; i++) { const a = -Math.PI + i * Math.PI / 6; x.save(); x.translate(84, 60); x.rotate(a); x.fillStyle = c; x.beginPath(); x.ellipse(36 * k, 0, 40 * k, 10 * k, 0, 0, 6.29); x.fill(); x.restore(); }
+  }),
+  fern: sprite(140, 80, (x) => { for (const [c, k] of [[OUT, 1.1], ['#2a7a3a', 1], ['#4fb85a', 0.7]]) for (let i = 0; i < 7; i++) { const a = -Math.PI + 0.2 + i * 0.45; x.save(); x.translate(70, 78); x.rotate(a); x.fillStyle = c; x.beginPath(); x.ellipse(32 * k, 0, 34 * k, 7 * k, 0, 0, 6.29); x.fill(); x.restore(); } }),
+  dead: sprite(160, 260, (x) => {
+    x.lineCap = 'round'; for (const [c, w] of [[OUT, 18], ['#5a5048', 11]]) { x.strokeStyle = c; x.lineWidth = w; x.beginPath(); x.moveTo(80, 258); x.lineTo(78, 90); x.moveTo(79, 150); x.lineTo(40, 100); x.lineTo(30, 60); x.moveTo(78, 120); x.lineTo(120, 80); x.lineTo(126, 40); x.moveTo(78, 90); x.lineTo(70, 30); x.stroke(); }
+    x.fillStyle = 'rgba(120,160,120,.6)'; for (const [px, py] of [[34, 70], [124, 50], [72, 36]]) { x.fillRect(px - 2, py, 4, 26); }
+  }),
+  charred: sprite(160, 260, (x) => {
+    x.lineCap = 'round'; for (const [c, w] of [[OUT, 18], ['#2a1a1a', 11]]) { x.strokeStyle = c; x.lineWidth = w; x.beginPath(); x.moveTo(80, 258); x.lineTo(84, 70); x.moveTo(82, 140); x.lineTo(46, 96); x.moveTo(83, 110); x.lineTo(118, 76); x.stroke(); }
+    x.fillStyle = '#ff6a1f'; for (const [px, py] of [[84, 200], [60, 118], [104, 96]]) { x.fillRect(px, py, 4, 3); }
+  }),
+  rock: sprite(160, 100, (x) => { blob(x, () => { x.beginPath(); x.moveTo(6, 98); x.lineTo(24, 36); x.lineTo(80, 10); x.lineTo(134, 30); x.lineTo(156, 98); x.closePath(); }, 10, 98, '#8a7a6a'); })
+};
+const AREAS = [
+  { name: 'JUNGLE', sky: ['#4a9ae8', '#c8f0d0'], ground: ['#3a7a2a', '#1f4a1a'], far: '#4a8a6a', canopy: '#2a5a2a', trees: ['palm', 'palm', 'fern', 'fern', 'rock'], mist: 0 },
+  { name: 'SWAMP', sky: ['#5a7a7a', '#c8d8c0'], ground: ['#4a5a3a', '#26301e'], far: '#6a7a6a', canopy: '#3a4a3a', trees: ['dead', 'dead', 'fern', 'rock'], mist: 0.35 },
+  { name: 'VOLCANO', sky: ['#2a0a1a', '#ff6a3a'], ground: ['#4a2a22', '#1a0a0a'], far: '#3a1a1a', canopy: '#2a1414', trees: ['charred', 'charred', 'rock', 'rock'], mist: 0, ash: true }
+];
+AREAS.forEach(a => {
+  a.bg = sprite(W, H, (x) => {
+    const g = x.createLinearGradient(0, 0, 0, HZ); g.addColorStop(0, a.sky[0]); g.addColorStop(1, a.sky[1]); x.fillStyle = g; x.fillRect(0, 0, W, H);
+    if (a.ash) { x.fillStyle = '#3a1a1a'; x.beginPath(); x.moveTo(330, HZ); x.lineTo(410, 40); x.lineTo(450, 40); x.lineTo(540, HZ); x.fill(); x.fillStyle = '#ff6a1f'; x.beginPath(); x.moveTo(410, 40); x.lineTo(450, 40); x.lineTo(470, 80); x.lineTo(392, 80); x.fill(); }
+    else { x.fillStyle = 'rgba(255,250,220,.9)'; x.beginPath(); x.arc(520, 50, 22, 0, 6.29); x.fill(); }
+    let s = 9; const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    x.fillStyle = a.far; x.beginPath(); x.moveTo(0, HZ); for (let i = 0; i <= W; i += 12) x.lineTo(i, HZ - 30 - Math.abs(Math.sin(i * 0.011 + 2)) * 46 - r() * 6); x.lineTo(W, HZ); x.fill();
+    x.fillStyle = a.canopy; x.beginPath(); x.moveTo(0, HZ + 2); for (let i = 0; i <= W; i += 18) { x.lineTo(i, HZ - 8 - r() * 16); x.lineTo(i + 9, HZ - 2); } x.lineTo(W, HZ + 2); x.fill();
+  });
+});
+
+/* ---------- state ---------- */
+let state = 'title', area = 0, loop = 0, areaT = 0, spawnT = 0, boss = null, dinos = [], spits = [], props = [], crates = [], score = 0, hp = 5, ammo = 8, reloadT = 0, fireT = 0;
+let shots = 0, hits = 0, travel = 0, camX = 0, hurtT = 0, msg = '', msgT = 0, darts = [], cross = { x: W / 2, y: H / 2 - 20 }, slept = 0, clearT = 0;
+const CLIP_N = 8;
+function say(t) { msg = t; msgT = 2; }
+function spawnProp(z) { const a = AREAS[area % 3], side = Math.random() < 0.5 ? -1 : 1, t = A.pick(a.trees); props.push({ t, x: camX + side * A.rand(t === 'fern' ? 2 : 4, 15), z: z || A.rand(30, 46) }); }
+function newGame() {
+  area = 0; loop = 0; score = 0; hp = A.easy ? 8 : 5; ammo = CLIP_N; slept = 0; A.setScore(0); state = 'play'; startArea();
+}
+function startArea() {
+  areaT = 0; spawnT = 2; boss = null; dinos = []; spits = []; crates = []; shots = 0; hits = 0; clearT = 0;
+  props = []; for (let i = 0; i < 26; i++) spawnProp(A.rand(3, 46));
+  say(`AREA ${area + 1} · ${AREAS[area % 3].name}${loop ? ' · ROUND ' + (loop + 1) : ''}`);
+}
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+function reload() { if (reloadT > 0 || ammo === CLIP_N) return; reloadT = 0.9; A.tone(300, 0.06, 'square', 0.03); A.tone(500, 0.06, 'square', 0.03, 0.4); A.tone(700, 0.08, 'square', 0.03, 0.8); }
+A.onPress(c => { if (c === 'KeyP' || c === 'Escape') return pause(); if (state === 'play' && c === 'KeyR') reload(); });
+A.onHide(pause);
+let mouseFire = false;
+cv.addEventListener('pointermove', e => { if (e.pointerType === 'mouse') Object.assign(cross, A.pointer(cv, e)); });
+cv.addEventListener('pointerdown', e => { A.unlock(); Object.assign(cross, A.pointer(cv, e)); if (state === 'play') { fire(); mouseFire = e.pointerType === 'mouse'; } });
+addEventListener('pointerup', () => { mouseFire = false; });
+
+/* ---------- projection and hit tests ---------- */
+const proj = (x, z, alt = 0) => { const s = F / z; return { x: W / 2 + (x - camX) * s, y: HZ + (CAMH - alt) * s, s }; };
+function dinoBox(d) {
+  const K = KIND[d.kind], p = proj(d.x, d.z, d.alt || 0), img = SPR[d.kind][0], h = K.h * p.s * (d.kind === 'ptero' ? 0.6 : 1), w = h * img.width / img.height;
+  return { x: p.x - w / 2, y: p.y - h - (d.jump || 0) * p.s, w, h, p };
+}
+function fire() {
+  if (fireT > 0 || reloadT > 0) return;
+  if (ammo <= 0) { reload(); return; }
+  ammo--; fireT = 0.16; shots++;
+  A.tone(900, 0.06, 'square', 0.035, 0, 300); A.noise(0.05, 0.05);
+  darts.push({ x: cross.x, y: cross.y, t: 0.12 });
+  // spit first (it's coming at you), then the nearest dinosaur, then crates
+  for (const s of spits) { const p = proj(s.x, s.z, s.alt), r = 0.35 * p.s + 8; if (Math.hypot(cross.x - p.x, cross.y - p.y) < r) { s.dead = true; hits++; score += 50; A.burst(p.x, p.y, { n: 10, colors: ['#9aff6a', '#fff'], speed: 120, life: 0.4 }); A.pop(p.x, p.y - 10, 50, '#9aff6a'); return; } }
+  const order = dinos.filter(d => d.state !== 'sleep').sort((a, b) => a.z - b.z);
+  for (const d of order) {
+    const b = dinoBox(d);
+    if (cross.x < b.x || cross.x > b.x + b.w || cross.y < b.y || cross.y > b.y + b.h) continue;
+    const head = d.kind === 'rex' ? cross.y < b.y + b.h * 0.3 : cross.y < b.y + b.h * 0.42 && (d.face < 0 ? cross.x < b.x + b.w * 0.45 : cross.x > b.x + b.w * 0.55);
+    hits++; d.hp -= head ? 2 : 1; d.flash = 0.1;
+    A.burst(cross.x, cross.y, { n: head ? 12 : 7, colors: head ? ['#ffd23d', '#fff'] : ['#bfe8ff', '#fff'], speed: 150, life: 0.35 });
+    if (head) A.pop(cross.x, cross.y - 16, 'CRITICAL', '#ffd23d');
+    if (d.kind === 'rex') { d.z = Math.min(16, d.z + 0.35); d.stun = (d.stun || 0) + 1; A.tone(140, 0.08, 'square', 0.04); }
+    if (d.hp <= 0) sleep(d);
+    return;
+  }
+  for (const c of crates) { const p = proj(c.x, c.z, c.alt); if (Math.abs(cross.x - p.x) < 0.5 * p.s + 6 && Math.abs(cross.y - (p.y - 0.25 * p.s)) < 0.5 * p.s + 6) { c.dead = true; hits++; hp = Math.min(A.easy ? 8 : 5, hp + 1); ammo = CLIP_N; A.jingle([659, 880, 1175], 0.06); A.pop(p.x, p.y - 20, '+1 HEART', '#ff4f6d'); A.burst(p.x, p.y, { n: 14, kind: 'debris', colors: ['#c8904a', '#fff'], speed: 160, life: 0.7 }); return; } }
+  A.burst(cross.x, cross.y, { n: 4, color: '#c8b890', speed: 60, life: 0.25 }); // a miss
+}
+function sleep(d) {
+  d.state = 'sleep'; d.sleepT = 0; slept++; const K = KIND[d.kind], pts = K.pts * (d.kind === 'rex' ? area + 1 + loop : 1);
+  score += pts; const b = dinoBox(d); A.pop(b.x + b.w / 2, b.y, pts, '#fff6c2');
+  A.tone(660, 0.1, 'triangle', 0.04, 0, 220); A.burst(b.x + b.w / 2, b.y + b.h / 2, { n: 10, colors: ['#bfe8ff', '#ffffff', '#b48cff'], speed: 120, life: 0.6 });
+  if (d.kind === 'rex') { boss = null; A.badge('boss'); A.flash('#fff', 0.35); A.shake(10, 0.6); A.hitstop(0.15); say('SLEEP TIGHT!'); A.jingle([523, 659, 784, 1047, 784, 1047, 1319], 0.1); clearT = 3.2; }
+}
+function hurt(n, kind) {
+  if (state !== 'play') return;
+  hp -= n; hurtT = 0.7; A.shake(9, 0.35); A.flash('#ff2a3a', 0.25); A.noise(0.3, 0.07); A.tone(180, 0.3, 'sawtooth', 0.05, 0, 70);
+  if (hp <= 0) { hp = 0; state = 'over'; setTimeout(finish, 900); }
+}
+function finish() {
+  const rec = A.submit(score);
+  A.overlay({ title: 'TAKEN DOWN', big: `SCORE ${score} · AREA ${area + 1 + loop * 3} · ${slept} ASLEEP`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, btn: 'Ride again', onGo: newGame });
+}
+function spawnWave() {
+  const lv = area + loop * 3, r = Math.random();
+  if (r < 0.3) { const n = 3 + Math.floor(Math.random() * 3), x0 = camX + A.rand(-6, 6); for (let i = 0; i < n; i++) addDino('compy', x0 + A.rand(-2, 2), A.rand(26, 32)); }
+  else if (r < 0.62) { addDino('raptor', camX + A.rand(-7, 7), A.rand(26, 32)); if (lv >= 1 && Math.random() < 0.5) addDino('raptor', camX + A.rand(-7, 7), A.rand(30, 36)); }
+  else if (r < 0.82) addDino('dilo', camX + A.rand(-5, 5), A.rand(24, 28));
+  else { const side = Math.random() < 0.5 ? -1 : 1; addDino('ptero', camX - side * 12, A.rand(14, 22), { alt: A.rand(2.5, 4.2), vx: side * A.rand(4, 7) }); }
+  if (Math.random() < 0.12) crates.push({ x: camX + A.rand(-4, 4), z: A.rand(16, 22), alt: 5 });
+}
+function addDino(kind, x, z, extra) { const K = KIND[kind]; dinos.push({ kind, x, z, hp: K.hp + (kind === 'rex' ? (area + loop * 3) * 6 : 0), state: 'run', t: Math.random() * 3, face: x > camX ? -1 : 1, wob: Math.random() * 6, ...extra }); }
+
+A.loop(dt => {
+  if (msgT > 0) msgT -= dt; if (hurtT > 0) hurtT -= dt;
+  darts.forEach(d => d.t -= dt); darts = darts.filter(d => d.t > 0);
+  // the jeep keeps moving even on the title screen
+  const v = state === 'play' && boss ? 8 : 6, sp = state === 'title' ? 5 : v;
+  travel += sp * dt; camX = Math.sin(travel / 22) * 3;
+  for (const p of props) p.z -= sp * dt;
+  props = props.filter(p => p.z > 1.2); while (props.length < 26) spawnProp();
+  if (state !== 'play') return;
+  // aiming with keys or a controller
+  const ax = (A.held('ArrowRight', 'KeyD') ? 1 : 0) - (A.held('ArrowLeft', 'KeyA') ? 1 : 0), ay = (A.held('ArrowDown', 'KeyS') ? 1 : 0) - (A.held('ArrowUp', 'KeyW') ? 1 : 0);
+  cross.x = A.clamp(cross.x + ax * 420 * dt, 6, W - 6); cross.y = A.clamp(cross.y + ay * 420 * dt, 6, H - 6);
+  fireT -= dt; if (A.held('Space', 'KeyJ') || mouseFire) fire();
+  if (reloadT > 0) { reloadT -= dt; if (reloadT <= 0) ammo = CLIP_N; }
+  if (clearT > 0) { clearT -= dt; if (clearT <= 0) areaClear(); }
+  areaT += dt;
+  // waves, then the boss
+  const lv = area + loop * 3;
+  if (!boss && clearT <= 0) {
+    if (areaT < 50) { spawnT -= dt; if (spawnT <= 0) { spawnWave(); spawnT = Math.max(1.1, 2.6 - lv * 0.25) * A.rand(0.7, 1.3); } }
+    else if (!dinos.some(d => d.state !== 'sleep')) { addDino('rex', camX, 18); boss = dinos[dinos.length - 1]; say('THE BIG ONE!'); A.tone(80, 1.2, 'sawtooth', 0.07, 0, 40); A.shake(8, 1); }
+  }
+  for (const d of dinos) {
+    const K = KIND[d.kind]; d.t += dt; if (d.flash > 0) d.flash -= dt;
+    if (d.state === 'sleep') { d.z -= sp * dt; d.sleepT += dt; continue; }
+    if (d.kind === 'compy' || d.kind === 'raptor') {
+      d.z -= (K.v + lv * 0.5) * dt; d.x += Math.sin(d.t * (d.kind === 'compy' ? 5 : 2.5) + d.wob) * (d.kind === 'compy' ? 3 : 2.4) * dt;
+      if (d.kind === 'raptor' && d.z < 7 && !d.leap) { d.leap = 0.0001; A.tone(500, 0.25, 'sawtooth', 0.04, 0, 900); }
+      if (d.leap) { d.leap += dt; d.jump = Math.sin(Math.min(1, d.leap / 0.6) * Math.PI) * 1.4; d.z -= 6 * dt; }
+    } else if (d.kind === 'dilo') {
+      if (d.z > 8) d.z -= K.v * dt; else { d.spitT = (d.spitT || 0.8) - dt; if (d.spitT <= 0) { d.spitT = Math.max(1.4, 2.6 - lv * 0.2); spits.push({ x: d.x - 0.4 * d.face, z: d.z, alt: 1.5, v: 7 + lv }); A.tone(240, 0.2, 'sawtooth', 0.03, 0, 600); } d.open = d.spitT < 0.6; d.z -= sp * 0.15 * dt; }
+    } else if (d.kind === 'ptero') {
+      d.x += d.vx * dt; d.z -= K.v * dt * 0.6; if (Math.abs(d.x - camX) < 3) d.alt = Math.max(1, d.alt - dt * 1.6);
+    } else if (d.kind === 'rex') {
+      d.roarT = (d.roarT || 3) - dt; if (d.roarT <= 0) { d.roarT = A.rand(3, 5); d.roar = 1.2; A.tone(70, 1, 'sawtooth', 0.07, 0, 35); A.shake(7, 0.8); }
+      if (d.roar > 0) d.roar -= dt; else d.z -= (K.v + lv * 0.25) * dt;
+      d.x += (camX - d.x) * dt * 0.8;
+      if (d.z < 3.2) { hurt(2, 'rex'); d.z = 10; }
+    }
+    if (d.z < 1.9 && d.kind !== 'rex') { hurt(1, d.kind); d.gone = true; }
+  }
+  dinos = dinos.filter(d => !d.gone && d.z > 1.2 && Math.abs(d.x - camX) < 30);
+  for (const s of spits) { s.z -= s.v * dt; s.alt = Math.max(0.6, s.alt - dt * 0.3); if (s.z < 1.4) { s.dead = true; hurt(1, 'spit'); } }
+  spits = spits.filter(s => !s.dead);
+  for (const c of crates) { c.z -= sp * dt; c.alt = Math.max(0.5, c.alt - dt * 0.8); if (c.z < 2) c.dead = true; }
+  crates = crates.filter(c => !c.dead);
+  A.setScore(score);
+}, draw);
+function areaClear() {
+  const acc = shots ? hits / shots : 0, bonus = Math.round(acc * 3000); score += bonus;
+  if (acc >= 0.8) A.badge('sharp');
+  if (area === 2) A.badge('escape');
+  area++; if (area >= 3) { area = 0; loop++; }
+  say(`ACCURACY ${Math.round(acc * 100)}% +${bonus}`); A.jingle([523, 659, 784, 1047], 0.09);
+  setTimeout(() => { if (state === 'play') startArea(); }, 1800);
+}
+
+/* ---------- drawing ---------- */
+function draw(t) {
+  const a = AREAS[area % 3];
+  ctx.drawImage(a.bg, 0, 0);
+  // the ground with stripes rushing toward you
+  const g = ctx.createLinearGradient(0, HZ, 0, H); g.addColorStop(0, a.ground[0]); g.addColorStop(1, a.ground[1]); ctx.fillStyle = g; ctx.fillRect(0, HZ, W, H - HZ);
+  ctx.fillStyle = 'rgba(0,0,0,.12)'; for (let k = 0; k < 14; k++) { const z = 2 + ((k * 3 - travel % 3) + 42) % 42; const y = HZ + CAMH * F / z, h = Math.max(1, 0.4 * F / z / 6); ctx.fillRect(0, y, W, h); }
+  // the trail
+  ctx.fillStyle = 'rgba(200,170,120,.18)'; ctx.beginPath(); ctx.moveTo(W / 2 - camX * 6 - 6, HZ); ctx.lineTo(W / 2 - camX * 6 + 6, HZ); ctx.lineTo(W / 2 + 160, H); ctx.lineTo(W / 2 - 160, H); ctx.fill();
+  // everything at a depth, far to near
+  const list = [];
+  for (const p of props) list.push([p.z, () => { const q = proj(p.x, p.z), img = TREE[p.t], h = (p.t === 'fern' ? 0.9 : p.t === 'rock' ? 1.3 : 6) * q.s, w = h * img.width / img.height; ctx.drawImage(img, q.x - w / 2, q.y - h, w, h); }]);
+  for (const d of dinos) list.push([d.z, () => drawDino(d, t)]);
+  for (const s of spits) list.push([s.z, () => { const p = proj(s.x, s.z, s.alt), r = 0.3 * p.s + 3; ctx.fillStyle = OUT; ctx.beginPath(); ctx.arc(p.x, p.y, r + 2, 0, 6.29); ctx.fill(); const sg = ctx.createRadialGradient(p.x - r / 3, p.y - r / 3, 1, p.x, p.y, r); sg.addColorStop(0, '#eaffc0'); sg.addColorStop(1, '#5ad82a'); ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 6.29); ctx.fill(); }]);
+  for (const c of crates) list.push([c.z, () => drawCrate(c)]);
+  list.sort((p, q) => q[0] - p[0]).forEach(e => e[1]());
+  if (a.mist) { const mg = ctx.createLinearGradient(0, HZ - 30, 0, H); mg.addColorStop(0, `rgba(200,220,210,${a.mist})`); mg.addColorStop(0.5, `rgba(200,220,210,${a.mist * 0.4})`); mg.addColorStop(1, 'rgba(200,220,210,0)'); ctx.fillStyle = mg; ctx.fillRect(0, HZ - 30, W, H - HZ + 30); }
+  if (a.ash) { for (let i = 0; i < 40; i++) { const x = (i * 97 + t / 20) % W, y = (i * 53 + t / 12) % H; ctx.fillStyle = i % 4 ? 'rgba(180,170,170,.5)' : 'rgba(255,140,60,.8)'; ctx.fillRect(x, y, 2, 2); } }
+  drawJeep(t);
+  // darts and the crosshair
+  for (const d of darts) { ctx.strokeStyle = `rgba(255,255,255,${d.t / 0.12})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(W / 2, H - 30); ctx.lineTo(d.x, d.y); ctx.stroke(); }
+  if (state === 'play') drawCross(t);
+  if (hurtT > 0) drawClaws(t);
+  if (state !== 'title') drawHUD(t, a);
+  if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '24px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = OUT; ctx.fillText(msg, W / 2 + 2, 112); ctx.shadowColor = '#7dd63d'; ctx.shadowBlur = 14; ctx.fillStyle = '#fff6c2'; ctx.fillText(msg, W / 2, 110); ctx.shadowBlur = 0; ctx.globalAlpha = 1; }
+}
+function drawDino(d, t) {
+  const b = dinoBox(d), frames = SPR[d.kind];
+  let f = d.kind === 'dilo' ? (d.open ? 1 : 0) : d.kind === 'rex' ? (d.roar > 0 ? 1 : 0) : Math.floor(t / (d.kind === 'compy' ? 90 : 130) + d.wob) % 2;
+  ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(b.p.x, b.p.y, b.w * 0.4, b.w * 0.08, 0, 0, 6.29); ctx.fill();
+  ctx.save(); ctx.translate(b.x + b.w / 2, b.y + b.h);
+  if (d.state === 'sleep') { // tipped over, eyes shut, dreaming
+    ctx.rotate(Math.min(1, d.sleepT * 3) * (d.face < 0 ? -1.35 : 1.35)); ctx.globalAlpha = Math.max(0.3, 1 - d.sleepT / 3);
+  }
+  if (d.kind !== 'rex' && (d.kind === 'ptero' ? d.vx > 0 : d.face > 0)) ctx.scale(-1, 1);
+  if (d.kind === 'rex' && d.roar > 0) ctx.translate(Math.sin(t / 25) * 3, 0);
+  ctx.drawImage(frames[f], -b.w / 2, -b.h, b.w, b.h);
+  if (d.flash > 0) { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.6; ctx.drawImage(frames[f], -b.w / 2, -b.h, b.w, b.h); ctx.globalCompositeOperation = 'source-over'; }
+  ctx.restore(); ctx.globalAlpha = 1;
+  if (d.state === 'sleep') { ctx.font = `${Math.max(10, b.h * 0.25) | 0}px Bungee, sans-serif`; ctx.textAlign = 'center'; for (let i = 0; i < 3; i++) { const k = ((t / 900 + i / 3) % 1); ctx.globalAlpha = 1 - k; ctx.fillStyle = '#bfe8ff'; ctx.fillText('z', b.p.x + k * 20 + i * 6, b.y - k * 30); } ctx.globalAlpha = 1; }
+  if (d.kind === 'rex' && d.state !== 'sleep') { const max = KIND.rex.hp + (area + loop * 3) * 6; ctx.fillStyle = OUT; ctx.fillRect(W / 2 - 122, 62, 244, 12); ctx.fillStyle = '#3a1a1a'; ctx.fillRect(W / 2 - 120, 64, 240, 8); ctx.fillStyle = '#ff4f6d'; ctx.fillRect(W / 2 - 120, 64, 240 * d.hp / max, 8); ctx.font = '10px Silkscreen, monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.fillText('BIG ONE', W / 2, 58); }
+}
+function drawCrate(c) {
+  const p = proj(c.x, c.z, c.alt), s = 0.5 * p.s;
+  ctx.strokeStyle = '#e8ecf4'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(p.x - s, p.y - s); ctx.lineTo(p.x, p.y - s * 3); ctx.lineTo(p.x + s, p.y - s); ctx.stroke();
+  ctx.fillStyle = OUT; ctx.beginPath(); ctx.arc(p.x, p.y - s * 3, s * 1.6 + 2, Math.PI, 0); ctx.fill(); ctx.fillStyle = '#ff4f6d'; ctx.beginPath(); ctx.arc(p.x, p.y - s * 3, s * 1.6, Math.PI, 0); ctx.fill(); ctx.fillStyle = '#fff'; ctx.fillRect(p.x - s * 0.2, p.y - s * 4.6, s * 0.4, s * 1.6);
+  ctx.fillStyle = OUT; ctx.fillRect(p.x - s - 2, p.y - s - 2, s * 2 + 4, s * 2 + 4); ctx.fillStyle = '#c8904a'; ctx.fillRect(p.x - s, p.y - s, s * 2, s * 2);
+  ctx.fillStyle = '#fff'; ctx.fillRect(p.x - s * 0.15, p.y - s * 0.7, s * 0.3, s * 1.4); ctx.fillRect(p.x - s * 0.7, p.y - s * 0.15, s * 1.4, s * 0.3);
+}
+/** The jeep's hood and the tranquilizer rifle on its mount, turning toward the crosshair. */
+function drawJeep(t) {
+  const bob = Math.sin(t / 110) * 1.5;
+  ctx.save(); ctx.translate(0, bob);
+  ctx.fillStyle = OUT; ctx.beginPath(); ctx.moveTo(-10, H + 4); ctx.lineTo(70, H - 46); ctx.lineTo(W - 70, H - 46); ctx.lineTo(W + 10, H + 4); ctx.fill();
+  const g = ctx.createLinearGradient(0, H - 44, 0, H); g.addColorStop(0, '#8aa84a'); g.addColorStop(0.4, '#5a7a2a'); g.addColorStop(1, '#2a3a14');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(0, H + 4); ctx.lineTo(74, H - 42); ctx.lineTo(W - 74, H - 42); ctx.lineTo(W, H + 4); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.22)'; ctx.fillRect(84, H - 40, W - 168, 3);
+  ctx.fillStyle = '#ffd23d'; ctx.font = '12px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('RIDGE PATROL', W / 2, H - 14);
+  for (const lx of [110, W - 110]) { ctx.fillStyle = OUT; ctx.beginPath(); ctx.arc(lx, H - 30, 13, 0, 6.29); ctx.fill(); ctx.fillStyle = '#fff6c2'; ctx.beginPath(); ctx.arc(lx, H - 30, 9, 0, 6.29); ctx.fill(); }
+  ctx.restore();
+  const a = Math.atan2(cross.y - (H - 20), cross.x - W / 2);
+  ctx.save(); ctx.translate(W / 2, H - 20); ctx.rotate(a);
+  ctx.fillStyle = OUT; ctx.fillRect(-4, -9, 78, 18); ctx.fillStyle = '#4a4e60'; ctx.fillRect(0, -6, 72, 12); ctx.fillStyle = '#8a8ea0'; ctx.fillRect(0, -6, 72, 3); ctx.fillStyle = '#7dd63d'; ctx.fillRect(56, -6, 6, 12);
+  ctx.restore();
+  ctx.fillStyle = OUT; ctx.beginPath(); ctx.arc(W / 2, H - 20, 14, 0, 6.29); ctx.fill(); ctx.fillStyle = '#5a5e70'; ctx.beginPath(); ctx.arc(W / 2, H - 20, 10, 0, 6.29); ctx.fill();
+}
+function drawCross(t) {
+  const r = 14 + (fireT > 0.08 ? 4 : 0);
+  ctx.strokeStyle = OUT; ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(cross.x, cross.y, r, 0, 6.29); ctx.stroke();
+  ctx.strokeStyle = reloadT > 0 ? '#ff4f6d' : '#7dd63d'; ctx.lineWidth = 2.5; ctx.shadowColor = ctx.strokeStyle; ctx.shadowBlur = 8; ctx.beginPath(); ctx.arc(cross.x, cross.y, r, 0, 6.29);
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { ctx.moveTo(cross.x + dx * (r - 6), cross.y + dy * (r - 6)); ctx.lineTo(cross.x + dx * (r + 7), cross.y + dy * (r + 7)); }
+  ctx.stroke(); ctx.shadowBlur = 0; ctx.fillStyle = '#fff'; ctx.fillRect(cross.x - 1, cross.y - 1, 2, 2);
+}
+function drawClaws(t) {
+  const k = hurtT / 0.7; ctx.globalAlpha = k; ctx.strokeStyle = '#ff2a3a'; ctx.lineCap = 'round';
+  for (let i = 0; i < 3; i++) { ctx.lineWidth = 10; ctx.beginPath(); ctx.moveTo(160 + i * 60, 60); ctx.lineTo(260 + i * 60, 300); ctx.stroke(); ctx.strokeStyle = '#ffb0b8'; ctx.lineWidth = 3; ctx.stroke(); ctx.strokeStyle = '#ff2a3a'; }
+  ctx.globalAlpha = 1; ctx.lineCap = 'butt';
+}
+function drawHUD(t, a) {
+  const maxHp = A.easy ? 8 : 5;
+  for (let i = 0; i < maxHp; i++) { const x = 14 + i * 22, y = 14, on = i < hp; ctx.fillStyle = OUT; heart(x, y, 10); ctx.fill(); ctx.fillStyle = on ? '#ff4f6d' : '#3a2440'; heart(x + 1, y + 1, 8); ctx.fill(); if (on) { ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.fillRect(x + 3, y + 3, 3, 2); } }
+  if (hp === 1 && Math.floor(t / 300) % 2) { const v = ctx.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, H * 0.8); v.addColorStop(0, 'rgba(255,0,0,0)'); v.addColorStop(1, 'rgba(255,0,40,.35)'); ctx.fillStyle = v; ctx.fillRect(0, 0, W, H); }
+  for (let i = 0; i < CLIP_N; i++) { const x = W - 20 - i * 12, y = H - 60, on = i < ammo; ctx.fillStyle = OUT; ctx.fillRect(x - 1, y - 1, 8, 24); ctx.fillStyle = on ? '#e8ecf4' : '#2a2440'; ctx.fillRect(x, y, 6, 16); ctx.fillStyle = on ? '#7dd63d' : '#2a2440'; ctx.fillRect(x, y + 16, 6, 6); }
+  ctx.font = '10px Silkscreen, monospace'; ctx.textAlign = 'right'; ctx.fillStyle = reloadT > 0 || !ammo ? (Math.floor(t / 200) % 2 ? '#ff4f6d' : '#ffd23d') : '#a39bc4';
+  ctx.fillText(reloadT > 0 ? 'RELOADING' : !ammo ? 'RELOAD! (R)' : 'DARTS', W - 12, H - 66);
+  ctx.textAlign = 'center'; ctx.fillStyle = OUT; ctx.font = '12px Silkscreen, monospace'; ctx.fillText(`AREA ${area + 1 + loop * 3} · ${a.name}`, W / 2 + 1, 23); ctx.fillStyle = '#fff6c2'; ctx.fillText(`AREA ${area + 1 + loop * 3} · ${a.name}`, W / 2, 22);
+  if (!boss && clearT <= 0) { const k = Math.min(1, areaT / 50); ctx.fillStyle = OUT; ctx.fillRect(W / 2 - 61, 28, 122, 7); ctx.fillStyle = '#2a2148'; ctx.fillRect(W / 2 - 60, 29, 120, 5); ctx.fillStyle = '#7dd63d'; ctx.fillRect(W / 2 - 60, 29, 120 * k, 5); }
+}
+function heart(x, y, s) { ctx.beginPath(); ctx.moveTo(x + s, y + s * 1.8); ctx.bezierCurveTo(x - s * 0.6, y + s, x, y - s * 0.3, x + s, y + s * 0.5); ctx.bezierCurveTo(x + s * 2, y - s * 0.3, x + s * 2.6, y + s, x + s, y + s * 1.8); }
+
+/* Attract demo: swing the crosshair onto the nearest threat (spit first) and fire when it's on target. */
+A.attract({
+  start: newGame,
+  stop: () => { state = 'title'; dinos = []; spits = []; crates = []; boss = null; msgT = 0; },
+  bot: () => {
+    if (state !== 'play') return [];
+    let tx = null, ty = null;
+    const s = spits.slice().sort((a, b) => a.z - b.z)[0];
+    if (s) { const p = proj(s.x, s.z, s.alt); tx = p.x; ty = p.y; }
+    else { const d = dinos.filter(d => d.state !== 'sleep').sort((a, b) => a.z - b.z)[0]; if (d) { const b = dinoBox(d); tx = b.x + b.w / 2; ty = b.y + b.h * 0.45; } }
+    if (tx == null) return [];
+    const keys = [], dx = tx - cross.x, dy = ty - cross.y;
+    if (Math.abs(dx) > 6) keys.push(dx > 0 ? 'ArrowRight' : 'ArrowLeft'); if (Math.abs(dy) > 6) keys.push(dy > 0 ? 'ArrowDown' : 'ArrowUp');
+    if (Math.hypot(dx, dy) < 16) keys.push('Space');
+    return keys;
+  }
+});
+A.overlay({ title: 'RAPTOR RIDGE', sub: 'Ride through the valley and keep the dinosaurs off the jeep with your tranquilizer darts. Aim for the head for a <b>critical</b>, shoot the spit out of the air, and grab the supply crates. Something big is waiting at the end of each area.', btn: 'Start', scores: true, onGo: newGame });
+})();
+</script>
+</body>
+</html>

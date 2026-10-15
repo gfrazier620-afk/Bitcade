@@ -88,6 +88,18 @@ window.BADGES = {
     { id: 'rock', name: 'Rockslide', desc: 'Crush two pests with one rock' },
     { id: 'veg', name: 'Green Thumb', desc: 'Grab the bonus veggie' },
     { id: 'level5', name: 'Deep Digger', desc: 'Clear level 5' }],
+  'turbo-tour': [
+    { id: 'checkpoint', name: 'Checkpoint!', desc: 'Reach your first checkpoint' },
+    { id: 'clean', name: 'Clean Lap', desc: 'Clear a stage without crashing' },
+    { id: 'tour', name: 'World Tourist', desc: 'Make it through all four stages' }],
+  'raptor-ridge': [
+    { id: 'boss', name: 'Sleep Tight', desc: 'Put the big one to sleep' },
+    { id: 'sharp', name: 'Sharpshooter', desc: 'Finish an area with 80% accuracy' },
+    { id: 'escape', name: 'Valley Escape', desc: 'Clear all three areas' }],
+  'marsh-marksman': [
+    { id: 'pair', name: 'Double Up', desc: 'Hit both birds of a pair with two shots' },
+    { id: 'perfect', name: 'Ten for Ten', desc: 'Hit every bird in a round' },
+    { id: 'round10', name: 'Season Pro', desc: 'Reach round 10' }],
   'blip-sports': [
     { id: 'fbwin', name: 'Gridiron Win', desc: 'Win a football game' },
     { id: 'bbwin', name: 'Ballpark Win', desc: 'Win a baseball game' },
@@ -103,7 +115,7 @@ window.WEEKLY = (() => {
   // Single-player score games, mixed so neighbouring weeks feel different. Blip Sports counts wins, so it sits out.
   const ROTATION = ['twin-blast', 'stackdown', 'hedge-hop', 'wing-duel', 'neon-noodle', 'sky-shield', 'mole-patrol', 'star-siege',
     'nitro-lane', 'cube-hopper', 'rock-rift', 'light-trail', 'wallbuster', 'garden-gunner', 'crater-lander', 'circuit-chase',
-    'scaffold-scramble', 'back-alley-brawl', 'swarm-strike', 'highrise-handyman', 'volley-duel'];
+    'scaffold-scramble', 'back-alley-brawl', 'swarm-strike', 'highrise-handyman', 'volley-duel', 'turbo-tour', 'raptor-ridge', 'marsh-marksman'];
   const DAY = 864e5, EPOCH = Date.UTC(2024, 0, 1); // a Monday
   const index = (now = Date.now()) => Math.floor((now - EPOCH) / (7 * DAY));
   const start = (now = Date.now()) => EPOCH + index(now) * 7 * DAY;

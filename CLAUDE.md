@@ -1,6 +1,6 @@
 # Bitcade
 
-A GitHub Pages arcade site: a lobby page plus 22 classic-style browser games. Plain HTML, CSS and canvas JavaScript. No build step, no frameworks. The only outside dependencies are Google Fonts and the Firebase SDK, loaded from gstatic only for the world leaderboard.
+A GitHub Pages arcade site: a lobby page plus 25 classic-style browser games. Plain HTML, CSS and canvas JavaScript. No build step, no frameworks. The only outside dependencies are Google Fonts and the Firebase SDK, loaded from gstatic only for the world leaderboard.
 
 ## Layout
 
@@ -44,7 +44,7 @@ A GitHub Pages arcade site: a lobby page plus 22 classic-style browser games. Pl
 
 ## Games
 
-neon-noodle (snake), wallbuster (brick breaker), star-siege (alien shooter), rock-rift (asteroids), stackdown (falling blocks), back-alley-brawl (1v1 fighter vs CPU ladder), circuit-chase (maze chase), highrise-handyman (fix-it climber), nitro-lane (racing), volley-duel (paddle duel, 1P vs CPU ladder or 2P on one keyboard/tablet), crater-lander (lunar lander), sky-shield (missile defense), hedge-hop (road crossing), scaffold-scramble (girder climber), swarm-strike (dive-bomb shooter), garden-gunner (caterpillar shooter), cube-hopper (pyramid hopper), light-trail (light-cycle duel, 1P vs CPU ladder or 2P), wing-duel (flying joust, 1P waves or 2P duel), twin-blast (twin-stick arena shooter), mole-patrol (dig and trap), blip-sports (LED football + baseball).
+neon-noodle (snake), wallbuster (brick breaker), star-siege (alien shooter), rock-rift (asteroids), stackdown (falling blocks), back-alley-brawl (1v1 fighter vs CPU ladder), circuit-chase (maze chase), highrise-handyman (fix-it climber), nitro-lane (racing), volley-duel (paddle duel, 1P vs CPU ladder or 2P on one keyboard/tablet), crater-lander (lunar lander), sky-shield (missile defense), hedge-hop (road crossing), scaffold-scramble (girder climber), swarm-strike (dive-bomb shooter), garden-gunner (caterpillar shooter), cube-hopper (pyramid hopper), light-trail (light-cycle duel, 1P vs CPU ladder or 2P), wing-duel (flying joust, 1P waves or 2P duel), twin-blast (twin-stick arena shooter), mole-patrol (dig and trap), turbo-tour (pseudo-3D road racer, world-tour stages against the clock), raptor-ridge (on-rails dino shooter: aim with mouse, touch or keys), marsh-marksman (bird hunt: aim and shoot, rounds of ten), blip-sports (LED football + baseball).
 
 All names, characters and art are original. Keep it that way: no trademarked game names, characters or sprites.
 
@@ -54,7 +54,7 @@ All names, characters and art are original. Keep it that way: no trademarked gam
 ## Adding a game
 
 1. `games/<slug>/index.html`, using the kit (copy the head tags, including the manifest and icon links, and the chip.js / badges.js / arcade.js script tags from another game).
-2. A cabinet in the lobby's `GAMES` array, and the count word in its tagline ("TWENTY-TWO CLASSIC-STYLE GAMES").
+2. A cabinet in the lobby's `GAMES` array, and the count word in its tagline ("TWENTY-FIVE CLASSIC-STYLE GAMES").
 3. The slug in `sw.js` `GAMES`, then bump `VERSION`.
 4. Its badges in `shared/badges.js`, with matching `A.badge('id')` calls in the game.
    Score games also go in `WEEKLY` `ROTATION` at the end of that file (the tests check it).

@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Marsh Marksman</title>
+<link rel="manifest" href="../../manifest.json">
+<meta name="theme-color" content="#0f0c1f">
+<link rel="icon" type="image/png" href="../../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../../icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Rubik:wght@400;500;700&family=Silkscreen&display=swap">
+<link rel="stylesheet" href="../../shared/arcade.css">
+</head>
+<body data-game="marsh-marksman" style="--game:#ffb84d">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>MARSH MARKSMAN</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <div class="pad">
+    <div class="ab"><button class="sm" data-k="KeyP">PAUSE</button></div>
+  </div>
+  <p class="help">Aim with the mouse and click to shoot · or <kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> aim, <kbd>Space</kbd> shoot · <kbd>P</kbd> pause · tap to shoot on touch screens</p>
+</main>
+<script src="../../shared/chip.js"></script>
+<script src="../../shared/badges.js"></script>
+<script src="../../shared/arcade.js"></script>
+<script>
+(() => {
+const A = Arcade, cv = document.getElementById('cv');
+const W = 640, H = 480, ctx = A.canvas(cv, W, H), OUT = '#0a0612', GRASS = 392;
+/** Lighten (k > 0) or darken (k < 0) a #rgb / #rrggbb colour. */
+function shade(hex, k) {
+  let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join('');
+  const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+const sprite = (w, h, fn) => { const c = document.createElement('canvas'); c.width = w; c.height = h; fn(c.getContext('2d'), w, h); return c; };
+function blob(x, path, top, bot, col, pad = 3) {
+  x.save(); path(); x.lineWidth = pad * 2; x.lineJoin = 'round'; x.strokeStyle = OUT; x.stroke(); x.restore();
+  const g = x.createLinearGradient(0, top, 0, bot); g.addColorStop(0, shade(col, 0.35)); g.addColorStop(0.55, col); g.addColorStop(1, shade(col, -0.35));
+  path(); x.fillStyle = g; x.fill();
+}
+
+/* ---------- the marsh, drawn once: dawn sky and sun, far trees, a pond, and the reeds and grass in front ---------- */
+const sky = sprite(W, H, (x) => {
+  const g = x.createLinearGradient(0, 0, 0, GRASS); g.addColorStop(0, '#5aa8ff'); g.addColorStop(0.65, '#bfe0ff'); g.addColorStop(1, '#ffd8a0'); x.fillStyle = g; x.fillRect(0, 0, W, H);
+  const sg = x.createRadialGradient(500, 300, 10, 500, 300, 90); sg.addColorStop(0, 'rgba(255,240,180,.9)'); sg.addColorStop(1, 'rgba(255,240,180,0)'); x.fillStyle = sg; x.fillRect(380, 200, 240, 200);
+  x.fillStyle = '#fff6c8'; x.beginPath(); x.arc(500, 300, 30, 0, 6.29); x.fill();
+  let s = 3; const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  // far tree line
+  x.fillStyle = '#3a6a5a'; x.beginPath(); x.moveTo(0, 320); for (let i = 0; i <= W; i += 10) x.lineTo(i, 300 - Math.abs(Math.sin(i * 0.05)) * 18 - r() * 10); x.lineTo(W, 330); x.lineTo(0, 330); x.fill();
+  x.fillStyle = '#2a5a48'; x.beginPath(); x.moveTo(0, 330); for (let i = 0; i <= W; i += 14) x.lineTo(i, 312 - Math.abs(Math.sin(i * 0.031 + 1)) * 22 - r() * 8); x.lineTo(W, 340); x.lineTo(0, 340); x.fill();
+  // pond with the sky in it
+  const pg = x.createLinearGradient(0, 326, 0, GRASS); pg.addColorStop(0, '#9ad0f0'); pg.addColorStop(1, '#3a7ab8'); x.fillStyle = pg; x.fillRect(0, 326, W, GRASS - 326);
+  x.fillStyle = 'rgba(255,240,180,.5)'; for (let i = 0; i < 6; i++) x.fillRect(470 + Math.sin(i) * 8, 334 + i * 8, 60 - i * 6, 2);
+  x.fillStyle = 'rgba(255,255,255,.35)'; for (let i = 0; i < 30; i++) x.fillRect(r() * W, 330 + r() * 56, 10 + r() * 16, 1.5);
+});
+let rs = 11; const rr = () => (rs = (rs * 16807) % 2147483647) / 2147483647;
+const reeds = sprite(W, H, (x) => { // the reeds birds fly up out of (the dog stands in front of them)
+  const r = rr;
+  for (let i = 0; i < 70; i++) { const px = r() * W, h = 50 + r() * 90, lean = (r() - 0.5) * 20;
+    x.strokeStyle = OUT; x.lineWidth = 6; x.beginPath(); x.moveTo(px, H); x.quadraticCurveTo(px + lean / 2, H - h / 2, px + lean, GRASS + 30 - h); x.stroke();
+    x.strokeStyle = r() < 0.5 ? '#6a8a3a' : '#8aa84a'; x.lineWidth = 3; x.stroke();
+    if (r() < 0.4) { x.fillStyle = OUT; x.beginPath(); x.ellipse(px + lean, GRASS + 30 - h, 5, 12, 0, 0, 6.29); x.fill(); x.fillStyle = '#7a4a2a'; x.beginPath(); x.ellipse(px + lean, GRASS + 30 - h, 3.5, 10, 0, 0, 6.29); x.fill(); } }
+});
+const lawn = sprite(W, H, (x) => { // the grass bank in front of everything
+  const r = rr;
+  const g = x.createLinearGradient(0, GRASS, 0, H); g.addColorStop(0, '#5a8a2a'); g.addColorStop(1, '#2a4a14'); x.fillStyle = g;
+  x.beginPath(); x.moveTo(0, H); for (let i = 0; i <= W; i += 8) x.lineTo(i, GRASS + 6 - (i % 16 ? 10 : 22) - r() * 8); x.lineTo(W, H); x.fill();
+  x.strokeStyle = OUT; x.lineWidth = 2; x.stroke();
+});
+
+/* ---------- birds: side view, three wing positions plus a hit and a falling pose, per colour ---------- */
+const BIRDS = { green: { body: '#7a6a5a', head: '#2a9a5a', pts: 500, v: 150 }, blue: { body: '#6a6a8a', head: '#3a6ad8', pts: 1000, v: 190 }, red: { body: '#8a5a4a', head: '#d83a3a', pts: 1500, v: 240 } };
+function birdFrame(c, pose) {
+  return sprite(120, 90, (x) => {
+    const wingY = { up: -26, mid: 0, down: 22, hit: -30, fall: 14 }[pose];
+    const wing = () => { x.beginPath(); x.moveTo(64, 46); x.quadraticCurveTo(80, 46 + wingY, 98, 40 + wingY * 1.3); x.quadraticCurveTo(84, 52, 70, 54); x.closePath(); };
+    if (pose === 'up' || pose === 'hit') blob(x, wing, 10, 60, shade(c.body, -0.15));
+    blob(x, () => { x.beginPath(); x.moveTo(96, 52); x.lineTo(112, 44); x.lineTo(110, 58); x.closePath(); }, 44, 58, shade(c.body, -0.3)); // tail
+    blob(x, () => { x.beginPath(); x.ellipse(70, 54, 30, 15, -0.1, 0, 6.29); }, 40, 70, c.body);
+    x.fillStyle = '#e8dcc0'; x.beginPath(); x.ellipse(66, 62, 20, 6, -0.1, 0, 6.29); x.fill();
+    blob(x, () => { x.beginPath(); x.ellipse(36, 38, 15, 13, 0, 0, 6.29); }, 26, 52, c.head);
+    x.fillStyle = '#f4f0e8'; x.fillRect(42, 48, 14, 4); // neck ring
+    blob(x, () => { x.beginPath(); x.moveTo(24, 36); x.lineTo(6, 40); x.lineTo(24, 44); x.closePath(); }, 34, 44, '#ffb03d', 2.5);
+    if (pose === 'hit') { x.strokeStyle = OUT; x.lineWidth = 2.5; x.beginPath(); x.moveTo(29, 30); x.lineTo(35, 36); x.moveTo(35, 30); x.lineTo(29, 36); x.stroke(); }
+    else { x.fillStyle = '#fff'; x.beginPath(); x.arc(32, 33, 4, 0, 6.29); x.fill(); x.fillStyle = OUT; x.beginPath(); x.arc(31, 33, 2, 0, 6.29); x.fill(); }
+    if (pose !== 'up' && pose !== 'hit') blob(x, wing, 40, 80, shade(c.body, -0.05));
+    x.fillStyle = 'rgba(255,255,255,.35)'; x.beginPath(); x.ellipse(32, 30, 5, 3, -0.4, 0, 6.29); x.fill();
+  });
+}
+for (const c of Object.values(BIRDS)) c.img = { up: birdFrame(c, 'up'), mid: birdFrame(c, 'mid'), down: birdFrame(c, 'down'), hit: birdFrame(c, 'hit'), fall: birdFrame(c, 'fall') };
+
+/* ---------- the retriever: pops up out of the grass with the catch, or covers its eyes after a miss ---------- */
+function dogFrame(mode) {
+  return sprite(150, 150, (x) => {
+    const fur = '#d8963a';
+    blob(x, () => { x.beginPath(); x.roundRect(36, 92, 78, 70, 30); }, 92, 160, fur); // body
+    x.fillStyle = '#f0d8a8'; x.beginPath(); x.ellipse(75, 120, 22, 26, 0, 0, 6.29); x.fill();
+    x.fillStyle = OUT; x.fillRect(48, 92, 54, 8); x.fillStyle = '#d83a3a'; x.fillRect(50, 93, 50, 5); x.fillStyle = '#ffd23d'; x.beginPath(); x.arc(75, 102, 5, 0, 6.29); x.fill();
+    blob(x, () => { x.beginPath(); x.ellipse(75, 58, 34, 32, 0, 0, 6.29); }, 26, 90, fur); // head
+    blob(x, () => { x.beginPath(); x.ellipse(75, 74, 20, 14, 0, 0, 6.29); }, 60, 88, '#f0d8a8'); // muzzle
+    for (const s of [-1, 1]) blob(x, () => { x.beginPath(); x.ellipse(75 + s * 34, 60, 11, 24, s * 0.2, 0, 6.29); }, 36, 84, shade(fur, -0.3)); // floppy ears
+    x.fillStyle = OUT; x.beginPath(); x.ellipse(75, 66, 7, 5, 0, 0, 6.29); x.fill(); x.fillStyle = 'rgba(255,255,255,.5)'; x.fillRect(72, 63, 3, 2);
+    if (mode === 'sad') { // paws over the eyes
+      for (const s of [-1, 1]) blob(x, () => { x.beginPath(); x.ellipse(75 + s * 14, 50, 14, 10, 0, 0, 6.29); }, 40, 60, fur);
+      x.strokeStyle = OUT; x.lineWidth = 2; x.beginPath(); x.arc(75, 84, 8, Math.PI + 0.3, -0.3); x.stroke();
+    } else {
+      for (const s of [-1, 1]) { x.fillStyle = OUT; x.beginPath(); x.arc(75 + s * 13, 50, 5, 0, 6.29); x.fill(); x.fillStyle = '#fff'; x.fillRect(73 + s * 13, 47, 2, 2); }
+      x.strokeStyle = OUT; x.lineWidth = 2; x.beginPath(); x.arc(75, 76, 9, 0.3, Math.PI - 0.3); x.stroke();
+      x.fillStyle = '#ff6a7a'; x.beginPath(); x.ellipse(75, 86, 5, 6, 0, 0, Math.PI); x.fill();
+      for (const s of [-1, 1]) blob(x, () => { x.beginPath(); x.ellipse(75 + s * 42, 100, 10, 14, 0, 0, 6.29); }, 86, 114, fur); // raised paws
+    }
+  });
+}
+const DOG = { happy: dogFrame('happy'), sad: dogFrame('sad') };
+
+/* ---------- state ---------- */
+let state = 'title', round = 1, score = 0, tally = [], birdIdx = 0, birds = [], shotsLeft = 3, pairT = 0, phase = 'idle', phaseT = 0, dog = null, flashT = 0, msg = '', msgT = 0;
+let cross = { x: W / 2, y: H / 2 }, fireT = 0, pairShots = 0;
+const quota = () => Math.max(3, Math.min(9, 5 + Math.ceil(round / 2)) - (A.easy ? 2 : 0));
+function say(t) { msg = t; msgT = 2; }
+function newGame() { round = 1; score = 0; A.setScore(0); state = 'play'; startRound(); }
+function startRound() { tally = Array(10).fill(0); birdIdx = 0; phase = 'intro'; phaseT = 1.8; say(`ROUND ${round} · HIT ${quota()} OF 10`); A.jingle([523, 659, 784, 659, 1047], 0.1); }
+function releasePair() {
+  birds = []; shotsLeft = 3; pairShots = 0; pairT = Math.max(3.2, 6 - round * 0.25); phase = 'fly';
+  for (let k = 0; k < 2 && birdIdx < 10; k++, birdIdx++) {
+    const r = Math.random(), type = round > 2 && r < 0.2 + round * 0.02 ? 'red' : r < 0.55 ? 'green' : 'blue', B = BIRDS[type];
+    const a = -Math.PI / 2 + A.rand(-0.9, 0.9), v = B.v * (1 + (round - 1) * 0.07);
+    birds.push({ type, idx: birdIdx, x: A.rand(120, W - 120), y: GRASS + 30, vx: Math.cos(a) * v, vy: Math.sin(a) * v, v, turnT: A.rand(0.5, 1.2), st: 'fly', t: 0, born: performance.now() });
+  }
+  A.tone(700, 0.08, 'square', 0.03, 0, 500); A.tone(640, 0.08, 'square', 0.03, 0.12, 460);
+}
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+A.onPress(c => { if (c === 'KeyP' || c === 'Escape') pause(); });
+A.onHide(pause);
+let mouseDown = false;
+cv.addEventListener('pointermove', e => { if (e.pointerType === 'mouse') Object.assign(cross, A.pointer(cv, e)); });
+cv.addEventListener('pointerdown', e => { A.unlock(); Object.assign(cross, A.pointer(cv, e)); if (state === 'play') shoot(); });
+
+function shoot() {
+  if (fireT > 0 || phase !== 'fly' || shotsLeft <= 0) return;
+  fireT = 0.22; shotsLeft--; pairShots++; A.noise(0.12, 0.08); A.tone(160, 0.08, 'square', 0.04, 0, 60); A.shake(2, 0.08);
+  A.burst(cross.x, cross.y, { n: 6, color: '#fff6c2', speed: 90, life: 0.2 });
+  const hit = birds.filter(b => b.st === 'fly').sort((a, b) => Math.hypot(a.x - cross.x, a.y - cross.y) - Math.hypot(b.x - cross.x, b.y - cross.y))[0];
+  if (hit && Math.hypot(hit.x - cross.x, hit.y - cross.y) < 30) {
+    hit.st = 'hit'; hit.t = 0; tally[hit.idx] = 1; const pts = Math.round(BIRDS[hit.type].pts * (1 + (round - 1) * 0.1)); score += pts; A.setScore(score);
+    A.pop(hit.x, hit.y - 30, pts, '#fff6c2'); A.burst(hit.x, hit.y, { n: 16, kind: 'debris', colors: [BIRDS[hit.type].body, BIRDS[hit.type].head, '#e8dcc0'], speed: 140, gravity: 120, life: 1, size: 3 });
+    A.tone(900, 0.12, 'square', 0.035, 0, 300);
+    if (birds.every(b => b.st !== 'fly') && pairShots <= 2 && birds.length === 2) A.badge('pair');
+  }
+}
+
+A.loop(dt => {
+  if (msgT > 0) msgT -= dt; if (flashT > 0) flashT -= dt; fireT -= dt;
+  if (state === 'title') { // attract: a pair of birds circling over the reeds
+    if (!birds.length) { for (let k = 0; k < 2; k++) birds.push({ type: k ? 'blue' : 'green', x: 200 + k * 200, y: 200, vx: 120 * (k ? -1 : 1), vy: -60, v: 140, turnT: 1, st: 'fly', t: 0 }); }
+    for (const b of birds) moveBird(b, dt);
+    return;
+  }
+  if (state !== 'play') return;
+  const ax = (A.held('ArrowRight', 'KeyD') ? 1 : 0) - (A.held('ArrowLeft', 'KeyA') ? 1 : 0), ay = (A.held('ArrowDown', 'KeyS') ? 1 : 0) - (A.held('ArrowUp', 'KeyW') ? 1 : 0);
+  cross.x = A.clamp(cross.x + ax * 460 * dt, 6, W - 6); cross.y = A.clamp(cross.y + ay * 460 * dt, 6, H - 6);
+  if (A.held('Space', 'KeyJ')) shoot();
+  phaseT -= dt;
+  if (phase === 'intro' && phaseT <= 0) releasePair();
+  else if (phase === 'fly') {
+    pairT -= dt;
+    for (const b of birds) {
+      b.t += dt;
+      if (b.st === 'fly') { moveBird(b, dt); if (pairT <= 0 || shotsLeft <= 0) { b.st = 'away'; } }
+      else if (b.st === 'away') { b.vy = -Math.abs(b.v) * 1.3; b.x += b.vx * 0.3 * dt; b.y += b.vy * dt; }
+      else if (b.st === 'hit') { if (b.t > 0.45) { b.st = 'fall'; b.vy = 0; } }
+      else if (b.st === 'fall') { b.vy += 700 * dt; b.y += b.vy * dt; if (b.y > GRASS + 30) b.st = 'down'; }
+    }
+    if (birds.some(b => b.st === 'away') && !birds.flyAway) { birds.flyAway = true; flashT = 0.6; say('FLY AWAY!'); A.tone(1400, 0.6, 'sine', 0.03, 0, 600); }
+    if (birds.every(b => b.st === 'down' || (b.st === 'away' && b.y < -60))) {
+      const got = birds.filter(b => b.st === 'down');
+      dog = { mode: got.length ? 'happy' : 'sad', n: got.length, x: got.length ? got[0].x : W / 2, t: 0 }; phase = 'dog'; phaseT = 1.6;
+      if (got.length) A.jingle([784, 988, 1175], 0.08); else A.jingle([392, 370, 330], 0.14, 'triangle');
+    }
+  } else if (phase === 'dog') {
+    dog.t += dt;
+    if (phaseT <= 0) { dog = null; if (birdIdx < 10) { phase = 'intro'; phaseT = 0.5; } else endRound(); }
+  } else if (phase === 'tally' && phaseT <= 0) {
+    const hits = tally.reduce((s, v) => s + v, 0);
+    if (hits < quota()) return gameOver(hits);
+    round++; if (round >= 10) A.badge('round10'); startRound();
+  }
+}, draw);
+function moveBird(b, dt) {
+  b.turnT -= dt; if (b.turnT <= 0) { b.turnT = A.rand(0.5, 1.3); const a = Math.atan2(b.vy, b.vx) + A.rand(-1.1, 1.1); b.vx = Math.cos(a) * b.v; b.vy = Math.sin(a) * b.v; }
+  b.x += b.vx * dt; b.y += b.vy * dt;
+  if (b.x < 30) { b.x = 30; b.vx = Math.abs(b.vx); } if (b.x > W - 30) { b.x = W - 30; b.vx = -Math.abs(b.vx); }
+  if (b.y < 30) { b.y = 30; b.vy = Math.abs(b.vy); } if (b.y > GRASS - 20 && b.vy > 0 && b.t > 0.6) { b.vy = -Math.abs(b.vy); }
+  if (Math.random() < dt * 0.6) A.tone(600 + Math.random() * 80, 0.07, 'square', 0.018, 0, 480); // quack
+}
+function endRound() {
+  const hits = tally.reduce((s, v) => s + v, 0);
+  phase = 'tally'; phaseT = 2.4;
+  if (hits === 10) { score += 10000; A.setScore(score); A.badge('perfect'); say('PERFECT! +10000'); A.flash('#fff', 0.3); A.jingle([523, 659, 784, 1047, 1319, 1568], 0.08); }
+  else if (hits >= quota()) say(`${hits} OF 10 · NICE SHOOTING`);
+  else say(`${hits} OF 10 · NEEDED ${quota()}`);
+}
+function gameOver(hits) {
+  state = 'over'; const rec = A.submit(score);
+  A.overlay({ title: 'SEASON OVER', big: `SCORE ${score} · ROUND ${round}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, btn: 'Hunt again', onGo: newGame });
+}
+
+/* ---------- drawing ---------- */
+function draw(t) {
+  ctx.drawImage(sky, 0, 0);
+  if (flashT > 0) { ctx.globalAlpha = Math.min(0.6, flashT); ctx.fillStyle = '#ff9ad0'; ctx.fillRect(0, 0, W, GRASS); ctx.globalAlpha = 1; }
+  // clouds drift by
+  for (let i = 0; i < 4; i++) { const x = ((i * 190 + t / 60) % (W + 160)) - 80, y = 50 + i * 30; ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.beginPath(); ctx.ellipse(x, y, 44, 12, 0, 0, 6.29); ctx.ellipse(x + 20, y - 8, 26, 12, 0, 0, 6.29); ctx.fill(); }
+  // birds behind the reeds while low, then the reeds, the dog rising in front of them, and the grass bank
+  for (const b of birds) drawBird(b, t);
+  ctx.drawImage(reeds, 0, 0);
+  if (dog) { const k = Math.min(1, dog.t / 0.4) - Math.max(0, (dog.t - 1.2) / 0.4), y = GRASS + 70 - 190 * Math.max(0, k), img = DOG[dog.mode];
+    ctx.drawImage(img, dog.x - 75, y - 10, 150, 150);
+    if (dog.mode === 'happy') for (let i = 0; i < dog.n; i++) { const by = y + 70; ctx.save(); ctx.translate(dog.x + (i ? 50 : -50), by); ctx.rotate(Math.PI / 2 * (i ? 1 : -1)); ctx.drawImage(BIRDS.green.img.fall, -30, -22, 60, 45); ctx.restore(); } }
+  ctx.drawImage(lawn, 0, 0);
+  if (state === 'play') drawCross(t);
+  if (state !== 'title') drawHUD(t);
+  if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '26px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = OUT; ctx.fillText(msg, W / 2 + 2, 152); ctx.shadowColor = '#ffb84d'; ctx.shadowBlur = 14; ctx.fillStyle = '#fff6c2'; ctx.fillText(msg, W / 2, 150); ctx.shadowBlur = 0; ctx.globalAlpha = 1; }
+}
+function drawBird(b, t) {
+  const B = BIRDS[b.type], face = b.vx > 0 ? -1 : 1;
+  let img = B.img.mid;
+  if (b.st === 'fly' || b.st === 'away') img = [B.img.up, B.img.mid, B.img.down, B.img.mid][Math.floor(t / 70) % 4];
+  else if (b.st === 'hit') img = B.img.hit; else if (b.st === 'fall') img = B.img.fall; else return;
+  ctx.save(); ctx.translate(b.x, b.y); if (b.st === 'fall') ctx.rotate(Math.PI / 2 + Math.sin(t / 50) * 0.3); ctx.scale(face, 1);
+  ctx.drawImage(img, -45, -38, 90, 68); ctx.restore();
+}
+function drawCross(t) {
+  const r = 16;
+  ctx.strokeStyle = OUT; ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(cross.x, cross.y, r, 0, 6.29); ctx.stroke();
+  ctx.strokeStyle = '#ff4f6d'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(cross.x, cross.y, r, 0, 6.29);
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { ctx.moveTo(cross.x + dx * 6, cross.y + dy * 6); ctx.lineTo(cross.x + dx * (r + 8), cross.y + dy * (r + 8)); }
+  ctx.stroke();
+}
+function drawHUD(t) {
+  const y = H - 30;
+  ctx.fillStyle = 'rgba(10,6,18,.78)'; ctx.beginPath(); ctx.roundRect(10, y - 14, W - 20, 38, 8); ctx.fill(); ctx.strokeStyle = 'rgba(255,184,77,.5)'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.font = '11px Silkscreen, monospace'; ctx.textAlign = 'left'; ctx.fillStyle = '#a39bc4'; ctx.fillText('SHOTS', 20, y + 3);
+  for (let i = 0; i < 3; i++) { ctx.fillStyle = OUT; ctx.fillRect(74 + i * 14, y - 7, 9, 18); ctx.fillStyle = i < shotsLeft && phase === 'fly' ? '#ff4f6d' : '#3a2440'; ctx.fillRect(75 + i * 14, y - 6, 7, 12); ctx.fillStyle = i < shotsLeft && phase === 'fly' ? '#ffd23d' : '#3a2440'; ctx.fillRect(75 + i * 14, y + 6, 7, 4); }
+  ctx.fillText('HIT', 132, y + 3);
+  for (let i = 0; i < 10; i++) { const x = 166 + i * 26, done = tally[i], cur = phase === 'fly' && birds.some(b => b.idx === i);
+    ctx.fillStyle = OUT; ctx.fillRect(x - 1, y - 7, 20, 16); ctx.fillStyle = done ? '#ff4f6d' : cur && Math.floor(t / 200) % 2 ? '#ffd23d' : '#f4f0e8'; ctx.beginPath(); ctx.ellipse(x + 9, y + 1, 8, 5, 0, 0, 6.29); ctx.fill(); ctx.fillRect(x + 1, y - 4, 5, 4); }
+  for (let i = 0; i < quota(); i++) { ctx.fillStyle = '#3dff8f'; ctx.fillRect(166 + i * 26 + 4, y + 12, 10, 2); }
+  ctx.textAlign = 'right'; ctx.fillStyle = '#ffb84d'; ctx.fillText('ROUND ' + round, W - 20, y + 3);
+}
+
+/* Attract demo: lead the nearest flying bird and squeeze off a shot when the crosshair is on it. */
+A.attract({
+  start: newGame,
+  stop: () => { state = 'title'; birds = []; dog = null; msgT = 0; flashT = 0; },
+  bot: () => {
+    if (state !== 'play' || phase !== 'fly') return [];
+    const b = birds.filter(q => q.st === 'fly').sort((a, c) => Math.hypot(a.x - cross.x, a.y - cross.y) - Math.hypot(c.x - cross.x, c.y - cross.y))[0];
+    if (!b) return [];
+    const tx = b.x + b.vx * 0.12, ty = b.y + b.vy * 0.12, dx = tx - cross.x, dy = ty - cross.y, keys = [];
+    if (Math.abs(dx) > 5) keys.push(dx > 0 ? 'ArrowRight' : 'ArrowLeft'); if (Math.abs(dy) > 5) keys.push(dy > 0 ? 'ArrowDown' : 'ArrowUp');
+    if (Math.hypot(b.x - cross.x, b.y - cross.y) < 16 && fireT <= 0) keys.push('!Space');
+    return keys;
+  }
+});
+A.overlay({ title: 'MARSH MARKSMAN', sub: 'Birds burst out of the reeds two at a time: you get three shots for each pair. Hit enough of the ten each round to keep the season going. Green 500, blue 1000, the quick red ones 1500. Ten for ten earns a big bonus.', btn: 'Start', scores: true, onGo: newGame });
+})();
+</script>
+</body>
+</html>
