@@ -75,10 +75,16 @@ function launch(x, y, fragment) {
   const split = !fragment && wave >= 3 && Math.random() < 0.18 + wave * 0.02;
   foes.push({ ox: x, oy: y, x, y, vx: (t.x - x) / d * sp, vy: (GROUND - y) / d * sp, split, splitY: 140 + A.rnd(100) });
 }
-function blast(x, y, r, chain) { blasts.push({ x, y, t: 0, r, chain }); A.noise(chain ? 0.2 : 0.35, chain ? 0.04 : 0.06); }
+function blast(x, y, r, chain) {
+  blasts.push({ x, y, t: 0, r, chain, seed: Math.random() * 6 }); A.noise(chain ? 0.2 : 0.35, chain ? 0.04 : 0.06);
+  A.ring(x, y, chain ? '#ff8a3d' : '#fff6c2', r * 1.3); A.burst(x, y, { n: chain ? 8 : 14, colors: ['#fff6c2', '#ffe14d', '#ff8a3d'], speed: r * 5, life: 0.5 });
+  if (!chain) A.shake(2, 0.12);
+}
 function hitGround(f) {
   blast(f.x, GROUND - 4, 26, true);
-  for (const c of cities) if (c.alive && Math.abs(c.x - f.x) < 22) { c.alive = false; A.tone(90, 0.6, 'sawtooth', 0.06, 0, 40); }
+  A.shake(5, 0.3); A.burst(f.x, GROUND - 4, { n: 10, kind: 'debris', colors: ['#6b4a2a', '#3a2a1a', '#ff8a3d'], speed: 220, angle: -Math.PI / 2, spread: 1.8, life: 0.9 });
+  A.burst(f.x, GROUND - 6, { n: 5, kind: 'smoke', color: '#4a3a4a', speed: 30, life: 1.4 });
+  for (const c of cities) if (c.alive && Math.abs(c.x - f.x) < 22) { c.alive = false; A.tone(90, 0.6, 'sawtooth', 0.06, 0, 40); A.shake(12, 0.5); A.flash('#ff4f6d', 0.2); A.hitstop(0.08); A.burst(c.x, GROUND - 14, { n: 18, kind: 'debris', colors: ['#4f7bff', '#2a3a7a', '#ffe98a'], speed: 260, angle: -Math.PI / 2, spread: 2.2, life: 1 }); }
   for (const b of bases) if (b.alive && Math.abs(b.x - f.x) < 24) { b.alive = false; b.ammo = 0; }
 }
 function endWave() {
@@ -118,7 +124,7 @@ A.loop(dt => {
     if (f.split && f.y > f.splitY) { f.dead = true; for (let i = 0; i < 2 + (wave > 6 ? 1 : 0); i++) launch(f.x, f.y, true); continue; }
     for (const b of blasts) {
       const r = blastR(b);
-      if (r > 2 && Math.hypot(f.x - b.x, f.y - b.y) < r) { f.dead = true; score += 25 * mult(); blast(f.x, f.y, 20, true); break; }
+      if (r > 2 && Math.hypot(f.x - b.x, f.y - b.y) < r) { f.dead = true; score += 25 * mult(); blast(f.x, f.y, 20, true); A.pop(f.x, f.y - 14, 25 * mult(), '#ffe14d'); break; }
     }
     if (!f.dead && f.y >= GROUND - 4) { f.dead = true; hitGround(f); }
   }
@@ -127,38 +133,132 @@ A.loop(dt => {
   if (!cities.some(c => c.alive)) { state = 'falling'; phaseT = 2; say('THE LAST CITY FELL'); return; }
   if (!toSpawn && !foes.length && !shots.length && !blasts.some(b => !b.chain && b.t < 0.9)) endWave();
 }, t => {
-  const g = ctx.createLinearGradient(0, 0, 0, GROUND); g.addColorStop(0, '#05030f'); g.addColorStop(1, '#1d0f2e'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = '#2b1d10'; ctx.fillRect(0, GROUND, W, H - GROUND); ctx.fillStyle = '#ffe14d'; ctx.fillRect(0, GROUND, W, 2);
-  const cs = cities.length ? cities : CITY_X.map(x => ({ x, alive: true })), bs = bases.length ? bases : BASE_X.map(x => ({ x, alive: true, ammo: 10 }));
-  cs.forEach(c => drawCity(c));
-  bs.forEach(b => drawBase(b));
-  // trails
-  ctx.lineWidth = 1.5;
-  foes.forEach(f => { ctx.strokeStyle = 'rgba(255,79,109,.75)'; ctx.beginPath(); ctx.moveTo(f.ox, f.oy); ctx.lineTo(f.x, f.y); ctx.stroke(); ctx.fillStyle = '#fff'; ctx.fillRect(f.x - 1.5, f.y - 1.5, 3, 3); });
-  shots.forEach(s => {
-    ctx.strokeStyle = 'rgba(94,231,255,.8)'; ctx.beginPath(); ctx.moveTo(s.sx, s.sy); ctx.lineTo(s.x, s.y); ctx.stroke();
-    ctx.strokeStyle = '#5ee7ff'; ctx.beginPath(); ctx.moveTo(s.tx - 4, s.ty - 4); ctx.lineTo(s.tx + 4, s.ty + 4); ctx.moveTo(s.tx + 4, s.ty - 4); ctx.lineTo(s.tx - 4, s.ty + 4); ctx.stroke();
-  });
-  blasts.forEach(b => { const r = blastR(b); if (r <= 0) return; ctx.fillStyle = ['#fff', '#ffe14d', '#ff8a3d', '#ff4fd8'][Math.floor(t / 50 + b.x) % 4]; ctx.globalAlpha = 0.85; ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; });
-  if (state === 'title') { // attract: a few missiles drifting down
-    for (let i = 0; i < 5; i++) { const k = ((t / 6000 + i / 5) % 1), x0 = 80 + i * 120, x1 = CITY_X[i]; ctx.strokeStyle = 'rgba(255,79,109,.75)'; ctx.beginPath(); ctx.moveTo(x0, 0); ctx.lineTo(x0 + (x1 - x0) * k, GROUND * k); ctx.stroke(); }
+  ctx.drawImage(sky, 0, 0);
+  // the aurora drifts
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  for (let i = 0; i < 3; i++) {
+    const c = ['#3dff8f', '#5ee7ff', '#b48cff'][i];
+    ctx.beginPath(); for (let x = -20; x <= W + 20; x += 24) { const y = 90 + i * 26 + Math.sin(x / 110 + t / 2000 + i * 1.7) * 26; x < 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); }
+    ctx.strokeStyle = c; ctx.globalAlpha = 0.07 + Math.sin(t / 1700 + i) * 0.03; ctx.lineWidth = 34; ctx.stroke(); ctx.globalAlpha = 0.12; ctx.lineWidth = 10; ctx.stroke();
   }
-  if (state === 'play' || state === 'paused') { ctx.strokeStyle = '#ffe14d'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(cross.x - 9, cross.y); ctx.lineTo(cross.x - 3, cross.y); ctx.moveTo(cross.x + 3, cross.y); ctx.lineTo(cross.x + 9, cross.y); ctx.moveTo(cross.x, cross.y - 9); ctx.lineTo(cross.x, cross.y - 3); ctx.moveTo(cross.x, cross.y + 3); ctx.lineTo(cross.x, cross.y + 9); ctx.stroke(); }
-  if (wave) { ctx.font = '13px Silkscreen, monospace'; ctx.textAlign = 'left'; ctx.fillStyle = '#f4effd'; ctx.fillText(`WAVE ${wave}  ×${mult()}`, 12, 22); }
-  if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '24px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffe14d'; ctx.fillText(msg, W / 2, 190); ctx.globalAlpha = 1; }
+  ctx.globalAlpha = 1; ctx.lineCap = 'butt';
+  ctx.drawImage(land, 0, 0);
+  const cs = cities.length ? cities : CITY_X.map(x => ({ x, alive: true })), bs = bases.length ? bases : BASE_X.map(x => ({ x, alive: true, ammo: 10 }));
+  cs.forEach(c => drawCity(c, t));
+  bs.forEach(b => drawBase(b, t));
+  // incoming: a trail that fades back toward where it came from, and a flickering warhead
+  for (const f of foes) {
+    const g = ctx.createLinearGradient(f.ox, f.oy, f.x, f.y); g.addColorStop(0, 'rgba(255,79,109,0)'); g.addColorStop(1, 'rgba(255,79,109,.9)');
+    ctx.strokeStyle = g; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(f.ox, f.oy); ctx.lineTo(f.x, f.y); ctx.stroke();
+    ctx.shadowColor = '#ff4f6d'; ctx.shadowBlur = 12; ctx.fillStyle = Math.floor(t / 60) % 2 ? '#fff' : '#ffd0d8'; ctx.beginPath(); ctx.arc(f.x, f.y, 2.6, 0, 6.29); ctx.fill(); ctx.shadowBlur = 0;
+  }
+  if (state === 'title') { // attract: a few missiles drifting down
+    for (let i = 0; i < 5; i++) { const k = ((t / 6000 + i / 5) % 1), x0 = 80 + i * 120, x1 = CITY_X[i], x = x0 + (x1 - x0) * k, y = GROUND * k;
+      const g = ctx.createLinearGradient(x0, 0, x, y); g.addColorStop(0, 'rgba(255,79,109,0)'); g.addColorStop(1, 'rgba(255,79,109,.9)');
+      ctx.strokeStyle = g; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x0, 0); ctx.lineTo(x, y); ctx.stroke(); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, 2.4, 0, 6.29); ctx.fill(); }
+  }
+  // interceptors: a cyan streak with a bright head, aimed at a pulsing marker
+  for (const sh of shots) {
+    const g = ctx.createLinearGradient(sh.sx, sh.sy, sh.x, sh.y); g.addColorStop(0, 'rgba(94,231,255,0)'); g.addColorStop(1, 'rgba(94,231,255,.95)');
+    ctx.strokeStyle = g; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(sh.sx, sh.sy); ctx.lineTo(sh.x, sh.y); ctx.stroke();
+    ctx.shadowColor = '#5ee7ff'; ctx.shadowBlur = 10; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(sh.x, sh.y, 2.4, 0, 6.29); ctx.fill(); ctx.shadowBlur = 0;
+    const m = 4 + Math.sin(t / 60) * 1.5; ctx.strokeStyle = '#5ee7ff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(sh.tx - m, sh.ty - m); ctx.lineTo(sh.tx + m, sh.ty + m); ctx.moveTo(sh.tx + m, sh.ty - m); ctx.lineTo(sh.tx - m, sh.ty + m); ctx.stroke();
+  }
+  blasts.forEach(b => drawBlast(b, t));
+  if (state === 'play' || state === 'paused') drawCross(t);
+  if (wave) { ctx.font = '13px Silkscreen, monospace'; ctx.textAlign = 'left'; ctx.fillStyle = '#0a0612'; ctx.fillText(`WAVE ${wave}  ×${mult()}`, 13, 23); ctx.fillStyle = '#f4effd'; ctx.fillText(`WAVE ${wave}  ×${mult()}`, 12, 22); }
+  if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '24px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#0a0612'; ctx.fillText(msg, W / 2 + 2, 192); ctx.shadowColor = '#ffe14d'; ctx.shadowBlur = 14; ctx.fillStyle = '#ffe14d'; ctx.fillText(msg, W / 2, 190); ctx.shadowBlur = 0; ctx.globalAlpha = 1; }
 });
 /* blast radius over its life: grow, hold, shrink */
 function blastR(b) { const r = b.r; return b.t < 0.45 ? r * b.t / 0.45 : b.t < 0.75 ? r : b.t < 1.2 ? r * (1 - (b.t - 0.75) / 0.45) : 0; }
-function drawCity(c) {
-  if (!c.alive) { ctx.fillStyle = '#3a2a2a'; ctx.fillRect(c.x - 16, GROUND - 5, 32, 5); return; }
-  [[-16, 12, 14], [-6, 20, 10], [4, 15, 12], [-12, 8, 6]].forEach(([dx, h, w]) => { ctx.fillStyle = '#4f7bff'; ctx.fillRect(c.x + dx, GROUND - h, w, h); });
-  ctx.fillStyle = '#ffe98a'; for (let i = 0; i < 4; i++) ctx.fillRect(c.x - 13 + i * 7, GROUND - 10, 2, 2);
+
+/* ---------- art ---------- */
+/** Lighten (k > 0) or darken (k < 0) a #rgb / #rrggbb colour. */
+function shade(hex, k) {
+  let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join('');
+  const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
 }
-function drawBase(b) {
-  ctx.fillStyle = b.alive ? '#6b4a2a' : '#3a2a2a'; ctx.beginPath(); ctx.moveTo(b.x - 26, GROUND); ctx.lineTo(b.x - 12, GROUND - 16); ctx.lineTo(b.x + 12, GROUND - 16); ctx.lineTo(b.x + 26, GROUND); ctx.fill();
-  if (!b.alive) return;
-  ctx.fillStyle = '#ffe14d'; for (let i = 0; i < b.ammo; i++) ctx.fillRect(b.x - 11 + (i % 5) * 5, GROUND - 13 + Math.floor(i / 5) * 5, 3, 3);
-  if (state === 'play' && b.ammo <= 2) { ctx.fillStyle = '#ff4f6d'; ctx.font = '10px Silkscreen, monospace'; ctx.textAlign = 'center'; ctx.fillText(b.ammo ? 'LOW' : 'OUT', b.x, GROUND + 16); }
+// the night sky (stars, a moon) and the land (two mountain ranges, rocky ground with a lit horizon), drawn once
+const sky = (() => {
+  const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
+  const g = x.createLinearGradient(0, 0, 0, GROUND); g.addColorStop(0, '#04020c'); g.addColorStop(0.6, '#140a2a'); g.addColorStop(1, '#3a1638'); x.fillStyle = g; x.fillRect(0, 0, W, H);
+  let s = 11; const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < 140; i++) { const y = r() * GROUND * 0.8; x.fillStyle = `rgba(255,255,255,${0.2 + r() * 0.7 * (1 - y / GROUND)})`; x.fillRect(r() * W, y, r() < 0.1 ? 2 : 1, r() < 0.1 ? 2 : 1); }
+  const mx = 540, my = 70;
+  const mg = x.createRadialGradient(mx, my, 10, mx, my, 70); mg.addColorStop(0, 'rgba(255,220,180,.25)'); mg.addColorStop(1, 'rgba(255,220,180,0)'); x.fillStyle = mg; x.fillRect(mx - 70, my - 70, 140, 140);
+  const m2 = x.createRadialGradient(mx - 8, my - 8, 4, mx, my, 26); m2.addColorStop(0, '#fff4e0'); m2.addColorStop(1, '#d8b890'); x.fillStyle = m2; x.beginPath(); x.arc(mx, my, 26, 0, 6.29); x.fill();
+  x.fillStyle = 'rgba(160,120,90,.35)'; [[-8, -6, 6], [9, 4, 5], [-3, 10, 3], [6, -12, 3]].forEach(([dx, dy, rr]) => { x.beginPath(); x.arc(mx + dx, my + dy, rr, 0, 6.29); x.fill(); });
+  return c;
+})();
+const land = (() => {
+  const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
+  const ridge = (base, amp, f, col, seed) => { x.fillStyle = col; x.beginPath(); x.moveTo(0, GROUND); for (let i = 0; i <= W; i += 8) x.lineTo(i, base - Math.abs(Math.sin(i * f + seed)) * amp - Math.sin(i * f * 3.1 + seed * 2) * amp * 0.25); x.lineTo(W, GROUND); x.fill(); };
+  ridge(GROUND - 40, 70, 0.009, '#1e1034', 1); ridge(GROUND - 14, 36, 0.017, '#140a24', 3);
+  const g = x.createLinearGradient(0, GROUND, 0, H); g.addColorStop(0, '#4a3020'); g.addColorStop(1, '#1a0f0a'); x.fillStyle = g; x.fillRect(0, GROUND, W, H - GROUND);
+  let s = 5; const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < 90; i++) { x.fillStyle = r() < 0.5 ? '#2a1a10' : '#6b4a2a'; x.fillRect(r() * W, GROUND + 4 + r() * (H - GROUND - 6), 3 + r() * 4, 2); }
+  x.shadowColor = '#ffe14d'; x.shadowBlur = 8; x.fillStyle = '#ffe14d'; x.fillRect(0, GROUND, W, 2); x.shadowBlur = 0;
+  return c;
+})();
+/** A city: a cluster of outlined towers, lit on the left and shaded on the right, with twinkling windows and a red beacon. */
+const TOWERS = [[-17, 14, 22], [-5, 11, 32], [5, 13, 24], [-11, 7, 14], [11, 8, 16]];
+function drawCity(c, t) {
+  if (!c.alive) { // rubble, still smouldering
+    ctx.fillStyle = '#0a0612'; ctx.fillRect(c.x - 18, GROUND - 7, 36, 7);
+    ctx.fillStyle = '#3a2a3a'; [[-16, 4, 8], [-6, 6, 6], [2, 3, 9], [10, 5, 6]].forEach(([dx, h, w]) => ctx.fillRect(c.x + dx, GROUND - h, w, h));
+    ctx.fillStyle = Math.floor(t / 200 + c.x) % 3 ? '#ff8a3d' : '#ffe14d'; ctx.fillRect(c.x - 4, GROUND - 3, 2, 2); ctx.fillRect(c.x + 7, GROUND - 2, 2, 2);
+    for (let i = 0; i < 3; i++) { const k = ((t / 2200 + i / 3 + c.x / 97) % 1); ctx.globalAlpha = 0.3 * (1 - k); ctx.fillStyle = '#5a4a5a'; ctx.beginPath(); ctx.arc(c.x - 4 + i * 5 + Math.sin(k * 6) * 4, GROUND - 8 - k * 40, 4 + k * 8, 0, 6.29); ctx.fill(); }
+    ctx.globalAlpha = 1; return;
+  }
+  ctx.fillStyle = '#0a0612'; TOWERS.forEach(([dx, w, h]) => ctx.fillRect(c.x + dx - 1, GROUND - h - 1, w + 2, h + 1));
+  TOWERS.forEach(([dx, w, h], i) => {
+    const X = c.x + dx, Y = GROUND - h, col = ['#4f7bff', '#3d5fd8', '#5a88ff', '#2f4ab8', '#4670f0'][i];
+    ctx.fillStyle = col; ctx.fillRect(X, Y, w, h);
+    ctx.fillStyle = shade(col, 0.25); ctx.fillRect(X, Y, Math.ceil(w * 0.35), h);
+    ctx.fillStyle = shade(col, -0.35); ctx.fillRect(X + w - 2, Y, 2, h);
+    ctx.fillStyle = shade(col, 0.5); ctx.fillRect(X, Y, w, 1);
+    for (let wy = Y + 4; wy < GROUND - 3; wy += 5) for (let wx = X + 2; wx < X + w - 2; wx += 4) {
+      const on = Math.sin(wx * 12.9 + wy * 7.3 + Math.floor(t / 1600 + wx) * 0.7) > -0.2;
+      ctx.fillStyle = on ? '#ffe98a' : '#1a2450'; ctx.fillRect(wx, wy, 2, 2);
+    }
+  });
+  if (Math.floor(t / 500 + c.x) % 2) { ctx.fillStyle = '#ff4f6d'; ctx.shadowColor = '#ff4f6d'; ctx.shadowBlur = 8; ctx.fillRect(c.x - 5, GROUND - 35, 2, 2); ctx.shadowBlur = 0; }
+  ctx.fillStyle = '#9aa0b0'; ctx.fillRect(c.x - 5, GROUND - 34, 1, 2);
+}
+/** A missile base: an outlined, shaded bunker with a turret that tracks the crosshair, and its missiles standing in racks. */
+function drawBase(b, t) {
+  ctx.fillStyle = '#0a0612'; ctx.beginPath(); ctx.moveTo(b.x - 29, GROUND); ctx.lineTo(b.x - 14, GROUND - 19); ctx.lineTo(b.x + 14, GROUND - 19); ctx.lineTo(b.x + 29, GROUND); ctx.fill();
+  const g = ctx.createLinearGradient(0, GROUND - 17, 0, GROUND); g.addColorStop(0, b.alive ? '#8a6a4a' : '#4a3a3a'); g.addColorStop(1, b.alive ? '#4a3018' : '#2a1f1f');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(b.x - 26, GROUND); ctx.lineTo(b.x - 12, GROUND - 17); ctx.lineTo(b.x + 12, GROUND - 17); ctx.lineTo(b.x + 26, GROUND); ctx.fill();
+  if (!b.alive) { ctx.fillStyle = '#ff8a3d'; ctx.fillRect(b.x - 2, GROUND - 19, 4, 2); return; }
+  ctx.fillStyle = 'rgba(255,255,255,.25)'; ctx.fillRect(b.x - 12, GROUND - 17, 24, 2);
+  // turret
+  const a = Math.atan2(cross.y - (GROUND - 22), cross.x - b.x);
+  ctx.save(); ctx.translate(b.x, GROUND - 21); ctx.rotate(state === 'title' ? -Math.PI / 2 + Math.sin(t / 900 + b.x) * 0.5 : a);
+  ctx.fillStyle = '#0a0612'; ctx.fillRect(-2, -4, 16, 8); ctx.fillStyle = '#c0c6d0'; ctx.fillRect(0, -2, 13, 4); ctx.fillStyle = '#ffe14d'; ctx.fillRect(11, -2, 2, 4);
+  ctx.restore();
+  ctx.fillStyle = '#0a0612'; ctx.beginPath(); ctx.arc(b.x, GROUND - 19, 6, Math.PI, 0); ctx.fill(); ctx.fillStyle = '#6a7080'; ctx.beginPath(); ctx.arc(b.x, GROUND - 19, 4.5, Math.PI, 0); ctx.fill();
+  // missiles in the racks
+  for (let i = 0; i < b.ammo; i++) { const mx = b.x - 20 + (i % 5) * 4 + (i >= 5 ? 22 : 0), my = GROUND - 9 + (i % 5 === 2 ? -1 : 0); ctx.fillStyle = '#0a0612'; ctx.fillRect(mx - 1, my - 1, 3, 9); ctx.fillStyle = '#e8ecf4'; ctx.fillRect(mx, my, 1, 7); ctx.fillStyle = '#ff4f6d'; ctx.fillRect(mx, my, 1, 2); }
+  if (state === 'play' && b.ammo <= 2) { ctx.fillStyle = Math.floor(t / 250) % 2 ? '#ff4f6d' : '#ffe14d'; ctx.font = '10px Silkscreen, monospace'; ctx.textAlign = 'center'; ctx.fillText(b.ammo ? 'LOW' : 'OUT', b.x, GROUND + 18); }
+}
+/** An explosion: a white-hot core inside layered fire, wobbling at the edge. */
+function drawBlast(b, t) {
+  const r = blastR(b); if (r <= 0) return;
+  const g = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, r);
+  g.addColorStop(0, '#fff'); g.addColorStop(0.3, '#fff6c2'); g.addColorStop(0.55, '#ffe14d'); g.addColorStop(0.8, '#ff8a3d'); g.addColorStop(1, 'rgba(255,79,216,.0)');
+  ctx.fillStyle = g; ctx.beginPath();
+  for (let i = 0; i <= 16; i++) { const a = i / 16 * Math.PI * 2, w = r * (0.9 + Math.sin(a * 5 + t / 60 + b.seed) * 0.1); i ? ctx.lineTo(b.x + Math.cos(a) * w, b.y + Math.sin(a) * w) : ctx.moveTo(b.x + Math.cos(a) * w, b.y + Math.sin(a) * w); }
+  ctx.fill();
+  ctx.globalAlpha = 0.5; ctx.strokeStyle = '#ff4fd8'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, 6.29); ctx.stroke(); ctx.globalAlpha = 1;
+}
+/** The crosshair: corner brackets that slowly turn, around a dot. */
+function drawCross(t) {
+  ctx.save(); ctx.translate(cross.x, cross.y); ctx.rotate(t / 900);
+  ctx.strokeStyle = '#0a0612'; ctx.lineWidth = 4; const br = () => { ctx.beginPath(); for (let i = 0; i < 4; i++) { ctx.rotate(Math.PI / 2); ctx.moveTo(7, -11); ctx.lineTo(11, -11); ctx.lineTo(11, -7); } ctx.stroke(); };
+  br(); ctx.strokeStyle = '#ffe14d'; ctx.lineWidth = 2; ctx.shadowColor = '#ffe14d'; ctx.shadowBlur = 6; br(); ctx.shadowBlur = 0;
+  ctx.restore(); ctx.fillStyle = '#ffe14d'; ctx.fillRect(cross.x - 1, cross.y - 1, 2, 2);
 }
 /* Attract demo: slide the crosshair ahead of the lowest missile and fire, one shot per missile. */
 let demoAim = null, demoCD = 0;

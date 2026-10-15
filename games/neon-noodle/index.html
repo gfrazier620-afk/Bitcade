@@ -31,12 +31,12 @@
 (() => {
 const A = Arcade, cv = document.getElementById('cv');
 const N = 24, CS = 20, ctx = A.canvas(cv, N * CS, N * CS);
-let snake, dir, queue, food, bonus, score, state = 'title', stepT, speed, grow, eaten, deathT = 0;
+let snake, prev = [], dir, queue, food, bonus, score, state = 'title', stepT = 0, speed = 0.13, grow, eaten, deathT = 0;
 const DV = { up: { x: 0, y: -1 }, down: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } };
 const KEYS = { ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right' };
 
 function reset() {
-  snake = [{ x: 8, y: 12 }, { x: 7, y: 12 }, { x: 6, y: 12 }];
+  snake = [{ x: 8, y: 12 }, { x: 7, y: 12 }, { x: 6, y: 12 }]; prev = snake.map(p => ({ ...p }));
   dir = DV.right; queue = []; score = 0; speed = 0.13; stepT = 0; grow = 0; eaten = 0; bonus = null; food = null;
   food = free(); A.setScore(0);
 }
@@ -59,6 +59,8 @@ function pause() {
 }
 function die() {
   state = 'dying'; deathT = 0.9; A.noise(0.5, 0.08); A.tone(300, 0.5, 'sawtooth', 0.05, 0, 60);
+  A.hitstop(0.12); A.shake(10, 0.45); A.flash('#ff3b3b', 0.25);
+  snake.forEach((s, i) => { if (i % 2 === 0) A.burst(s.x * CS + CS / 2, s.y * CS + CS / 2, { n: 4, kind: 'debris', colors: ['#3dff8f', '#1f9a55'], speed: 160, life: 0.9 }); });
   setTimeout(() => {
     if (state !== 'dying') return; // a demo that was stopped mid-crash
     state = 'over';
@@ -67,6 +69,7 @@ function die() {
   }, 900);
 }
 function step() {
+  prev = snake.map(p => ({ ...p }));
   if (queue.length) dir = queue.shift();
   const h = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
   const body = grow ? snake.length : snake.length - 1;
@@ -75,11 +78,13 @@ function step() {
   if (h.x === food.x && h.y === food.y) {
     score += 10; grow += 2; eaten++;
     A.tone(660, 0.05); A.tone(990, 0.06, 'square', 0.04, 0.05);
+    A.burst(h.x * CS + CS / 2, h.y * CS + CS / 2, { n: 12, colors: ['#ff4fa3', '#ffd0e8'], speed: 180, life: 0.45 }); A.pop(h.x * CS + CS / 2, h.y * CS - 4, '+10', '#ffb0d8'); A.shake(2, 0.1);
     food = free(); speed = Math.max(0.055, speed - 0.0024);
     if (!bonus && eaten % 5 === 0) bonus = { ...free(), t: 6 };
   } else if (bonus && h.x === bonus.x && h.y === bonus.y) {
     const pts = 20 + Math.ceil(bonus.t) * 10; score += pts; grow += 4; bonus = null; A.badge('gem');
     A.jingle([784, 988, 1175, 1568], 0.05);
+    A.burst(h.x * CS + CS / 2, h.y * CS + CS / 2, { n: 22, colors: ['#ffd23d', '#fff6c2'], speed: 240, life: 0.6 }); A.ring(h.x * CS + CS / 2, h.y * CS + CS / 2, '#ffd23d', 40); A.pop(h.x * CS + CS / 2, h.y * CS - 4, '+' + pts, '#ffd23d'); A.shake(4, 0.15);
   }
   if (grow > 0) grow--; else snake.pop();
   A.setScore(score);
@@ -100,40 +105,94 @@ A.loop(dt => {
   stepT += dt;
   while (stepT >= speed && state === 'play') { stepT -= speed; step(); }
 }, t => {
-  ctx.fillStyle = '#060a10'; ctx.fillRect(0, 0, N * CS, N * CS);
-  ctx.fillStyle = 'rgba(61,255,143,.07)';
-  for (let x = 0; x < N; x++) for (let y = 0; y < N; y++) ctx.fillRect(x * CS + CS / 2 - 1, y * CS + CS / 2 - 1, 2, 2);
-  if (!snake) { // title attract
-    const k = Math.floor(t / 120);
-    for (let i = 0; i < 10; i++) { const x = (k - i + N * 4) % (N + 10) - 5; seg(x, 12 + Math.round(Math.sin((k - i) / 3) * 2), 1 - i / 12, i === 0); }
+  ctx.drawImage(arena, 0, 0);
+  if (!snake) { // title attract: a noodle weaving across the floor
+    const k = t / 120, body = [];
+    for (let i = 0; i < 12; i++) body.push({ x: ((k - i) % (N + 12) + N + 12) % (N + 12) - 6, y: 12 + Math.sin((k - i) / 3) * 2 });
+    drawSnake(body, { x: 1, y: 0 }, false, t);
     return;
   }
-  // food
-  const pulse = 0.7 + Math.sin(t / 160) * 0.3;
-  ctx.shadowColor = '#ff4fa3'; ctx.shadowBlur = 14 * pulse; ctx.fillStyle = '#ff4fa3';
-  ctx.beginPath(); ctx.arc(food.x * CS + CS / 2, food.y * CS + CS / 2, 5 + pulse * 1.5, 0, Math.PI * 2); ctx.fill();
-  if (bonus) {
-    const cx = bonus.x * CS + CS / 2, cy = bonus.y * CS + CS / 2;
-    ctx.shadowColor = '#ffd23d'; ctx.shadowBlur = 16; ctx.fillStyle = '#ffd23d';
-    ctx.beginPath(); ctx.moveTo(cx, cy - 8); ctx.lineTo(cx + 7, cy); ctx.lineTo(cx, cy + 8); ctx.lineTo(cx - 7, cy); ctx.closePath(); ctx.fill();
-    ctx.shadowBlur = 0; ctx.strokeStyle = 'rgba(255,210,61,.6)'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(cx, cy, 13, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (bonus.t / 6)); ctx.stroke();
-  }
-  ctx.shadowBlur = 0;
+  drawFood(food.x * CS + CS / 2, food.y * CS + CS / 2, t);
+  if (bonus) drawGem(bonus.x * CS + CS / 2, bonus.y * CS + CS / 2, t, bonus.t);
   const dead = state === 'dying' || state === 'over';
-  const flicker = state === 'dying' && Math.floor(t / 90) % 2;
-  if (!flicker) snake.forEach((s, i) => seg(s.x, s.y, 1 - (i / snake.length) * 0.65, i === 0, dead));
+  if (state === 'dying' && Math.floor(t / 90) % 2) return;
+  // glide: each segment slides from where it was to where it is
+  const u = state === 'play' ? Math.min(1, stepT / speed) : 1;
+  const body = snake.map((p, i) => { const q = prev[i] || p; return { x: q.x + (p.x - q.x) * u, y: q.y + (p.y - q.y) * u }; });
+  drawSnake(body, dir, dead, t);
 });
-function seg(x, y, a, head, dead) {
-  const px = x * CS, py = y * CS;
-  ctx.shadowColor = dead ? '#ff3b3b' : '#3dff8f'; ctx.shadowBlur = head ? 16 : 8;
-  ctx.fillStyle = dead ? `rgba(255,80,80,${a})` : `rgba(61,255,143,${a})`;
-  ctx.beginPath(); ctx.roundRect(px + 2, py + 2, CS - 4, CS - 4, head ? 7 : 5); ctx.fill(); ctx.shadowBlur = 0;
-  if (head && dir) {
-    ctx.fillStyle = '#04120a';
-    const ex = dir.x ? [dir.x * 4, dir.x * 4] : [-4, 4], ey = dir.y ? [dir.y * 4, dir.y * 4] : [-4, 4];
-    for (let k = 0; k < 2; k++) { ctx.beginPath(); ctx.arc(px + CS / 2 + ex[k], py + CS / 2 + ey[k], 2.2, 0, Math.PI * 2); ctx.fill(); }
+
+/* ---------- art ---------- */
+/** Lighten (k > 0) or darken (k < 0) a #rgb / #rrggbb colour. */
+function shade(hex, k) {
+  let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join('');
+  const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+// the arena: two-tone floor tiles, soft vignette and a glowing neon border, drawn once
+const arena = (() => {
+  const c = document.createElement('canvas'), S = N * CS; c.width = S; c.height = S; const x = c.getContext('2d');
+  for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+    x.fillStyle = (i + j) % 2 ? '#07120c' : '#091710'; x.fillRect(i * CS, j * CS, CS, CS);
+    x.fillStyle = 'rgba(61,255,143,.05)'; x.fillRect(i * CS, j * CS, CS, 1); x.fillRect(i * CS, j * CS, 1, CS);
   }
+  const v = x.createRadialGradient(S / 2, S / 2, S * 0.2, S / 2, S / 2, S * 0.75); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,.55)');
+  x.fillStyle = v; x.fillRect(0, 0, S, S);
+  x.shadowColor = '#3dff8f'; x.shadowBlur = 14; x.strokeStyle = '#3dff8f'; x.lineWidth = 3; x.strokeRect(2.5, 2.5, S - 5, S - 5);
+  x.shadowBlur = 0; x.strokeStyle = 'rgba(255,255,255,.35)'; x.lineWidth = 1; x.strokeRect(2.5, 2.5, S - 5, S - 5);
+  return c;
+})();
+/** The noodle: one shaded tube (outline, body, belly stripe, scale bands), then a head with eyes and a flicking tongue. */
+function drawSnake(body, d, dead, t) {
+  if (!body.length) return;
+  const pts = body.map(p => [p.x * CS + CS / 2, p.y * CS + CS / 2]), col = dead ? '#ff5a5a' : '#3dff8f';
+  const path = () => { ctx.beginPath(); pts.forEach(([x, y], i) => { if (i && Math.hypot(x - pts[i - 1][0], y - pts[i - 1][1]) > CS * 1.5) ctx.moveTo(x, y); else if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); }); };
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  // drop shadow, outline, body, belly highlight
+  ctx.save(); ctx.translate(2, 4); path(); ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = CS - 4; ctx.stroke(); ctx.restore();
+  path(); ctx.strokeStyle = '#04120a'; ctx.lineWidth = CS + 2; ctx.stroke();
+  if (!dead) { ctx.shadowColor = col; ctx.shadowBlur = 12; }
+  path(); ctx.strokeStyle = shade(col, -0.4); ctx.lineWidth = CS - 2; ctx.stroke(); ctx.shadowBlur = 0;
+  path(); ctx.strokeStyle = col; ctx.lineWidth = CS - 7; ctx.stroke();
+  ctx.save(); ctx.translate(-2, -3); path(); ctx.strokeStyle = shade(col, 0.6); ctx.lineWidth = 3.5; ctx.stroke(); ctx.restore();
+  // scale bands: a darker diamond on every other segment, shrinking toward the tail
+  for (let i = 2; i < pts.length; i += 2) { const [x, y] = pts[i], r = 5 * (1 - i / pts.length * 0.5); ctx.fillStyle = shade(col, -0.5); ctx.beginPath(); ctx.moveTo(x, y - r); ctx.lineTo(x + r, y); ctx.lineTo(x, y + r); ctx.lineTo(x - r, y); ctx.fill(); }
+  // head
+  const [hx, hy] = pts[0], dx = d ? d.x : 1, dy = d ? d.y : 0;
+  ctx.fillStyle = '#04120a'; ctx.beginPath(); ctx.arc(hx, hy, CS / 2 + 2, 0, 6.29); ctx.fill();
+  const g = ctx.createRadialGradient(hx - 3, hy - 4, 1, hx, hy, CS / 2 + 1); g.addColorStop(0, shade(col, 0.6)); g.addColorStop(0.5, col); g.addColorStop(1, shade(col, -0.4));
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(hx, hy, CS / 2, 0, 6.29); ctx.fill();
+  if (!dead && Math.floor(t / 260) % 5 === 0) { // tongue
+    ctx.strokeStyle = '#ff4f6d'; ctx.lineWidth = 2; ctx.beginPath(); const tx = hx + dx * (CS / 2 + 7), ty = hy + dy * (CS / 2 + 7);
+    ctx.moveTo(hx + dx * CS / 2, hy + dy * CS / 2); ctx.lineTo(tx, ty); ctx.lineTo(tx + dx * 3 - dy * 3, ty + dy * 3 - dx * 3); ctx.moveTo(tx, ty); ctx.lineTo(tx + dx * 3 + dy * 3, ty + dy * 3 + dx * 3); ctx.stroke();
+  }
+  for (const side of [-1, 1]) { // eyes look where it's going
+    const ex = hx + dx * 3 + (dy ? side * 4.5 : 0), ey = hy + dy * 3 + (dx ? side * 4.5 : 0);
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ex, ey, 3.4, 0, 6.29); ctx.fill();
+    ctx.fillStyle = '#04120a'; if (dead) { ctx.fillRect(ex - 2, ey - 0.6, 4, 1.2); } else { ctx.beginPath(); ctx.arc(ex + dx * 1.3, ey + dy * 1.3, 1.8, 0, 6.29); ctx.fill(); }
+  }
+}
+/** A glossy berry that bobs and glows. */
+function drawFood(x, y, t) {
+  const b = Math.sin(t / 220) * 1.5, p = 0.7 + Math.sin(t / 160) * 0.3;
+  ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.ellipse(x, y + 8, 6, 2, 0, 0, 6.29); ctx.fill();
+  ctx.shadowColor = '#ff4fa3'; ctx.shadowBlur = 12 * p;
+  ctx.fillStyle = '#2a0618'; ctx.beginPath(); ctx.arc(x, y + b, 9.5, 0, 6.29); ctx.fill(); ctx.shadowBlur = 0;
+  const g = ctx.createRadialGradient(x - 2.5, y - 3 + b, 1, x, y + b, 7); g.addColorStop(0, '#ffd0e8'); g.addColorStop(0.35, '#ff4fa3'); g.addColorStop(1, '#a01a5a');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y + b, 8, 0, 6.29); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.beginPath(); ctx.ellipse(x - 2.5, y - 3 + b, 2, 1.3, -0.6, 0, 6.29); ctx.fill();
+  ctx.strokeStyle = '#2f9a48'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, y - 6 + b); ctx.quadraticCurveTo(x + 2, y - 10 + b, x + 5, y - 9 + b); ctx.stroke();
+}
+/** A faceted gold gem with a shine that sweeps across, and a ring that runs down as it fades. */
+function drawGem(x, y, t, left) {
+  const b = Math.sin(t / 180) * 2;
+  ctx.shadowColor = '#ffd23d'; ctx.shadowBlur = 16;
+  ctx.fillStyle = '#3a2400'; ctx.beginPath(); ctx.moveTo(x, y - 11 + b); ctx.lineTo(x + 10, y - 2 + b); ctx.lineTo(x, y + 11 + b); ctx.lineTo(x - 10, y - 2 + b); ctx.closePath(); ctx.fill(); ctx.shadowBlur = 0;
+  const f = (pts, c) => { ctx.fillStyle = c; ctx.beginPath(); pts.forEach(([px, py], i) => i ? ctx.lineTo(x + px, y + py + b) : ctx.moveTo(x + px, y + py + b)); ctx.fill(); };
+  f([[0, -9], [8, -2], [0, -2]], '#fff0a8'); f([[0, -9], [-8, -2], [0, -2]], '#ffd23d');
+  f([[-8, -2], [0, -2], [0, 9]], '#e0a820'); f([[8, -2], [0, -2], [0, 9]], '#b8860b');
+  const sweep = ((t / 600) % 2) - 0.5; if (sweep < 1) { ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.fillRect(x - 8 + sweep * 16, y - 6 + b, 2, 8); }
+  ctx.strokeStyle = 'rgba(255,210,61,.7)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y + b, 15, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (left / 6)); ctx.stroke();
 }
 const DEMO_KEYS = { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' };
 /* Attract demo: head for the pellet (or the gem), never into a wall or the tail, keeping the most room to move. */

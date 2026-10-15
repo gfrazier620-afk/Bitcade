@@ -74,7 +74,14 @@ function turn(dir) {
 function touchLock() { if (grounded() && lockMoves < 15) { lockT = 0; lockMoves++; } }
 const grounded = () => collide(cur.m, cur.x, cur.y + 1);
 function ghostY() { let y = cur.y; while (!collide(cur.m, cur.x, y + 1)) y++; return y; }
-function hardDrop() { const g = ghostY(); score += (g - cur.y) * 2; cur.y = g; A.tone(160, 0.08, 'triangle', 0.07); lock(); }
+function hardDrop() {
+  const g = ghostY(), fell = g - cur.y; score += fell * 2; cur.y = g; A.tone(160, 0.08, 'triangle', 0.07);
+  // a thump: dust where it lands, and a shake that grows with the drop
+  const col = PIECES[cur.k].c, w = cur.m[0].length; let bottom = 0; cur.m.forEach((row, r) => { if (row.some(Boolean)) bottom = r; });
+  A.burst(BX + (cur.x + w / 2) * S, BY + (cur.y + bottom + 1) * S, { n: 12, colors: [col, '#fff'], speed: 140, angle: -Math.PI / 2, spread: 2.6, life: 0.35 });
+  if (fell > 2) A.shake(Math.min(5, 1 + fell / 4), 0.12);
+  lock();
+}
 function doHold() {
   if (holdUsed) return; holdUsed = true; A.tone(700, 0.04);
   const k = cur.k; if (hold) { const h = hold; hold = k; spawn(h); } else { hold = k; spawn(nextKey()); }
@@ -83,7 +90,12 @@ function lock() {
   cur.m.forEach((row, r) => row.forEach((v, c) => { if (v && cur.y + r >= 0) grid[cur.y + r][cur.x + c] = PIECES[cur.k].c; }));
   if (cur.m.some((row, r) => row.some(v => v) && cur.y + r < 0)) return gameOver();
   const full = []; grid.forEach((row, y) => { if (row.every(Boolean)) full.push(y); });
-  if (full.length) { clearing = full; clearT = 0.28; A.jingle(full.length === 4 ? [523, 659, 784, 1047] : [659, 880, 1047].slice(0, full.length), 0.06); cur = null; }
+  if (full.length) {
+    clearing = full; clearT = 0.28; A.jingle(full.length === 4 ? [523, 659, 784, 1047] : [659, 880, 1047].slice(0, full.length), 0.06); cur = null;
+    full.forEach(y => grid[y].forEach((c, x) => { if (x % 2 === 0) A.burst(BX + x * S + S / 2, BY + y * S + S / 2, { n: 5, colors: [c, '#fff'], speed: 260, life: 0.6 }); }));
+    A.shake(full.length * 2, 0.25);
+    if (full.length === 4) { A.flash('#b48cff', 0.3); A.hitstop(0.1); A.ring(BX + CW * S / 2, BY + full[0] * S, '#fff', 160); }
+  }
   else { A.tone(220, 0.03, 'square', 0.03); spawn(nextKey()); holdUsed = false; }
   A.setScore(score);
 }
@@ -127,45 +139,96 @@ A.loop(dt => {
   if (grounded()) { lockT += dt; if (lockT >= 0.5) { lock(); dropT = 0; } }
   A.setScore(score);
 }, t => {
-  ctx.fillStyle = '#0b0818'; ctx.fillRect(0, 0, W, H);
-  // well
-  ctx.fillStyle = '#120d26'; ctx.fillRect(BX, BY, CW * S, CH * S);
-  ctx.strokeStyle = 'rgba(180,140,255,.08)'; ctx.lineWidth = 1;
-  for (let x = 1; x < CW; x++) { ctx.beginPath(); ctx.moveTo(BX + x * S, BY); ctx.lineTo(BX + x * S, BY + CH * S); ctx.stroke(); }
-  for (let y = 1; y < CH; y++) { ctx.beginPath(); ctx.moveTo(BX, BY + y * S); ctx.lineTo(BX + CW * S, BY + y * S); ctx.stroke(); }
-  ctx.strokeStyle = 'rgba(180,140,255,.6)'; ctx.lineWidth = 2; ctx.strokeRect(BX - 1, BY - 1, CW * S + 2, CH * S + 2);
-  if (grid) grid.forEach((row, y) => row.forEach((c, x) => { if (c) cell(BX + x * S, BY + y * S, c, clearing && clearing.includes(y) ? (Math.floor(t / 60) % 2 ? '#fff' : c) : null); }));
-  else { // attract
+  ctx.drawImage(backdrop, 0, 0);
+  if (grid) grid.forEach((row, y) => row.forEach((c, x) => { if (c) cell(BX + x * S, BY + y * S, c, clearing && clearing.includes(y) ? (Math.floor(t / 60) % 2 ? '#fff' : null) : null); }));
+  else { // attract: pieces raining down the well
     const k = Math.floor(t / 300); Object.keys(PIECES).forEach((key, i) => { const p = PIECES[key]; const y = (k * 1 + i * 3) % 24 - 2; p.m.forEach((row, r) => row.forEach((v, c) => { if (v && y + r >= 0 && y + r < CH) cell(BX + (i % 3) * 3 * S + c * S + S, BY + (y + r) * S, p.c); })); });
   }
   if (cur && state === 'play') {
     const gy = ghostY(), col = PIECES[cur.k].c;
-    cur.m.forEach((row, r) => row.forEach((v, c) => { if (v && gy + r >= 0) { ctx.strokeStyle = col; ctx.globalAlpha = 0.45; ctx.lineWidth = 2; ctx.strokeRect(BX + (cur.x + c) * S + 3, BY + (gy + r) * S + 3, S - 6, S - 6); ctx.globalAlpha = 1; } }));
+    cur.m.forEach((row, r) => row.forEach((v, c) => { if (v && gy + r >= 0) { const X = BX + (cur.x + c) * S, Y = BY + (gy + r) * S; ctx.globalAlpha = 0.12; ctx.fillStyle = col; ctx.fillRect(X + 2, Y + 2, S - 4, S - 4); ctx.globalAlpha = 0.6; ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]); ctx.strokeRect(X + 2.5, Y + 2.5, S - 5, S - 5); ctx.setLineDash([]); ctx.globalAlpha = 1; } }));
+    ctx.shadowColor = col; ctx.shadowBlur = 14;
     cur.m.forEach((row, r) => row.forEach((v, c) => { if (v && cur.y + r >= 0) cell(BX + (cur.x + c) * S, BY + (cur.y + r) * S, col); }));
+    ctx.shadowBlur = 0;
   }
-  // side panel
-  const px = BX + CW * S + 20;
-  label('NEXT', px, BY + 12);
-  (queue || []).slice(0, 3).forEach((k, i) => mini(k, px, BY + 26 + i * 62, i === 0 ? 1 : 0.7));
-  label('HOLD', px, BY + 222); if (hold) mini(hold, px, BY + 236, holdUsed ? 0.35 : 1);
-  label('LEVEL', px, BY + 322); big(level || 1, px, BY + 350);
-  label('LINES', px, BY + 386); big(lines || 0, px, BY + 414);
-  if (daily && grid) { label('DAILY', px, BY + 450); label(A.today().slice(5), px, BY + 466); }
-  if (popT > 0) { ctx.globalAlpha = Math.min(1, popT * 2); ctx.fillStyle = '#b48cff'; ctx.font = '20px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillText(popText, BX + CW * S / 2, BY + 200); ctx.globalAlpha = 1; }
+  // side panel: framed cards
+  const px = BX + CW * S + 14, pw = W - px - 10;
+  card(px, BY, pw, 200, 'NEXT'); (queue || []).slice(0, 3).forEach((k, i) => mini(k, px + 8, BY + 24 + i * 58, i === 0 ? 1 : 0.6));
+  card(px, BY + 210, pw, 90, 'HOLD'); if (hold) mini(hold, px + 8, BY + 234, holdUsed ? 0.3 : 1);
+  card(px, BY + 310, pw, 60, 'LEVEL'); big(level || 1, px + 10, BY + 352);
+  card(px, BY + 378, pw, 60, 'LINES'); big(lines || 0, px + 10, BY + 420);
+  if (daily && grid) { card(px, BY + 446, pw, 44, 'DAILY'); label(A.today().slice(5), px + 10, BY + 480); }
+  if (popT > 0) {
+    const k = Math.min(1, popT * 2), sc = 1 + Math.max(0, popT - 1.1) * 2;
+    ctx.save(); ctx.translate(BX + CW * S / 2, BY + 200); ctx.scale(sc, sc); ctx.globalAlpha = k;
+    ctx.font = '22px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#0a0612'; ctx.fillText(popText, 2, 2);
+    ctx.shadowColor = '#b48cff'; ctx.shadowBlur = 16; ctx.fillStyle = '#fff'; ctx.fillText(popText, 0, 0); ctx.shadowBlur = 0; ctx.restore(); ctx.globalAlpha = 1;
+  }
 });
-function cell(x, y, c, over) {
-  ctx.fillStyle = over || c; ctx.fillRect(x + 1, y + 1, S - 2, S - 2);
-  ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.fillRect(x + 1, y + 1, S - 2, 3); ctx.fillRect(x + 1, y + 1, 3, S - 2);
-  ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.fillRect(x + 1, y + S - 4, S - 2, 3); ctx.fillRect(x + S - 4, y + 1, 3, S - 2);
+
+/* ---------- art ---------- */
+/** Lighten (k > 0) or darken (k < 0) a #rgb / #rrggbb colour. */
+function shade(hex, k) {
+  let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join('');
+  const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
 }
+// the backdrop, drawn once: a synthwave night (stars, a striped sun, a glowing grid) behind a framed glass well
+const backdrop = (() => {
+  const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
+  const g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#07041a'); g.addColorStop(0.55, '#24104a'); g.addColorStop(1, '#3a1040'); x.fillStyle = g; x.fillRect(0, 0, W, H);
+  let s = 3; const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < 80; i++) { x.fillStyle = `rgba(255,255,255,${0.2 + r() * 0.6})`; x.fillRect(r() * W, r() * H * 0.6, 1, 1); }
+  const sx = W * 0.7, sy = H * 0.66, sun = x.createLinearGradient(0, sy - 60, 0, sy + 40); sun.addColorStop(0, '#ffd23d'); sun.addColorStop(1, '#ff4fa3');
+  x.fillStyle = sun; x.beginPath(); x.arc(sx, sy, 56, 0, 6.29); x.fill();
+  x.fillStyle = '#24104a'; for (let i = 0; i < 6; i++) x.fillRect(sx - 60, sy + i * 9 - 4, 120, 2 + i);
+  const hz = H * 0.74; x.fillStyle = '#12082a'; x.fillRect(0, hz, W, H - hz);
+  x.strokeStyle = 'rgba(255,79,163,.45)'; x.lineWidth = 1;
+  for (let i = 0; i < 9; i++) { const y = hz + Math.pow(i / 8, 2) * (H - hz); x.beginPath(); x.moveTo(0, y); x.lineTo(W, y); x.stroke(); }
+  for (let i = -10; i <= 10; i++) { x.beginPath(); x.moveTo(W / 2 + i * 14, hz); x.lineTo(W / 2 + i * 70, H); x.stroke(); }
+  // the well: an outlined steel frame with rivets around tinted glass with a faint grid
+  x.fillStyle = '#0a0612'; x.fillRect(BX - 7, BY - 7, CW * S + 14, CH * S + 14);
+  const fg = x.createLinearGradient(BX - 6, 0, BX + CW * S + 6, 0); fg.addColorStop(0, '#5a5078'); fg.addColorStop(0.5, '#8a80a8'); fg.addColorStop(1, '#3a3058');
+  x.fillStyle = fg; x.fillRect(BX - 6, BY - 6, CW * S + 12, CH * S + 12);
+  for (const [rx, ry] of [[BX - 3, BY - 3], [BX + CW * S + 3, BY - 3], [BX - 3, BY + CH * S + 3], [BX + CW * S + 3, BY + CH * S + 3]]) { x.fillStyle = '#0a0612'; x.beginPath(); x.arc(rx, ry, 2, 0, 6.29); x.fill(); }
+  const wg = x.createLinearGradient(0, BY, 0, BY + CH * S); wg.addColorStop(0, 'rgba(10,6,24,.94)'); wg.addColorStop(1, 'rgba(24,10,40,.94)'); x.fillStyle = wg; x.fillRect(BX, BY, CW * S, CH * S);
+  x.strokeStyle = 'rgba(180,140,255,.07)';
+  for (let i = 1; i < CW; i++) { x.beginPath(); x.moveTo(BX + i * S + .5, BY); x.lineTo(BX + i * S + .5, BY + CH * S); x.stroke(); }
+  for (let j = 1; j < CH; j++) { x.beginPath(); x.moveTo(BX, BY + j * S + .5); x.lineTo(BX + CW * S, BY + j * S + .5); x.stroke(); }
+  x.fillStyle = 'rgba(255,255,255,.05)'; x.beginPath(); x.moveTo(BX, BY); x.lineTo(BX + 60, BY); x.lineTo(BX, BY + 160); x.fill(); // a glint on the glass
+  return c;
+})();
+/** A jewel-cut block: dark outline, light bevel top and left, dark bevel bottom and right, a raised centre and a glint. */
+function cell(x, y, c, over) {
+  const col = over || c, b = 4;
+  ctx.fillStyle = '#0a0612'; ctx.fillRect(x, y, S, S);
+  ctx.fillStyle = shade(col, 0.45); ctx.beginPath(); ctx.moveTo(x + 1, y + 1); ctx.lineTo(x + S - 1, y + 1); ctx.lineTo(x + S - 1 - b, y + 1 + b); ctx.lineTo(x + 1 + b, y + 1 + b); ctx.lineTo(x + 1 + b, y + S - 1 - b); ctx.lineTo(x + 1, y + S - 1); ctx.fill();
+  ctx.fillStyle = shade(col, -0.45); ctx.beginPath(); ctx.moveTo(x + S - 1, y + 1); ctx.lineTo(x + S - 1, y + S - 1); ctx.lineTo(x + 1, y + S - 1); ctx.lineTo(x + 1 + b, y + S - 1 - b); ctx.lineTo(x + S - 1 - b, y + S - 1 - b); ctx.lineTo(x + S - 1 - b, y + 1 + b); ctx.fill();
+  const g = ctx.createLinearGradient(0, y + b, 0, y + S - b); g.addColorStop(0, shade(col, 0.15)); g.addColorStop(1, shade(col, -0.15));
+  ctx.fillStyle = g; ctx.fillRect(x + 1 + b, y + 1 + b, S - 2 - 2 * b, S - 2 - 2 * b);
+  ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.fillRect(x + b + 2, y + b + 2, 3, 2);
+}
+/** A small piece for the NEXT and HOLD cards. */
 function mini(k, x, y, a) {
-  const p = PIECES[k], s = 16; ctx.globalAlpha = a;
+  const p = PIECES[k], s = 14; ctx.globalAlpha = a;
   const rows = p.m.filter(r => r.some(Boolean)), w = rows[0].length;
-  rows.forEach((row, r) => row.forEach((v, c) => { if (v) { ctx.fillStyle = p.c; ctx.fillRect(x + c * s + (4 - w) * s / 2, y + r * s + 6, s - 2, s - 2); } }));
+  rows.forEach((row, r) => row.forEach((v, c) => { if (v) miniCell(x + c * s + (4 - w) * s / 2 + 4, y + r * s + 4, s, p.c); }));
   ctx.globalAlpha = 1;
 }
+function miniCell(x, y, s, c) {
+  ctx.fillStyle = '#0a0612'; ctx.fillRect(x, y, s, s);
+  ctx.fillStyle = shade(c, 0.4); ctx.fillRect(x + 1, y + 1, s - 2, s - 2);
+  ctx.fillStyle = c; ctx.fillRect(x + 3, y + 3, s - 5, s - 5);
+  ctx.fillStyle = shade(c, -0.4); ctx.fillRect(x + 3, y + s - 3, s - 4, 2); ctx.fillRect(x + s - 3, y + 3, 2, s - 4);
+}
+/** A dark rounded card with a coloured title, for the side panel. */
+function card(x, y, w, h, title) {
+  ctx.fillStyle = 'rgba(10,6,18,.82)'; ctx.beginPath(); ctx.roundRect(x, y, w, h, 8); ctx.fill();
+  ctx.strokeStyle = 'rgba(180,140,255,.45)'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = '#b48cff'; ctx.font = '11px Silkscreen, monospace'; ctx.textAlign = 'left'; ctx.fillText(title, x + 9, y + 15);
+}
 function label(t, x, y) { ctx.fillStyle = '#a39bc4'; ctx.font = '12px Silkscreen, monospace'; ctx.textAlign = 'left'; ctx.fillText(t, x, y); }
-function big(t, x, y) { ctx.fillStyle = '#f4effd'; ctx.font = '24px Silkscreen, monospace'; ctx.textAlign = 'left'; ctx.fillText(t, x, y); }
+function big(t, x, y) { ctx.fillStyle = '#0a0612'; ctx.font = '24px Silkscreen, monospace'; ctx.textAlign = 'left'; ctx.fillText(t, x + 2, y + 2); ctx.fillStyle = '#f4effd'; ctx.fillText(t, x, y); }
 /* Attract demo: for each new piece, try every turn and column and pick the spot that leaves the flattest stack. */
 let plan = null, planFor = null, actT = 0;
 function bestSpot() {

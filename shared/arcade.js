@@ -300,7 +300,7 @@
     const fit = () => { const d = Math.min(window.devicePixelRatio || 1, 2); cv.width = w * d; cv.height = h * d; ctx.setTransform(d, 0, 0, d, 0, 0); };
     fit(); addEventListener('resize', fit);
     cv.parentElement.style.setProperty('--ar', w / h); document.documentElement.style.setProperty('--ar', w / h);
-    A.W = w; A.H = h;
+    A.W = w; A.H = h; fxCtx = ctx;
     return ctx;
   };
   /** Pointer position in canvas units. */
@@ -309,11 +309,65 @@
     let last = performance.now(), acc = 0; const dt = 1 / 60;
     const f = t => {
       acc += Math.min(0.1, (t - last) / 1000) * (A.easy && !A.demo ? 0.7 : 1); last = t;
-      while (acc >= dt) { if (A.demo) demoTick(dt); else if (!overlayOpen()) { playT += dt; if (A.easy) runEasy = true; } update(dt); acc -= dt; }
-      draw(t); requestAnimationFrame(f);
+      while (acc >= dt) {
+        if (A.demo) demoTick(dt); else if (!overlayOpen()) { playT += dt; if (A.easy) runEasy = true; }
+        fxUpdate(dt);
+        if (stopT > 0) stopT -= dt; else update(dt); // hit-pause freezes the game, not the effects
+        acc -= dt;
+      }
+      fxDraw(t, draw); requestAnimationFrame(f);
     };
     requestAnimationFrame(f);
   };
+
+  /*
+   * Game feel, shared by every game (all in canvas units, all optional):
+   *   A.shake(px, s)          shake the screen          A.hitstop(s)        freeze the game for a moment
+   *   A.burst(x, y, opts)     particles: { n, color | colors, speed, life, size, gravity, kind: 'spark' | 'debris' | 'smoke' }
+   *   A.pop(x, y, text, c)    a score that floats up    A.ring(x, y, c, r)  a shockwave ring
+   *   A.flash(c, s)           a full-screen flash
+   * The loop draws them on top of the game, inside the shake. Reduced-motion players get no shake and soft flashes.
+   */
+  let fxCtx = null, stopT = 0, shakeA = 0, shakeT = 0, shakeD = 1, flashC = null, flashT = 0, flashD = 1, fx = [];
+  const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  A.shake = (px = 6, s = 0.3) => { if (calm) return; if (px >= (shakeT > 0 ? shakeA * shakeT / shakeD : 0)) { shakeA = px; shakeT = shakeD = s; } };
+  A.hitstop = (s = 0.05) => { stopT = Math.max(stopT, s); };
+  A.flash = (c = '#fff', s = 0.15) => { flashC = c; flashT = flashD = s; };
+  A.burst = (x, y, o = {}) => {
+    const n = o.n || 14, cols = o.colors || [o.color || '#fff'], kind = o.kind || 'spark', sp = o.speed || 220;
+    for (let i = 0; i < n && fx.length < 600; i++) {
+      const a = o.angle != null ? o.angle + (Math.random() - 0.5) * (o.spread || 1.2) : Math.random() * Math.PI * 2, v = sp * (0.3 + Math.random() * 0.8), life = (o.life || 0.6) * (0.6 + Math.random() * 0.6);
+      fx.push({ k: kind, x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - (kind === 'smoke' ? 30 : 0), t: life, life, c: cols[i % cols.length],
+        s: (o.size || (kind === 'smoke' ? 10 : kind === 'debris' ? 4 : 2.5)) * (0.7 + Math.random() * 0.6), g: o.gravity != null ? o.gravity : kind === 'debris' ? 520 : kind === 'smoke' ? -20 : 0, r: Math.random() * 6, vr: (Math.random() - 0.5) * 14 });
+    }
+  };
+  A.pop = (x, y, text, c = '#fff6c2') => { fx.push({ k: 'pop', x, y, vy: -46, vx: 0, t: 0.9, life: 0.9, c, text: String(text), g: 0 }); };
+  A.ring = (x, y, c = '#fff', r = 60) => { fx.push({ k: 'ring', x, y, vx: 0, vy: 0, t: 0.35, life: 0.35, c, s: r, g: 0 }); };
+  function fxUpdate(dt) {
+    if (shakeT > 0) shakeT -= dt; if (flashT > 0) flashT -= dt;
+    for (const p of fx) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += p.g * dt; if (p.k !== 'pop') { p.vx *= p.k === 'smoke' ? 0.96 : 0.985; } if (p.r != null) p.r += p.vr * dt; p.t -= dt; }
+    if (fx.length) fx = fx.filter(p => p.t > 0);
+  }
+  function fxDraw(t, draw) {
+    const c = fxCtx;
+    if (!c) return draw(t);
+    const k = shakeT > 0 ? shakeA * (shakeT / shakeD) : 0;
+    c.save();
+    if (k) { c.fillStyle = '#000'; c.fillRect(0, 0, A.W, A.H); c.translate((Math.random() * 2 - 1) * k, (Math.random() * 2 - 1) * k); }
+    draw(t);
+    for (const p of fx) {
+      const a = Math.max(0, Math.min(1, p.t / p.life * 1.6));
+      c.globalAlpha = a;
+      if (p.k === 'pop') { c.font = '13px Silkscreen, monospace'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillStyle = '#0a0612'; c.fillText(p.text, p.x + 1, p.y + 1); c.fillStyle = p.c; c.fillText(p.text, p.x, p.y); }
+      else if (p.k === 'ring') { const q = 1 - p.t / p.life; c.strokeStyle = p.c; c.lineWidth = 3 * (1 - q) + 1; c.beginPath(); c.arc(p.x, p.y, p.s * (0.2 + q), 0, 6.29); c.stroke(); }
+      else if (p.k === 'smoke') { c.globalAlpha = a * 0.35; c.fillStyle = p.c; c.beginPath(); c.arc(p.x, p.y, p.s * (1.6 - p.t / p.life), 0, 6.29); c.fill(); }
+      else if (p.k === 'debris') { c.save(); c.translate(p.x, p.y); c.rotate(p.r); c.fillStyle = '#0a0612'; c.fillRect(-p.s / 2 - 1, -p.s / 2 - 1, p.s + 2, p.s + 2); c.fillStyle = p.c; c.fillRect(-p.s / 2, -p.s / 2, p.s, p.s); c.restore(); }
+      else { c.fillStyle = p.c; c.fillRect(p.x - p.s / 2, p.y - p.s / 2, p.s, p.s); }
+    }
+    c.globalAlpha = 1;
+    c.restore();
+    if (flashT > 0) { c.globalAlpha = Math.max(0, flashT / flashD) * (calm ? 0.2 : 0.55); c.fillStyle = flashC; c.fillRect(0, 0, A.W, A.H); c.globalAlpha = 1; }
+  }
   // Play time per game (arcade:time:<slug>, seconds) for the lobby's profile page: game time with no screen up.
   let playT = 0;
   const saveTime = () => { if (playT >= 1 && A.id !== 'game') { store.set('arcade:time:' + A.id, Math.round((+store.get('arcade:time:' + A.id) || 0) + playT)); playT = 0; } };

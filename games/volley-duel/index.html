@@ -30,8 +30,9 @@
 <script>
 (() => {
 const A = Arcade, cv = document.getElementById('cv');
-const W = 640, H = 400, PX = 24, PW = 10, PH = 70, BR = 7, WIN = 7, PS = 430, ctx = A.canvas(cv, W, H);
+const RAIL = 8, W = 640, H = 400, PX = 24, PW = 10, PH = 70, BR = 7, WIN = 7, PS = 430, ctx = A.canvas(cv, W, H);
 // err: the CPU aims within ±err of the ball, so anything past PH / 2 + BR (42) is a miss.
+const LC = '#ff7bf0', RC = '#5ee7ff';
 const CPUS = [
   { name: 'BLIP', spd: 220, err: 60, wake: 0.55 }, { name: 'ZAP', spd: 270, err: 55, wake: 0.45 }, { name: 'NOVA', spd: 320, err: 51, wake: 0.38 },
   { name: 'VOLT', spd: 380, err: 48, wake: 0.3 }, { name: 'APEX', spd: 460, err: 46, wake: 0.2 }];
@@ -61,7 +62,7 @@ function steer(p, side, up, down, dt) {
   const ty = touchY(side);
   if (ty != null) p.y += A.clamp(ty - p.y, -PS * 1.6 * dt, PS * 1.6 * dt);
   else p.y += ((down ? 1 : 0) - (up ? 1 : 0)) * PS * dt;
-  p.y = A.clamp(p.y, PH / 2, H - PH / 2);
+  p.y = A.clamp(p.y, PH / 2 + RAIL, H - PH / 2 - RAIL);
 }
 /** Where the ball will cross the right paddle, bouncing off top and bottom. */
 function predictY() {
@@ -73,7 +74,7 @@ function cpu(dt) {
   const c = CPUS[opp];
   let target = H / 2;
   if (ball && serveT <= 0 && ball.vx > 0 && ball.x > W * c.wake) target = predictY() + ball.aim;
-  R.y = A.clamp(R.y + A.clamp(target - R.y, -c.spd * dt, c.spd * dt), PH / 2, H - PH / 2);
+  R.y = A.clamp(R.y + A.clamp(target - R.y, -c.spd * dt, c.spd * dt), PH / 2 + RAIL, H - PH / 2 - RAIL);
 }
 function bat(p, px, dir) {
   if (Math.sign(ball.vx) === dir) return; // already heading away from this paddle
@@ -84,10 +85,17 @@ function bat(p, px, dir) {
   ball.sp = Math.min(760, ball.sp + 18);
   ball.vx = Math.cos(ang) * ball.sp * dir; ball.vy = Math.sin(ang) * ball.sp; ball.x = face + dir * BR; ball.aim = aimError();
   A.tone(dir > 0 ? 520 : 440, 0.05, 'square', 0.05);
-  if (dir > 0 && !two) { score += 10; A.setScore(score); }
+  ball.by = dir > 0 ? 'L' : 'R';
+  const c = dir > 0 ? LC : RC, k = ball.sp / 760;
+  A.burst(face, ball.y, { n: 10 + Math.round(k * 10), colors: [c, '#fff'], speed: 160 + k * 200, angle: dir > 0 ? 0 : Math.PI, spread: 1.6, life: 0.4 });
+  A.ring(face, ball.y, c, 26); A.shake(1 + k * 4, 0.12); p.hit = 0.18;
+  if (dir > 0 && !two) { score += 10; A.setScore(score); A.pop(face + 18, ball.y - 14, '+10', LC); }
 }
 function point(side) {
-  const p = side === 'L' ? L : R; p.s++;
+  const p = side === 'L' ? L : R; p.s++; p.pop = 0.5;
+  const gx = side === 'L' ? W - 6 : 6, c = side === 'L' ? LC : RC;
+  A.burst(gx, ball.y, { n: 36, colors: [c, '#fff', shade(c, -0.3)], speed: 320, angle: side === 'L' ? Math.PI : 0, spread: 2.4, life: 0.8 });
+  A.flash(c, 0.22); A.shake(8, 0.35); A.hitstop(0.08);
   if (!two && side === 'L') { score += 100; A.setScore(score); }
   A.tone(side === 'L' || two ? 880 : 220, 0.25, 'triangle', 0.05, 0, side === 'L' || two ? 1320 : 110);
   if (p.s >= WIN) return matchOver(side);
@@ -125,34 +133,102 @@ A.loop(dt => {
     return;
   }
   ball.x += ball.vx * dt; ball.y += ball.vy * dt;
-  if (ball.y < BR) { ball.y = BR; ball.vy = Math.abs(ball.vy); A.tone(300, 0.03, 'square', 0.03); }
-  if (ball.y > H - BR) { ball.y = H - BR; ball.vy = -Math.abs(ball.vy); A.tone(300, 0.03, 'square', 0.03); }
+  if (ball.y < BR + RAIL) { ball.y = BR + RAIL; ball.vy = Math.abs(ball.vy); A.tone(300, 0.03, 'square', 0.03); A.burst(ball.x, RAIL, { n: 6, color: '#fff', speed: 120, angle: Math.PI / 2, spread: 2, life: 0.25 }); }
+  if (ball.y > H - BR - RAIL) { ball.y = H - BR - RAIL; ball.vy = -Math.abs(ball.vy); A.tone(300, 0.03, 'square', 0.03); A.burst(ball.x, H - RAIL, { n: 6, color: '#fff', speed: 120, angle: -Math.PI / 2, spread: 2, life: 0.25 }); }
   bat(L, PX, 1); bat(R, W - PX, -1);
   trail.push({ x: ball.x, y: ball.y }); if (trail.length > 10) trail.shift();
   if (ball.x < -BR * 2) { trail = []; point('R'); }
   else if (ball.x > W + BR * 2) { trail = []; point('L'); }
 }, t => {
-  ctx.fillStyle = '#08050f'; ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = 'rgba(255,123,240,.18)'; for (let y = 8; y < H; y += 24) ctx.fillRect(W / 2 - 2, y, 4, 12);
+  ctx.drawImage(court, 0, 0);
   let l = L, r = R, b = ball;
   if (state === 'title') { // attract: a rally that plays itself
     const k = t / 1500, tri = v => Math.abs(((v % 2) + 2) % 2 - 1);
-    b = { x: PX + PW + BR + (W - 2 * (PX + PW + BR)) * tri(k), y: BR + 30 + (H - 2 * BR - 60) * tri(k * 1.37) };
+    b = { x: PX + PW + BR + (W - 2 * (PX + PW + BR)) * tri(k), y: RAIL + BR + 30 + (H - 2 * (BR + RAIL) - 60) * tri(k * 1.37), by: Math.floor(k) % 2 ? 'R' : 'L' };
     l = { y: b.y, s: 0 }; r = { y: b.y, s: 0 };
   }
-  ctx.font = '44px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(244,239,253,.85)';
-  if (state !== 'title') { ctx.fillText(l.s, W / 2 - 70, 62); ctx.fillText(r.s, W / 2 + 70, 62); }
-  ctx.font = '11px Silkscreen, monospace'; ctx.fillStyle = '#a39bc4';
-  if (state !== 'title') { ctx.fillText(two ? 'LEFT' : 'YOU', W / 2 - 70, 80); ctx.fillText(two ? 'RIGHT' : CPUS[opp].name, W / 2 + 70, 80); }
-  const paddle = (x, y, c) => { ctx.shadowColor = c; ctx.shadowBlur = 16; ctx.fillStyle = c; ctx.beginPath(); ctx.roundRect(x - PW / 2, y - PH / 2, PW, PH, 4); ctx.fill(); ctx.shadowBlur = 0; };
-  paddle(PX, l.y, '#ff7bf0'); paddle(W - PX, r.y, '#5ee7ff');
-  if (b) {
-    trail.forEach((p, i) => { ctx.globalAlpha = i / trail.length * 0.35; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(p.x, p.y, BR * (i / trail.length), 0, Math.PI * 2); ctx.fill(); });
-    ctx.globalAlpha = serveT > 0 && Math.floor(t / 120) % 2 ? 0.3 : 1;
-    ctx.shadowColor = '#fff'; ctx.shadowBlur = 14; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(b.x, b.y, BR, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0; ctx.globalAlpha = 1;
-  }
-  if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '26px Bungee, sans-serif'; ctx.fillStyle = '#ff7bf0'; ctx.fillText(msg, W / 2, H / 2 + 70); ctx.globalAlpha = 1; }
+  // goal zones glow brighter as the ball heads their way
+  if (b && b.vx) { const zone = (x, c, on) => { const g = ctx.createLinearGradient(x, 0, x + (x ? -60 : 60), 0); g.addColorStop(0, c); g.addColorStop(1, 'transparent'); ctx.globalAlpha = on ? 0.18 + Math.sin(t / 90) * 0.05 : 0.06; ctx.fillStyle = g; ctx.fillRect(x ? x - 60 : 0, RAIL, 60, H - 2 * RAIL); ctx.globalAlpha = 1; };
+    zone(0, LC, b.vx < 0); zone(W, RC, b.vx > 0); }
+  if (state !== 'title') scoreboard(l, r, t);
+  drawBat(PX, l, LC, 1, t); drawBat(W - PX, r, RC, -1, t);
+  if (b) drawBall(b, t);
+  if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '26px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#0a0612'; ctx.fillText(msg, W / 2 + 2, H / 2 + 72); ctx.fillStyle = LC; ctx.shadowColor = LC; ctx.shadowBlur = 14; ctx.fillText(msg, W / 2, H / 2 + 70); ctx.shadowBlur = 0; ctx.globalAlpha = 1; }
 });
+
+/* ---------- art ---------- */
+/** Lighten (k > 0) or darken (k < 0) a #rgb / #rrggbb colour. */
+function shade(hex, k) {
+  let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join('');
+  const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+// the court, drawn once: a dark floor with a faint grid, glowing lines, a centre circle and lit rails top and bottom
+const court = (() => {
+  const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
+  const g = x.createRadialGradient(W / 2, H / 2, 40, W / 2, H / 2, W * 0.7); g.addColorStop(0, '#1a1036'); g.addColorStop(1, '#07040f'); x.fillStyle = g; x.fillRect(0, 0, W, H);
+  x.strokeStyle = 'rgba(255,255,255,.035)'; x.lineWidth = 1;
+  for (let i = 0; i <= W; i += 32) { x.beginPath(); x.moveTo(i + .5, 0); x.lineTo(i + .5, H); x.stroke(); }
+  for (let j = 0; j <= H; j += 32) { x.beginPath(); x.moveTo(0, j + .5); x.lineTo(W, j + .5); x.stroke(); }
+  const glow = (c2, f) => { x.shadowColor = c2; x.shadowBlur = 10; x.strokeStyle = c2; f(); x.shadowBlur = 0; };
+  x.lineWidth = 2; x.globalAlpha = 0.55;
+  glow('#b48cff', () => { x.setLineDash([10, 10]); x.beginPath(); x.moveTo(W / 2, RAIL + 6); x.lineTo(W / 2, H - RAIL - 6); x.stroke(); x.setLineDash([]); x.beginPath(); x.arc(W / 2, H / 2, 52, 0, 6.29); x.stroke(); });
+  glow(LC, () => { x.beginPath(); x.moveTo(PX + 30, RAIL + 10); x.lineTo(PX + 30, H - RAIL - 10); x.stroke(); });
+  glow(RC, () => { x.beginPath(); x.moveTo(W - PX - 30, RAIL + 10); x.lineTo(W - PX - 30, H - RAIL - 10); x.stroke(); });
+  x.globalAlpha = 1;
+  x.fillStyle = 'rgba(180,140,255,.25)'; x.beginPath(); x.arc(W / 2, H / 2, 6, 0, 6.29); x.fill();
+  for (const y of [0, H - RAIL]) { // rails: dark metal with a bright edge and little lights
+    x.fillStyle = '#0a0612'; x.fillRect(0, y - (y ? 2 : 0), W, RAIL + 2);
+    const rg = x.createLinearGradient(0, y, 0, y + RAIL); rg.addColorStop(0, '#4a3e78'); rg.addColorStop(1, '#221a40'); x.fillStyle = rg; x.fillRect(0, y, W, RAIL);
+    x.fillStyle = 'rgba(255,255,255,.35)'; x.fillRect(0, y ? y : RAIL - 1, W, 1);
+    for (let i = 20; i < W; i += 40) { x.fillStyle = i < W / 2 ? LC : RC; x.globalAlpha = 0.7; x.fillRect(i, y + 3, 4, 2); x.globalAlpha = 1; }
+  }
+  return c;
+})();
+/** A hover-bat: outlined, shaded capsule with a bright core, end lights and a thruster glow behind it. */
+function drawBat(x, p, c, face, t) {
+  const y = p.y, v = p.py == null ? 0 : y - p.py; p.py = y;
+  const hit = p.hit > 0 ? (p.hit -= 1 / 60, p.hit / 0.18) : 0;
+  // thruster flame behind the bat
+  const fl = ctx.createLinearGradient(x - face * 6, 0, x - face * (22 + Math.sin(t / 40) * 4), 0); fl.addColorStop(0, c); fl.addColorStop(1, 'transparent');
+  ctx.globalAlpha = 0.5; ctx.fillStyle = fl; ctx.fillRect(Math.min(x - face * 6, x - face * 26), y - PH / 2 + 8, 20, PH - 16); ctx.globalAlpha = 1;
+  // motion streak
+  if (Math.abs(v) > 2) { ctx.globalAlpha = 0.25; ctx.fillStyle = c; ctx.fillRect(x - PW / 2, y - PH / 2 - Math.max(0, -v) * 3, PW, PH + Math.abs(v) * 3); ctx.globalAlpha = 1; }
+  ctx.fillStyle = '#0a0612'; ctx.beginPath(); ctx.roundRect(x - PW / 2 - 2, y - PH / 2 - 2, PW + 4, PH + 4, 7); ctx.fill();
+  ctx.shadowColor = c; ctx.shadowBlur = 16 + hit * 20;
+  const g = ctx.createLinearGradient(x - PW / 2, 0, x + PW / 2, 0); g.addColorStop(0, shade(c, -0.45)); g.addColorStop(0.45, hit ? '#fff' : c); g.addColorStop(1, shade(c, -0.3));
+  ctx.fillStyle = g; ctx.beginPath(); ctx.roundRect(x - PW / 2, y - PH / 2, PW, PH, 5); ctx.fill(); ctx.shadowBlur = 0;
+  ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.fillRect(x - 1, y - PH / 2 + 8, 2, PH - 16);
+  ctx.fillStyle = '#fff'; ctx.fillRect(x - 2, y - PH / 2 + 3, 4, 3); ctx.fillRect(x - 2, y + PH / 2 - 6, 4, 3);
+}
+/** The ball: a white-hot core in the colour of whoever hit it last, with a tapering trail that grows with speed. */
+function drawBall(b, t) {
+  const c = b.by === 'R' ? RC : LC;
+  if (trail.length > 1) {
+    for (let i = 1; i < trail.length; i++) { const k = i / trail.length; ctx.strokeStyle = c; ctx.globalAlpha = k * 0.5; ctx.lineWidth = BR * 2 * k; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(trail[i - 1].x, trail[i - 1].y); ctx.lineTo(trail[i].x, trail[i].y); ctx.stroke(); }
+    ctx.globalAlpha = 1;
+  }
+  ctx.globalAlpha = serveT > 0 && Math.floor(t / 120) % 2 ? 0.35 : 1;
+  ctx.shadowColor = c; ctx.shadowBlur = 20;
+  ctx.fillStyle = '#0a0612'; ctx.beginPath(); ctx.arc(b.x, b.y, BR + 2, 0, 6.29); ctx.fill();
+  const g = ctx.createRadialGradient(b.x - 2, b.y - 2, 1, b.x, b.y, BR); g.addColorStop(0, '#fff'); g.addColorStop(0.5, shade(c, 0.6)); g.addColorStop(1, c);
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(b.x, b.y, BR, 0, 6.29); ctx.fill(); ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+}
+/** The scoreboard: a dark panel with each side's score in its colour, and the names under them. */
+function scoreboard(l, r, t) {
+  const x0 = W / 2 - 110, y0 = RAIL + 10;
+  ctx.fillStyle = 'rgba(10,6,18,.78)'; ctx.beginPath(); ctx.roundRect(x0, y0, 220, 62, 10); ctx.fill();
+  ctx.strokeStyle = 'rgba(180,140,255,.4)'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.textAlign = 'center';
+  for (const [p, c, cx, name] of [[l, LC, W / 2 - 55, two ? 'LEFT' : 'YOU'], [r, RC, W / 2 + 55, two ? 'RIGHT' : CPUS[opp].name]]) {
+    const pop = p.pop > 0 ? (p.pop -= 1 / 60, 1 + p.pop * 0.8) : 1;
+    ctx.save(); ctx.translate(cx, y0 + 34); ctx.scale(pop, pop);
+    ctx.font = '34px Bungee, sans-serif'; ctx.fillStyle = '#0a0612'; ctx.fillText(p.s, 2, 2); ctx.shadowColor = c; ctx.shadowBlur = 12; ctx.fillStyle = c; ctx.fillText(p.s, 0, 0); ctx.shadowBlur = 0; ctx.restore();
+    ctx.font = '10px Silkscreen, monospace'; ctx.fillStyle = '#a39bc4'; ctx.fillText(name, cx, y0 + 55);
+  }
+  ctx.fillStyle = 'rgba(255,255,255,.4)'; ctx.font = '18px Bungee, sans-serif'; ctx.fillText('·', W / 2, y0 + 30);
+  ctx.font = '9px Silkscreen, monospace'; ctx.fillStyle = '#6a6290'; ctx.fillText(`FIRST TO ${WIN}`, W / 2, y0 + 55);
+}
 /* Attract demo: the left paddle follows the ball when it's coming, and drifts back to the middle when it isn't. */
 A.attract({
   start: () => newGame(false),
