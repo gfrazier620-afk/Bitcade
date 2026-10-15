@@ -7,11 +7,11 @@
  *
  * Adding a game? Add its slug to GAMES and bump VERSION. The smoke tests check that GAMES matches games/.
  */
-const VERSION = 'bitcade-v18', RUNTIME = 'bitcade-runtime';
+const VERSION = 'bitcade-v19', RUNTIME = 'bitcade-runtime';
 const GAMES = ['neon-noodle', 'wallbuster', 'star-siege', 'rock-rift', 'stackdown', 'back-alley-brawl', 'circuit-chase',
   'highrise-handyman', 'nitro-lane', 'volley-duel', 'crater-lander', 'sky-shield', 'hedge-hop', 'scaffold-scramble', 'swarm-strike', 'garden-gunner', 'cube-hopper',
   'light-trail', 'wing-duel', 'twin-blast', 'mole-patrol', 'turbo-tour', 'raptor-ridge', 'marsh-marksman', 'blip-sports'];
-const SHELL = ['./', 'manifest.json', 'shared/arcade.js', 'shared/arcade.css', 'shared/world.js', 'shared/badges.js', 'shared/chip.js', 'shared/prizes.js', 'shared/floor.js', 'shared/profile.js', 'shared/save.js',
+const SHELL = ['./', 'manifest.json', 'shared/arcade.js', 'shared/arcade.css', 'shared/world.js', 'shared/badges.js', 'shared/chip.js', 'shared/boot.js', 'shared/prizes.js', 'shared/floor.js', 'shared/profile.js', 'shared/save.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', ...GAMES.map(g => `games/${g}/`),
   ...GAMES.flatMap(g => [1, 2].map(n => `icons/screens/${g}-${n}.webp`))]; // the lobby's cabinet footage
 

@@ -53,9 +53,9 @@ async function open(path, opts = {}) {
   return { page, errors, close: () => ctx.close() };
 }
 const wait = ms => new Promise(r => setTimeout(r, ms));
-/** Get past the lobby's boot sequence: a key skips the BIOS part, another leaves the title. */
+/** Get past the lobby's boot sequence: keys power it on, skip the BIOS and the flight, put a coin in and hurry the doors. */
 async function skipBoot(page) {
-  for (let i = 0; i < 4 && await page.isVisible('#boot'); i++) { await page.keyboard.press('KeyX'); await wait(350); }
+  for (let i = 0; i < 6 && await page.isVisible('#boot'); i++) { await page.keyboard.press('KeyX'); await wait(350); }
   await page.waitForSelector('#boot', { state: 'hidden' });
 }
 
@@ -83,25 +83,41 @@ console.log('\nBoot sequence');
 {
   const { page, errors, close } = await open('/');
   const gone = ms => page.waitForSelector('#boot', { state: 'hidden', timeout: ms }).then(() => true, () => false);
-  check(await page.isVisible('#boot'), 'the boot sequence plays on the first visit');
-  const bios = await page.waitForFunction(() => /CPU/.test(document.getElementById('bootPost').textContent), null, { timeout: 4000 }).then(() => true, () => false);
-  check(bios, 'the BIOS check types out');
+  const cls = c => page.evaluate(c => document.getElementById('boot').classList.contains(c), c);
+  const until = (c, ms) => page.waitForFunction(c => document.getElementById('boot').classList.contains(c), c, { timeout: ms }).then(() => true, () => false);
+  check(await page.isVisible('#boot') && await cls('gate'), 'the boot sequence plays on the first visit, starting at the power switch');
+  await wait(600);
+  check(await cls('gate') && !(await page.textContent('#bootPost')).trim(), 'it waits at the power switch');
   await page.keyboard.press('Space');
-  check(await gone(1500), 'any key skips it');
+  const bios = await page.waitForFunction(() => /CPU/.test(document.getElementById('bootPost').textContent), null, { timeout: 4000 }).then(() => true, () => false);
+  check(bios, 'a key powers it on and the BIOS check types out');
+  await page.keyboard.press('Space');
+  check(await until('scene', 1500) && !(await cls('slam')), 'a key skips the BIOS to the flight over the grid');
+  await wait(300);
+  const drawn = await page.evaluate(() => { const c = document.getElementById('bootCv'); return c.width > 0 && c.getContext('2d').getImageData(c.width / 2, c.height * 0.8, 1, 1).data[3] > 0; });
+  check(drawn, 'the flight draws on its canvas');
+  await page.keyboard.press('Space');
+  check(await until('slam', 1500), 'a key lands the logo');
+  await page.keyboard.press('Space');
+  check(await until('coined', 1500), 'a key on the title puts a coin in');
+  check(await until('shut', 3000), 'the doors shut');
+  check(await page.waitForFunction(() => document.querySelectorAll('.door.l .ds-word span.lit').length === 7, null, { timeout: 3000 }).then(() => true, () => false), 'the sign lights letter by letter');
+  check(await gone(4000), 'the doors open on the lobby');
   check(!(await page.evaluate(() => document.documentElement.classList.contains('booting'))), 'the lobby can scroll again afterwards');
   await page.reload();
   check(await page.isHidden('#boot'), 'it plays once per visit');
   await page.goto(BASE + '/?boot');
   check(await page.isVisible('#boot'), '?boot replays it');
-  const titled = await page.waitForFunction(() => document.getElementById('boot').classList.contains('scene'), null, { timeout: 8000 }).then(() => true, () => false);
-  await wait(3000);
-  check(titled && !!(await page.$('#boot')), 'left alone, it waits on the title screen');
   await page.mouse.click(200, 200);
-  check(await gone(1500), 'a click on the title opens the lobby');
+  const titled = await until('slam', 15000);
+  await wait(1500);
+  check(titled && await page.isVisible('#boot'), 'left alone after power-on, it flies in, lands the logo and waits on the title');
+  await page.mouse.click(200, 200); await wait(300); await page.mouse.click(200, 200);
+  check(await gone(1500), 'a click puts a coin in, and another hurries it into the lobby');
   // a controller button works too
   await page.goto(BASE + '/?boot');
-  await page.evaluate(() => { const gp = { buttons: Array.from({ length: 17 }, () => ({ pressed: false })) }; Object.defineProperty(navigator, 'getGamepads', { value: () => [gp], configurable: true }); setTimeout(() => { gp.buttons[0].pressed = true; }, 300); });
-  check(await gone(2500), 'a controller button skips it');
+  await page.evaluate(() => { const gp = { buttons: Array.from({ length: 17 }, () => ({ pressed: false })) }; Object.defineProperty(navigator, 'getGamepads', { value: () => [gp], configurable: true }); setInterval(() => { gp.buttons[0].pressed = !gp.buttons[0].pressed; }, 300); });
+  check(await gone(8000), 'controller buttons work through it');
   check(!errors.length, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
   await close();
   // with reduced motion the animations are off, so everything must still be visible, and it ends quickly
@@ -126,7 +142,7 @@ console.log('\nAttract mode');
   const hof = await page.waitForFunction(() => document.getElementById('boot').classList.contains('hof'), null, { timeout: 9000 }).then(() => true, () => false);
   check(hof && /STACKDOWN/.test(await page.textContent('#bootHof')) && /4,321/.test(await page.textContent('#bootHof')), 'then it shows a high-score screen');
   await page.keyboard.press('KeyA');
-  check(await page.waitForSelector('#boot', { state: 'hidden', timeout: 1500 }).then(() => true, () => false), 'any key returns to the lobby');
+  check(await page.waitForSelector('#boot', { state: 'hidden', timeout: 6000 }).then(() => true, () => false), 'any key returns to the lobby (coin, doors)');
   check(!errors.length, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
   await close();
 }
