@@ -182,7 +182,7 @@ STAGES.forEach(st => {
   });
 });
 
-let state = 'title', segments = [], cars = [], stage = 0, position = 0, speed = 0, playerX = 0, timeLeft = 60, score = 0, nitro = 3, boostT = 0, crashT = 0, stageCrashes = 0;
+let state = 'title', segments = [], cars = [], stage = 0, position = 0, speed = 0, playerX = 0, timeLeft = 60, score = 0, nitro = 3, boostT = 0, crashT = 0, stageCrashes = 0, bounceTo = null;
 let skyX = 0, nearX = 0, msg = '', msgT = 0, finishIdx = 0, finishZ = 0, engT = 0, countT = 0, steer = 0;
 
 /* ---------- building a stage ---------- */
@@ -228,7 +228,7 @@ const findSeg = z => segments[Math.min(segments.length - 1, Math.max(0, Math.flo
 
 /* ---------- game flow ---------- */
 function newGame() {
-  stage = 0; score = 0; A.setScore(0); position = 0; speed = 0; playerX = 0; nitro = 3; boostT = 0; crashT = 0; stageCrashes = 0;
+  stage = 0; score = 0; A.setScore(0); position = 0; speed = 0; playerX = 0; nitro = 3; boostT = 0; crashT = 0; stageCrashes = 0; bounceTo = null;
   timeLeft = A.easy ? 80 : 60; buildStage(0); state = 'play'; countT = 3; say('COAST');
 }
 function say(t) { msg = t; msgT = 2; }
@@ -266,17 +266,18 @@ A.loop(dt => {
   const left = A.held('ArrowLeft', 'KeyA'), right = A.held('ArrowRight', 'KeyD'), gas = A.held('ArrowUp', 'KeyW'), brake = A.held('ArrowDown', 'KeyS');
   position += dt * speed;
   steer = (right ? 1 : 0) - (left ? 1 : 0);
-  if (crashT > 0) crashT -= dt; else playerX += steer * dx;
+  if (crashT > 0) { crashT -= dt; if (bounceTo !== null) { playerX += (bounceTo - playerX) * Math.min(1, dt * 9); if (crashT <= 0) bounceTo = null; } }
+  else playerX += steer * dx;
   playerX -= dx * sp * seg.curve * CENTRIFUGAL;
   const top = boostT > 0 ? MAX * 1.35 : MAX;
   if (boostT > 0) { boostT -= dt; speed += ACCEL * 1.8 * dt; }
   else if (gas) speed += ACCEL * dt; else if (brake) speed += BRAKE * dt; else speed += DECEL * dt;
-  if (Math.abs(playerX) > 1) {
+  if (Math.abs(playerX) > 1 && crashT <= 0) {
     if (speed > OFF_LIMIT) speed += OFF_DECEL * dt;
     if (speed > 1000 && Math.random() < 0.5) A.burst(W / 2 + (Math.random() - 0.5) * 120, H - 20, { n: 1, kind: 'smoke', color: STAGES[stage % 4].grass[0], speed: 60, angle: -Math.PI / 2, spread: 1.6, life: 0.5, size: 8 });
     for (const s of seg.sprites) {
       if (s.t === 'gate') continue; const ww = PROPS[s.t].ww / ROAD, cx = s.offset + (s.offset < 0 ? -ww / 2 : ww / 2);
-      if (Math.abs(playerX - cx) < (CAR_W + ww) / 2 * 0.8) { speed = MAX / 6; position = seg.p1.world.z - PZ; crash(); break; }
+      if (Math.abs(playerX - cx) < (CAR_W + ww) / 2 * 0.8) { speed = MAX / 6; bounceTo = Math.sign(playerX) * 0.7; crash(); break; }
     }
   }
   for (const c of cars) {
@@ -284,7 +285,7 @@ A.loop(dt => {
     const rel = c.z - (position + PZ);
     if (!c.passed && rel < 0) { c.passed = true; score += 100; A.pop(W / 2, H - 120, '+100', '#ffd23d'); A.tone(880, 0.05, 'square', 0.025); }
     else if (c.passed && rel > 0) c.passed = false;
-    if (speed > c.speed && rel > -SEG * 0.4 && rel < SEG * 0.8 && Math.abs(playerX - c.offset) < (CAR_W + c.w) / 2 * 0.85) { speed = c.speed * (c.speed / speed); position = c.z - PZ - SEG; crash(); }
+    if (crashT <= 0 && speed > c.speed && rel > -SEG * 0.4 && rel < SEG * 0.8 && Math.abs(playerX - c.offset) < (CAR_W + c.w) / 2 * 0.85) { speed = c.speed * (c.speed / speed); position = c.z - PZ - SEG; crash(); }
   }
   cars = cars.filter(c => c.z > position - 2000 && c.z < finishZ);
   for (let k = 0; cars.length < carCount() && k < 4; k++) spawnCar(false);

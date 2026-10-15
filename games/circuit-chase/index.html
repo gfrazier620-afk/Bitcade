@@ -105,8 +105,13 @@ function ready() { state = 'ready'; phaseT = 1.8; A.jingle([523, 659, 784, 659, 
 function pause() { if (state !== 'play' && state !== 'ready') return; const prev = state; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = prev }); }
 function want(d) {
   if (!player) return; const v = DIRS[d]; player.want = v;
-  if ((player.dir.x || player.dir.y) && v.x === -player.dir.x && v.y === -player.dir.y) reverse(player);
+  const e = player, d0 = e.dir;
+  if (!(d0.x || d0.y)) return;
+  if (v.x === -d0.x && v.y === -d0.y) return reverse(e);
+  // Pressed a turn just after passing a junction: take it anyway (cut the corner) instead of waiting for the next one.
+  if (d0.x * v.x + d0.y * v.y === 0 && e.p < 0.35 && passable(e.tx + v.x, e.ty + v.y)) { e.dir = v; e.face = v; e.nx = e.tx + v.x; e.ny = e.ty + v.y; e.p *= 0.5; }
 }
+const HELD = { up: ['ArrowUp', 'KeyW'], down: ['ArrowDown', 'KeyS'], left: ['ArrowLeft', 'KeyA'], right: ['ArrowRight', 'KeyD'] };
 function reverse(e) {
   if (!(e.dir.x || e.dir.y)) return;
   const tx = e.nx, ty = e.ny; e.nx = e.tx; e.ny = e.ty; e.tx = tx; e.ty = ty; e.p = 1 - e.p; e.dir = { x: -e.dir.x, y: -e.dir.y };
@@ -186,6 +191,7 @@ A.loop(dt => {
   if (frightT > 0) { frightT -= dt; if (frightT <= 0) viruses.forEach(v => v.fright = false); }
   else { modeT -= dt; if (modeT <= 0) { modeIdx = Math.min(modeIdx + 1, SCHEDULE.length - 1); modeT = SCHEDULE[modeIdx][1]; viruses.forEach(v => { if (!v.home && !v.eaten && !v.exiting) reverse(v); }); } }
   if (bonus) { bonus.t -= dt; if (bonus.t <= 0) bonus = null; }
+  { const h = Object.keys(HELD).filter(d => A.held(...HELD[d])); if (h.length === 1 && player.want !== DIRS[h[0]]) want(h[0]); }
   advance(player, Math.min(8.6, 7.4 + level * 0.15), dt, playerDecide, playerArrive);
   if (state !== 'play') return;
   for (const v of viruses) {
