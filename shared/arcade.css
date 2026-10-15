@@ -225,3 +225,8 @@ body.skin-neon .cpanel{background:linear-gradient(180deg,#22e0ff 0 3px,#140a26 3
 }
 /* phones: five header buttons on one row */
 @media (max-width:440px){.toggles{gap:4px}.toggles .mute{padding:4px 5px;font-size:9.5px;letter-spacing:0}.bar .back{font-size:11px}}
+
+/* ---------- title screens: an animated logo (drawn by arcade.js) over the game's own attract scene ---------- */
+.overlay.title{background:linear-gradient(180deg,rgba(6,4,16,.25) 0%,rgba(6,4,16,.55) 30%,rgba(6,4,16,.84) 55%);backdrop-filter:none}
+.overlay .logo{width:min(100%,560px);height:auto;flex:none;filter:drop-shadow(0 6px 18px rgba(0,0,0,.55))}
+.sr{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}

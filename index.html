@@ -39,7 +39,12 @@ body{display:block;overflow-x:hidden;
 .cab-top span{font-family:var(--f-pixel);font-size:11px;color:var(--muted)}
 .cab-screen{background:#05040c;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;border-bottom:1px solid var(--line);position:relative}
 .cab-screen canvas{width:46%;height:auto;image-rendering:pixelated}
-.cab-screen::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(0deg,rgba(255,255,255,.03) 0 1px,transparent 1px 3px);pointer-events:none}
+/* footage from the game's own attract demo (tools/make-screens.mjs): two frames that alternate, over the pixel icon */
+.cab-screen .shot{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 35%;transition:opacity .35s}
+.cab-screen .shot.two{opacity:0}
+.cab-screen.f2 .shot.two{opacity:1}
+.cab-screen::before{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;background:radial-gradient(ellipse at 30% 20%,rgba(255,255,255,.10),transparent 45%),radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,.45))}
+.cab-screen::after{content:"";position:absolute;inset:0;z-index:1;background:repeating-linear-gradient(0deg,rgba(255,255,255,.03) 0 1px,transparent 1px 3px);pointer-events:none}
 .cab-body{padding:12px 14px 14px;display:flex;flex-direction:column;gap:10px;flex:1}
 .cab-body p{margin:0;font-size:14px;color:var(--muted);line-height:1.4}
 .cab-foot{margin-top:auto;display:flex;justify-content:space-between;align-items:center;font-family:var(--f-pixel);font-size:11px;color:var(--muted)}
@@ -368,13 +373,14 @@ GAMES.forEach(g => {
   badgesGot += bd.got; badgesAll += bd.all;
   const a = document.createElement('a');
   a.className = 'cab'; a.href = `games/${g.slug}/`; a.style.setProperty('--c', g.c);
-  a.innerHTML = `<div class="cab-top"><h2></h2><span></span></div><div class="cab-screen"><canvas width="12" height="8"></canvas></div>
+  a.innerHTML = `<div class="cab-top"><h2></h2><span></span></div><div class="cab-screen"><canvas width="12" height="8"></canvas><img class="shot" alt="" loading="lazy" src="icons/screens/${g.slug}-1.webp"><img class="shot two" alt="" loading="lazy" src="icons/screens/${g.slug}-2.webp"></div>
     <div class="cab-body"><p></p><div class="cab-foot"><span>${g.label || 'BEST'} <b>${who ? who + ' ' : ''}${best ? best.toLocaleString() : '—'}</b></span><span class="bd" title="Badges">★ ${bd.got}/${bd.all}</span><span class="play">PLAY ▶</span></div></div>`;
   a.querySelector('h2').textContent = g.name; a.querySelector('.cab-top span').textContent = g.kind.toUpperCase(); a.querySelector('p').textContent = g.blurb;
   if (g.daily) { const chip = document.createElement('b'); chip.className = 'chip'; chip.textContent = 'DAILY'; chip.title = 'Has a daily challenge'; a.querySelector('.cab-top').prepend(chip); }
   if (window.WEEKLY && WEEKLY.game() === g.slug) a.classList.add('feat');
   const cx = a.querySelector('canvas').getContext('2d');
-  paint(cx, g.px); screens.push({ cx, g, f: 0 });
+  paint(cx, g.px); screens.push({ cx, g, f: 0, scr: a.querySelector('.cab-screen'), f2: 0 });
+  a.querySelectorAll('.shot').forEach(img => img.addEventListener('error', () => img.remove())); // offline before it was cached: the pixel icon shows
   floor.appendChild(a);
   g.el = a;
 });
@@ -420,7 +426,10 @@ import('./shared/world.js').then(w => {
 if (!matchMedia('(prefers-reduced-motion: reduce)').matches) setInterval(() => {
   if (document.hidden) return;
   const now = performance.now();
-  screens.forEach((s, i) => { const f = Math.floor((now + i * 170) / 520) % 2; if (f !== s.f) { s.f = f; paint(s.cx, f ? s.g.px2 : s.g.px); } });
+  screens.forEach((s, i) => {
+    const f = Math.floor((now + i * 170) / 520) % 2; if (f !== s.f) { s.f = f; paint(s.cx, f ? s.g.px2 : s.g.px); }
+    const f2 = Math.floor((now + i * 290) / 1700) % 2; if (f2 !== s.f2) { s.f2 = f2; s.scr.classList.toggle('f2', !!f2); }
+  });
 }, 60);
 document.getElementById('stats').innerHTML = `<span>CABINETS <b>${GAMES.length}</b></span><span>TRIED <b>${played}</b></span><span>GAMES PLAYED <b>${total}</b></span><span>BADGES <b>${badgesGot}/${badgesAll}</b></span><span>TICKETS <b id="tixStat"></b></span>`;
 // Tickets and the prize counter (shared/prizes.js), and the walkable arcade floor (shared/floor.js).

@@ -170,25 +170,74 @@
   /* ---------- sound ---------- */
   let ac = null;
   A.muted = store.get('arcade:muted') === '1';
+  /*
+   * Sound effects go through one bus: a compressor (so stacked sounds never clip) with a short echo send, like a
+   * cabinet speaker in a room. Square waves are softened and thickened; long noises become filtered explosions
+   * with a bass thump, short ones crisp hits.
+   */
+  let bus = null, echo = null, noiseBuf = null;
+  function buildBus() {
+    const comp = ac.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 4; comp.attack.value = 0.003; comp.release.value = 0.15;
+    comp.connect(ac.destination);
+    bus = ac.createGain(); bus.gain.value = 1; bus.connect(comp);
+    const dl = ac.createDelay(0.3), fb = ac.createGain(), wet = ac.createGain(), lp = ac.createBiquadFilter();
+    dl.delayTime.value = 0.085; fb.gain.value = 0.22; wet.gain.value = 0.16; lp.type = 'lowpass'; lp.frequency.value = 2400;
+    echo = ac.createGain(); echo.connect(dl); dl.connect(lp).connect(fb).connect(dl); lp.connect(wet).connect(comp);
+    const n = ac.sampleRate * 2; noiseBuf = ac.createBuffer(1, n, ac.sampleRate); const ch = noiseBuf.getChannelData(0); for (let i = 0; i < n; i++) ch[i] = Math.random() * 2 - 1;
+  }
+  const out = node => { node.connect(bus); node.connect(echo); };
   A.unlock = () => {
-    if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+    if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); buildBus(); } catch (e) {} }
     if (ac && ac.state === 'suspended') ac.resume();
   };
   A.tone = (f, d = 0.06, type = 'square', v = 0.04, when = 0, slideTo) => {
     if (A.muted || !ac || A.demo) return;
-    const t = ac.currentTime + when, o = ac.createOscillator(), g = ac.createGain();
-    o.type = type; o.frequency.setValueAtTime(f, t);
-    if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + d);
-    g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
-    o.connect(g).connect(ac.destination); o.start(t); o.stop(t + d + 0.03);
+    const t = ac.currentTime + when, g = ac.createGain(), oscs = [ac.createOscillator()], thick = type === 'square' || type === 'sawtooth';
+    if (thick) { const o2 = ac.createOscillator(); o2.detune.value = 9; oscs.push(o2); }
+    oscs.forEach(o => { o.type = type; o.frequency.setValueAtTime(f, t); if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + d); });
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+    let node = g;
+    if (thick) { const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 5200; g.connect(lp); node = lp; }
+    oscs.forEach((o, i) => { const k = ac.createGain(); k.gain.value = i ? 0.45 : 1; o.connect(k).connect(g); o.start(t); o.stop(t + d + 0.03); });
+    out(node);
   };
   A.noise = (d = 0.2, v = 0.06, when = 0) => {
     if (A.muted || !ac || A.demo) return;
-    const len = Math.floor(ac.sampleRate * d), buf = ac.createBuffer(1, len, ac.sampleRate), ch = buf.getChannelData(0);
-    for (let i = 0; i < len; i++) ch[i] = (Math.random() * 2 - 1) * (1 - i / len);
-    const s = ac.createBufferSource(), g = ac.createGain(); s.buffer = buf; g.gain.value = v;
-    s.connect(g).connect(ac.destination); s.start(ac.currentTime + when);
+    const t = ac.currentTime + when, src = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+    src.buffer = noiseBuf; src.loop = true;
+    if (d >= 0.25) { f.type = 'lowpass'; f.frequency.setValueAtTime(5000, t); f.frequency.exponentialRampToValueAtTime(260, t + d); } // a rumbling blast
+    else { f.type = 'bandpass'; f.frequency.value = 2600; f.Q.value = 0.6; }                                                        // a crisp hit
+    g.gain.setValueAtTime(v * 1.4, t); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+    src.connect(f).connect(g); out(g); src.start(t, Math.random()); src.stop(t + d + 0.05);
+    if (d >= 0.3) thump(Math.min(0.12, v * 1.6), t);
   };
+  /** A sub-bass thump: the low end of explosions and heavy hits. */
+  function thump(v = 0.08, t) {
+    if (A.muted || !ac || A.demo) return;
+    if (t == null) t = ac.currentTime;
+    const o = ac.createOscillator(), g = ac.createGain(); o.type = 'sine';
+    o.frequency.setValueAtTime(120, t); o.frequency.exponentialRampToValueAtTime(32, t + 0.35);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+    o.connect(g); g.connect(bus); o.start(t); o.stop(t + 0.45);
+  }
+  let thumpAt = 0;
+  /** The coin drop when a run starts: two bright chimes, a metallic clink and the mechanism clunking. */
+  A.coin = () => {
+    if (A.muted || !ac) return;
+    A.tone(988, 0.07, 'square', 0.045); A.tone(1319, 0.22, 'square', 0.045, 0.07); A.tone(2637, 0.05, 'triangle', 0.03, 0.02);
+    A.noise(0.04, 0.05, 0.16); A.tone(140, 0.08, 'triangle', 0.06, 0.17, 70);
+  };
+  /** Named effects for games: A.sfx('pickup' | 'powerup' | 'hurt' | 'boom' | 'laser' | 'jump' | 'select'). */
+  const SFX = {
+    pickup: () => A.jingle([880, 1175, 1568], 0.045, 'triangle', 0.045),
+    powerup: () => { A.tone(300, 0.35, 'square', 0.035, 0, 1200); A.jingle([1568, 2093], 0.06, 'triangle', 0.03); },
+    hurt: () => { A.tone(420, 0.35, 'sawtooth', 0.05, 0, 80); A.noise(0.18, 0.05); },
+    boom: () => { A.noise(0.6, 0.09); },
+    laser: () => A.tone(1500, 0.09, 'square', 0.025, 0, 260),
+    jump: () => A.tone(300, 0.12, 'square', 0.03, 0, 760),
+    select: () => A.tone(660, 0.03, 'square', 0.03)
+  };
+  A.sfx = name => { const f = SFX[name]; if (f) f(); };
   A.jingle = (notes, step = 0.1, type = 'square', v = 0.045) => notes.forEach((f, i) => f && A.tone(f, step * 0.9, type, v, i * step));
 
   /* ---------- input ---------- */
@@ -330,7 +379,10 @@
    */
   let fxCtx = null, stopT = 0, shakeA = 0, shakeT = 0, shakeD = 1, flashC = null, flashT = 0, flashD = 1, fx = [];
   const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  A.shake = (px = 6, s = 0.3) => { if (calm) return; if (px >= (shakeT > 0 ? shakeA * shakeT / shakeD : 0)) { shakeA = px; shakeT = shakeD = s; } };
+  A.shake = (px = 6, s = 0.3) => {
+    if (px >= 5 && ac && performance.now() - thumpAt > 120) { thumpAt = performance.now(); thump(Math.min(0.14, px / 80)); } // big shakes get bass, even with motion reduced
+    if (calm) return; if (px >= (shakeT > 0 ? shakeA * shakeT / shakeD : 0)) { shakeA = px; shakeT = shakeD = s; }
+  };
   A.hitstop = (s = 0.05) => { stopT = Math.max(stopT, s); };
   A.flash = (c = '#fff', s = 0.15) => { flashC = c; flashT = flashD = s; };
   A.burst = (x, y, o = {}) => {
@@ -380,11 +432,11 @@
   let goFn = null, altFn = null, goLabel = '', entry = null, shown = null; // shown: { top, hi, day } for the table
   const overlayOpen = () => { const o = $('ov'); return o && !o.hidden; };
   const startsRun = () => !!shown; // title and game-over screens list scores; the pause screen doesn't
-  const overlayGo = () => { if (entry) return saveEntry(); const f = goFn; if (!f) return; if (startsRun()) runEasy = A.easy; A.hideOverlay(); f(); };
+  const overlayGo = () => { if (entry) return saveEntry(); const f = goFn; if (!f) return; if (startsRun()) { runEasy = A.easy; A.coin(); } A.hideOverlay(); f(); };
   const music = () => window.Chip; // shared/chip.js, when the page loads it
-  const overlayAlt = () => { const f = altFn; if (!f) return; if (startsRun()) runEasy = A.easy; A.hideOverlay(); f(); };
+  const overlayAlt = () => { const f = altFn; if (!f) return; if (startsRun()) { runEasy = A.easy; A.coin(); } A.hideOverlay(); f(); };
   let alt2Fn = null;
-  const overlayAlt2 = () => { const f = alt2Fn; if (!f) return; if (startsRun()) runEasy = A.easy; A.hideOverlay(); f(); };
+  const overlayAlt2 = () => { const f = alt2Fn; if (!f) return; if (startsRun()) { runEasy = A.easy; A.coin(); } A.hideOverlay(); f(); };
   /**
    * Show the overlay. alt: { btn, onGo } adds a second button (gamepad Y), alt2 a third (gamepad X). scores: true lists the top 10 (title screens),
    * and daily: true adds today's daily-challenge board to it. Called right after A.submit, it also asks for initials
@@ -396,6 +448,7 @@
     const o = $('ov'), res = lastResult; lastResult = null;
     const canShare = res && res.s > 0 && !res.easy, isTitle = scores && !res;
     if (isTitle) titleArgs = args;
+    o.classList.toggle('title', !!isTitle);
     clearInterval(contT);
     o.innerHTML = (isTitle && A.featured() ? `<div class="weekly">★ WEEKLY TOURNAMENT · ENDS IN ${WK.leftText()}</div>` : '') + `<h2></h2>${big ? '<div class="big"></div>' : ''}${sub ? '<p></p>' : ''}` +
       (res && res.easy ? '<div class="tix easy">EASY MODE · SCORE NOT RECORDED</div>' : isTitle && A.easy ? '<div class="tix easy">EASY MODE ON · SCORES WON\u2019T COUNT</div>' : '') +
@@ -405,6 +458,7 @@
       (canShare ? '<button class="share">Share score</button>' : '') + (isTitle ? '<div class="credit">FREE PLAY · CREDIT 99</div>' : '');
     if (canShare) { const sb = o.querySelector('.share'); sb.addEventListener('click', () => shareScore(res.s, res.day && res.day.d, sb)); }
     o.querySelector('h2').textContent = title;
+    if (isTitle && A.id !== 'game') { const lc = document.createElement('canvas'); lc.className = 'logo'; lc.setAttribute('aria-hidden', 'true'); o.querySelector('h2').before(lc); o.querySelector('h2').classList.add('sr'); startLogo(lc, title); }
     if (big) o.querySelector('.big').textContent = big;
     if (sub) o.querySelector('p').innerHTML = sub;
     o.querySelector('.go').addEventListener('click', () => { A.unlock(); overlayGo(); });
@@ -447,6 +501,83 @@
     }, 1000);
   }
   A.overlayOpen = overlayOpen;
+
+  /*
+   * Title logos: the game's name drawn as an animated logo on its title screen, in one of five styles picked per game
+   * (block: chunky extruded letters; neon: glowing tubes; chrome: polished metal with a coloured side; pixel: stepped
+   * pixel type; retro: a synthwave sunset fill with cut lines). A light sweeps across and sparkles twinkle.
+   */
+  const LOGOS = {
+    'neon-noodle': ['neon'], wallbuster: ['block'], 'star-siege': ['pixel'], 'rock-rift': ['chrome'], stackdown: ['retro'],
+    'back-alley-brawl': ['block', -0.16], 'circuit-chase': ['neon'], 'highrise-handyman': ['block'], 'nitro-lane': ['chrome', -0.22],
+    'volley-duel': ['neon'], 'crater-lander': ['chrome'], 'sky-shield': ['retro'], 'hedge-hop': ['block'], 'scaffold-scramble': ['block'],
+    'swarm-strike': ['pixel'], 'garden-gunner': ['block'], 'cube-hopper': ['retro'], 'light-trail': ['neon', -0.12], 'wing-duel': ['chrome'],
+    'twin-blast': ['neon'], 'mole-patrol': ['block']
+  };
+  const tint = (hex, k) => {
+    let h = hex.replace('#', ''); if (h.length === 3) h = [...h].map(c => c + c).join('');
+    const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
+    return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+  };
+  function startLogo(cv, text) {
+    const [style, skew = 0] = LOGOS[A.id] || ['block'], col = (getComputedStyle(document.body).getPropertyValue('--game') || '#5ee7ff').trim();
+    const pixel = style === 'pixel', font = s2 => pixel ? `${s2}px Silkscreen, monospace` : `${s2}px Bungee, sans-serif`;
+    const S = 2, W2 = 560 * S, x = cv.getContext('2d'), L = document.createElement('canvas'); // L: the letters' face layer, reused
+    let lines = [text], size = 0;
+    const layout = () => { // the biggest size that fits, on one line or split over two
+      for (const ls of [[text], splitTwo(text)]) { let sz = (pixel ? 96 : 84) * S; x.font = font(sz); while (sz > 20 && Math.max(...ls.map(l => x.measureText(l).width)) > W2 - 60 * S) { sz -= 2 * S; x.font = font(sz); } if (sz >= 54 * S || ls.length === 2) { lines = ls; size = sz; if (sz >= 54 * S) break; } }
+      const lh = size * (pixel ? 0.95 : 1.05); cv.width = W2; cv.height = Math.round(lh * lines.length + 40 * S);
+    };
+    const splitTwo = t => { const w = t.split(' '); if (w.length < 2) return [t]; let best = [t], bd = 1e9; for (let i = 1; i < w.length; i++) { const a = w.slice(0, i).join(' '), b = w.slice(i).join(' '), d = Math.abs(a.length - b.length); if (d < bd) { bd = d; best = [a, b]; } } return best; };
+    const sparks = Array.from({ length: 5 }, () => ({ x: Math.random(), y: Math.random(), p: Math.random() * 3000 }));
+    let raf = 0, laidFont = '';
+    const draw = t => {
+      if (!cv.isConnected) return cancelAnimationFrame(raf);
+      if (!overlayOpen() || document.hidden) { raf = requestAnimationFrame(draw); return; }
+      const fontState = document.fonts && document.fonts.check(font(40)) ? 'ok' : 'wait';
+      if (fontState !== laidFont) { laidFont = fontState; layout(); }
+      x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, cv.width, cv.height);
+      const lh = size * (pixel ? 0.95 : 1.05), top = 20 * S + size * 0.82;
+      x.font = font(size); x.textAlign = 'center'; x.textBaseline = 'alphabetic'; x.lineJoin = 'round';
+      x.setTransform(1, 0, skew, 1, -skew * cv.height / 2, 0);
+      lines.forEach((ln, i) => drawLine(x, ln, W2 / 2, top + i * lh, t));
+      // sparkles on the letters
+      x.setTransform(1, 0, 0, 1, 0, 0);
+      for (const sp of sparks) { const k = ((t + sp.p) % 3000) / 3000; if (k > 0.25) continue; const a = Math.sin(k / 0.25 * Math.PI), sx = W2 * (0.18 + sp.x * 0.64), sy = 20 * S + sp.y * (cv.height - 40 * S), r = 14 * S * a;
+        x.fillStyle = `rgba(255,255,255,${a})`; x.beginPath(); x.moveTo(sx, sy - r); x.lineTo(sx + r * 0.2, sy - r * 0.2); x.lineTo(sx + r, sy); x.lineTo(sx + r * 0.2, sy + r * 0.2); x.lineTo(sx, sy + r); x.lineTo(sx - r * 0.2, sy + r * 0.2); x.lineTo(sx - r, sy); x.lineTo(sx - r * 0.2, sy - r * 0.2); x.fill();
+        if (k > 0.24) { sp.x = Math.random(); sp.y = Math.random(); } }
+      raf = requestAnimationFrame(draw);
+    };
+    // one line of the logo, in this game's style
+    function drawLine(x, ln, cx, y, t) {
+      const w = x.measureText(ln).width, faceGrad = stops => { const g = x.createLinearGradient(0, y - size * 0.8, 0, y + size * 0.05); stops.forEach(([o, c]) => g.addColorStop(o, c)); return g; };
+      const sweep = () => { // a band of light that slides across the face
+        const k = ((t / 2600) % 1) * 1.6 - 0.3, sx = cx - w / 2 + w * k;
+        x.save(); x.globalCompositeOperation = 'source-atop'; const g = x.createLinearGradient(sx - 60 * S, 0, sx + 60 * S, 0); g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(0.5, 'rgba(255,255,255,.55)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(sx - 60 * S, y - size, 120 * S, size * 1.2); x.restore();
+      };
+      // the face goes on its own layer so the sweep only lights the letters
+      const face = (fill, extra) => { if (L.width !== cv.width || L.height !== cv.height) { L.width = cv.width; L.height = cv.height; } const lx = L.getContext('2d'); lx.setTransform(1, 0, 0, 1, 0, 0); lx.clearRect(0, 0, L.width, L.height); lx.setTransform(x.getTransform()); lx.font = x.font; lx.textAlign = 'center'; lx.fillStyle = fill; lx.fillText(ln, cx, y); if (extra) extra(lx); const keep = x; x = lx; sweep(); x = keep; x.save(); x.setTransform(1, 0, 0, 1, 0, 0); x.drawImage(L, 0, 0); x.restore(); };
+      if (style === 'neon') {
+        const flick = Math.sin(t / 47) > 0.985 ? 0.5 : 1;
+        x.globalAlpha = flick; x.strokeStyle = col; x.shadowColor = col; x.shadowBlur = 30 * S; x.lineWidth = 7 * S; x.strokeText(ln, cx, y); x.shadowBlur = 14 * S; x.strokeText(ln, cx, y);
+        x.shadowBlur = 0; x.strokeStyle = '#fff'; x.lineWidth = 2.4 * S; x.strokeText(ln, cx, y); x.globalAlpha = 1;
+        return;
+      }
+      const depth = (pixel ? 9 : 10) * S, step = pixel ? 1.5 * S : 1 * S;
+      const side = style === 'chrome' ? tint(col, -0.35) : style === 'retro' ? '#4a1a6a' : pixel ? '#ff5edb' : tint(col, -0.6);
+      x.fillStyle = '#0a0612'; for (let d = depth + 3 * S; d > 0; d -= step) x.fillText(ln, cx + d * 0.45, y + d); // drop and outline under the extrusion
+      for (let d = depth; d > 0; d -= step) { x.fillStyle = d === depth ? tint(side, -0.3) : side; x.fillText(ln, cx + d * 0.45, y + d); }
+      x.strokeStyle = '#0a0612'; x.lineWidth = (pixel ? 14 : 12) * S; x.strokeText(ln, cx, y);
+      if (style === 'block') face(faceGrad([[0, tint(col, 0.65)], [0.45, col], [1, tint(col, -0.3)]]), lx => { lx.strokeStyle = 'rgba(255,255,255,.55)'; lx.lineWidth = 1.5 * S; lx.strokeText(ln, cx, y - 2 * S); });
+      else if (style === 'chrome') face(faceGrad([[0, '#ffffff'], [0.42, '#c8ccd8'], [0.5, '#4a4e60'], [0.56, '#8a8ea0'], [1, '#f0f2f8']]), lx => { lx.strokeStyle = tint(col, 0.2); lx.lineWidth = 2 * S; lx.strokeText(ln, cx, y); });
+      else if (style === 'pixel') face(faceGrad([[0, tint(col, 0.55)], [0.5, tint(col, 0.55)], [0.5, col], [1, tint(col, -0.2)]]));
+      else if (style === 'retro') face(faceGrad([[0, '#fff6a8'], [0.35, '#ffd23d'], [0.6, '#ff8a3d'], [1, '#ff4fa3']]), lx => {
+        lx.save(); lx.globalCompositeOperation = 'destination-out'; for (let i = 0; i < 4; i++) lx.fillRect(0, y - size * 0.32 + i * size * 0.09, cv.width, (1 + i) * S); lx.restore();
+        lx.strokeStyle = '#fff'; lx.lineWidth = 1.5 * S; lx.strokeText(ln, cx, y);
+      });
+    }
+    layout(); raf = requestAnimationFrame(draw);
+  }
   /** Cloud save (shared/save.js), when the player has turned it on: sync a few seconds after each game over. */
   let syncT = 0;
   function cloudSync() {

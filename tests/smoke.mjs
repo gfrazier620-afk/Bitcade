@@ -455,6 +455,25 @@ console.log('\nProfile and cloud save');
   await g.close();
 }
 
+/* ---------- cabinet footage and title logos ---------- */
+console.log('\nCabinet footage and title logos');
+{
+  const missing = [];
+  for (const d of dirs) for (const n of [1, 2]) { try { await stat(join(ROOT, 'icons', 'screens', `${d}-${n}.webp`)); } catch { missing.push(`${d}-${n}`); } }
+  check(!missing.length, `every cabinet has two frames of footage${missing.length ? ' (missing: ' + missing.join(', ') + '; run node tools/make-screens.mjs)' : ''}`);
+  const { page, errors, close } = await open('/');
+  await skipBoot(page);
+  await page.waitForFunction(() => [...document.querySelectorAll('.cab-screen .shot')].filter(i => i.complete && i.naturalWidth).length >= 4, null, { timeout: 8000 }).catch(() => {});
+  check(await page.evaluate(() => document.querySelectorAll('.cab-screen .shot').length) === dirs.length * 2, 'lobby cabinets show the footage');
+  check(!errors.length, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
+  await close();
+  const g = await open('/games/stackdown/');
+  check(await g.page.isVisible('#ov .logo') && (await g.page.textContent('#ov h2')) === 'STACKDOWN' && await g.page.evaluate(() => document.getElementById('ov').classList.contains('title')), 'title screens draw a logo (the name stays as text for screen readers)');
+  await g.page.click('#ov .go'); await g.page.keyboard.press('KeyP');
+  check(!(await g.page.isVisible('#ov .logo')) && await g.page.isVisible('#ov h2'), 'other screens keep the plain heading');
+  await g.close();
+}
+
 /* ---------- install + offline ---------- */
 console.log('\nInstall and offline');
 {
