@@ -327,7 +327,7 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
   <section class="arcadefloor" id="arcadeFloor" hidden>
     <canvas id="floorCv" tabindex="0" aria-label="The arcade floor: walk to a cabinet to play it"></canvas>
     <div class="fl-card" id="floorCard"></div>
-    <p class="fl-help">←↑↓→ or WASD to walk · Enter to play · or tap where to go · controllers work too</p>
+    <p class="fl-help">←↑↓→ or WASD to walk · hold SHIFT to run · Enter to play or use · tap where to go, or the map · controllers work too (B runs)</p>
   </section>
   <section class="profile" id="profileView" hidden></section>
   <main class="floor" id="floor"></main>
@@ -343,6 +343,7 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
 <script src="shared/badges.js"></script>
 <script src="shared/boot.js"></script>
 <script src="shared/prizes.js"></script>
+<script src="shared/floor-play.js"></script>
 <script src="shared/floor.js"></script>
 <script src="shared/profile.js"></script>
 <script>
@@ -529,8 +530,10 @@ function topOffline() { if (feat) tourney.querySelector('.t-top').innerHTML = '<
 // World #1 for each cabinet from the online leaderboard, plus today's #1 for daily-challenge games.
 // The lobby works the same without it.
 const d = new Date(), today = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+const worldTop = {}; // world #1 per cabinet, for the floor's high-score wall and chatter
 const leaderRow = (g, label, e, unit = '') => {
   if (!e || !/^[A-Z]{3}$/.test(e.n)) return;
+  if (label === 'WORLD #1' && !unit) worldTop[g.slug] = e;
   const row = document.createElement('div'); row.className = 'cab-world'; row.textContent = label + ' ';
   const b = document.createElement('b'); b.textContent = `${e.n} ${(+e.s || 0).toLocaleString()}${unit}`; row.append(b);
   g.el.querySelector('.cab-foot').before(row);
@@ -564,8 +567,11 @@ Floor.init({
   canvas: document.getElementById('floorCv'), card: document.getElementById('floorCard'), games: GAMES, pal: PAL,
   featured: window.WEEKLY ? WEEKLY.game() : null,
   info: g => { const b = badges(g.slug); return { label: g.label || 'BEST', best: +get('arcade:best:' + g.slug) || 0, got: b.got, all: b.all }; },
+  world: slug => worldTop[slug],
   onPlay: g => enterGame(`games/${g.slug}/`),
-  onCounter: () => Prizes.open()
+  onCounter: () => Prizes.open(),
+  onTickets: () => tixShow(),
+  onJukebox: slug => { try { localStorage.setItem('bitcade:jukebox', slug); } catch (e) {} if (window.Chip) { Chip.enabled = true; Chip.play(slug ? Chip.theme(slug) : Chip.lobby); } document.getElementById('musicBtn').textContent = '♪ MUSIC ON'; }
 });
 // The player profile and cloud save (shared/profile.js, shared/save.js).
 const profileView = document.getElementById('profileView'), vProfile = document.getElementById('vProfile');
@@ -627,7 +633,7 @@ reset.addEventListener('click', () => {
   /* ---------- music: the Bitcade theme, once the doors open ---------- */
   const musicBtn = document.getElementById('musicBtn');
   const musicLabel = () => { musicBtn.textContent = `♪ MUSIC ${chip && chip.enabled ? 'ON' : 'OFF'}`; musicBtn.setAttribute('aria-pressed', String(!!(chip && chip.enabled))); };
-  const music = () => { if (chip) chip.play(chip.lobby); };
+  const music = () => { if (!chip) return; const j = get('bitcade:jukebox'); chip.play(j && document.querySelector(`.cab[href="games/${j}/"]`) ? chip.theme(j) : chip.lobby); }; // the floor's jukebox picks the tune
   if (chip) { if (mode === 'lobby') music(); musicLabel(); musicBtn.addEventListener('click', () => { chip.enabled = !chip.enabled; if (chip.enabled) music(); musicLabel(); }); }
   else musicBtn.hidden = true;
 
