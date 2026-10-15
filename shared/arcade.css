@@ -174,6 +174,30 @@ kbd{font-family:var(--f-pixel);font-size:11px;border:1px solid var(--line);borde
   .cab-on .pad{margin-top:14px}
 }
 @media (pointer:fine) and (min-width:621px){.cab-on .help{display:block}}
+/* phones: a slim frame round the screen so the game gets the room (arcade.js measures what's left and sets --sw) */
+@media (pointer:coarse),(max-width:620px){
+  .cab-on{--bz:5px}
+  .cab-on .bar{padding:4px 6px;gap:6px;flex-wrap:nowrap}
+  .cab-on .bar .back{font-size:10px}
+  .cab-on .toggles{flex-wrap:nowrap;gap:3px}
+  .cab-on .toggles .mute{padding:3px 4px;font-size:8.5px;letter-spacing:0;white-space:nowrap}
+  .cab-on .stage{padding:2px 4px 6px}
+  .cabinet .marquee{height:30px;border-radius:10px 10px 0 0}
+  .cabinet .marquee::before{inset:4px 6px}
+  .cabinet .marquee span{font-size:16px}
+  .bezel-top{padding:3px 2px 4px;font-size:9px}
+  .bezel-top .sc{gap:12px}
+  .bezel-top .sc b{font-size:12px}
+  .cab-on .pad{margin-top:8px}
+  .pad > .ab:last-child{margin-left:auto}
+}
+/* phones held sideways: no marquee, and the pad's halves sit either side of the screen */
+body.phone-land .cabinet .marquee{display:none}
+body.phone-land .bezel{border-top:2px solid #2d2556;border-radius:10px;padding-top:0}
+body.phone-land .freeplay{display:none}
+body.phone-land .pad{position:fixed;left:0;right:0;bottom:max(12px,env(safe-area-inset-bottom,0px));max-width:none;margin:0;
+  padding:0 max(12px,env(safe-area-inset-right,0px)) 0 max(12px,env(safe-area-inset-left,0px));pointer-events:none;z-index:5}
+body.phone-land .pad > *{pointer-events:auto}
 
 /* title screens and game over, arcade style */
 .push{font-family:var(--f-pixel);font-size:14px;letter-spacing:.14em;color:#ffe36a;text-shadow:0 0 10px rgba(255,227,106,.7);animation:boot-blink-k 1s steps(2,start) infinite}

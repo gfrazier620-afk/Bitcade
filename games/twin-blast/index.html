@@ -14,6 +14,8 @@
 <style>
   /* twin thumbsticks under the screen on touch devices: left zone moves, right zone shoots */
   .pad.twin{flex-wrap:wrap}
+  body.phone-land .pad.twin{flex-wrap:nowrap;justify-content:space-between}
+  body.phone-land .twin .zone{flex:none;width:min(27vw,230px);height:min(62vh,230px)}
   .twin .zone{position:relative;flex:1;height:min(34vh,200px);border:2px dashed rgba(255,79,209,.35);border-radius:22px;touch-action:none;
     display:flex;align-items:flex-end;justify-content:center;padding-bottom:10px;font:11px Silkscreen,monospace;letter-spacing:2px;color:rgba(255,255,255,.45)}
   .twin .knob{position:absolute;width:64px;height:64px;margin:-32px 0 0 -32px;border-radius:50%;border:2px solid rgba(255,255,255,.4);pointer-events:none}

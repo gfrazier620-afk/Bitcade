@@ -7,7 +7,7 @@
  *
  * Adding a game? Add its slug to GAMES and bump VERSION. The smoke tests check that GAMES matches games/.
  */
-const VERSION = 'bitcade-v20', RUNTIME = 'bitcade-runtime';
+const VERSION = 'bitcade-v21', RUNTIME = 'bitcade-runtime';
 const GAMES = ['neon-noodle', 'wallbuster', 'star-siege', 'rock-rift', 'stackdown', 'back-alley-brawl', 'circuit-chase',
   'highrise-handyman', 'nitro-lane', 'volley-duel', 'crater-lander', 'sky-shield', 'hedge-hop', 'scaffold-scramble', 'swarm-strike', 'garden-gunner', 'cube-hopper',
   'light-trail', 'wing-duel', 'twin-blast', 'mole-patrol', 'turbo-tour', 'raptor-ridge', 'marsh-marksman', 'blip-sports'];

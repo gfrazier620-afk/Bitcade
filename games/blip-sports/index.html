@@ -78,6 +78,34 @@ button:focus-visible{outline:2px solid var(--stripe);outline-offset:3px}
 .pill button:active{transform:translateY(1px)}
 .pill span{font-size:10px;font-weight:700;letter-spacing:.18em;color:var(--muted)}
 .keys{text-align:center;color:var(--muted);font-size:12px;margin-top:14px}
+/* phones: a compact handheld that fits the screen while you play */
+@media (pointer:coarse),(max-width:600px){
+  body{padding-inline:8px;padding-block:max(8px,env(safe-area-inset-top)) 32px}
+  .backlink{margin-bottom:8px;font-size:11px}
+  .device{padding:10px 12px 16px;border-radius:22px 22px 44px 44px}
+  .brand{font-size:19px}.brand small{font-size:8px;margin-top:2px}
+  .switch button{padding:5px 10px;font-size:10px}
+  .stripes{height:8px;margin:8px -12px 8px}
+  .bezel{padding:7px}
+  .readout{margin-top:6px;gap:4px 6px;flex-wrap:nowrap}.ro canvas{height:19px}.ro-l{font-size:7.5px;letter-spacing:.08em}.tag{font-size:12px}
+  .brand small{display:none}
+  .ticker{font-size:15px;min-height:2.2em;margin-top:6px}
+  .controls{margin-top:10px;gap:10px}
+  .dpad{grid-template-columns:repeat(3,44px);grid-template-rows:repeat(3,44px)}
+  .btns{gap:14px}.act button{width:62px;height:62px}.act button.b2{width:50px;height:50px}
+  .small{margin-top:10px}
+  .keys{display:none}
+}
+/* a phone held sideways: d-pad on the left, the screen in the middle, buttons on the right */
+@media (pointer:coarse) and (orientation:landscape) and (max-height:520px){
+  .device{max-width:none;display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"top top top" "dpad bezel btns" "small small small";column-gap:14px;align-items:center;padding:8px 14px 10px;border-radius:22px}
+  .top{grid-area:top}.stripes{display:none}
+  .bezel{grid-area:bezel;max-width:calc((100dvh - 200px) * 400 / 260 + 14px);justify-self:center;width:100%}
+  .backlink{margin-bottom:4px}body{padding-block:4px 24px}
+  .controls{display:contents}.dpad{grid-area:dpad}.btns{grid-area:btns}
+  .small{grid-area:small;margin-top:6px}
+  .readout{flex-wrap:nowrap;gap:2px 4px}.ro canvas{height:15px}.ro-l{font-size:6.5px;gap:3px}.tag{font-size:10px}.ticker{min-height:1.2em;font-size:12px}
+}
 kbd{font-family:var(--f-ui);font-weight:600;font-size:11px;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;color:var(--ink)}
 
 /* ---------- panel ---------- */
@@ -740,6 +768,8 @@ function requestStart(){
 }
 function startGame(){
   audio(); stopGame(); armT=0;
+  // on a phone the setup is below the handheld: bring the handheld back into view
+  { const d=document.getElementById('device'), r=d.getBoundingClientRect(); if(r.top<-10||r.bottom>innerHeight+10) d.scrollIntoView({block:'start',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'}); }
   store.set('arcade:plays:blip-sports',(+store.get('arcade:plays:blip-sports')||0)+1);
   const list=teams(); const me=team(S.my[S.mode]);
   let cpu = S.cpuMode==='random' ? shuffle(list.filter(t=>t.id!==me.id))[0] : team(S.cpu[S.mode]);

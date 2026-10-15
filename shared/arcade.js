@@ -726,6 +726,38 @@
     const help = document.querySelector('.stage > .help'); if (help) panel.querySelector('.card').append(help);
     cab.append(marquee, bezel, panel);
     document.body.classList.add('cab-on');
+    fitScreen();
+    ['resize', 'orientationchange'].forEach(e => addEventListener(e, fitScreen));
+    if (window.visualViewport) visualViewport.addEventListener('resize', fitScreen);
+    if (document.fonts) document.fonts.ready.then(fitScreen);
+    setTimeout(fitScreen, 300);
+  }
+  /*
+   * Phones and narrow windows: size the screen to the space really left once the header, marquee, score strip and
+   * touch pad are laid out (each game's pad is different), so nothing spills off the bottom. A phone held sideways
+   * gets body.phone-land: no marquee, and the pad's two halves either side of the screen. Wide windows keep the CSS fit.
+   */
+  function fitScreen() {
+    const body = document.body, screen = document.querySelector('.cab-on .screen'), stage = document.querySelector('.stage'), cab = document.querySelector('.cabinet');
+    if (!screen || !stage || !cab) return;
+    const vv = window.visualViewport, vw = vv ? vv.width : innerWidth, vh = vv ? vv.height : innerHeight;
+    const phone = matchMedia('(pointer:coarse)').matches, land = phone && vw > vh && vh < 560;
+    body.classList.toggle('phone-land', land);
+    if (!phone && innerWidth > 620) { body.style.removeProperty('--sw'); return; }
+    const ar = A.W && A.H ? A.W / A.H : 1, cs = getComputedStyle(stage), bs = getComputedStyle(body), bar = document.querySelector('.bar');
+    // everything in the stage except the screen, plus the header and the safe areas
+    let used = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom), n = 0;
+    for (const el of stage.children) {
+      const st = getComputedStyle(el); if (st.display === 'none' || st.position === 'fixed' || st.position === 'absolute') continue;
+      used += el.offsetHeight + parseFloat(st.marginTop) + parseFloat(st.marginBottom); n++;
+    }
+    used += Math.max(0, n - 1) * (parseFloat(cs.rowGap) || 0) - screen.offsetHeight;
+    used += (bar ? bar.offsetHeight : 0) + parseFloat(bs.paddingTop) + parseFloat(bs.paddingBottom) + 4;
+    const frameW = cab.offsetWidth - screen.offsetWidth, padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+    let maxW = vw - frameW - padX;
+    if (land) { const sides = [...document.querySelectorAll('.pad > *')].reduce((m, el) => Math.max(m, el.offsetWidth), 0); if (sides) maxW = Math.min(maxW, vw - 2 * (sides + 18) - frameW); }
+    const sw = Math.floor(Math.max(120, Math.min(maxW, (vh - used - 6) * ar)));
+    body.style.setProperty('--sw', sw + 'px');
   }
 
   /*
