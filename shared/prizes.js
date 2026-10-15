@@ -14,21 +14,39 @@ window.Prizes = (() => {
     { id: 'green', slot: 'tint', name: 'Green Phosphor', price: 60, desc: 'The classic green terminal glow.', sw: ['#5aff6a', '#002a08'] },
     { id: 'ice', slot: 'tint', name: 'Ice Monitor', price: 60, desc: 'Cool blue, like an old radar screen.', sw: ['#7ad8ff', '#001a2e'] },
     { id: 'sunset', slot: 'tint', name: 'Sunset Glow', price: 80, desc: 'Full colour, warmed up like a faded tube.', sw: ['#ff9a5a', '#4a1830'] },
+    { id: 'noir', slot: 'tint', name: 'Noir', price: 60, desc: 'Black and white, hard contrast. Very detective.', sw: ['#f0f0f0', '#101010'] },
+    { id: 'film', slot: 'tint', name: 'Old Film', price: 70, desc: 'Brown and faded, like a 1920s reel.', sw: ['#e8c890', '#3a2410'] },
+    { id: 'pocket', slot: 'tint', name: 'Pocket LCD', price: 90, desc: 'Olive-green dots, like a 1989 handheld.', sw: ['#c4cf8a', '#2a3a18'] },
+    { id: 'vapor', slot: 'tint', name: 'Vaporwave', price: 110, desc: 'Every colour pushed pink and teal.', sw: ['#ff7bf0', '#3ae0e0'] },
     { id: 'wood', slot: 'skin', name: 'Walnut Cabinet', price: 90, desc: 'Woodgrain sides on every cabinet.', sw: ['#6b4020', '#3a2010'] },
     { id: 'neon', slot: 'skin', name: 'Neon Trim', price: 100, desc: 'Pink and cyan tubes around every cabinet.', sw: ['#ff4fd1', '#22e0ff'] },
     { id: 'chrome', slot: 'skin', name: 'Chrome Cabinet', price: 140, desc: 'Polished chrome, straight out of a diner.', sw: ['#e8ecf4', '#6a6e7c'] },
     { id: 'gold', slot: 'skin', name: 'Gold Cabinet', price: 250, desc: 'For champions. Solid gold (not really).', sw: ['#ffd23d', '#a07010'] },
+    { id: 'retro', slot: 'skin', name: 'Beige 80s Plastic', price: 110, desc: 'Cream plastic, like the first home computers.', sw: ['#e8dcc0', '#a89878'] },
+    { id: 'carbon', slot: 'skin', name: 'Carbon Fibre', price: 160, desc: 'A woven black weave, race-car light.', sw: ['#3a3a48', '#121218'] },
+    { id: 'holo', slot: 'skin', name: 'Holographic', price: 320, desc: 'A rainbow sheen that never stops moving.', sw: ['#ff9ad8', '#9ad8ff'] },
     { id: 'cap', slot: 'outfit', name: 'Cap and Hoodie', price: 30, desc: 'Your arcade-goer, ready for a long session.' },
     { id: 'shades', slot: 'outfit', name: 'Cool Shades', price: 50, desc: 'Leather jacket, dark glasses, no fear.' },
     { id: 'astro', slot: 'outfit', name: 'Astronaut Suit', price: 120, desc: 'Fresh back from a lunar landing.' },
     { id: 'crown', slot: 'outfit', name: 'High-Score Crown', price: 200, desc: 'Royal robes for the top of the table.' },
+    { id: 'punk', slot: 'outfit', name: 'Punk', price: 80, desc: 'A pink mohawk and a leather jacket.' },
+    { id: 'ninja', slot: 'outfit', name: 'Ninja', price: 100, desc: 'All black, a red headband, silent steps.' },
+    { id: 'robot', slot: 'outfit', name: 'Robot', price: 140, desc: 'Chrome plating, a visor and an antenna.' },
+    { id: 'wizard', slot: 'outfit', name: 'Wizard', price: 180, desc: 'A starry hat and a long purple robe.' },
     { id: 'cosmic', slot: 'carpet', name: 'Cosmic Carpet', price: 50, desc: 'Planets and rings, the true arcade carpet.' },
     { id: 'checker', slot: 'carpet', name: 'Checkerboard Floor', price: 70, desc: 'Black and white tiles, diner style.' },
+    { id: 'lava', slot: 'carpet', name: 'Lava Swirl', price: 80, desc: 'Red and orange swirls. Do not touch.' },
+    { id: 'grid', slot: 'carpet', name: 'Neon Grid', price: 100, desc: 'A glowing cyan grid, straight out of the future.' },
     { id: 'plants', slot: 'decor', name: 'Potted Palms', price: 25, desc: 'A little green by the walls.' },
     { id: 'sign', slot: 'decor', name: 'GAME ON Sign', price: 60, desc: 'More neon for the back wall.' },
     { id: 'jukebox', slot: 'decor', name: 'Jukebox', price: 80, desc: 'Bubbling lights in the corner.' },
     { id: 'claw', slot: 'decor', name: 'Claw Machine', price: 110, desc: 'Full of prizes nobody ever wins.' },
-    { id: 'disco', slot: 'decor', name: 'Disco Ball', price: 150, desc: 'Spinning light spots across the floor.' }
+    { id: 'disco', slot: 'decor', name: 'Disco Ball', price: 150, desc: 'Spinning light spots across the floor.' },
+    { id: 'gumball', slot: 'decor', name: 'Gumball Machine', price: 50, desc: 'A glass globe of gumballs. One ticket a go.' },
+    { id: 'strips', slot: 'decor', name: 'Neon Floor Strips', price: 90, desc: 'Chasing lights down the aisles.' },
+    { id: 'sofa', slot: 'decor', name: 'Lounge Sofa', price: 100, desc: 'Somewhere to sit between high scores.' },
+    { id: 'redeem', slot: 'decor', name: 'Ticket Machine', price: 130, desc: 'A redemption machine that eats tickets.' },
+    { id: 'trophies', slot: 'decor', name: 'Trophy Case', price: 220, desc: 'Gold cups for every cabinet you master.' }
   ];
   const SLOTS = [['tint', 'SCREEN TINTS · every game'], ['skin', 'CABINET FINISHES · every game'], ['outfit', 'OUTFITS · arcade floor'], ['carpet', 'CARPETS · arcade floor'], ['decor', 'DECORATIONS · arcade floor']];
   const get = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
@@ -65,6 +83,7 @@ window.Prizes = (() => {
     const x = c.getContext('2d'); x.imageSmoothingEnabled = false; x.clearRect(0, 0, c.width, c.height);
     if (window.Floor && Floor.preview(p, x, c.width, c.height)) return;
     const g = x.createLinearGradient(0, 0, c.width, c.height); g.addColorStop(0, p.sw[0]); g.addColorStop(1, p.sw[1]);
+    if (p.id === 'holo') { const hg = x.createLinearGradient(0, 0, c.width, c.height); ['#ff9ad8', '#9ad8ff', '#c8ffb0', '#ffe89a', '#ff9ad8'].forEach((cc, i) => hg.addColorStop(i / 4, cc)); x.fillStyle = hg; x.fillRect(c.width / 2 - 22, 4, 44, c.height - 8); x.fillStyle = '#05040c'; x.fillRect(c.width / 2 - 15, 14, 30, 22); return; }
     if (p.slot === 'tint') { // a little screen in that phosphor
       x.fillStyle = '#05040c'; x.fillRect(0, 0, c.width, c.height); x.fillStyle = g; x.fillRect(8, 8, c.width - 16, c.height - 16);
       x.fillStyle = 'rgba(0,0,0,.35)'; for (let i = 8; i < c.height - 8; i += 3) x.fillRect(8, i, c.width - 16, 1);

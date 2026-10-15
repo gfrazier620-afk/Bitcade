@@ -230,3 +230,37 @@ body.skin-neon .cpanel{background:linear-gradient(180deg,#22e0ff 0 3px,#140a26 3
 .overlay.title{background:linear-gradient(180deg,rgba(6,4,16,.25) 0%,rgba(6,4,16,.55) 30%,rgba(6,4,16,.84) 55%);backdrop-filter:none}
 .overlay .logo{width:min(100%,560px);height:auto;flex:none;filter:drop-shadow(0 6px 18px rgba(0,0,0,.55))}
 .sr{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* ---------- mastered: every badge earned, so the cabinet goes gold (body.mastered, set by arcade.js) ---------- */
+body.mastered .cabinet .marquee{border-color:#c89a2a}
+body.mastered .cabinet .marquee::before{background:repeating-linear-gradient(90deg,rgba(255,255,255,.1) 0 2px,transparent 2px 46px),linear-gradient(100deg,#6a4808,#e0a820 22%,#ffe98a 42%,#fff6c8 50%,#e0a820 64%,#7a5410);
+  box-shadow:inset 0 0 18px rgba(0,0,0,.45),0 0 32px rgba(255,210,61,.55)}
+body.mastered .cabinet .marquee::after{content:"";position:absolute;inset:7px 9px;border-radius:7px;pointer-events:none;
+  background:linear-gradient(100deg,transparent 40%,rgba(255,255,255,.6) 50%,transparent 60%) -150% 0/250% 100% no-repeat;animation:gold-sweep 3.6s ease-in-out infinite}
+@keyframes gold-sweep{0%{background-position:-150% 0}60%,100%{background-position:150% 0}}
+body.mastered .cabinet .marquee span{z-index:1;color:#2a1800;text-shadow:0 1px 0 rgba(255,255,255,.6),0 0 16px rgba(255,240,180,.9)}
+body.mastered .bezel{box-shadow:inset 5px 0 0 #ffd23d,inset -5px 0 0 #ffd23d,inset 7px 0 0 #8a6010,inset -7px 0 0 #8a6010}
+.plaque{font-family:var(--f-pixel);font-size:11px;letter-spacing:.12em;color:#2a1800;white-space:nowrap;padding:2px 10px;border-radius:4px;
+  background:linear-gradient(90deg,#b8860b,#ffd23d,#fff0a8,#ffd23d,#b8860b);box-shadow:0 0 10px rgba(255,210,61,.6)}
+@media (prefers-reduced-motion:reduce){body.mastered .cabinet .marquee::after{animation:none}}
+
+/* ---------- more prizes: screen tints and cabinet finishes ---------- */
+body.tint-noir .screen canvas{filter:grayscale(1) contrast(1.35) brightness(1.05)}
+body.tint-film .screen canvas{filter:sepia(.9) contrast(1.12) brightness(.95) saturate(1.1)}
+body.tint-pocket .screen canvas{filter:grayscale(1) contrast(1.25) sepia(1) hue-rotate(38deg) saturate(1.4) brightness(.92)}
+body.tint-vapor .screen canvas{filter:hue-rotate(-40deg) saturate(1.9) contrast(1.05)}
+body.skin-retro .cabinet .marquee,body.skin-retro .bezel{border-color:#8a7a5a;background:linear-gradient(90deg,#b8a888,#ece2c8 18%,#d8cbb0 60%,#a89878)}
+body.skin-retro .cpanel{background:linear-gradient(180deg,#f0e6cc 0 3px,#cbbd9e 3px,#9a8a6a 100%)}
+body.skin-retro .bezel-top{color:#3a2a10}
+body.skin-carbon .cabinet .marquee,body.skin-carbon .bezel{border-color:#4a4a58;
+  background:repeating-linear-gradient(45deg,#1a1a20 0 4px,#2a2a34 4px 8px),repeating-linear-gradient(-45deg,rgba(255,255,255,.04) 0 4px,transparent 4px 8px),#1a1a20}
+body.skin-carbon .cpanel{background:linear-gradient(180deg,#5a5a68 0 3px,#22222a 3px,#121218 100%)}
+body.skin-holo .cabinet .marquee,body.skin-holo .bezel,body.skin-holo .cpanel{border-color:#c8b0ff;
+  background:linear-gradient(110deg,#ff9ad8,#9ad8ff,#c8ffb0,#ffe89a,#ff9ad8,#9ad8ff);background-size:300% 100%;animation:holo-shift 7s linear infinite}
+body.skin-holo .bezel-top{color:#2a1a40}
+@keyframes holo-shift{to{background-position:300% 0}}
+@media (prefers-reduced-motion:reduce){body.skin-holo .cabinet .marquee,body.skin-holo .bezel,body.skin-holo .cpanel{animation:none}}
+/* light cabinet finishes: dark score-strip text, and a dark card behind the controls so both stay readable */
+:is(body.skin-holo,body.skin-retro,body.skin-chrome,body.skin-gold) .bezel-top .sc span,:is(body.skin-holo,body.skin-retro,body.skin-chrome,body.skin-gold) .freeplay{color:#2a1a40}
+:is(body.skin-holo,body.skin-retro,body.skin-chrome,body.skin-gold) .bezel-top .sc b{color:#120a1c}
+:is(body.skin-holo,body.skin-retro,body.skin-chrome,body.skin-gold) .card{background:rgba(10,6,18,.78);border-color:rgba(0,0,0,.4)}

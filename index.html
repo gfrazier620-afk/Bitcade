@@ -55,6 +55,13 @@ body{display:block;overflow-x:hidden;
 .play{background:var(--c);color:#120a1c;border-radius:7px;padding:5px 10px;font-size:11px}
 .cab-top .chip{float:right;margin-top:2px;font-family:var(--f-pixel);font-size:10px;letter-spacing:.08em;color:var(--c);border:1px solid var(--c);border-radius:5px;padding:1px 5px}
 /* the weekly tournament: a banner above the floor, and a ribbon on the featured cabinet */
+/* mastered cabinets (every badge earned) go gold */
+.cab.gold{border-color:#e0a820}
+.cab.gold .cab-top{background:linear-gradient(100deg,#6a4808,#e0a820 30%,#fff0a8 48%,#e0a820 65%,#7a5410);border-bottom-color:#ffd23d}
+.cab.gold .cab-top h2{color:#2a1800;text-shadow:0 1px 0 rgba(255,255,255,.55)}
+.cab.gold .cab-top span{color:#4a3000}
+.cab.gold .cab-top .chip{color:#2a1800;border-color:#2a1800}
+.cab-screen .mastered{position:absolute;z-index:2;left:50%;bottom:8px;transform:translateX(-50%);font-family:var(--f-pixel);font-size:10px;letter-spacing:.12em;color:#2a1800;white-space:nowrap;padding:2px 8px;border-radius:4px;background:linear-gradient(90deg,#b8860b,#ffd23d,#fff0a8,#ffd23d,#b8860b);box-shadow:0 0 10px rgba(255,210,61,.6)}
 .cab.feat{border-color:#ffd23d;box-shadow:0 0 0 1px #ffd23d,0 0 26px rgba(255,210,61,.28)}
 .cab.feat::before{content:"★ THIS WEEK";position:absolute;z-index:2;top:12px;right:-30px;transform:rotate(35deg);width:130px;text-align:center;padding:3px 0;
   font-family:var(--f-pixel);font-size:10px;letter-spacing:.08em;color:#1a0f00;background:linear-gradient(90deg,#ffd23d,#ff9a3d)}
@@ -146,6 +153,8 @@ body{display:block;overflow-x:hidden;
 .pf-g small i{font-style:normal;color:var(--ink)}
 .pf-badges{display:flex;flex-wrap:wrap;gap:4px}
 .pf-badges span{font-family:var(--f-pixel);font-size:10px;color:#5a5478;border:1px solid #2d2556;border-radius:5px;padding:2px 6px}
+.pf-game.gold{border-color:#e0a820;border-left-color:#ffd23d;background:linear-gradient(100deg,rgba(255,210,61,.14),transparent 60%),var(--bg2)}
+.pf-game.gold b::after{content:" ★ MASTERED";font-family:var(--f-pixel);font-size:10px;color:#ffd23d}
 .pf-badges span.got{color:#1a0f00;background:#ffd23d;border-color:#ffd23d}
 .pf-prizes{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .pf-prizes span{font-family:var(--f-pixel);font-size:11px;color:#04161c;background:#5ee7ff;border-radius:6px;padding:5px 9px}
@@ -378,12 +387,66 @@ GAMES.forEach(g => {
   a.querySelector('h2').textContent = g.name; a.querySelector('.cab-top span').textContent = g.kind.toUpperCase(); a.querySelector('p').textContent = g.blurb;
   if (g.daily) { const chip = document.createElement('b'); chip.className = 'chip'; chip.textContent = 'DAILY'; chip.title = 'Has a daily challenge'; a.querySelector('.cab-top').prepend(chip); }
   if (window.WEEKLY && WEEKLY.game() === g.slug) a.classList.add('feat');
+  if (bd.all && bd.got === bd.all) { a.classList.add('gold'); a.querySelector('.cab-screen').insertAdjacentHTML('beforeend', '<b class="mastered">★ MASTERED ★</b>'); }
   const cx = a.querySelector('canvas').getContext('2d');
   paint(cx, g.px); screens.push({ cx, g, f: 0, scr: a.querySelector('.cab-screen'), f2: 0 });
   a.querySelectorAll('.shot').forEach(img => img.addEventListener('error', () => img.remove())); // offline before it was cached: the pixel icon shows
   floor.appendChild(a);
   g.el = a;
 });
+/*
+ * Screen transitions, like an old CRT (games do the same in shared/arcade.js). Picking a cabinet drops a coin and
+ * powers the lobby off: the picture collapses to a line, then a dot. Coming back from a game, it powers on again.
+ */
+const calmCRT = matchMedia('(prefers-reduced-motion: reduce)').matches;
+function crtLayer() {
+  const o = document.createElement('div'); o.className = 'crt-fx'; o.innerHTML = '<i></i><i></i><b></b><s></s>';
+  o.style.cssText = 'position:fixed;inset:0;z-index:9999;pointer-events:none;overflow:hidden';
+  const [top, bot] = o.querySelectorAll('i'), line = o.querySelector('b'), glow = o.querySelector('s');
+  top.style.cssText = 'position:absolute;left:0;right:0;top:0;height:50%;background:#000';
+  bot.style.cssText = 'position:absolute;left:0;right:0;bottom:0;height:50%;background:#000';
+  line.style.cssText = 'position:absolute;left:50%;top:50%;width:100%;height:3px;margin-top:-1.5px;transform:translateX(-50%);background:#fff;box-shadow:0 0 18px 4px rgba(190,230,255,.9)';
+  glow.style.cssText = 'position:absolute;inset:0;background:#d8f0ff;opacity:0';
+  document.body.append(o); return { o, top, bot, line, glow };
+}
+function coinSound() {
+  if (get('arcade:muted') === '1') return;
+  try {
+    const ac = new (window.AudioContext || window.webkitAudioContext)(), t = ac.currentTime;
+    [[988, 0, 0.07], [1319, 0.07, 0.22], [2637, 0.02, 0.05]].forEach(([f, at, d]) => { const o = ac.createOscillator(), g = ac.createGain(); o.type = f > 2000 ? 'triangle' : 'square'; o.frequency.value = f; g.gain.setValueAtTime(0.045, t + at); g.gain.exponentialRampToValueAtTime(0.0001, t + at + d); o.connect(g).connect(ac.destination); o.start(t + at); o.stop(t + at + d + 0.02); });
+    const o = ac.createOscillator(), g = ac.createGain(); o.type = 'sine'; o.frequency.setValueAtTime(1200, t + 0.25); o.frequency.exponentialRampToValueAtTime(60, t + 0.55); g.gain.setValueAtTime(0.035, t + 0.25); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.56); o.connect(g).connect(ac.destination); o.start(t + 0.25); o.stop(t + 0.6);
+  } catch (e) {}
+}
+function enterGame(href) {
+  try { sessionStorage.setItem('bitcade:enter', '1'); } catch (e) {}
+  coinSound();
+  const L = crtLayer();
+  if (calmCRT) { L.line.remove(); L.top.style.height = L.bot.style.height = '51%'; L.o.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 250, fill: 'forwards' }).onfinish = () => { location.href = href; }; return; }
+  L.line.style.opacity = '0';
+  L.top.animate([{ transform: 'translateY(-101%)' }, { transform: 'translateY(0)' }], { duration: 220, delay: 120, easing: 'ease-in', fill: 'forwards' });
+  L.bot.animate([{ transform: 'translateY(101%)' }, { transform: 'translateY(0)' }], { duration: 220, delay: 120, easing: 'ease-in', fill: 'forwards' });
+  L.line.animate([{ opacity: 0, width: '100%' }, { opacity: 1, width: '100%', offset: 0.35 }, { opacity: 1, width: '1%', offset: 0.8 }, { opacity: 0, width: '0.5%' }], { duration: 420, delay: 300, fill: 'forwards' })
+    .onfinish = () => { location.href = href; };
+}
+document.addEventListener('click', e => {
+  const a = e.target.closest && e.target.closest('a[href^="games/"]'); if (!a || e.ctrlKey || e.metaKey || e.shiftKey || e.button) return;
+  e.preventDefault(); enterGame(a.getAttribute('href'));
+});
+addEventListener('pageshow', e => { if (e.persisted) document.querySelectorAll('.crt-fx').forEach(o => o.remove()); }); // back from a game, out of the page cache
+try {
+  if (sessionStorage.getItem('bitcade:enter')) { // back from a game: power on
+    sessionStorage.removeItem('bitcade:enter');
+    const L = crtLayer();
+    if (calmCRT) L.o.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 300, fill: 'forwards' }).onfinish = () => L.o.remove();
+    else {
+      L.line.animate([{ width: '0%' }, { width: '100%' }], { duration: 170, easing: 'ease-out', fill: 'forwards' });
+      L.top.animate([{ transform: 'translateY(0)' }, { transform: 'translateY(-101%)' }], { duration: 300, delay: 170, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' });
+      L.bot.animate([{ transform: 'translateY(0)' }, { transform: 'translateY(101%)' }], { duration: 300, delay: 170, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' });
+      L.line.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 220, delay: 230, fill: 'forwards' });
+      L.glow.animate([{ opacity: 0 }, { opacity: 0.4 }, { opacity: 0 }], { duration: 380, delay: 170, fill: 'forwards' }).onfinish = () => L.o.remove();
+    }
+  }
+} catch (e) {}
 // The weekly tournament banner (shared/badges.js picks the game): countdown, this device's best this week, world top 3.
 const feat = window.WEEKLY && GAMES.find(g => g.slug === WEEKLY.game()), tourney = document.getElementById('tourney');
 if (feat) {
@@ -441,7 +504,7 @@ Floor.init({
   canvas: document.getElementById('floorCv'), card: document.getElementById('floorCard'), games: GAMES, pal: PAL,
   featured: window.WEEKLY ? WEEKLY.game() : null,
   info: g => { const b = badges(g.slug); return { label: g.label || 'BEST', best: +get('arcade:best:' + g.slug) || 0, got: b.got, all: b.all }; },
-  onPlay: g => { location.href = `games/${g.slug}/`; },
+  onPlay: g => enterGame(`games/${g.slug}/`),
   onCounter: () => Prizes.open()
 });
 // The player profile and cloud save (shared/profile.js, shared/save.js).

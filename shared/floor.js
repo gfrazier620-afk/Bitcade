@@ -13,7 +13,7 @@ window.Floor = (() => {
   const CW = 56, CH = 92; // a cabinet's footprint
   let PAL = {}; // the lobby's icon palette, passed to init
   let cv = null, ctx = null, opt = null, cabs = [], solids = [], running = false, raf = 0, last = 0, bg = null, bgKey = '';
-  let near = null, shownNear = undefined, route = [], arriveAct = null, idlePing = 0, padWas = false;
+  let mastered = new Set(), near = null, shownNear = undefined, route = [], arriveAct = null, idlePing = 0, padWas = false;
   const me = { x: 480, y: 540, dir: 'up', walk: 0, moving: false };
   const keys = new Set();
 
@@ -39,7 +39,8 @@ window.Floor = (() => {
 
   /* ---------- layout: two rows of cabinets (the front row split by a centre aisle), the prize counter, decor ---------- */
   const COUNTER = { x: 742, y: 470, w: 178, h: 70 };
-  const DECOR = { jukebox: { x: 40, y: 486, w: 60, h: 74 }, claw: { x: 132, y: 474, w: 68, h: 86 }, plantL: { x: 22, y: 160, w: 26, h: 44 }, plantR: { x: 912, y: 160, w: 26, h: 44 } };
+  const DECOR = { redeem: { x: 684, y: 470, w: 48, h: 74 }, gumball: { x: 236, y: 500, w: 30, h: 56 }, sofa: { x: 566, y: 518, w: 100, h: 42 }, trophies: { x: 290, y: 478, w: 64, h: 80 },
+    jukebox: { x: 40, y: 486, w: 60, h: 74 }, claw: { x: 132, y: 474, w: 68, h: 86 }, plantL: { x: 22, y: 160, w: 26, h: 44 }, plantR: { x: 912, y: 160, w: 26, h: 44 } };
   const ROW1 = 62, ROW2 = 272, GAP = 70;
   const gaps = []; // x positions where you can cross the front row
   function layout(games) {
@@ -60,11 +61,25 @@ window.Floor = (() => {
     solids.push({ x: COUNTER.x, y: COUNTER.y + 20, w: COUNTER.w, h: COUNTER.h - 20 });
     if (owns('jukebox')) solids.push({ ...DECOR.jukebox, y: DECOR.jukebox.y + 40, h: DECOR.jukebox.h - 40 });
     if (owns('claw')) solids.push({ ...DECOR.claw, y: DECOR.claw.y + 50, h: DECOR.claw.h - 50 });
+    for (const k of ['redeem', 'gumball', 'sofa', 'trophies']) if (owns(k)) { const d = DECOR[k]; solids.push({ x: d.x, y: d.y + d.h * 0.55, w: d.w, h: d.h * 0.45 }); }
   }
   const hit = (x, y) => x < 14 || x > W - 14 || y < WALL + 8 || y > H - 4 || solids.some(s => x + 9 > s.x && x - 9 < s.x + s.w && y > s.y && y - 6 < s.y + s.h);
 
   /* ---------- background: wall, signs and carpet (redrawn when the carpet or decor changes) ---------- */
   function carpet(x, kind, w, h, y0 = 0) {
+    if (kind === 'grid') {
+      x.fillStyle = '#04060e'; x.fillRect(0, y0, w, h);
+      x.strokeStyle = 'rgba(34,224,255,.55)'; x.lineWidth = 1.5; x.shadowColor = '#22e0ff'; x.shadowBlur = 6;
+      for (let i = 0; i <= w; i += 32) { x.beginPath(); x.moveTo(i + 0.5, y0); x.lineTo(i + 0.5, y0 + h); x.stroke(); }
+      for (let j = 0; j <= h; j += 32) { x.beginPath(); x.moveTo(0, y0 + j + 0.5); x.lineTo(w, y0 + j + 0.5); x.stroke(); }
+      x.shadowBlur = 0; return;
+    }
+    if (kind === 'lava') {
+      x.fillStyle = '#2a0808'; x.fillRect(0, y0, w, h);
+      let s2 = 5; const r2 = () => (s2 = (s2 * 16807) % 2147483647) / 2147483647;
+      for (let i = 0; i < 26; i++) { const px = r2() * w, py = y0 + r2() * h, rr = 14 + r2() * 26, g = x.createRadialGradient(px, py, 0, px, py, rr); g.addColorStop(0, '#ffb03d'); g.addColorStop(0.45, '#ff4a1a'); g.addColorStop(1, 'rgba(120,10,10,0)'); x.fillStyle = g; x.beginPath(); x.ellipse(px, py, rr * 1.6, rr * 0.7, r2() * 3, 0, 6.29); x.fill(); }
+      return;
+    }
     if (kind === 'checker') {
       for (let j = 0; j < h; j += 24) for (let i = 0; i < w; i += 24) { x.fillStyle = ((i + j) / 24) % 2 ? '#e8e4f0' : '#141020'; x.fillRect(i, y0 + j, 24, 24); }
       return;
@@ -117,7 +132,7 @@ window.Floor = (() => {
   /* ---------- sprites ---------- */
   const icon = (x, px, ox, oy, k) => px.forEach((row, j) => [...row].forEach((ch, i) => { if (PAL[ch]) { x.fillStyle = PAL[ch]; x.fillRect(ox + i * k, oy + j * k, k, k); } }));
   function drawCab(x, c, t) {
-    const { g } = c, X = Math.round(c.x), Y = Math.round(c.y), col = g.c, isNear = near === c, feat = opt.featured === g.slug;
+    const { g } = c, X = Math.round(c.x), Y = Math.round(c.y), gold = mastered.has(g.slug), col = gold ? '#ffd23d' : g.c, isNear = near === c, feat = opt.featured === g.slug;
     x.fillStyle = 'rgba(0,0,0,.45)'; x.beginPath(); x.ellipse(X + CW / 2, Y + CH, CW * 0.62, 7, 0, 0, 6.29); x.fill();
     if (isNear) { x.shadowColor = col; x.shadowBlur = 22; }
     paint(x, [[X, Y + 14, CW, CH - 14, '#211b42'], [X - 2, Y, CW + 4, 16, shade(col, -0.35)], [X + 4, Y + 58, CW - 8, 10, '#322a5e'], [X + 6, Y + 70, CW - 12, 20, '#17122e', true]]);
@@ -126,6 +141,7 @@ window.Floor = (() => {
     x.fillStyle = col; x.globalAlpha = 0.85 + Math.sin(t / 300 + c.x) * 0.1; x.fillRect(X + 1, Y + 3, CW - 2, 10); x.globalAlpha = 1;
     x.fillStyle = 'rgba(255,255,255,.55)'; x.fillRect(X + 6, Y + 6, CW - 12, 2);
     x.fillStyle = col; x.fillRect(X, Y + 16, 3, CH - 18); x.fillRect(X + CW - 3, Y + 16, 3, CH - 18);
+    if (gold) { const s2 = ((t / 1800 + c.x / 400) % 1.4) - 0.2; x.fillStyle = 'rgba(255,255,255,.7)'; x.fillRect(X + 1 + s2 * (CW - 4), Y + 3, 3, 10); star(x, X + CW - 7, Y + 24, 4, '#ffd23d'); }
     x.fillStyle = '#05040c'; x.fillRect(X + 6, Y + 20, CW - 12, 34);
     icon(x, Math.floor((t + c.x * 7) / 520) % 2 ? g.px2 : g.px, X + 10, Y + 25, 3);
     x.fillStyle = 'rgba(255,255,255,.06)'; x.fillRect(X + 6, Y + 20, CW - 12, 6);
@@ -146,7 +162,11 @@ window.Floor = (() => {
     cap: { top: '#ff4f6d', legs: '#2a3a5a', hair: '#3a2414', hat: 'cap' },
     shades: { top: '#2a2630', legs: '#1a1a24', hair: '#111', glasses: true },
     astro: { top: '#e8ecf4', legs: '#c8ccd8', hair: '#3a2414', hat: 'helmet' },
-    crown: { top: '#8a3dff', legs: '#5a2aa0', hair: '#c88a3a', hat: 'crown' }
+    crown: { top: '#8a3dff', legs: '#5a2aa0', hair: '#c88a3a', hat: 'crown' },
+    punk: { top: '#2a2630', legs: '#3d5ab8', hair: '#ff4fa3', hat: 'mohawk' },
+    ninja: { top: '#1a1a24', legs: '#1a1a24', hair: '#1a1a24', hat: 'band', mask: true },
+    robot: { top: '#c0c6d0', legs: '#8a8ea0', hair: '#c0c6d0', hat: 'antenna', visor: true },
+    wizard: { top: '#4a2a9a', legs: '#4a2a9a', hair: '#e8e8f0', hat: 'wizard' }
   };
   /** The arcade-goer, feet at (fx, fy). */
   function drawWalker(x, fx, fy, dir, walk, moving, outfit) {
@@ -163,6 +183,13 @@ window.Floor = (() => {
     if (side) { x.fillStyle = OUT; x.fillRect(3, -33, 2, 3); if (o.glasses) { x.fillStyle = '#111'; x.fillRect(1, -34, 6, 3); } }
     if (o.hat === 'cap') { paint(x, [[-7, -44, 14, 6, '#ffd23d'], side ? [5, -40, 6, 2, '#e0b020', true] : [-6, -39, 12, 2, '#e0b020', true]]); }
     if (o.hat === 'crown') { paint(x, [[-6, -45, 12, 5, '#ffd23d']]); x.fillStyle = '#ffd23d'; x.fillRect(-6, -48, 2, 3); x.fillRect(-1, -49, 2, 4); x.fillRect(4, -48, 2, 3); x.fillStyle = '#ff4f6d'; x.fillRect(-1, -44, 2, 2); }
+    if (o.hat === 'mohawk') { paint(x, [[-2, -48, 4, 9, '#ff4fa3']]); x.fillStyle = '#ffb0d8'; x.fillRect(-1, -47, 1, 6); }
+    if (o.hat === 'band') { x.fillStyle = '#ff2a3a'; x.fillRect(-7, -38, 14, 3); if (dir !== 'up') { x.fillStyle = '#ff2a3a'; x.fillRect(side ? -9 : 6, -38, 4, 2); x.fillRect(side ? -11 : 8, -36, 3, 2); } }
+    if (o.mask && dir !== 'up') { x.fillStyle = '#1a1a24'; x.fillRect(-6, -31, 12, 5); }
+    if (o.visor && dir !== 'up') { x.fillStyle = '#0a0612'; x.fillRect(-5, -35, 10, 4); x.fillStyle = '#22e0ff'; x.fillRect(-4, -34, 8, 2); }
+    if (o.hat === 'antenna') { x.fillStyle = OUT; x.fillRect(-1, -48, 2, 9); x.fillStyle = Math.floor(performance.now() / 300) % 2 ? '#ff4f6d' : '#3dff8f'; x.fillRect(-2, -50, 4, 3); }
+    if (o.hat === 'wizard') { x.fillStyle = OUT; x.beginPath(); x.moveTo(-10, -38); x.lineTo(2, -62); x.lineTo(10, -38); x.fill(); x.fillStyle = '#4a2a9a'; x.beginPath(); x.moveTo(-8, -39); x.lineTo(2, -59); x.lineTo(8, -39); x.fill(); x.fillStyle = '#ffd23d'; x.fillRect(-1, -50, 2, 2); x.fillRect(3, -45, 2, 2); x.fillStyle = '#5a3aba'; x.fillRect(-10, -40, 20, 3);
+      if (dir === 'down') { x.fillStyle = '#e8e8f0'; x.beginPath(); x.moveTo(-5, -28); x.lineTo(5, -28); x.lineTo(0, -18); x.fill(); } }
     if (o.hat === 'helmet') { x.strokeStyle = OUT; x.lineWidth = 3; x.beginPath(); x.arc(0, -33, 11, 0, 6.29); x.stroke(); x.fillStyle = 'rgba(160,220,255,.35)'; x.beginPath(); x.arc(0, -33, 10, 0, 6.29); x.fill(); x.fillStyle = 'rgba(255,255,255,.7)'; x.fillRect(-6, -40, 4, 2); }
     x.restore();
   }
@@ -195,6 +222,46 @@ window.Floor = (() => {
     for (let i = 0; i < 8; i++) { x.fillStyle = bits[i % 6]; x.beginPath(); x.arc(X + 10 + i * 7, Y + 48 - (i % 3) * 4, 5, 0, 6.29); x.fill(); }
     const cx = X + 34 + Math.sin(t / 900) * 22; x.fillStyle = '#c0c6d0'; x.fillRect(cx - 1, Y + 10, 2, 16); x.fillRect(cx - 6, Y + 26, 12, 3); x.fillRect(cx - 6, Y + 26, 2, 7); x.fillRect(cx + 4, Y + 26, 2, 7);
     x.fillStyle = '#ffd23d'; x.fillRect(X + 26, Y + 62, 16, 4); x.fillStyle = OUT; x.fillRect(X + 28, Y + 72, 12, 8);
+  }
+  /** A ticket redemption machine: a tall outlined cabinet with a slot, a counter display and tickets spilling out. */
+  function drawRedeem(x, t, X = DECOR.redeem.x, Y = DECOR.redeem.y) {
+    paint(x, [[X, Y + 10, 48, 64, '#c8304a'], [X + 4, Y, 40, 14, '#ffd23d']]);
+    x.font = '8px Silkscreen, monospace'; x.textAlign = 'center'; x.fillStyle = '#3a1a00'; x.fillText('TICKETS', X + 24, Y + 10);
+    x.fillStyle = OUT; x.fillRect(X + 8, Y + 20, 32, 12); x.fillStyle = '#3dff8f'; x.font = '9px Silkscreen, monospace'; x.fillText(String(Math.floor(t / 90) % 1000).padStart(3, '0'), X + 24, Y + 30);
+    x.fillStyle = OUT; x.fillRect(X + 14, Y + 40, 20, 4);
+    const k = (t / 1400) % 1; x.fillStyle = '#ffd23d'; for (let i = 0; i < 4; i++) x.fillRect(X + 18 + Math.sin(i + k * 6) * 2, Y + 46 + i * 5 + k * 3, 12, 3);
+  }
+  /** A gumball machine: an outlined glass globe of colours on a red stand. */
+  function drawGumball(x, X = DECOR.gumball.x, Y = DECOR.gumball.y) {
+    paint(x, [[X + 6, Y + 30, 18, 26, '#d82a3a'], [X + 10, Y + 38, 10, 6, '#c0c6d0']]);
+    x.fillStyle = OUT; x.beginPath(); x.arc(X + 15, Y + 17, 16, 0, 6.29); x.fill();
+    x.fillStyle = 'rgba(200,230,255,.3)'; x.beginPath(); x.arc(X + 15, Y + 17, 14, 0, 6.29); x.fill();
+    ['#ff4f6d', '#ffd23d', '#3dff8f', '#22e0ff', '#b86bff', '#ff9a3d'].forEach((c, i) => { x.fillStyle = c; x.beginPath(); x.arc(X + 7 + (i % 3) * 8, Y + 14 + Math.floor(i / 3) * 8, 3.5, 0, 6.29); x.fill(); });
+    x.fillStyle = 'rgba(255,255,255,.7)'; x.fillRect(X + 7, Y + 6, 4, 3); x.fillStyle = '#d82a3a'; x.fillRect(X + 11, Y - 1, 8, 4);
+  }
+  /** A lounge sofa: an outlined, cushioned couch. */
+  function drawSofa(x, X = DECOR.sofa.x, Y = DECOR.sofa.y) {
+    paint(x, [[X, Y, 100, 22, '#6a3aa8'], [X - 6, Y + 8, 12, 32, '#5a2a98'], [X + 94, Y + 8, 12, 32, '#5a2a98'], [X + 4, Y + 20, 44, 16, '#8a5ac8'], [X + 52, Y + 20, 44, 16, '#8a5ac8']]);
+    x.fillStyle = '#3a1a68'; x.fillRect(X + 2, Y + 38, 4, 4); x.fillRect(X + 94, Y + 38, 4, 4);
+  }
+  /** A trophy case: a glass cabinet of gold cups, one lit for each mastered cabinet (at least one shows). */
+  function drawTrophies(x, t, X = DECOR.trophies.x, Y = DECOR.trophies.y) {
+    paint(x, [[X, Y, 64, 80, '#4a3020']]);
+    x.fillStyle = 'rgba(160,220,255,.16)'; x.fillRect(X + 4, Y + 4, 56, 62); x.fillStyle = '#6a4a30'; x.fillRect(X + 4, Y + 34, 56, 3);
+    const n = Math.max(1, Math.min(8, mastered.size));
+    for (let i = 0; i < 8; i++) { const cx = X + 11 + (i % 4) * 14, cy = Y + 30 + Math.floor(i / 4) * 30, on = i < n;
+      x.fillStyle = on ? '#ffd23d' : 'rgba(255,255,255,.1)'; x.fillRect(cx - 4, cy - 14, 8, 6); x.fillRect(cx - 1, cy - 8, 2, 5); x.fillRect(cx - 3, cy - 3, 6, 2);
+      if (on && (Math.floor(t / 400) + i) % 5 === 0) { x.fillStyle = '#fff'; x.fillRect(cx - 3, cy - 13, 2, 2); } }
+    x.fillStyle = 'rgba(255,255,255,.25)'; x.fillRect(X + 6, Y + 6, 3, 58);
+  }
+  /** Neon strips along the aisle edges, with lights chasing along them. */
+  function drawStrips(x, t) {
+    for (const y of [ROW1 + CH + 8, ROW2 - 12, ROW2 + CH + 8]) {
+      x.fillStyle = 'rgba(255,79,163,.18)'; x.fillRect(20, y - 2, W - 40, 4);
+      x.fillStyle = '#ff4fa3'; x.fillRect(20, y - 0.5, W - 40, 1);
+      for (let i = 0; i < 12; i++) { const px = 20 + (((t / 6 + i * 80) % (W - 40)) + (W - 40)) % (W - 40); x.fillStyle = i % 2 ? '#22e0ff' : '#fff'; x.shadowColor = '#22e0ff'; x.shadowBlur = 8; x.fillRect(px, y - 1.5, 6, 3); }
+      x.shadowBlur = 0;
+    }
   }
   function drawPlant(x, X, Y) {
     paint(x, [[X + 4, Y + 28, 18, 16, '#b8603a']]);
@@ -317,7 +384,12 @@ window.Floor = (() => {
   function draw(t) {
     const x = ctx; x.drawImage(background(), 0, 0);
     if (owns('disco')) discoSpots(x, t);
+    if (owns('strips')) drawStrips(x, t);
     const eq = equip(), list = cabs.map(c => [base(c), () => drawCab(x, c, t)]);
+    if (owns('redeem')) list.push([DECOR.redeem.y + DECOR.redeem.h, () => drawRedeem(x, t)]);
+    if (owns('gumball')) list.push([DECOR.gumball.y + DECOR.gumball.h, () => drawGumball(x)]);
+    if (owns('sofa')) list.push([DECOR.sofa.y + DECOR.sofa.h, () => drawSofa(x)]);
+    if (owns('trophies')) list.push([DECOR.trophies.y + DECOR.trophies.h, () => drawTrophies(x, t)]);
     list.push([COUNTER.y + COUNTER.h, () => drawCounter(x, t)]);
     if (owns('jukebox')) list.push([DECOR.jukebox.y + DECOR.jukebox.h, () => drawJukebox(x, t)]);
     if (owns('claw')) list.push([DECOR.claw.y + DECOR.claw.h, () => drawClaw(x, t)]);
@@ -337,7 +409,7 @@ window.Floor = (() => {
       if (window.Prizes) Prizes.onChange(() => { bgKey = null; buildSolids(); showCard(); });
       if (document.fonts) { document.fonts.ready.then(() => { bgKey = null; }); document.fonts.addEventListener('loadingdone', () => { bgKey = null; }); } // the neon signs use Bungee
     },
-    start() { if (running) return; running = true; buildSolids(); bgKey = null; shownNear = undefined; last = performance.now(); raf = requestAnimationFrame(frame); },
+    start() { if (running) return; running = true; mastered = new Set(cabs.filter(c => { const i = opt.info(c.g); return i.all && i.got === i.all; }).map(c => c.g.slug)); buildSolids(); bgKey = null; shownNear = undefined; last = performance.now(); raf = requestAnimationFrame(frame); },
     stop() { running = false; cancelAnimationFrame(raf); keys.clear(); route = []; },
     /** Test and debug hook: where the walker is, and what it's standing at. */
     state: () => ({ x: me.x, y: me.y, near: near && (near === 'counter' ? 'counter' : near.g.slug) }),
@@ -356,6 +428,11 @@ window.Floor = (() => {
       else if (p.id === 'claw') { x.translate(w / 2 - 22, 2); x.scale(0.68, 0.68); drawClaw(x, t, 0, 0); }
       else if (p.id === 'disco') { x.translate(w / 2 - 480, -168); drawDisco(x, t); }
       else if (p.id === 'sign') { x.fillStyle = '#120e26'; x.fillRect(0, 0, w, h); neon(x, 'GAME ON', w / 2, h / 2, 16, '#22e0ff'); }
+      else if (p.id === 'redeem') { x.translate(w / 2 - 18, 3); x.scale(0.75, 0.75); drawRedeem(x, t, 0, 0); }
+      else if (p.id === 'gumball') { x.translate(w / 2 - 15, 4); drawGumball(x, 0, 0); }
+      else if (p.id === 'sofa') { x.translate(w / 2 - 40, 14); x.scale(0.8, 0.8); drawSofa(x, 0, 0); }
+      else if (p.id === 'trophies') { x.translate(w / 2 - 24, 2); x.scale(0.75, 0.75); drawTrophies(x, t, 0, 0); }
+      else if (p.id === 'strips') { x.fillStyle = '#140c24'; x.fillRect(0, 0, w, h); x.translate(-20, 0); for (const y of [h / 3, h * 2 / 3]) { x.fillStyle = '#ff4fa3'; x.fillRect(20, y, w, 2); for (let i = 0; i < 4; i++) { x.fillStyle = '#22e0ff'; x.fillRect(20 + ((t / 6 + i * 30) % w), y - 1, 6, 4); } } }
       x.restore(); return true;
     }
   };

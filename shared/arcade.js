@@ -82,8 +82,19 @@
     gotCache = [...got, id]; store.set(badgeKey, JSON.stringify(gotCache));
     if (window.TICKETS) TICKETS.add(10);
     toast(`★ BADGE · ${def.name} · +10 TICKETS`); A.jingle([659, 880, 1175, 1568], 0.07, 'triangle');
+    if (mastered()) { // the last badge: this cabinet turns gold
+      setTimeout(() => { toast('★ CABINET MASTERED · GOLD MARQUEE UNLOCKED'); A.jingle([523, 659, 784, 1047, 1319, 1568], 0.08, 'square'); A.flash('#ffd23d', 0.3); }, 900);
+      setMastered();
+    }
     if (shown && overlayOpen()) renderHS();
   };
+  /** Every badge for this game earned: the cabinet is mastered and goes gold (body.mastered, styled in arcade.css). */
+  const mastered = () => A.badgeList().length > 0 && A.badgeList().every(b => A.badgesGot().includes(b.id));
+  function setMastered() {
+    document.body.classList.add('mastered');
+    const strip = document.querySelector('.bezel-top');
+    if (strip && !strip.querySelector('.plaque')) { const pl = document.createElement('span'); pl.className = 'plaque'; pl.textContent = '★ MASTERED ★'; strip.querySelector('.sc') ? strip.querySelector('.sc').after(pl) : strip.prepend(pl); }
+  }
   /** A short message at the top of the screen. Styled inline so pages without arcade.css (Blip Sports) get it too. */
   function toast(text) {
     const n = document.querySelectorAll('.arcade-toast').length, t = document.createElement('div');
@@ -717,9 +728,54 @@
     document.body.classList.add('cab-on');
   }
 
+  /*
+   * Screen transitions, like an old CRT. Arriving from the lobby (which sets bitcade:enter as it powers off), the
+   * screen powers on: a line of light opens out from the middle, with a flash. Going back to the lobby powers it
+   * off: the picture collapses to a line, then a dot. Inline styles, so Blip Sports (no arcade.css) gets them too.
+   */
+  const calmCRT = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function crtLayer() {
+    const o = document.createElement('div'); o.className = 'crt-fx';
+    o.style.cssText = 'position:fixed;inset:0;z-index:9999;pointer-events:none;overflow:hidden';
+    o.innerHTML = '<i></i><i></i><b></b><s></s>';
+    const [top, bot] = o.querySelectorAll('i'), line = o.querySelector('b'), glow = o.querySelector('s');
+    top.style.cssText = 'position:absolute;left:0;right:0;top:0;height:50%;background:#000';
+    bot.style.cssText = 'position:absolute;left:0;right:0;bottom:0;height:50%;background:#000';
+    line.style.cssText = 'position:absolute;left:50%;top:50%;width:100%;height:3px;margin-top:-1.5px;transform:translateX(-50%);background:#fff;box-shadow:0 0 18px 4px rgba(190,230,255,.9)';
+    glow.style.cssText = 'position:absolute;inset:0;background:#d8f0ff;opacity:0';
+    document.body.append(o); return { o, top, bot, line, glow };
+  }
+  function crtOn() {
+    const L = crtLayer();
+    if (calmCRT) { L.o.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 300, fill: 'forwards' }).onfinish = () => L.o.remove(); return; }
+    L.line.animate([{ width: '0%', opacity: 1 }, { width: '100%', opacity: 1 }], { duration: 170, easing: 'ease-out', fill: 'forwards' });
+    L.top.animate([{ transform: 'translateY(0)' }, { transform: 'translateY(-101%)' }], { duration: 300, delay: 170, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' });
+    L.bot.animate([{ transform: 'translateY(0)' }, { transform: 'translateY(101%)' }], { duration: 300, delay: 170, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' });
+    L.line.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 220, delay: 230, fill: 'forwards' });
+    L.glow.animate([{ opacity: 0 }, { opacity: 0.45 }, { opacity: 0 }], { duration: 380, delay: 170, fill: 'forwards' }).onfinish = () => L.o.remove();
+  }
+  /** Power the screen off, then go to href. */
+  A.crtOff = href => {
+    try { sessionStorage.setItem('bitcade:enter', '1'); } catch (e) {} // so the lobby powers on when it loads
+    A.tone(1200, 0.3, 'sine', 0.035, 0, 60);
+    if (calmCRT) { const L = crtLayer(); L.line.remove(); L.top.style.height = L.bot.style.height = '51%'; L.o.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, fill: 'forwards' }).onfinish = () => { location.href = href; }; return; }
+    const L = crtLayer();
+    L.line.style.opacity = '0';
+    L.top.animate([{ transform: 'translateY(-101%)' }, { transform: 'translateY(0)' }], { duration: 200, easing: 'ease-in', fill: 'forwards' });
+    L.bot.animate([{ transform: 'translateY(101%)' }, { transform: 'translateY(0)' }], { duration: 200, easing: 'ease-in', fill: 'forwards' });
+    L.line.animate([{ opacity: 0, width: '100%' }, { opacity: 1, width: '100%', offset: 0.35 }, { opacity: 1, width: '1%', height: '3px', offset: 0.8 }, { opacity: 0, width: '0.5%', height: '3px' }], { duration: 420, delay: 160, fill: 'forwards' })
+      .onfinish = () => { location.href = href; };
+  };
+  addEventListener('pageshow', e => { if (e.persisted) document.querySelectorAll('.crt-fx').forEach(o => o.remove()); }); // back from the lobby, out of the page cache
   function init() {
+    try { if (sessionStorage.getItem('bitcade:enter')) { sessionStorage.removeItem('bitcade:enter'); crtOn(); } } catch (e) {}
+    document.addEventListener('click', e => { // the back link (◀ BITCADE) powers the screen off first
+      const a = e.target.closest && e.target.closest('a[href="../../"]'); if (!a || e.ctrlKey || e.metaKey || e.shiftKey || e.button) return;
+      e.preventDefault(); A.crtOff(a.href);
+    });
     A.showBest();
     buildCabinet();
+    if (mastered()) setMastered();
     const m = $('mute');
     // Touch players need a way to pause; add a header button unless the pad already has one (shown on coarse pointers only).
     if (m && !document.querySelector('[data-k="KeyP"]')) {

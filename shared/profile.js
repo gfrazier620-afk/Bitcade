@@ -47,7 +47,7 @@ window.Profile = (() => {
       <div class="pf-cloud" id="pfCloud"></div>
       <h3 class="pf-h">TROPHY CASE</h3>
       <div class="pf-grid">${st.rows.map((r, i) => `
-        <a class="pf-game" href="games/${r.g.slug}/" style="--c:${r.g.c}">
+        <a class="pf-game${r.badges.length && r.badges.every(b => b.got) ? ' gold' : ''}" href="games/${r.g.slug}/" style="--c:${r.g.c}">
           <canvas width="12" height="8" data-i="${i}"></canvas>
           <div class="pf-g"><b>${esc(r.g.name)}</b>
             <small>${r.g.label || 'BEST'} <i>${r.who ? r.who + ' ' : ''}${r.best ? r.best.toLocaleString() : '—'}</i> · PLAYED <i>${r.p}</i> · <i>${hm(r.t)}</i></small>

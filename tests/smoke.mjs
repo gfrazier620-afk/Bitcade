@@ -474,6 +474,30 @@ console.log('\nCabinet footage and title logos');
   await g.close();
 }
 
+/* ---------- screen transitions and mastered cabinets ---------- */
+console.log('\nTransitions and gold cabinets');
+{
+  const { page, errors, close } = await open('/');
+  await skipBoot(page);
+  await Promise.all([page.waitForURL(/games\/wallbuster\//, { timeout: 5000 }), page.click('a.cab[href="games/wallbuster/"]')]);
+  check(true, 'picking a cabinet powers the lobby off and opens the game');
+  check(await page.evaluate(() => !!document.querySelector('.crt-fx')), 'the game powers on as it opens');
+  await page.waitForFunction(() => !document.querySelector('.crt-fx'), null, { timeout: 3000 });
+  check(true, 'and the power-on clears away');
+  await Promise.all([page.waitForURL(u => !/games\//.test(u), { timeout: 5000 }), page.click('a.back')]);
+  check(await page.evaluate(() => !!document.getElementById('floor')), 'the back link powers off and returns to the lobby');
+  check(!errors.length, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
+  await close();
+
+  const g = await open('/games/neon-noodle/');
+  check(!(await g.page.evaluate(() => document.body.classList.contains('mastered'))), 'a cabinet starts plain');
+  await g.page.evaluate(() => ['gem', 'long', 'score'].forEach(id => Arcade.badge(id)));
+  check(await g.page.evaluate(() => document.body.classList.contains('mastered')) && await g.page.isVisible('.plaque'), 'earning every badge turns the cabinet gold, with a MASTERED plaque');
+  await g.page.goto(BASE + '/?feature=none');
+  check(await g.page.evaluate(() => document.querySelector('a.cab[href="games/neon-noodle/"]').classList.contains('gold')), 'the lobby shows that cabinet in gold');
+  await g.close();
+}
+
 /* ---------- install + offline ---------- */
 console.log('\nInstall and offline');
 {
