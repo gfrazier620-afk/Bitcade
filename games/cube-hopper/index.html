@@ -90,12 +90,13 @@ function landPlayer() {
 function paint(r, c) {
   const cube = cubes.find(q => q.r === r && q.c === c), g = goal();
   if (mode() === 'toggle') { cube.s = cube.s ? 0 : 1; if (cube.s) { score += 25; A.tone(880, 0.05, 'triangle', 0.04); } }
-  else if (cube.s < g) { cube.s++; score += 25; A.tone(760 + cube.s * 120, 0.05, 'triangle', 0.04); }
+  else if (cube.s < g) { cube.s++; score += 25; A.tone(760 + cube.s * 120, 0.05, 'triangle', 0.04); const q = pos(r, c), pal = palette(); A.burst(q.x, q.y, { n: 8, colors: [pal[Math.min(2, cube.s >= g ? 2 : 1)], '#fff'], speed: 110, angle: -Math.PI / 2, spread: 2.4, life: 0.4, size: 3 }); }
   if (cubes.every(q => q.s === g)) roundClear();
 }
 function roundClear() {
   const bonus = 1000 + 250 * round + discs.filter(d => !d.used).length * 50;
-  score += bonus; state = 'clear'; phaseT = 2.4; say(`ROUND CLEAR! +${bonus}`); A.badge('round'); A.jingle([523, 659, 784, 1047, 784, 1047, 1319], 0.08);
+  score += bonus; state = 'clear'; phaseT = 2.4; say(`ROUND CLEAR! +${bonus}`);
+  A.flash('#fff', 0.25); A.shake(4, 0.3); A.burst(W / 2, TOPY + 60, { n: 40, colors: ['#ffd23d', '#ff7bf0', '#5ee7ff', '#3dff8f'], speed: 300, gravity: 260, life: 1.2, size: 3.5 }); A.badge('round'); A.jingle([523, 659, 784, 1047, 784, 1047, 1319], 0.08);
 }
 function spawn() {
   const max = 2 + Math.floor(round / 2);
@@ -139,6 +140,8 @@ const drawPos = o => {
 };
 function die(fromFall) {
   state = 'dying'; phaseT = 1.6; lives--; A.noise(0.5, 0.07); A.tone(300, 0.7, 'sawtooth', 0.05, 0, 60);
+  if (!fromFall && me) { const q = drawPos(me); A.burst(q.x, q.y - 10, { n: 12, kind: 'debris', colors: ['#6fb7ff', '#c0c6d0', '#ff7bf0'], speed: 200, angle: -Math.PI / 2, spread: 2.4, life: 0.9 }); A.ring(q.x, q.y - 10, '#6fb7ff', 50); }
+  A.shake(8, 0.35); A.flash('#ff4f6d', 0.2); A.hitstop(0.1);
   foes = []; spawnT = 2; if (fromFall) { me.r = 0; me.c = 0; }
   me.hop = null; me.fall = null; me.queued = null;
 }
@@ -187,9 +190,9 @@ A.loop(dt => {
   if (score >= nextLife) { lives++; nextLife += 8000; A.jingle([660, 880, 1320], 0.08); }
   A.setScore(score);
 }, t => {
-  const g = ctx.createRadialGradient(W / 2, 0, 40, W / 2, 0, H); g.addColorStop(0, '#1b1640'); g.addColorStop(1, '#07060f'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.drawImage(space, 0, 0);
   const pal = palette(), flash = state === 'clear' && Math.floor(t / 140) % 2;
-  for (const q of cubes) drawCube(pos(q.r, q.c), flash ? '#ffffff' : q.s === 0 ? pal[0] : q.s >= goal() ? pal[2] : pal[1]);
+  for (const q of cubes) drawCube(pos(q.r, q.c), flash ? '#ffffff' : q.s === 0 ? pal[0] : q.s >= goal() ? pal[2] : pal[1], 1, q.s >= goal() && state !== 'title' ? t : null);
   discs.forEach(d => { if (!d.used) drawDisc(pos(d.r, d.c), t); });
   if (me && me.ride) { const k = Math.min(1, me.ride.t / 1.5), a = me.ride.from, b = { x: W / 2, y: TOPY - 60 }, x = a.x + (b.x - a.x) * k, y = a.y + (b.y - a.y) * k; drawDisc({ x, y }, t); drawHopper(x, y - 10, me.face); }
   foes.forEach(f => { const p = drawPos(f); drawFoe(f, p.x, p.y - (f.drop > 0 ? f.drop * 120 : 0), t); });
@@ -199,53 +202,99 @@ A.loop(dt => {
     else if (!(state === 'dying' && Math.floor(t / 100) % 2)) { const p = drawPos(me); drawHopper(p.x, p.y - 10, me.face); }
   }
   parts.forEach(q => { ctx.globalAlpha = Math.min(1, q.t * 2); ctx.fillStyle = q.c; ctx.fillRect(q.x - 2, q.y - 2, 4, 4); }); ctx.globalAlpha = 1;
-  ctx.font = '13px Silkscreen, monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffd23d'; pops.forEach(q => ctx.fillText(q.n, q.x, q.y - 30 - (1 - q.t) * 20));
+  ctx.font = '13px Silkscreen, monospace'; ctx.textAlign = 'center'; pops.forEach(q => { const y = q.y - 30 - (1 - q.t) * 20; ctx.fillStyle = '#0a0612'; ctx.fillText(q.n, q.x + 1, y + 1); ctx.fillStyle = '#ffd23d'; ctx.fillText(q.n, q.x, y); });
   if (state !== 'title') {
     ctx.textAlign = 'left'; ctx.fillStyle = '#f4effd'; ctx.font = '13px Silkscreen, monospace'; ctx.fillText('ROUND ' + round, 12, 22);
     ctx.fillStyle = '#a39bc4'; ctx.font = '11px Silkscreen, monospace'; ctx.fillText('CHANGE TO', 12, 40); drawCube({ x: 106, y: 34 }, pal[2], 0.45);
     for (let i = 0; i < lives - 1; i++) { ctx.save(); ctx.translate(W - 20 - i * 24, 24); ctx.scale(0.6, 0.6); drawHopper(0, 0, -1); ctx.restore(); }
     if (freezeT > 0) { ctx.textAlign = 'right'; ctx.fillStyle = '#3dff8f'; ctx.fillText('FROZEN ' + Math.ceil(freezeT), W - 12, 50); }
   }
-  if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '20px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#6fb7ff'; ctx.shadowColor = '#000'; ctx.shadowBlur = 8; ctx.fillText(msg, W / 2, H - 28); ctx.shadowBlur = 0; ctx.globalAlpha = 1; }
+  if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '20px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#0a0612'; ctx.fillText(msg, W / 2 + 2, H - 26); ctx.fillStyle = '#6fb7ff'; ctx.shadowColor = '#6fb7ff'; ctx.shadowBlur = 12; ctx.fillText(msg, W / 2, H - 28); ctx.shadowBlur = 0; ctx.globalAlpha = 1; }
 });
-function drawCube(p, top, s = 1) {
+/* ---------- art ---------- */
+/** Lighten (k > 0) or darken (k < 0) a #rgb / #rrggbb colour. */
+function shade(hex, k) {
+  let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join('');
+  const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+// deep space behind the pyramid, drawn once: stars, a soft nebula and a ringed planet
+const space = (() => {
+  const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
+  const g = x.createRadialGradient(W / 2, 0, 40, W / 2, 0, H); g.addColorStop(0, '#1b1640'); g.addColorStop(1, '#05040c'); x.fillStyle = g; x.fillRect(0, 0, W, H);
+  let s = 17; const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < 120; i++) { x.fillStyle = `rgba(255,255,255,${0.15 + r() * 0.6})`; x.fillRect(r() * W, r() * H, r() < 0.1 ? 2 : 1, r() < 0.1 ? 2 : 1); }
+  const n = x.createRadialGradient(W * 0.2, H * 0.75, 0, W * 0.2, H * 0.75, 220); n.addColorStop(0, 'rgba(255,123,240,.1)'); n.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = n; x.fillRect(0, 0, W, H);
+  const px = W - 70, py = H - 90;
+  x.strokeStyle = 'rgba(255,210,150,.35)'; x.lineWidth = 4; x.beginPath(); x.ellipse(px, py, 52, 12, -0.3, Math.PI, Math.PI * 2); x.stroke();
+  const pg = x.createRadialGradient(px - 10, py - 10, 3, px, py, 30); pg.addColorStop(0, '#ffcfa0'); pg.addColorStop(1, '#8a4a3a'); x.fillStyle = pg; x.beginPath(); x.arc(px, py, 28, 0, 6.29); x.fill();
+  x.strokeStyle = 'rgba(255,210,150,.5)'; x.lineWidth = 4; x.beginPath(); x.ellipse(px, py, 52, 12, -0.3, 0, Math.PI); x.stroke();
+  return c;
+})();
+/** A cube: outlined edges, a top face shaded toward its far corner, two shaded sides and a glint; done cubes shimmer. */
+function drawCube(p, top, s = 1, shimmer = null) {
   const x = p.x, y = p.y, hw = DX * s, hh = 14 * s, side = 30 * s;
-  ctx.fillStyle = top; ctx.beginPath(); ctx.moveTo(x, y - hh); ctx.lineTo(x + hw, y); ctx.lineTo(x, y + hh); ctx.lineTo(x - hw, y); ctx.closePath(); ctx.fill();
-  if (s < 1) return;
-  ctx.fillStyle = '#231a4a'; ctx.beginPath(); ctx.moveTo(x - hw, y); ctx.lineTo(x, y + hh); ctx.lineTo(x, y + hh + side); ctx.lineTo(x - hw, y + side); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = '#352a6b'; ctx.beginPath(); ctx.moveTo(x + hw, y); ctx.lineTo(x, y + hh); ctx.lineTo(x, y + hh + side); ctx.lineTo(x + hw, y + side); ctx.closePath(); ctx.fill();
-  ctx.strokeStyle = 'rgba(0,0,0,.25)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, y + hh); ctx.lineTo(x, y + hh + side); ctx.stroke();
+  const tg = ctx.createLinearGradient(x, y - hh, x, y + hh); tg.addColorStop(0, shade(top, 0.35)); tg.addColorStop(1, shade(top, -0.15));
+  ctx.fillStyle = tg; ctx.beginPath(); ctx.moveTo(x, y - hh); ctx.lineTo(x + hw, y); ctx.lineTo(x, y + hh); ctx.lineTo(x - hw, y); ctx.closePath(); ctx.fill();
+  if (s < 1) { ctx.strokeStyle = '#0a0612'; ctx.lineWidth = 1.5; ctx.stroke(); return; }
+  const lg = ctx.createLinearGradient(x - hw, y, x, y + hh + side); lg.addColorStop(0, '#2c2258'); lg.addColorStop(1, '#16102e');
+  ctx.fillStyle = lg; ctx.beginPath(); ctx.moveTo(x - hw, y); ctx.lineTo(x, y + hh); ctx.lineTo(x, y + hh + side); ctx.lineTo(x - hw, y + side); ctx.closePath(); ctx.fill();
+  const rg = ctx.createLinearGradient(x + hw, y, x, y + hh + side); rg.addColorStop(0, '#4a3c8a'); rg.addColorStop(1, '#2a2058');
+  ctx.fillStyle = rg; ctx.beginPath(); ctx.moveTo(x + hw, y); ctx.lineTo(x, y + hh); ctx.lineTo(x, y + hh + side); ctx.lineTo(x + hw, y + side); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#0a0612'; ctx.lineWidth = 1.5; ctx.beginPath();
+  ctx.moveTo(x, y - hh); ctx.lineTo(x + hw, y); ctx.lineTo(x + hw, y + side); ctx.lineTo(x, y + hh + side); ctx.lineTo(x - hw, y + side); ctx.lineTo(x - hw, y); ctx.closePath();
+  ctx.moveTo(x - hw, y); ctx.lineTo(x, y + hh); ctx.lineTo(x + hw, y); ctx.moveTo(x, y + hh); ctx.lineTo(x, y + hh + side); ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,.45)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x - hw + 3, y - 0.5); ctx.lineTo(x, y - hh + 1.5); ctx.lineTo(x + hw * 0.4, y - hh * 0.6 + 1); ctx.stroke();
+  if (shimmer != null) { const k = ((shimmer / 900 + x / 300 + y / 200) % 1); if (k < 0.25) { ctx.fillStyle = `rgba(255,255,255,${0.35 - k * 1.4})`; ctx.beginPath(); ctx.moveTo(x, y - hh); ctx.lineTo(x + hw, y); ctx.lineTo(x, y + hh); ctx.lineTo(x - hw, y); ctx.fill(); } }
 }
+/** A transport disc: outlined, a metal rim and a rainbow core that turns. */
 function drawDisc(p, t) {
-  const hue = (t / 6) % 360;
-  ctx.fillStyle = `hsl(${hue},90%,62%)`; ctx.beginPath(); ctx.ellipse(p.x, p.y, 18, 7, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = `hsl(${(hue + 120) % 360},90%,70%)`; ctx.beginPath(); ctx.ellipse(p.x, p.y, 9, 3.5, 0, 0, Math.PI * 2); ctx.fill();
+  const hue = (t / 6) % 360, b = Math.sin(t / 300) * 2;
+  ctx.fillStyle = '#0a0612'; ctx.beginPath(); ctx.ellipse(p.x, p.y + b, 20, 8.5, 0, 0, 6.29); ctx.fill();
+  const g = ctx.createLinearGradient(0, p.y - 7 + b, 0, p.y + 7 + b); g.addColorStop(0, '#f0f2f8'); g.addColorStop(1, '#6a6e80'); ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(p.x, p.y + b, 18, 7, 0, 0, 6.29); ctx.fill();
+  ctx.fillStyle = `hsl(${hue},90%,62%)`; ctx.beginPath(); ctx.ellipse(p.x, p.y + b, 12, 4.5, 0, 0, 6.29); ctx.fill();
+  ctx.fillStyle = `hsl(${(hue + 120) % 360},90%,72%)`; ctx.beginPath(); ctx.ellipse(p.x, p.y + b, 6, 2.2, 0, 0, 6.29); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.fillRect(p.x - 10, p.y - 4 + b, 5, 1.5);
 }
+/** The hopper: an outlined robot with a body shaded from the top, a visor, a bobbing antenna and spring legs. */
 function drawHopper(x, y, face) {
   ctx.save(); ctx.translate(x, y); ctx.scale(face, 1);
-  ctx.strokeStyle = '#c0c6d0'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-4, 6); ctx.lineTo(-6, 9); ctx.lineTo(-2, 12); ctx.lineTo(-6, 15); ctx.moveTo(4, 6); ctx.lineTo(6, 9); ctx.lineTo(2, 12); ctx.lineTo(6, 15); ctx.stroke();
-  ctx.fillStyle = '#6fb7ff'; ctx.beginPath(); ctx.roundRect(-10, -12, 20, 19, 6); ctx.fill();
+  const legs = () => { ctx.beginPath(); ctx.moveTo(-4, 6); ctx.lineTo(-6, 9); ctx.lineTo(-2, 12); ctx.lineTo(-6, 15); ctx.moveTo(4, 6); ctx.lineTo(6, 9); ctx.lineTo(2, 12); ctx.lineTo(6, 15); };
+  legs(); ctx.strokeStyle = '#0a0612'; ctx.lineWidth = 4; ctx.stroke(); legs(); ctx.strokeStyle = '#c0c6d0'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = '#0a0612'; ctx.fillRect(-8, 14, 6, 3); ctx.fillRect(2, 14, 6, 3);
+  ctx.beginPath(); ctx.moveTo(-3, -12); ctx.lineTo(-5, -19); ctx.strokeStyle = '#0a0612'; ctx.lineWidth = 4; ctx.stroke(); ctx.strokeStyle = '#6fb7ff'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = '#0a0612'; ctx.beginPath(); ctx.roundRect(-12, -14, 24, 23, 7); ctx.fill();
+  const g = ctx.createLinearGradient(0, -12, 0, 7); g.addColorStop(0, '#c8e4ff'); g.addColorStop(0.45, '#6fb7ff'); g.addColorStop(1, '#2a5a9a');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.roundRect(-10, -12, 20, 19, 6); ctx.fill();
   ctx.fillStyle = '#0b1a33'; ctx.beginPath(); ctx.roundRect(-6, -8, 15, 8, 3); ctx.fill();
-  ctx.fillStyle = '#5ee7ff'; ctx.fillRect(1, -6, 3, 3); ctx.fillRect(5, -6, 3, 3);
-  ctx.strokeStyle = '#6fb7ff'; ctx.beginPath(); ctx.moveTo(-3, -12); ctx.lineTo(-5, -19); ctx.stroke(); ctx.fillStyle = '#ff7bf0'; ctx.beginPath(); ctx.arc(-5, -20, 2.5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#5ee7ff'; ctx.fillRect(1, -6, 3, 3); ctx.fillRect(5, -6, 3, 3); ctx.fillStyle = '#fff'; ctx.fillRect(1, -6, 1, 1); ctx.fillRect(5, -6, 1, 1);
+  ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.fillRect(-8, -10, 4, 2);
+  ctx.fillStyle = '#0a0612'; ctx.beginPath(); ctx.arc(-5, -20, 3.5, 0, 6.29); ctx.fill(); ctx.fillStyle = '#ff7bf0'; ctx.beginPath(); ctx.arc(-5, -20, 2.5, 0, 6.29); ctx.fill();
   ctx.restore();
 }
+/** Foes: glossy outlined balls; a spring creature with shaded coils and a head; and a wobbling grey blob. */
 function drawFoe(f, x, y, t) {
   if (f.kind === 'coil') {
-    ctx.strokeStyle = '#b48cff'; ctx.lineWidth = 3;
-    for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.ellipse(x, y - 2 - i * 6, 9, 3.5, 0, 0, Math.PI * 2); ctx.stroke(); }
-    ctx.fillStyle = '#b48cff'; ctx.beginPath(); ctx.arc(x, y - 30, 8, 0, Math.PI * 2); ctx.fill();
+    for (let i = 0; i < 4; i++) { const cy = y - 2 - i * 6; ctx.strokeStyle = '#0a0612'; ctx.lineWidth = 5; ctx.beginPath(); ctx.ellipse(x, cy, 9, 3.5, 0, 0, 6.29); ctx.stroke(); ctx.strokeStyle = i % 2 ? '#9a6ae8' : '#c8a8ff'; ctx.lineWidth = 3; ctx.stroke(); }
+    ctx.fillStyle = '#0a0612'; ctx.beginPath(); ctx.arc(x, y - 30, 9.5, 0, 6.29); ctx.fill();
+    const g = ctx.createRadialGradient(x - 3, y - 33, 1, x, y - 30, 9); g.addColorStop(0, '#e0d0ff'); g.addColorStop(1, '#7a4fd8'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y - 30, 8, 0, 6.29); ctx.fill();
     ctx.fillStyle = '#fff'; ctx.fillRect(x - 5, y - 33, 4, 4); ctx.fillRect(x + 1, y - 33, 4, 4); ctx.fillStyle = '#120a1c'; ctx.fillRect(x - 4, y - 32, 2, 2); ctx.fillRect(x + 2, y - 32, 2, 2);
+    ctx.fillStyle = '#ff4f6d'; ctx.fillRect(x - 2, y - 26, 4, 1.5);
     return;
   }
   if (f.kind === 'smudge') {
-    ctx.fillStyle = '#8a92a8'; ctx.beginPath(); ctx.ellipse(x, y - 8, 9, 8 + Math.sin(t / 90) * 1.5, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#fff'; ctx.fillRect(x - 5, y - 11, 3, 3); ctx.fillRect(x + 2, y - 11, 3, 3);
+    const h = 8 + Math.sin(t / 90) * 1.5;
+    ctx.fillStyle = '#0a0612'; ctx.beginPath(); ctx.ellipse(x, y - 8, 10.5, h + 1.5, 0, 0, 6.29); ctx.fill();
+    const g = ctx.createRadialGradient(x - 3, y - 11, 1, x, y - 8, 10); g.addColorStop(0, '#d0d6e8'); g.addColorStop(1, '#5a6278'); ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(x, y - 8, 9, h, 0, 0, 6.29); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.fillRect(x - 5, y - 11, 3, 3); ctx.fillRect(x + 2, y - 11, 3, 3); ctx.fillStyle = '#120a1c'; ctx.fillRect(x - 4, y - 10, 1.5, 1.5); ctx.fillRect(x + 3, y - 10, 1.5, 1.5);
     return;
   }
   const c = { red: '#ff4f6d', purple: '#b48cff', green: '#3dff8f' }[f.kind];
-  ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, y - 8, 8, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.beginPath(); ctx.arc(x - 3, y - 11, 2.5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(x, y + 1, 8, 3, 0, 0, 6.29); ctx.fill();
+  ctx.fillStyle = '#0a0612'; ctx.beginPath(); ctx.arc(x, y - 8, 9.5, 0, 6.29); ctx.fill();
+  const g = ctx.createRadialGradient(x - 3, y - 11, 1, x, y - 8, 9); g.addColorStop(0, shade(c, 0.6)); g.addColorStop(0.6, c); g.addColorStop(1, shade(c, -0.45));
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y - 8, 8, 0, 6.29); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.beginPath(); ctx.ellipse(x - 3, y - 11.5, 2.5, 1.6, -0.5, 0, 6.29); ctx.fill();
 }
 /* Attract demo: hop to cubes that still need colour, away from the bouncing foes. */
 let demoCD = 0;
