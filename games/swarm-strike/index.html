@@ -129,6 +129,8 @@ function updateEnemies(dt) {
 function kill(e) {
   const T = TYPES[e.type], pts = e.st === 'form' ? T.pts : T.dive;
   score += pts; pops.push({ x: e.x, y: e.y, n: pts, t: 1 }); boom(e.x, e.y, T.c, 18); e.dead = true;
+  A.burst(e.x, e.y, { n: e.type === 'boss' ? 16 : 10, kind: 'debris', colors: [T.c, T.a, shade(T.c, -0.4)], speed: 170, life: 0.7, size: 3, gravity: 150 });
+  A.shake(e.type === 'boss' ? 4 : 1.5, 0.1); if (e.st !== 'form') A.ring(e.x, e.y, T.c, 40);
   A.noise(0.18, 0.06); A.tone(e.type === 'boss' ? 300 : 600, 0.1, 'square', 0.04, 0, 100);
   if (e.type === 'boss') A.badge('boss');
   if (e.captive) { rescue = { x: e.x, y: e.y - 26, t: 0 }; say('SHIP RESCUED!'); A.jingle([523, 659, 784, 1047, 1319], 0.08); }
@@ -140,6 +142,8 @@ function hitPlayer(at) {
     player.dual = false; player.x = at < player.x ? player.x + 15 : player.x - 15; boom(at, PY, '#d47dff', 24); A.noise(0.5, 0.08); player.inv = 1; return;
   }
   player.alive = false; boom(player.x, PY, '#d47dff', 36); A.noise(0.8, 0.1); A.tone(160, 0.7, 'sawtooth', 0.05, 0, 40);
+  A.burst(player.x, PY, { n: 14, kind: 'debris', colors: ['#d47dff', '#f4effd', '#5ee7ff'], speed: 220, life: 1, angle: -Math.PI / 2, spread: 2.4 });
+  A.ring(player.x, PY, '#d47dff', 80); A.flash('#ff4f6d', 0.22); A.shake(10, 0.45); A.hitstop(0.1);
   lives--; player.respawnT = 2.2;
 }
 function gameOver() { state = 'over'; const rec = A.submit(score); A.overlay({ title: 'SWARMED', big: `SCORE ${score} · STAGE ${stage}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, btn: 'Play again', onGo: newGame }); }
@@ -209,8 +213,9 @@ A.loop(dt => {
   A.setScore(score);
   if (!enemies.length && !capture && !rescue) { state = 'clear'; phaseT = 2.4; say(`STAGE ${stage} CLEAR`); A.jingle([523, 659, 784, 1047], 0.1); }
 }, t => {
-  ctx.fillStyle = '#05030e'; ctx.fillRect(0, 0, W, H);
-  stars.forEach(s => { ctx.globalAlpha = 0.3 + (Math.floor(t / 300 + s.x) % 3) * 0.25; ctx.fillStyle = s.c; ctx.fillRect(s.x, s.y, 2, 2); }); ctx.globalAlpha = 1;
+  ctx.drawImage(backdrop, 0, 0);
+  // the stars stream past: three depths at three speeds
+  stars.forEach((s, i) => { const z = i % 3 + 1, y = (s.y + t / 1000 * 18 * z) % H; ctx.globalAlpha = 0.25 + z * 0.22; ctx.fillStyle = s.c; ctx.fillRect(s.x, y, z === 3 ? 2 : 1, z === 3 ? 3 : z); }); ctx.globalAlpha = 1;
   if (state === 'title') {
     ['boss', 'moth', 'drone'].forEach((k, i) => { sprite(k, Math.floor(t / 400) % 2, 150, 200 + i * 70, TYPES[k].c, TYPES[k].a, 0); ctx.fillStyle = '#f4effd'; ctx.font = '15px Silkscreen, monospace'; ctx.textAlign = 'left'; ctx.fillText(`${TYPES[k].pts} / ${TYPES[k].dive} DIVING`, 190, 206 + i * 70); });
     return;
@@ -229,25 +234,60 @@ A.loop(dt => {
   if (capture) drawShip(capture.x, capture.y, '#d47dff', false, capture.t * 6);
   if (rescue) drawShip(rescue.x, rescue.y, '#d47dff');
   if (player.alive && !(player.inv > 0 && Math.floor(t / 90) % 2)) ships().forEach(x => drawShip(x, PY, '#d47dff'));
-  ctx.fillStyle = '#fff'; shots.forEach(s => { ctx.fillRect(s.x - 1.5, s.y - 8, 3, 10); });
-  bombs.forEach(b => { ctx.fillStyle = '#ff4f6d'; ctx.fillRect(b.x - 2, b.y - 5, 4, 10); ctx.fillStyle = '#fff'; ctx.fillRect(b.x - 1, b.y - 3, 2, 4); });
+  ctx.shadowColor = '#d47dff'; ctx.shadowBlur = 10; shots.forEach(s => { ctx.fillStyle = '#d47dff'; ctx.fillRect(s.x - 2.5, s.y - 10, 5, 13); ctx.fillStyle = '#fff'; ctx.fillRect(s.x - 1, s.y - 9, 2, 11); });
+  ctx.shadowColor = '#ff4f6d'; bombs.forEach(b => { ctx.fillStyle = '#ff4f6d'; ctx.beginPath(); ctx.ellipse(b.x, b.y, 3, 6, 0, 0, 6.29); ctx.fill(); ctx.fillStyle = '#fff'; ctx.fillRect(b.x - 1, b.y - 3, 2, 4); }); ctx.shadowBlur = 0;
   parts.forEach(q => { ctx.globalAlpha = Math.min(1, q.t * 2); ctx.fillStyle = q.c; ctx.fillRect(q.x - 1.5, q.y - 1.5, 3, 3); }); ctx.globalAlpha = 1;
-  ctx.font = '12px Silkscreen, monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#5ee7ff'; pops.forEach(q => ctx.fillText(q.n, q.x, q.y - (1 - q.t) * 20));
-  ctx.textAlign = 'left'; ctx.fillStyle = '#f4effd'; ctx.font = '13px Silkscreen, monospace'; ctx.fillText('STAGE ' + stage, 12, 22);
+  ctx.font = '12px Silkscreen, monospace'; ctx.textAlign = 'center'; pops.forEach(q => { ctx.fillStyle = '#0a0612'; ctx.fillText(q.n, q.x + 1, q.y - (1 - q.t) * 20 + 1); ctx.fillStyle = '#5ee7ff'; ctx.fillText(q.n, q.x, q.y - (1 - q.t) * 20); });
+  ctx.textAlign = 'left'; ctx.font = '13px Silkscreen, monospace'; ctx.fillStyle = '#0a0612'; ctx.fillText('STAGE ' + stage, 13, 23); ctx.fillStyle = '#f4effd'; ctx.fillText('STAGE ' + stage, 12, 22);
   for (let i = 0; i < lives - (player.alive ? 1 : 0); i++) { ctx.save(); ctx.translate(20 + i * 24, H - 16); ctx.scale(0.55, 0.55); drawShip(0, 0, '#d47dff'); ctx.restore(); }
-  if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '26px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#d47dff'; ctx.fillText(msg, W / 2, 330); ctx.globalAlpha = 1; }
+  if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '26px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#0a0612'; ctx.fillText(msg, W / 2 + 2, 332); ctx.shadowColor = '#d47dff'; ctx.shadowBlur = 16; ctx.fillStyle = '#d47dff'; ctx.fillText(msg, W / 2, 330); ctx.shadowBlur = 0; ctx.globalAlpha = 1; }
 });
+/* ---------- art ---------- */
+/** Lighten (k > 0) or darken (k < 0) a #rgb / #rrggbb colour. */
+function shade(hex, k) {
+  let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join('');
+  const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+// a dark nebula behind the stars, drawn once
+const backdrop = (() => {
+  const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
+  x.fillStyle = '#04020c'; x.fillRect(0, 0, W, H);
+  const neb = (cx, cy, r, col) => { const g = x.createRadialGradient(cx, cy, 0, cx, cy, r); g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.fillRect(0, 0, W, H); };
+  neb(360, 160, 230, 'rgba(212,125,255,.09)'); neb(90, 430, 200, 'rgba(61,123,255,.08)'); neb(300, 560, 150, 'rgba(255,79,109,.05)');
+  return c;
+})();
+// Each bug frame, pre-drawn once per colour pair: outlined pixels lit from the top, with glints along top edges.
+const spriteCache = new Map();
+function spriteCanvas(name, f, c, a) {
+  const key = name + f + c + a; if (spriteCache.has(key)) return spriteCache.get(key);
+  const rows = SPR[name][f], cv2 = document.createElement('canvas'); cv2.width = SW + PX * 2; cv2.height = SH + PX * 2; const x = cv2.getContext('2d');
+  const on = (r, k) => rows[r] && rows[r][k] && rows[r][k] !== '.';
+  x.fillStyle = '#0a0612';
+  for (let r = 0; r < 8; r++) for (let k = 0; k < 11; k++) if (on(r, k)) x.fillRect(k * PX, r * PX, PX * 3, PX * 3);
+  for (let r = 0; r < 8; r++) for (let k = 0; k < 11; k++) if (on(r, k)) {
+    const base = rows[r][k] === 'o' ? a : c;
+    x.fillStyle = shade(base, r < 2 ? 0.3 : r > 5 ? -0.35 : 0); x.fillRect(PX + k * PX, PX + r * PX, PX, PX);
+    if (!on(r - 1, k)) { x.fillStyle = shade(base, 0.6); x.fillRect(PX + k * PX, PX + r * PX, PX, 1); }
+  }
+  spriteCache.set(key, cv2); return cv2;
+}
 function sprite(name, f, x, y, c, a, ang) {
-  const rows = SPR[name][f];
   ctx.save(); ctx.translate(x, y); if (ang) ctx.rotate(ang);
-  for (let r = 0; r < 8; r++) for (let k = 0; k < 11; k++) { const ch = rows[r][k]; if (ch === '.') continue; ctx.fillStyle = ch === 'o' ? a : c; ctx.fillRect(-SW / 2 + k * PX, -SH / 2 + r * PX, PX, PX); }
+  ctx.drawImage(spriteCanvas(name, f, c, a), -SW / 2 - PX, -SH / 2 - PX);
   ctx.restore();
 }
+/** A fighter: outlined white fuselage shaded round, coloured swept wings, a glass canopy and an engine flame. */
 function drawShip(x, y, c, flip, spin) {
   ctx.save(); ctx.translate(x, y); if (flip) ctx.rotate(Math.PI); if (spin) ctx.rotate(spin);
-  ctx.fillStyle = '#f4effd'; ctx.beginPath(); ctx.moveTo(0, -16); ctx.lineTo(5, -4); ctx.lineTo(5, 8); ctx.lineTo(-5, 8); ctx.lineTo(-5, -4); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(-5, -2); ctx.lineTo(-15, 8); ctx.lineTo(-15, 12); ctx.lineTo(-5, 8); ctx.moveTo(5, -2); ctx.lineTo(15, 8); ctx.lineTo(15, 12); ctx.lineTo(5, 8); ctx.fill();
-  ctx.fillStyle = '#5ee7ff'; ctx.fillRect(-1.5, -9, 3, 5);
+  if (!flip && !spin) { const f = 6 + Math.random() * 5, g = ctx.createLinearGradient(0, 8, 0, 8 + f); g.addColorStop(0, '#fff6c2'); g.addColorStop(0.5, '#ff8a3d'); g.addColorStop(1, 'rgba(255,79,109,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(-3, 8); ctx.lineTo(0, 8 + f); ctx.lineTo(3, 8); ctx.fill(); }
+  const wing = s2 => { ctx.beginPath(); ctx.moveTo(-5 * s2, -2); ctx.lineTo(-15 * s2, 8); ctx.lineTo(-15 * s2, 12); ctx.lineTo(-5 * s2, 8); ctx.fill(); };
+  const body = () => { ctx.beginPath(); ctx.moveTo(0, -16); ctx.lineTo(5, -4); ctx.lineTo(5, 9); ctx.lineTo(-5, 9); ctx.lineTo(-5, -4); ctx.closePath(); ctx.fill(); };
+  ctx.fillStyle = '#0a0612'; ctx.save(); ctx.scale(1.18, 1.14); wing(1); wing(-1); body(); ctx.restore();
+  const wg = ctx.createLinearGradient(0, -2, 0, 12); wg.addColorStop(0, shade(c, 0.35)); wg.addColorStop(1, shade(c, -0.45)); ctx.fillStyle = wg; wing(1); wing(-1);
+  const bg = ctx.createLinearGradient(-5, 0, 5, 0); bg.addColorStop(0, '#9a94b4'); bg.addColorStop(0.4, '#fff'); bg.addColorStop(1, '#8a84a4'); ctx.fillStyle = bg; body();
+  ctx.fillStyle = '#0a1a2a'; ctx.fillRect(-2, -10, 4, 6); ctx.fillStyle = '#5ee7ff'; ctx.fillRect(-1.5, -9.5, 3, 4); ctx.fillStyle = 'rgba(255,255,255,.8)'; ctx.fillRect(-1, -9, 1, 2);
+  ctx.fillStyle = c; ctx.fillRect(-15, 10, 2, 2); ctx.fillRect(13, 10, 2, 2);
   ctx.restore();
 }
 /* Attract demo: keep firing under the nearest bug (divers first), sidestepping bombs and dive-bombers. */

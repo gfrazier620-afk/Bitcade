@@ -83,6 +83,7 @@ function killSeg(s) {
   segs.forEach(x => { if (x.ahead === s) x.ahead = null; }); // the one behind becomes a new head
   segs = segs.filter(x => x !== s);
   burst(cx(s.c), cx(s.r), '#7dff6a', 8); A.tone(head ? 520 : 760, 0.05, 'square', 0.04);
+  A.burst(cx(s.c), cx(s.r), { n: head ? 12 : 7, colors: ['#7dff6a', '#c6ff3d', '#2f9a48'], speed: 140, life: 0.45, size: 3.5 }); if (head) { A.ring(cx(s.c), cx(s.r), '#c6ff3d', 30); A.shake(2, 0.1); }
   if (!segs.length) {
     cleared++; A.badge('wave'); if (cleared >= 5) A.badge('w5');
     wave++; say(`WAVE ${wave}`); A.jingle([523, 659, 784, 1047], 0.08); stepT = 0; hatch(12);
@@ -93,6 +94,7 @@ function hitFlower(c, r) { const f = flowerAt(c, r); if (!f) return false; f.hp-
 const blocked = (x, y) => [[-7, -7], [7, -7], [-7, 7], [7, 7]].some(([dx, dy]) => flowerAt(Math.floor((x + dx) / CELL), Math.floor((y + dy) / CELL)));
 function die() {
   state = 'dying'; phaseT = 1.6; lives--; burst(pl.x, pl.y, '#2ee6c5', 30); A.noise(0.6, 0.08); A.tone(400, 0.6, 'sawtooth', 0.05, 0, 60);
+  A.burst(pl.x, pl.y, { n: 12, kind: 'debris', colors: ['#2ee6c5', '#c8fff4', '#0d3a33'], speed: 200, life: 1, angle: -Math.PI / 2, spread: 2.4 }); A.flash('#ff4f6d', 0.22); A.shake(9, 0.4); A.hitstop(0.1);
 }
 function regrow() {
   let bonus = 0; flowers.forEach(f => { if (f.hp < 4) { f.hp = 4; bonus += 5; } });
@@ -123,10 +125,11 @@ A.loop(dt => {
     if (s) { killSeg(s); shot = null; break; }
     if (spider && Math.abs(spider.x - shot.x) < 14 && Math.abs(spider.y - shot.y) < 10) {
       const d = Math.abs(spider.y - pl.y), pts = d < 40 ? 900 : d < 80 ? 600 : 300;
-      score += pts; pops.push({ x: spider.x, y: spider.y, n: pts, t: 1.2 }); burst(spider.x, spider.y, '#b48cff', 16); spider = null; shot = null; A.badge('spider'); A.jingle([784, 988, 1175], 0.05); break;
+      score += pts; pops.push({ x: spider.x, y: spider.y, n: pts, t: 1.2 }); burst(spider.x, spider.y, '#b48cff', 16);
+      A.burst(spider.x, spider.y, { n: 12, kind: 'debris', colors: ['#7a4fd8', '#b48cff'], speed: 160, life: 0.7, size: 3 }); A.ring(spider.x, spider.y, '#b48cff', 50); A.shake(4, 0.2); spider = null; shot = null; A.badge('spider'); A.jingle([784, 988, 1175], 0.05); break;
     }
     if (beetle && Math.abs(beetle.x - shot.x) < 10 && Math.abs(beetle.y - shot.y) < 12) {
-      shot = null; beetle.hp--; if (beetle.hp <= 0) { score += 200; pops.push({ x: beetle.x, y: beetle.y, n: 200, t: 1 }); burst(beetle.x, beetle.y, '#ff4f6d', 12); beetle = null; } else beetle.v = 560; A.tone(500, 0.05); break;
+      shot = null; beetle.hp--; if (beetle.hp <= 0) { score += 200; pops.push({ x: beetle.x, y: beetle.y, n: 200, t: 1 }); burst(beetle.x, beetle.y, '#ff4f6d', 12); A.burst(beetle.x, beetle.y, { n: 10, kind: 'debris', colors: ['#ff4f6d', '#120c08'], speed: 160, life: 0.7, size: 3 }); A.shake(3, 0.15); beetle = null; } else beetle.v = 560; A.tone(500, 0.05); break;
     }
     if (hitFlower(Math.floor(shot.x / CELL), Math.floor(shot.y / CELL))) { shot = null; break; }
   }
@@ -155,52 +158,99 @@ A.loop(dt => {
   if (score >= nextLife) { lives++; nextLife += 12000; A.jingle([660, 880, 1320], 0.08); }
   A.setScore(score);
 }, t => {
-  ctx.fillStyle = '#120c08'; ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = 'rgba(255,255,255,.025)'; for (let r = 0; r < ROWS; r++) for (let c = (r % 2); c < COLS; c += 2) ctx.fillRect(c * CELL, r * CELL, CELL, CELL);
-  ctx.fillStyle = 'rgba(46,230,197,.08)'; ctx.fillRect(0, ZONE * CELL, W, H - ZONE * CELL);
-  ctx.fillStyle = 'rgba(46,230,197,.35)'; ctx.fillRect(0, ZONE * CELL, W, 1);
+  ctx.drawImage(garden, 0, 0);
   flowers.forEach((f, k) => { const [c, r] = k.split(',').map(Number); drawFlower(cx(c), cx(r), f); });
   if (state === 'title') { // attract: a caterpillar winding across
     for (let i = 0; i < 10; i++) { const x = ((t / 9) - i * 18) % (W + 200) - 40, y = 300 + Math.sin(((t / 9) - i * 18) / 40) * 20; drawSeg(x, y, i === 0, 1); }
   } else segs.forEach(s => { const p = segPos(s); drawSeg(p.x, p.y, !s.ahead, s.dir); });
   if (spider) drawSpider(spider.x, spider.y, t);
   if (beetle) drawBeetle(beetle.x, beetle.y, beetle.hp);
-  if (shot) { ctx.fillStyle = '#5ee7ff'; ctx.fillRect(shot.x - 1.5, shot.y - 7, 3, 10); }
+  if (shot) { // a water droplet
+    ctx.fillStyle = '#0a0612'; ctx.beginPath(); ctx.ellipse(shot.x, shot.y, 4, 6.5, 0, 0, 6.29); ctx.fill();
+    const g = ctx.createRadialGradient(shot.x - 1, shot.y - 2, 0.5, shot.x, shot.y, 5); g.addColorStop(0, '#e8fcff'); g.addColorStop(1, '#3dbaff'); ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(shot.x, shot.y, 3, 5.5, 0, 0, 6.29); ctx.fill();
+  }
   if (state !== 'title' && !(state === 'dying' && Math.floor(t / 90) % 2)) drawSprayer(pl.x, pl.y);
   parts.forEach(q => { ctx.globalAlpha = Math.min(1, q.t * 3); ctx.fillStyle = q.c; ctx.fillRect(q.x - 2, q.y - 2, 4, 4); }); ctx.globalAlpha = 1;
-  ctx.font = '12px Silkscreen, monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffd23d'; pops.forEach(q => ctx.fillText(q.n, q.x, q.y - (1 - q.t) * 18));
+  ctx.font = '12px Silkscreen, monospace'; ctx.textAlign = 'center'; pops.forEach(q => { ctx.fillStyle = '#0a0612'; ctx.fillText(q.n, q.x + 1, q.y - (1 - q.t) * 18 + 1); ctx.fillStyle = '#ffd23d'; ctx.fillText(q.n, q.x, q.y - (1 - q.t) * 18); });
   if (state !== 'title') {
-    ctx.textAlign = 'left'; ctx.fillStyle = '#f4effd'; ctx.font = '12px Silkscreen, monospace'; ctx.fillText('WAVE ' + wave, 8, 14);
+    ctx.textAlign = 'left'; ctx.font = '12px Silkscreen, monospace'; ctx.fillStyle = '#0a0612'; ctx.fillText('WAVE ' + wave, 9, 15); ctx.fillStyle = '#f4effd'; ctx.fillText('WAVE ' + wave, 8, 14);
     for (let i = 0; i < lives - 1; i++) { ctx.save(); ctx.translate(W - 14 - i * 20, 12); ctx.scale(0.6, 0.6); drawSprayer(0, 0); ctx.restore(); }
   }
-  if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '22px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#2ee6c5'; ctx.shadowColor = '#000'; ctx.shadowBlur = 8; ctx.fillText(msg, W / 2, 260); ctx.shadowBlur = 0; ctx.globalAlpha = 1; }
+  if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '22px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#0a0612'; ctx.fillText(msg, W / 2 + 2, 262); ctx.fillStyle = '#2ee6c5'; ctx.shadowColor = '#2ee6c5'; ctx.shadowBlur = 12; ctx.fillText(msg, W / 2, 260); ctx.shadowBlur = 0; ctx.globalAlpha = 1; }
 });
+/* ---------- art ---------- */
+/** Lighten (k > 0) or darken (k < 0) a #rgb / #rrggbb colour. */
+function shade(hex, k) {
+  let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join('');
+  const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+// the garden, drawn once: tilled soil in rows with pebbles, and a lawn strip where the sprayer works
+const garden = (() => {
+  const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
+  const ZY = ZONE * CELL;
+  x.fillStyle = '#2a1a10'; x.fillRect(0, 0, W, ZY);
+  for (let r = 0; r < ZONE; r++) { x.fillStyle = r % 2 ? '#2f1e12' : '#26170e'; x.fillRect(0, r * CELL, W, CELL); x.fillStyle = 'rgba(0,0,0,.18)'; x.fillRect(0, r * CELL + CELL - 3, W, 3); x.fillStyle = 'rgba(255,220,180,.04)'; x.fillRect(0, r * CELL, W, 2); }
+  let s = 9; const rr = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < 160; i++) { const px = rr() * W, py = rr() * ZY; x.fillStyle = rr() < 0.5 ? '#4a3220' : '#1a0f08'; x.fillRect(px, py, 2 + rr() * 2, 2); }
+  const lg = x.createLinearGradient(0, ZY, 0, H); lg.addColorStop(0, '#1f5a2a'); lg.addColorStop(1, '#143a1c'); x.fillStyle = lg; x.fillRect(0, ZY, W, H - ZY);
+  for (let i = 0; i < 260; i++) { const px = rr() * W, py = ZY + 4 + rr() * (H - ZY - 4); x.strokeStyle = rr() < 0.5 ? '#2f7a3a' : '#3d9a48'; x.lineWidth = 1; x.beginPath(); x.moveTo(px, py + 4); x.lineTo(px + (rr() - 0.5) * 3, py); x.stroke(); }
+  x.fillStyle = '#0a0612'; x.fillRect(0, ZY - 1, W, 3); x.fillStyle = '#6fd88a'; x.fillRect(0, ZY - 1, W, 1); // the lawn's edge
+  return c;
+})();
+/** A flower: outlined petals shaded from the top, a speckled centre, and two leaves on the stem. It shrinks as it's sprayed. */
 function drawFlower(x, y, f) {
   const s = 2 + f.hp * 1.4;
-  ctx.fillStyle = '#2f7a2c'; ctx.fillRect(x - 1, y, 2, 8);
-  ctx.fillStyle = f.col; for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2 + Math.PI / 4; ctx.beginPath(); ctx.arc(x + Math.cos(a) * s * 0.7, y + Math.sin(a) * s * 0.7, s * 0.6, 0, Math.PI * 2); ctx.fill(); }
-  ctx.fillStyle = '#fff3b0'; ctx.beginPath(); ctx.arc(x, y, Math.max(1.5, s * 0.35), 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#1f5a1c'; ctx.fillRect(x - 1, y, 2, 8);
+  ctx.fillStyle = '#3d9a3a'; ctx.beginPath(); ctx.ellipse(x - 3, y + 5, 3, 1.5, 0.6, 0, 6.29); ctx.ellipse(x + 3, y + 7, 3, 1.5, -0.6, 0, 6.29); ctx.fill();
+  ctx.fillStyle = '#0a0612'; for (let i = 0; i < 5; i++) { const a = i * Math.PI * 2 / 5 - Math.PI / 2; ctx.beginPath(); ctx.arc(x + Math.cos(a) * s * 0.7, y + Math.sin(a) * s * 0.7, s * 0.6 + 1, 0, 6.29); ctx.fill(); }
+  for (let i = 0; i < 5; i++) { const a = i * Math.PI * 2 / 5 - Math.PI / 2, px = x + Math.cos(a) * s * 0.7, py = y + Math.sin(a) * s * 0.7;
+    const g = ctx.createRadialGradient(px - 1, py - 1, 0, px, py, s * 0.6); g.addColorStop(0, shade(f.col, 0.5)); g.addColorStop(1, shade(f.col, -0.2)); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(px, py, s * 0.6, 0, 6.29); ctx.fill(); }
+  ctx.fillStyle = '#ffd23d'; ctx.beginPath(); ctx.arc(x, y, Math.max(1.5, s * 0.35), 0, 6.29); ctx.fill();
+  ctx.fillStyle = '#b8860b'; ctx.fillRect(x - 0.5, y + 0.5, 1, 1);
 }
+/** A caterpillar segment: an outlined, round, shaded body with a stripe and wiggling legs; the head has eyes, cheeks and antennae. */
 function drawSeg(x, y, head, dir) {
-  ctx.fillStyle = head ? '#c6ff3d' : '#7dff6a'; ctx.beginPath(); ctx.arc(x, y, head ? 9 : 8, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(x - 1, y - 8, 2, 16);
-  if (head) {
-    ctx.fillStyle = '#120c08'; ctx.fillRect(x + dir * 3 - 1, y - 4, 3, 3); ctx.fillRect(x + dir * 3 - 1, y + 1, 3, 3);
-    ctx.strokeStyle = '#c6ff3d'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x + dir * 5, y - 6); ctx.lineTo(x + dir * 10, y - 12); ctx.moveTo(x + dir * 5, y + 6); ctx.lineTo(x + dir * 10, y + 12); ctx.stroke();
-  }
+  const r = head ? 9 : 8, c = head ? '#c6ff3d' : '#7dff6a', wig = Math.sin(performance.now() / 90 + x * 0.3) * 1.5;
+  ctx.strokeStyle = '#0a0612'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x - 4, y + r - 2); ctx.lineTo(x - 5 + wig, y + r + 3); ctx.moveTo(x + 4, y + r - 2); ctx.lineTo(x + 5 - wig, y + r + 3); ctx.stroke();
+  ctx.fillStyle = '#0a0612'; ctx.beginPath(); ctx.arc(x, y, r + 1.5, 0, 6.29); ctx.fill();
+  const g = ctx.createRadialGradient(x - r * 0.35, y - r * 0.4, 1, x, y, r); g.addColorStop(0, shade(c, 0.55)); g.addColorStop(0.6, c); g.addColorStop(1, shade(c, -0.4));
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.29); ctx.fill();
+  if (!head) { ctx.fillStyle = shade(c, -0.3); ctx.fillRect(x - 1.5, y - r + 2, 3, r * 2 - 4); return; }
+  ctx.strokeStyle = '#0a0612'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x + dir * 3, y - 7); ctx.lineTo(x + dir * 7, y - 14); ctx.moveTo(x - dir * 1, y - 8); ctx.lineTo(x + dir * 1, y - 15); ctx.stroke();
+  ctx.fillStyle = '#ff4fa3'; ctx.beginPath(); ctx.arc(x + dir * 7, y - 14, 2, 0, 6.29); ctx.arc(x + dir * 1, y - 15, 2, 0, 6.29); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x + dir * 3, y - 2, 3, 0, 6.29); ctx.fill(); ctx.fillStyle = '#0a0612'; ctx.beginPath(); ctx.arc(x + dir * 4, y - 2, 1.5, 0, 6.29); ctx.fill();
+  ctx.fillStyle = 'rgba(255,79,163,.6)'; ctx.beginPath(); ctx.arc(x + dir * 5, y + 3, 2, 0, 6.29); ctx.fill();
 }
+/** The spider: a fuzzy outlined body shaded purple, eight jointed legs that scuttle, and red eyes. */
 function drawSpider(x, y, t) {
-  ctx.strokeStyle = '#b48cff'; ctx.lineWidth = 2; const k = Math.sin(t / 60) * 3;
-  ctx.beginPath(); for (const s of [-1, 1]) for (let i = 0; i < 3; i++) { ctx.moveTo(x, y); ctx.lineTo(x + s * 9, y - 5 + i * 5 + (i % 2 ? k : -k)); ctx.lineTo(x + s * 14, y + i * 5); } ctx.stroke();
-  ctx.fillStyle = '#7a4fd8'; ctx.beginPath(); ctx.ellipse(x, y, 8, 6, 0, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#ff4f6d'; ctx.fillRect(x - 3, y - 2, 2, 2); ctx.fillRect(x + 1, y - 2, 2, 2);
+  const k = Math.sin(t / 60) * 3;
+  for (const [col, w] of [['#0a0612', 4], ['#7a4fd8', 2]]) {
+    ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath();
+    for (const s2 of [-1, 1]) for (let i = 0; i < 4; i++) { const yy = y - 6 + i * 4; ctx.moveTo(x, y); ctx.lineTo(x + s2 * 9, yy - 4 + (i % 2 ? k : -k)); ctx.lineTo(x + s2 * 15, yy + 3); }
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#0a0612'; ctx.beginPath(); ctx.ellipse(x, y, 9.5, 7.5, 0, 0, 6.29); ctx.fill();
+  const g = ctx.createRadialGradient(x - 3, y - 3, 1, x, y, 9); g.addColorStop(0, '#c8a8ff'); g.addColorStop(0.6, '#7a4fd8'); g.addColorStop(1, '#3a2068'); ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(x, y, 8, 6, 0, 0, 6.29); ctx.fill();
+  ctx.fillStyle = '#ff4f6d'; ctx.fillRect(x - 4, y - 3, 3, 3); ctx.fillRect(x + 1, y - 3, 3, 3); ctx.fillStyle = '#fff'; ctx.fillRect(x - 4, y - 3, 1, 1); ctx.fillRect(x + 1, y - 3, 1, 1);
 }
+/** The beetle: an outlined, glossy shell split down the middle, with spots and a head. */
 function drawBeetle(x, y, hp) {
-  ctx.fillStyle = hp > 1 ? '#ff4f6d' : '#ff9a6a'; ctx.beginPath(); ctx.ellipse(x, y, 7, 9, 0, 0, Math.PI * 2); ctx.fill();
+  const c = hp > 1 ? '#ff4f6d' : '#ff9a6a';
+  ctx.fillStyle = '#0a0612'; ctx.beginPath(); ctx.ellipse(x, y, 8.5, 10.5, 0, 0, 6.29); ctx.fill(); ctx.fillRect(x - 4, y + 7, 8, 5);
+  const g = ctx.createRadialGradient(x - 3, y - 4, 1, x, y, 10); g.addColorStop(0, shade(c, 0.5)); g.addColorStop(0.6, c); g.addColorStop(1, shade(c, -0.45));
+  ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(x, y, 7, 9, 0, 0, 6.29); ctx.fill();
   ctx.fillStyle = '#120c08'; ctx.fillRect(x - 0.5, y - 9, 1, 18); ctx.beginPath(); ctx.arc(x - 3, y - 1, 1.6, 0, 6.3); ctx.arc(x + 3, y + 3, 1.6, 0, 6.3); ctx.fill(); ctx.fillRect(x - 3, y + 7, 6, 3);
+  ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.fillRect(x - 4, y - 6, 2, 3);
 }
+/** The sprayer: a little outlined robot with a shaded dome, a nozzle and wheels. */
 function drawSprayer(x, y) {
-  ctx.fillStyle = '#2ee6c5'; ctx.beginPath(); ctx.arc(x, y + 2, 8, Math.PI, 0); ctx.fill(); ctx.fillRect(x - 8, y + 2, 16, 5);
-  ctx.fillStyle = '#c8fff4'; ctx.fillRect(x - 2, y - 10, 4, 8); ctx.fillStyle = '#0d3a33'; ctx.fillRect(x - 4, y, 3, 3); ctx.fillRect(x + 1, y, 3, 3);
+  ctx.fillStyle = '#0a0612'; ctx.beginPath(); ctx.arc(x, y + 2, 10, Math.PI, 0); ctx.fill(); ctx.fillRect(x - 10, y + 1, 20, 9); ctx.fillRect(x - 3.5, y - 12, 7, 10);
+  const g = ctx.createLinearGradient(0, y - 8, 0, y + 7); g.addColorStop(0, '#a0fff0'); g.addColorStop(0.5, '#2ee6c5'); g.addColorStop(1, '#14806c');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y + 2, 8, Math.PI, 0); ctx.fill(); ctx.fillRect(x - 8, y + 2, 16, 5);
+  ctx.fillStyle = '#e8ecf4'; ctx.fillRect(x - 2, y - 11, 4, 9); ctx.fillStyle = '#5ee7ff'; ctx.fillRect(x - 2, y - 11, 4, 2);
+  ctx.fillStyle = '#0d3a33'; ctx.fillRect(x - 4, y - 1, 3, 3); ctx.fillRect(x + 1, y - 1, 3, 3); ctx.fillStyle = '#fff'; ctx.fillRect(x - 4, y - 1, 1, 1); ctx.fillRect(x + 1, y - 1, 1, 1);
+  ctx.fillStyle = '#3a3048'; ctx.fillRect(x - 8, y + 7, 5, 3); ctx.fillRect(x + 3, y + 7, 5, 3);
 }
 /* Attract demo: spray at the lowest part of the caterpillar, and back away from the spider. */
 A.attract({

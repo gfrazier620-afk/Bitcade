@@ -49,6 +49,9 @@ function nextWave() {
 function boom(x, y, n, c = '#c6ff3d', sp = 160) { for (let i = 0; i < n; i++) { const a = Math.random() * 6.28, s = A.rand(20, sp); parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, t: A.rand(0.4, 1), c }); } }
 function split(r, i) {
   rocks.splice(i, 1); score += SIZES[r.size].pts; boom(r.x, r.y, r.size * 6, '#e8ffd0');
+  A.burst(r.x, r.y, { n: r.size * 4, kind: 'debris', colors: ['#8a7f9a', '#5a5068', '#b8aac8'], speed: 90 + r.size * 30, life: 0.9, size: 3 + r.size * 1.5, gravity: 0 });
+  A.burst(r.x, r.y, { n: r.size * 2, kind: 'smoke', color: '#a8a0c0', speed: 40, life: 0.7, size: 4 + r.size * 3, gravity: 0 });
+  A.shake(r.size * 1.5, 0.12); A.pop(r.x, r.y - r.r * 0.5, SIZES[r.size].pts, '#c6ff3d');
   A.noise(0.12 + r.size * 0.08, 0.06 + r.size * 0.02);
   if (r.size > 1) for (let k = 0; k < 2; k++) { const n = rock(r.x, r.y, r.size - 1); rocks.push(n); }
 }
@@ -118,42 +121,89 @@ function update(dt) {
   A.setScore(score);
   if (!rocks.length && !saucer) nextWave();
 }
-function crash() { lives--; ship.dead = 2; boom(ship.x, ship.y, 40, '#c6ff3d', 220); A.noise(0.9, 0.12); }
+function crash() {
+  lives--; ship.dead = 2; boom(ship.x, ship.y, 40, '#c6ff3d', 220); A.noise(0.9, 0.12);
+  A.burst(ship.x, ship.y, { n: 14, kind: 'debris', colors: ['#c0c6d0', '#c6ff3d', '#5a5e70'], speed: 200, life: 1.2, gravity: 0 }); A.ring(ship.x, ship.y, '#ffb03d', 90);
+  A.flash('#ffb03d', 0.25); A.shake(12, 0.5); A.hitstop(0.1);
+}
 function gameOver() { state = 'over'; const rec = A.submit(score); A.overlay({ title: 'SHIP LOST', big: `SCORE ${score} · WAVE ${wave}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, btn: 'Play again', onGo: newGame }); }
 
-function drawShip(x, y, a, thrust, col = '#c6ff3d') {
-  ctx.save(); ctx.translate(x, y); ctx.rotate(a);
-  ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.shadowColor = col; ctx.shadowBlur = 10;
-  ctx.beginPath(); ctx.moveTo(15, 0); ctx.lineTo(-11, -9); ctx.lineTo(-6, 0); ctx.lineTo(-11, 9); ctx.closePath(); ctx.stroke();
-  if (thrust && Math.random() < 0.8) { ctx.strokeStyle = '#ffb03d'; ctx.shadowColor = '#ffb03d'; ctx.beginPath(); ctx.moveTo(-7, -4); ctx.lineTo(-17 - Math.random() * 6, 0); ctx.lineTo(-7, 4); ctx.stroke(); }
+/* ---------- art ---------- */
+/** Lighten (k > 0) or darken (k < 0) a #rgb / #rrggbb colour. */
+function shade(hex, k) {
+  let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join('');
+  const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+// deep space, drawn once: two nebula clouds over black; the stars are drawn live so they can drift
+const space = (() => {
+  const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
+  x.fillStyle = '#03030a'; x.fillRect(0, 0, W, H);
+  const cloud = (cx, cy, r, col) => { for (let i = 0; i < 14; i++) { const a = i * 2.4, d = r * 0.5 * (i % 3) / 2, g = x.createRadialGradient(cx + Math.cos(a) * d, cy + Math.sin(a) * d, 0, cx + Math.cos(a) * d, cy + Math.sin(a) * d, r * (0.5 + (i % 4) * 0.15)); g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.fillRect(0, 0, W, H); } };
+  cloud(150, 120, 170, 'rgba(120,40,160,.10)'); cloud(500, 360, 200, 'rgba(40,120,140,.09)'); cloud(560, 90, 90, 'rgba(198,255,61,.04)');
+  return c;
+})();
+const STARS = Array.from({ length: 110 }, (_, i) => ({ x: Math.random() * W, y: Math.random() * H, z: i < 70 ? 0.3 : i < 100 ? 0.6 : 1 }));
+function drawStars(t) {
+  for (const s of STARS) { const x = (s.x - t / 1000 * 6 * s.z % W + W) % W; ctx.globalAlpha = 0.3 + s.z * 0.6; ctx.fillStyle = s.z === 1 ? '#e8ffd0' : '#fff'; ctx.fillRect(x, s.y, s.z === 1 ? 2 : 1, s.z === 1 ? 2 : 1); }
+  ctx.globalAlpha = 1;
+}
+/** The ship: an outlined, shaded fighter (light on top, dark below) with a cockpit, and a flickering flame when thrusting. */
+function drawShip(x, y, a, thrust, col = '#c6ff3d', k = 1) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(a); ctx.scale(k, k);
+  if (thrust) { const f = 10 + Math.random() * 8, g = ctx.createLinearGradient(-6, 0, -6 - f, 0); g.addColorStop(0, '#fff6c2'); g.addColorStop(0.4, '#ffb03d'); g.addColorStop(1, 'rgba(255,79,109,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(-6, -5); ctx.lineTo(-6 - f, 0); ctx.lineTo(-6, 5); ctx.fill(); }
+  const hull = [[16, 0], [-10, -10], [-6, 0], [-10, 10]];
+  ctx.fillStyle = '#0a0612'; ctx.beginPath(); hull.forEach(([px, py], i) => i ? ctx.lineTo(px * 1.18, py * 1.25) : ctx.moveTo(px * 1.15 + 1, py)); ctx.closePath(); ctx.fill();
+  const g = ctx.createLinearGradient(0, -10, 0, 10); g.addColorStop(0, shade(col, 0.5)); g.addColorStop(0.5, col); g.addColorStop(1, shade(col, -0.55));
+  ctx.fillStyle = g; ctx.beginPath(); hull.forEach(([px, py], i) => i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = shade(col, -0.35); ctx.beginPath(); ctx.moveTo(-6, 0); ctx.lineTo(-10, 10); ctx.lineTo(-3, 3); ctx.fill(); // shaded wing
+  ctx.fillStyle = '#0a1a2a'; ctx.beginPath(); ctx.ellipse(3, 0, 4.5, 2.6, 0, 0, 6.29); ctx.fill();                    // cockpit
+  ctx.fillStyle = 'rgba(160,230,255,.85)'; ctx.fillRect(2.5, -1.6, 2.5, 1.2);
   ctx.restore();
 }
+/** A rock: an outlined, irregular body shaded from the upper left, with craters, turning slowly. */
 function drawRock(r) {
-  ctx.save(); ctx.translate(r.x, r.y); ctx.rotate(r.rot); ctx.beginPath();
-  r.pts.forEach((d, i) => { const a = i / r.pts.length * Math.PI * 2; i ? ctx.lineTo(Math.cos(a) * d, Math.sin(a) * d) : ctx.moveTo(Math.cos(a) * d, Math.sin(a) * d); });
-  ctx.closePath(); ctx.fillStyle = 'rgba(232,255,208,.04)'; ctx.fill(); ctx.stroke(); ctx.restore();
+  if (!r.cr) { r.cr = Array.from({ length: 1 + r.size }, () => ({ a: Math.random() * 6.28, d: Math.random() * 0.55, s: 0.12 + Math.random() * 0.14 })); r.tone = ['#7a6f8a', '#8a7a70', '#6f7a8a'][Math.floor(Math.random() * 3)]; }
+  ctx.save(); ctx.translate(r.x, r.y); ctx.rotate(r.rot);
+  const pathOf = k => { ctx.beginPath(); r.pts.forEach((d, i) => { const a = i / r.pts.length * Math.PI * 2; i ? ctx.lineTo(Math.cos(a) * d * k, Math.sin(a) * d * k) : ctx.moveTo(Math.cos(a) * d * k, Math.sin(a) * d * k); }); ctx.closePath(); };
+  pathOf(1); ctx.lineWidth = 4; ctx.strokeStyle = '#0a0612'; ctx.stroke();
+  ctx.rotate(-r.rot); // light stays put while the rock turns
+  const g = ctx.createRadialGradient(-r.r * 0.4, -r.r * 0.45, r.r * 0.1, 0, 0, r.r * 1.1); g.addColorStop(0, shade(r.tone, 0.45)); g.addColorStop(0.55, r.tone); g.addColorStop(1, shade(r.tone, -0.6));
+  ctx.rotate(r.rot); ctx.fillStyle = g; pathOf(1); ctx.fill();
+  for (const c of r.cr) { const cx = Math.cos(c.a) * c.d * r.r, cy = Math.sin(c.a) * c.d * r.r, cr = c.s * r.r * 1.4;
+    ctx.fillStyle = shade(r.tone, -0.4); ctx.beginPath(); ctx.arc(cx, cy, cr, 0, 6.29); ctx.fill();
+    ctx.fillStyle = shade(r.tone, 0.25); ctx.beginPath(); ctx.arc(cx + cr * 0.25, cy + cr * 0.25, cr * 0.7, 0, 6.29); ctx.fill();
+    ctx.fillStyle = shade(r.tone, -0.25); ctx.beginPath(); ctx.arc(cx + cr * 0.1, cy + cr * 0.1, cr * 0.55, 0, 6.29); ctx.fill(); }
+  ctx.lineWidth = 1.2; ctx.strokeStyle = 'rgba(232,255,208,.35)'; pathOf(0.96); ctx.stroke(); // a faint rim of light
+  ctx.restore();
+}
+/** The saucer: a metal disc with a glass dome, running lights that chase round, and a pink glow. */
+function drawSaucer(sc, t) {
+  const s = sc.small ? 0.6 : 1; ctx.save(); ctx.translate(sc.x, sc.y); ctx.scale(s, s);
+  ctx.shadowColor = '#ff5edb'; ctx.shadowBlur = 16;
+  ctx.fillStyle = '#0a0612'; ctx.beginPath(); ctx.ellipse(0, 2, 25, 9, 0, 0, 6.29); ctx.fill(); ctx.shadowBlur = 0;
+  const g = ctx.createLinearGradient(0, -6, 0, 10); g.addColorStop(0, '#e8ecf4'); g.addColorStop(0.5, '#8a8ea0'); g.addColorStop(1, '#3a3e50');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(0, 2, 23, 7, 0, 0, 6.29); ctx.fill();
+  const dg = ctx.createRadialGradient(-3, -7, 1, 0, -4, 10); dg.addColorStop(0, '#ffd0f4'); dg.addColorStop(1, 'rgba(255,94,219,.5)');
+  ctx.fillStyle = '#0a0612'; ctx.beginPath(); ctx.ellipse(0, -2, 11, 9, 0, Math.PI, 0); ctx.fill(); ctx.fillStyle = dg; ctx.beginPath(); ctx.ellipse(0, -2, 9.5, 7.5, 0, Math.PI, 0); ctx.fill();
+  for (let i = 0; i < 6; i++) { ctx.fillStyle = (i + Math.floor(t / 90)) % 6 === 0 ? '#fff' : '#ff5edb'; ctx.beginPath(); ctx.arc(-17 + i * 6.8, 4, 1.6, 0, 6.29); ctx.fill(); }
+  ctx.restore();
 }
 function draw(t) {
-  ctx.fillStyle = '#05060a'; ctx.fillRect(0, 0, W, H);
-  ctx.strokeStyle = '#e8ffd0'; ctx.lineWidth = 1.8; ctx.shadowColor = '#e8ffd0'; ctx.shadowBlur = 6;
-  if (!rocks) {
-    (demo || []).forEach(drawRock);
-    ctx.shadowBlur = 0; return;
-  }
+  ctx.drawImage(space, 0, 0); drawStars(t);
+  if (!rocks) { (demo || []).forEach(drawRock); return; }
   rocks.forEach(drawRock);
-  ctx.shadowBlur = 0;
   if (ship.dead <= 0 && !(ship.inv > 0 && Math.floor(t / 90) % 2)) drawShip(ship.x, ship.y, ship.a, ship.thrust);
-  ctx.fillStyle = '#fff'; bullets.forEach(b => { ctx.fillRect(b.x - 1.5, b.y - 1.5, 3, 3); });
-  ctx.fillStyle = '#ff5edb'; sbullets.forEach(b => ctx.fillRect(b.x - 2, b.y - 2, 4, 4));
-  if (saucer) {
-    const s = saucer.small ? 0.6 : 1; ctx.save(); ctx.translate(saucer.x, saucer.y); ctx.scale(s, s);
-    ctx.strokeStyle = '#ff5edb'; ctx.shadowColor = '#ff5edb'; ctx.shadowBlur = 10; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(-22, 0); ctx.lineTo(22, 0); ctx.lineTo(12, 7); ctx.lineTo(-12, 7); ctx.closePath(); ctx.moveTo(-12, 0); ctx.lineTo(-7, -7); ctx.lineTo(7, -7); ctx.lineTo(12, 0); ctx.stroke(); ctx.restore(); ctx.shadowBlur = 0;
-  }
+  ctx.shadowColor = '#c6ff3d'; ctx.shadowBlur = 8; ctx.strokeStyle = '#f4ffe0'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+  bullets.forEach(b => { const sp = Math.hypot(b.vx, b.vy) || 1; ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(b.x - b.vx / sp * 7, b.y - b.vy / sp * 7); ctx.stroke(); });
+  ctx.shadowColor = '#ff5edb'; ctx.fillStyle = '#ffd0f4'; sbullets.forEach(b => { ctx.beginPath(); ctx.arc(b.x, b.y, 3, 0, 6.29); ctx.fill(); });
+  ctx.shadowBlur = 0; ctx.lineCap = 'butt';
+  if (saucer) drawSaucer(saucer, t);
   parts.forEach(p => { ctx.globalAlpha = Math.min(1, p.t * 1.5); ctx.fillStyle = p.c; ctx.fillRect(p.x - 1, p.y - 1, 2.5, 2.5); }); ctx.globalAlpha = 1;
-  ctx.font = '14px Silkscreen, monospace'; ctx.fillStyle = '#f4effd'; ctx.textAlign = 'left'; ctx.fillText('WAVE ' + wave, 12, 22);
-  for (let i = 0; i < lives; i++) drawShip(W - 20 - i * 22, 18, -Math.PI / 2, false, '#c6ff3d');
-  if (waveT > 0) { ctx.globalAlpha = Math.min(1, waveT); ctx.fillStyle = '#c6ff3d'; ctx.font = '30px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('WAVE ' + wave, W / 2, H / 2 - 60); ctx.globalAlpha = 1; }
+  ctx.font = '14px Silkscreen, monospace'; ctx.textAlign = 'left'; ctx.fillStyle = '#0a0612'; ctx.fillText('WAVE ' + wave, 13, 23); ctx.fillStyle = '#f4effd'; ctx.fillText('WAVE ' + wave, 12, 22);
+  for (let i = 0; i < lives; i++) drawShip(W - 20 - i * 22, 18, -Math.PI / 2, false, '#c6ff3d', 0.75);
+  if (waveT > 0) { ctx.globalAlpha = Math.min(1, waveT); ctx.font = '30px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#0a0612'; ctx.fillText('WAVE ' + wave, W / 2 + 2, H / 2 - 58); ctx.shadowColor = '#c6ff3d'; ctx.shadowBlur = 16; ctx.fillStyle = '#c6ff3d'; ctx.fillText('WAVE ' + wave, W / 2, H / 2 - 60); ctx.shadowBlur = 0; ctx.globalAlpha = 1; }
 }
 A.loop(update, draw);
 /* Attract demo: turn to lead the nearest rock and fire; thrust away when one gets too close. */
