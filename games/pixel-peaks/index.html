@@ -37,7 +37,7 @@
  */
 const A = Arcade, cv = document.getElementById('cv');
 const W = 480, H = 270, ctx = A.canvas(cv, W, H), OUT = '#0a0612', T = 16, ROWS = 17;
-const GRAV = 1500, JUMP = 430, RUN = 135, ACC = 950, FRIC = 1300;
+const GRAV = 1500, JUMP = 360, RUN = 135, ACC = 950, FRIC = 1300, HOLD = 0.12; // holding jump keeps you rising for up to HOLD seconds
 function shade(hex, k) {
   let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join('');
   const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
@@ -151,7 +151,7 @@ function mountains(x, off, col, base, amp, step, seed) {
 }
 
 /* ---------- the hero, Pip: a round little climber in a cyan cap and a red scarf ---------- */
-const me = { x: 40, y: 0, vx: 0, vy: 0, w: 10, h: 14, onGround: false, face: 1, coyote: 0, buffer: 0, inv: 0, walk: 0, dead: 0, chain: 0 };
+const me = { x: 40, y: 0, vx: 0, vy: 0, w: 10, h: 14, onGround: false, face: 1, coyote: 0, buffer: 0, inv: 0, walk: 0, dead: 0, chain: 0, rise: 0 };
 function drawPip(x, px, py, t) {
   const X = Math.round(px), Y = Math.round(py), f = me.face, run = me.onGround && Math.abs(me.vx) > 20, leg = run ? Math.sin(me.walk) * 2 : 0;
   if (me.inv > 0 && Math.floor(t / 70) % 2) return;
@@ -240,8 +240,10 @@ function update(dt) {
   if (dir) { me.vx += dir * ACC * dt; me.face = dir; } else { const f = FRIC * dt * (me.onGround ? 1 : 0.35); me.vx = Math.abs(me.vx) < f ? 0 : me.vx - Math.sign(me.vx) * f; }
   me.vx = Math.max(-RUN, Math.min(RUN, me.vx));
   me.coyote = me.onGround ? 0.09 : me.coyote - dt; me.buffer -= dt;
-  if (me.buffer > 0 && me.coyote > 0) { me.vy = -JUMP; me.coyote = 0; me.buffer = 0; A.sfx('jump'); }
-  if (!jumpHeld && me.vy < -160) me.vy = -160; // let go early for a short hop
+  if (me.buffer > 0 && me.coyote > 0) { me.vy = -JUMP; me.coyote = 0; me.buffer = 0; me.rise = HOLD; A.sfx('jump'); }
+  if (jumpHeld && me.rise > 0 && me.vy < 0) { me.rise -= dt; me.vy = Math.min(me.vy, -JUMP * 0.92); } // still holding: keep rising
+  else me.rise = 0;
+  if (!jumpHeld && me.vy < -140) me.vy = -140; // let go early for a short hop
   me.vy = Math.min(me.vy + GRAV * dt, 620);
   const wasGround = me.onGround, res = collide(me, dt);
   if (me.onGround) me.chain = 0; if (!wasGround && me.onGround) A.burst(me.x + 5 - camX, me.y + me.h - camY, { n: 4, kind: 'smoke', color: '#e8e4f0', speed: 30, life: 0.3, size: 2 });
@@ -277,8 +279,8 @@ function update(dt) {
   camera(dt);
 }
 function camera(dt) {
-  const tx = Math.max(0, Math.min(L * T - W, me.x - W * 0.38)), ty = Math.max(0, Math.min(ROWS * T - H, me.y - H * 0.55));
-  camX += (tx - camX) * Math.min(1, dt * 8); camY += (ty - camY) * Math.min(1, dt * 5);
+  const tx = Math.max(0, Math.min(L * T - W, me.x - W * 0.38));
+  camX += (tx - camX) * Math.min(1, dt * 8); camY = 0; // the level is a screen tall: the camera only scrolls sideways
 }
 
 /* ---------- drawing ---------- */

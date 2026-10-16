@@ -398,7 +398,7 @@ window.FloorPlay = kit => {
       const dir = (right ? 1 : 0) - (left ? 1 : 0) + padX;
       if (!ball && !over && dir) aim = Math.max(-1, Math.min(1, aim + dir * dt * 1.4));
       if (charging) {
-        power += pdir * dt * 1.25; if (power > 1) { power = 1; pdir = -1; } if (power < 0) { power = 0; pdir = 1; }
+        power += pdir * dt * 0.95; if (power > 1) { power = 1; pdir = -1; } if (power < 0) { power = 0; pdir = 1; }
         if (touchId === null && !padCharge && !kit.held('Space') && !kit.held('Enter') && !kit.held('ArrowUp') && !kit.held('KeyW')) roll();
       }
       if (ball) {
@@ -467,9 +467,61 @@ window.FloorPlay = kit => {
     };
   }
 
+
+  /* The four tables' themes: the playfield art (drawn once), bumpers, lane letters and the big bonus. */
+  const PIN_THEMES = {
+    space: { lanes: 'UFO', bonus: 'METEOR SHOWER!', ball: ['#fff', '#9ab8ff'], wall: '#c8b8ff', tone: 880,
+      field(x, w, h) {
+        const g = x.createLinearGradient(0, 0, 0, h); g.addColorStop(0, '#0a0628'); g.addColorStop(1, '#1a0a3a'); x.fillStyle = g; x.fillRect(0, 0, w, h);
+        const n = x.createRadialGradient(80, 260, 10, 80, 260, 150); n.addColorStop(0, 'rgba(255,79,209,.35)'); n.addColorStop(1, 'rgba(255,79,209,0)'); x.fillStyle = n; x.fillRect(0, 100, w, 320);
+        for (let i = 0; i < 90; i++) { x.fillStyle = i % 9 ? 'rgba(255,255,255,.8)' : '#ffd23d'; x.fillRect((i * 97) % w, (i * 57) % h, i % 7 ? 1 : 2, i % 7 ? 1 : 2); }
+        x.fillStyle = '#ff9a3d'; x.beginPath(); x.arc(205, 300, 22, 0, 6.29); x.fill(); x.fillStyle = 'rgba(0,0,0,.25)'; x.beginPath(); x.arc(212, 306, 18, 0, 6.29); x.fill();
+        x.strokeStyle = '#ffd23d'; x.lineWidth = 3; x.beginPath(); x.ellipse(205, 300, 38, 9, -0.35, 0, 6.29); x.stroke();
+      },
+      bumper(x, bx, by, r, lit, t) { x.fillStyle = lit ? '#fff' : '#b86bff'; x.beginPath(); x.arc(bx, by, r, 0, 6.29); x.fill(); x.fillStyle = 'rgba(255,255,255,.35)'; x.beginPath(); x.arc(bx - 5, by - 5, 5, 0, 6.29); x.fill(); x.strokeStyle = '#5ee7ff'; x.lineWidth = 2; x.beginPath(); x.ellipse(bx, by, r + 7, 4, Math.sin(t / 600) * 0.4 - 0.3, 0, 6.29); x.stroke(); },
+      extra(x, t) { for (let i = 0; i < 3; i++) { const k = ((t / 1400 + i * 0.37) % 1), mx = 40 + k * 180 + i * 30, my = 90 + k * 140 + i * 40; x.strokeStyle = `rgba(255,190,90,${0.6 - k * 0.5})`; x.lineWidth = 2; x.beginPath(); x.moveTo(mx, my); x.lineTo(mx - 16, my - 12); x.stroke(); x.fillStyle = '#ffd23d'; x.fillRect(mx - 1, my - 1, 3, 3); } }
+    },
+    sea: { lanes: 'SUB', bonus: 'SUNKEN TREASURE!', ball: ['#fff', '#8ad8ff'], wall: '#9ae8ff', tone: 660,
+      field(x, w, h) {
+        const g = x.createLinearGradient(0, 0, 0, h); g.addColorStop(0, '#0a4a7a'); g.addColorStop(1, '#04182e'); x.fillStyle = g; x.fillRect(0, 0, w, h);
+        x.fillStyle = 'rgba(190,240,255,.06)'; for (let i = 0; i < 5; i++) { x.beginPath(); x.moveTo(30 + i * 55, 0); x.lineTo(60 + i * 55, 0); x.lineTo(10 + i * 60, h); x.lineTo(-20 + i * 60, h); x.fill(); }
+        x.fillStyle = '#c8a86a'; x.beginPath(); x.moveTo(0, h); x.lineTo(0, h - 40); for (let i = 0; i <= w; i += 20) x.lineTo(i, h - 40 + Math.sin(i / 25) * 6); x.lineTo(w, h); x.fill();
+        [[30, '#2a9a5a'], [240, '#1f8a6a']].forEach(([sx, c]) => { x.strokeStyle = c; x.lineWidth = 5; x.lineCap = 'round'; x.beginPath(); x.moveTo(sx, h - 40); for (let k = 1; k <= 7; k++) x.lineTo(sx + Math.sin(k) * 9, h - 40 - k * 26); x.stroke(); });
+        x.fillStyle = '#c87a3a'; x.fillRect(110, 270, 50, 30); x.fillStyle = '#ffd23d'; x.fillRect(110, 280, 50, 4); x.fillRect(130, 270, 10, 30);
+      },
+      bumper(x, bx, by, r, lit, t) { x.fillStyle = lit ? '#fff' : '#ff7bf0'; x.beginPath(); x.arc(bx, by, r, Math.PI, 0); x.lineTo(bx + r, by + 3); x.lineTo(bx - r, by + 3); x.fill(); x.strokeStyle = '#ffb0f0'; x.lineWidth = 2; for (let i = -2; i <= 2; i++) { x.beginPath(); x.moveTo(bx + i * 5, by + 3); x.quadraticCurveTo(bx + i * 5 + Math.sin(t / 200 + i) * 4, by + 10, bx + i * 5, by + 16); x.stroke(); } x.fillStyle = OUT; x.fillRect(bx - 5, by - 5, 2, 3); x.fillRect(bx + 3, by - 5, 2, 3); },
+      extra(x, t) { for (let i = 0; i < 9; i++) { const by = 470 - ((t / 22 + i * 60) % 470), bx = 20 + (i * 71) % 230 + Math.sin(t / 500 + i) * 6; x.strokeStyle = 'rgba(190,240,255,.5)'; x.lineWidth = 1; x.beginPath(); x.arc(bx, by, 2 + i % 3, 0, 6.29); x.stroke(); } const fx = ((t / 30) % 340) - 40; x.fillStyle = '#ffd23d'; x.beginPath(); x.ellipse(fx, 250, 8, 4, 0, 0, 6.29); x.fill(); x.beginPath(); x.moveTo(fx - 7, 250); x.lineTo(fx - 13, 245); x.lineTo(fx - 13, 255); x.fill(); }
+    },
+    gold: { lanes: 'ORE', bonus: 'MOTHER LODE!', ball: ['#fff8d0', '#c8a040'], wall: '#e8c890', tone: 520,
+      field(x, w, h) {
+        x.fillStyle = '#5a3418'; x.fillRect(0, 0, w, h);
+        for (let j = 0; j < h; j += 22) { x.fillStyle = (j / 22) % 2 ? '#6a4020' : '#5e381c'; x.fillRect(0, j, w, 21); x.fillStyle = 'rgba(0,0,0,.25)'; x.fillRect(0, j + 21, w, 1); for (let i = (j * 7) % 60; i < w; i += 60) x.fillRect(i, j, 1, 21); }
+        x.strokeStyle = '#8a8ea0'; x.lineWidth = 2; [[200, 230], [212, 230]].forEach(([a]) => { x.beginPath(); x.moveTo(a, 250); x.lineTo(a - 60, 330); x.stroke(); });
+        for (let i = 0; i < 6; i++) { x.fillStyle = '#8a8ea0'; x.fillRect(196 - i * 9, 258 + i * 12, 22, 2); }
+        x.fillStyle = '#3a7a3a'; [[40, 250], [235, 240]].forEach(([cx, cy]) => { x.fillRect(cx, cy, 8, 40); x.fillRect(cx - 8, cy + 12, 8, 4); x.fillRect(cx - 8, cy + 4, 4, 10); x.fillRect(cx + 8, cy + 18, 8, 4); x.fillRect(cx + 12, cy + 8, 4, 12); });
+        for (let i = 0; i < 10; i++) { x.fillStyle = '#ffd23d'; x.beginPath(); const nx = 30 + (i * 61) % 220, ny = 100 + (i * 37) % 200; x.moveTo(nx, ny + 3); x.lineTo(nx + 3, ny - 2); x.lineTo(nx + 7, ny); x.lineTo(nx + 6, ny + 4); x.fill(); }
+      },
+      bumper(x, bx, by, r, lit, t) { x.fillStyle = lit ? '#fff' : '#a0682a'; x.fillRect(bx - r + 2, by - r, r * 2 - 4, r * 2); x.fillStyle = lit ? '#fff' : '#ffd23d'; x.fillRect(bx - r + 2, by - r + 4, r * 2 - 4, 3); x.fillRect(bx - r + 2, by + r - 7, r * 2 - 4, 3); x.fillStyle = 'rgba(0,0,0,.25)'; x.fillRect(bx - 2, by - r, 2, r * 2); },
+      extra(x, t) { const k = (t / 2600) % 1, cx = 200 - k * 70, cy = 250 + k * 90; x.fillStyle = '#4a4e5c'; x.fillRect(cx - 9, cy - 8, 18, 9); x.fillStyle = '#ffd23d'; x.beginPath(); x.arc(cx - 3, cy - 9, 4, 0, 6.29); x.arc(cx + 4, cy - 9, 3, 0, 6.29); x.fill(); }
+    },
+    tiki: { lanes: 'GEM', bonus: 'TEMPLE TREASURE!', ball: ['#fff', '#b8f0a0'], wall: '#c8e8a0', tone: 440,
+      field(x, w, h) {
+        const g = x.createLinearGradient(0, 0, 0, h); g.addColorStop(0, '#0e3a1a'); g.addColorStop(1, '#06200e'); x.fillStyle = g; x.fillRect(0, 0, w, h);
+        for (let j = 220; j < 380; j += 20) for (let i = (j / 20 % 2) * 20; i < w; i += 40) { x.fillStyle = 'rgba(160,160,120,.12)'; x.fillRect(i, j, 38, 18); }
+        x.fillStyle = '#2f9a48'; for (let i = 0; i < 16; i++) { x.beginPath(); x.ellipse((i * 47) % w, (i * 29) % 140 + 10, 16, 6, i, 0, 6.29); x.fill(); }
+        x.strokeStyle = '#3a6a2a'; x.lineWidth = 3; [[20, 0], [250, 0]].forEach(([vx]) => { x.beginPath(); x.moveTo(vx, 0); for (let k = 1; k < 8; k++) x.lineTo(vx + Math.sin(k * 1.3) * 10, k * 30); x.stroke(); });
+        x.fillStyle = '#8a5a2a'; x.fillRect(125, 255, 26, 40); x.fillStyle = '#ffd23d'; x.fillRect(129, 262, 6, 6); x.fillRect(141, 262, 6, 6); x.fillStyle = OUT; x.fillRect(130, 280, 16, 4);
+      },
+      bumper(x, bx, by, r, lit, t) { x.fillStyle = lit ? '#fff' : '#a0682a'; x.fillRect(bx - r + 3, by - r, r * 2 - 6, r * 2); x.fillStyle = lit ? '#ff4f6d' : '#ffd23d'; x.fillRect(bx - 7, by - 6, 5, 5); x.fillRect(bx + 2, by - 6, 5, 5); x.fillStyle = OUT; x.fillRect(bx - 6, by + 3, 12, 3); x.fillStyle = '#3dff8f'; x.fillRect(bx - r + 3, by - r, r * 2 - 6, 3); },
+      extra(x, t) { [[18, 90], [252, 90]].forEach(([fx, fy], i) => { x.fillStyle = '#5a3418'; x.fillRect(fx - 2, fy, 4, 22); const fl = Math.sin(t / 90 + i * 2) * 2; x.fillStyle = '#ff9a3d'; x.beginPath(); x.ellipse(fx, fy - 4, 5, 8 + fl, 0, 0, 6.29); x.fill(); x.fillStyle = '#ffd23d'; x.beginPath(); x.ellipse(fx, fy - 2, 2.5, 4 + fl / 2, 0, 0, 6.29); x.fill(); }); }
+    }
+  };
+
   /* ---------- pinball: a small real table — plunger, flippers, bumpers, slingshots, rollover lanes; three balls ---------- */
   function pinball(o) {
-    const K = 1.12, TW = 300, TH = 480, OX = VW / 2 - TW * K / 2, OY = 26, c = o.c, BR = 7, G = 620;
+    const K = 1.12, TW = 300, TH = 480, OX = VW / 2 - TW * K / 2, OY = 26, c = o.c, BR = 7, G = 620, TH_ = PIN_THEMES[o.theme] || PIN_THEMES.space;
+    const fieldCv = document.createElement('canvas'); fieldCv.width = TW; fieldCv.height = TH; TH_.field(fieldCv.getContext('2d'), TW, TH);
+    let bigMsg = null;
     const W = [ // walls: [x1, y1, x2, y2, kind]
       [12, 470, 12, 70], [12, 70, 70, 14], [70, 14, 230, 14], [230, 14, 288, 72], [288, 72, 288, 480], [262, 150, 262, 480],
       [12, 362, 74, 418], [262, 362, 200, 418],
@@ -521,10 +573,10 @@ window.FloorPlay = kit => {
       for (const w of W) if (seg(w[0], w[1], w[2], w[3], 2, w[4] ? 0.2 : 0.45, w[4] ? 260 : 0) && w[4]) { add(10); sound.clank(); }
       BUMP.forEach(([bx, by, r], i) => {
         const ex = ball.x - bx, ey = ball.y - by, d = Math.hypot(ex, ey);
-        if (d < r + BR && d > 0) { const nx = ex / d, ny = ey / d; ball.x = bx + nx * (r + BR); ball.y = by + ny * (r + BR); const vn = ball.vx * nx + ball.vy * ny; ball.vx -= 2 * vn * nx; ball.vy -= 2 * vn * ny; ball.vx += nx * 330; ball.vy += ny * 330; flash[i] = 0.2; add(100, bx, by - 20); sound.beep(true); }
+        if (d < r + BR && d > 0) { const nx = ex / d, ny = ey / d; ball.x = bx + nx * (r + BR); ball.y = by + ny * (r + BR); const vn = ball.vx * nx + ball.vy * ny; ball.vx -= 2 * vn * nx; ball.vy -= 2 * vn * ny; ball.vx += nx * 330; ball.vy += ny * 330; flash[i] = 0.2; add(100, bx, by - 20); tone(TH_.tone * (1 + i * 0.25), 0.08, 0.05); }
       });
       FL.forEach(flipper);
-      LANES.forEach((lx, i) => { if (!lit[i] && Math.abs(ball.x - lx) < 14 && ball.y < 60 && ball.y > 30) { lit[i] = 1; add(50); sound.select(); if (lit.every(Boolean)) { lit = [0, 0, 0]; add(1000, 138, 90); sound.fanfare(); } } });
+      LANES.forEach((lx, i) => { if (!lit[i] && Math.abs(ball.x - lx) < 14 && ball.y < 60 && ball.y > 30) { lit[i] = 1; add(50); sound.select(); if (lit.every(Boolean)) { lit = [0, 0, 0]; add(1000, 138, 90); sound.fanfare(); bigMsg = { text: TH_.bonus, t: 1.8 }; } } });
       const sp = Math.hypot(ball.vx, ball.vy); if (sp > 1100) { ball.vx *= 1100 / sp; ball.vy *= 1100 / sp; }
       if (ball.y > TH + 20) { // drained
         balls--; sound.back();
@@ -545,24 +597,26 @@ window.FloorPlay = kit => {
         x.save(); x.translate(OX, OY); x.scale(K, K);
         // the playfield
         x.fillStyle = OUT; x.fillRect(-8, -8, TW + 16, TH + 16);
-        const pf = x.createLinearGradient(0, 0, 0, TH); pf.addColorStop(0, kit.shade(c, -0.55)); pf.addColorStop(1, kit.shade(c, -0.82)); x.fillStyle = pf; x.fillRect(0, 0, TW, TH);
-        x.save(); x.globalAlpha = 0.12; x.font = '40px Bungee, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = '#fff'; x.translate(138, 300); x.rotate(-0.2); x.fillText(o.name, 0, 0); x.restore();
-        LANES.forEach((lx, i) => { x.fillStyle = lit[i] ? '#ffd23d' : 'rgba(255,255,255,.15)'; x.beginPath(); x.arc(lx, 48, 5, 0, 6.29); x.fill(); });
+        x.drawImage(fieldCv, 0, 0); TH_.extra(x, t);
+        x.save(); x.globalAlpha = 0.16; x.font = '26px Bungee, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = '#fff'; x.translate(138, 380); x.rotate(-0.12); x.fillText(o.name, 0, 0); x.restore();
+        LANES.forEach((lx, i) => { x.fillStyle = OUT; x.beginPath(); x.arc(lx, 48, 8, 0, 6.29); x.fill(); x.fillStyle = lit[i] ? c : 'rgba(255,255,255,.12)'; x.beginPath(); x.arc(lx, 48, 6.5, 0, 6.29); x.fill(); x.font = '9px Bungee, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = lit[i] ? OUT : 'rgba(255,255,255,.5)'; x.fillText(TH_.lanes[i], lx, 49); });
         x.strokeStyle = '#e8e4f0'; x.lineCap = 'round';
-        for (const w of W) { x.lineWidth = w[4] ? 5 : 4; x.strokeStyle = w[4] ? c : '#c0c6d0'; x.beginPath(); x.moveTo(w[0], w[1]); x.lineTo(w[2], w[3]); x.stroke(); }
-        BUMP.forEach(([bx, by, r], i) => { x.fillStyle = OUT; x.beginPath(); x.arc(bx, by, r + 2, 0, 6.29); x.fill(); x.fillStyle = flash[i] ? '#fff' : c; x.beginPath(); x.arc(bx, by, r, 0, 6.29); x.fill(); x.fillStyle = kit.shade(c, -0.4); x.beginPath(); x.arc(bx, by, r * 0.55, 0, 6.29); x.fill(); x.fillStyle = '#fff'; x.font = '8px Silkscreen, monospace'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('100', bx, by + 1); });
+        for (const w of W) { x.lineWidth = w[4] ? 6 : 5; x.strokeStyle = OUT; x.beginPath(); x.moveTo(w[0], w[1]); x.lineTo(w[2], w[3]); x.stroke(); x.lineWidth = w[4] ? 4 : 3; x.strokeStyle = w[4] ? c : TH_.wall; x.stroke(); }
+        BUMP.forEach(([bx, by, r], i) => { x.fillStyle = OUT; x.beginPath(); x.arc(bx, by, r + 2.5, 0, 6.29); x.fill(); TH_.bumper(x, bx, by, r, flash[i] > 0, t); });
         FL.forEach(f => { const tx = f.px + f.side * f.len * Math.cos(f.a), ty = f.py + f.len * Math.sin(f.a); x.strokeStyle = OUT; x.lineWidth = 13; x.beginPath(); x.moveTo(f.px, f.py); x.lineTo(tx, ty); x.stroke(); x.strokeStyle = '#f4effd'; x.lineWidth = 9; x.stroke(); x.strokeStyle = c; x.lineWidth = 3; x.stroke(); });
         // the plunger lane and its spring
         x.fillStyle = '#05040c'; x.fillRect(264, 150, 22, TH - 150);
         const pull = ball && ball.lane ? plunge : 0; x.fillStyle = '#c0c6d0'; for (let i = 0; i < 5; i++) x.fillRect(268, 462 + pull * 12 + i * 3, 14, 1.5); x.fillStyle = c; x.fillRect(266, 460 + pull * 12, 18, 4);
-        if (ball) { x.fillStyle = OUT; x.beginPath(); x.arc(ball.x, ball.y, BR + 1.5, 0, 6.29); x.fill(); const bg = x.createRadialGradient(ball.x - 2, ball.y - 2, 1, ball.x, ball.y, BR); bg.addColorStop(0, '#fff'); bg.addColorStop(1, '#8a8ea0'); x.fillStyle = bg; x.beginPath(); x.arc(ball.x, ball.y, BR, 0, 6.29); x.fill(); }
+        if (ball) { x.fillStyle = OUT; x.beginPath(); x.arc(ball.x, ball.y, BR + 1.5, 0, 6.29); x.fill(); const bg = x.createRadialGradient(ball.x - 2, ball.y - 2, 1, ball.x, ball.y, BR); bg.addColorStop(0, TH_.ball[0]); bg.addColorStop(1, TH_.ball[1]); x.fillStyle = bg; x.beginPath(); x.arc(ball.x, ball.y, BR, 0, 6.29); x.fill(); }
         for (const p of pops) { x.globalAlpha = Math.min(1, p.t * 2); x.font = '12px Silkscreen, monospace'; x.textAlign = 'center'; x.fillStyle = '#ffd23d'; x.fillText(p.text, p.x, p.y - (0.8 - p.t) * 30); x.globalAlpha = 1; }
         x.restore();
+        if (bigMsg && (bigMsg.t -= dt) > 0) { x.globalAlpha = Math.min(1, bigMsg.t * 2); kit.neon(x, bigMsg.text, VW / 2, OY + 170, 26, c); x.globalAlpha = 1; }
         // the backglass beside the table: name, score, balls, best, plunger power
-        const SX = OX - 210; kit.neon(x, o.name, SX + 90, 70, 22, c);
-        x.textAlign = 'left'; x.font = '12px Silkscreen, monospace'; x.fillStyle = 'rgba(255,255,255,.6)'; x.fillText('SCORE', SX, 120); x.fillText('BALL', SX, 200); x.fillText('BEST', SX, 260);
-        x.font = '26px Silkscreen, monospace'; x.fillStyle = '#ff9a3d'; x.fillText(score.toLocaleString(), SX, 152);
-        x.font = '16px Silkscreen, monospace'; x.fillStyle = '#f4effd'; x.fillText(over ? '-' : `${4 - balls} OF 3`, SX, 224); x.fillStyle = '#ffd23d'; x.fillText(best.toLocaleString(), SX, 284);
+        const SX = OX - 220; o.name.split(' ').forEach((wd, i) => kit.neon(x, wd, SX + 95, 60 + i * 30, 24, c));
+        x.textAlign = 'left'; x.font = '12px Silkscreen, monospace'; x.fillStyle = 'rgba(255,255,255,.6)'; x.fillText('SCORE', SX, 140); x.fillText('BALL', SX, 220); x.fillText('BEST', SX, 280);
+        x.font = '26px Silkscreen, monospace'; x.fillStyle = '#ff9a3d'; x.fillText(score.toLocaleString(), SX, 172);
+        x.font = '16px Silkscreen, monospace'; x.fillStyle = '#f4effd'; x.fillText(over ? '-' : `${4 - balls} OF 3`, SX, 244); x.fillStyle = '#ffd23d'; x.fillText(best.toLocaleString(), SX, 304);
+        x.font = '10px Silkscreen, monospace'; x.fillStyle = 'rgba(255,255,255,.55)'; x.fillText(`LIGHT ${TH_.lanes.split('').join(' ')}: +1,000`, SX, 340);
         if (ball && ball.lane) { const MX = OX + TW * K + 40; x.fillStyle = OUT; x.fillRect(MX - 2, 300, 28, 220); x.fillStyle = '#140c24'; x.fillRect(MX, 302, 24, 216); x.fillStyle = '#3dff8f'; x.fillRect(MX, 518 - 216 * plunge, 24, 216 * plunge); x.font = '10px Silkscreen, monospace'; x.textAlign = 'center'; x.fillStyle = 'rgba(255,255,255,.7)'; x.fillText('LAUNCH', MX + 12, 288); }
         hint(x, ball && ball.lane ? 'ENTER OR TAP TO LAUNCH' : '← → FLIPPERS (OR Z AND /) · TAP LEFT OR RIGHT HALF · ESC LEAVE', VH - 12);
         if (over) gameOver(x, score, best, res, c);

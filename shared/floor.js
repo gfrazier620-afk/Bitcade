@@ -94,7 +94,7 @@ window.Floor = (() => {
     { kind: 'claw', x: 1690, y: 896, w: 96, h: 140, spot: [1738, 1058], solid: [[1690, 994, 96, 42]] },
     { kind: 'bench', x: 700, y: 950, w: 96, h: 30, solid: [[700, 958, 96, 22]], seats: [[724, 990], [772, 990]] },
     { kind: 'bench', x: 1444, y: 950, w: 96, h: 30, solid: [[1444, 958, 96, 22]], seats: [[1468, 990], [1516, 990]] },
-    ...[0, 1, 2, 3].map(i => ({ kind: 'pinball', i, x: 48 + i * 82, y: 1080, w: 58, h: 104, npcSpot: [77 + i * 82, 1202], spot: [77 + i * 82, 1202], solid: [[48 + i * 82, 1140, 58, 44]], c: ['#ff4f6d', '#5ee7ff', '#ffd23d', '#3dff8f'][i], name: ['METEOR', 'DEEP SEA', 'GOLD RUSH', 'JUNGLE'][i] })),
+    ...[0, 1, 2, 3].map(i => ({ kind: 'pinball', i, x: 48 + i * 82, y: 1080, w: 58, h: 104, npcSpot: [77 + i * 82, 1202], spot: [77 + i * 82, 1202], solid: [[48 + i * 82, 1140, 58, 44]], c: ['#b86bff', '#3dd6ff', '#ffb84d', '#3dff8f'][i], name: ['COSMIC METEOR', 'DEEP SEA DIVE', 'GOLD FEVER', 'TIKI TEMPLE'][i], theme: ['space', 'sea', 'gold', 'tiki'][i] })),
     ...[0, 1, 2].map(i => ({ kind: 'skee', i, x: 1870 + i * 80, y: 880, w: 64, h: 200, npcSpot: [1902 + i * 80, 1100], spot: [1902 + i * 80, 1100], solid: [[1870 + i * 80, 920, 64, 160]] })),
     { kind: 'hockey', x: 1700, y: 1150, w: 74, h: 112, spot: [1737, 1278], solid: [[1700, 1166, 74, 96]] },
     { kind: 'golf', x: 1296, y: 1100, w: 270, h: 150, spot: [1431, 1276], solid: [[1296, 1110, 270, 140]] },
@@ -955,7 +955,13 @@ window.Floor = (() => {
     shadow(x, X + o.w / 2, Y + o.h, o.w * 0.62);
     paint(x, [[X, Y + 30, o.w, o.h - 30, '#241c48'], [X + 4, Y, o.w - 8, 32, '#1a1430'], [X + 4, Y + o.h - 8, 8, 8, '#3a3060', true], [X + o.w - 12, Y + o.h - 8, 8, 8, '#3a3060', true]]);
     x.fillStyle = o.c; x.fillRect(X + 7, Y + 3, o.w - 14, 13);
-    x.font = '6px Silkscreen, monospace'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = OUT; x.fillText(o.name, X + o.w / 2, Y + 10, o.w - 16);
+    x.font = '5px Silkscreen, monospace'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = OUT; x.fillText(o.name, X + o.w / 2, Y + 10, o.w - 14);
+    // a little picture on the backglass, one per theme
+    const bx = X + o.w / 2, by = Y + 2;
+    if (o.theme === 'space') { x.fillStyle = '#ffd23d'; x.beginPath(); x.arc(bx + 16, by - 4, 4, 0, 6.29); x.fill(); x.strokeStyle = '#fff'; x.lineWidth = 1; x.beginPath(); x.ellipse(bx + 16, by - 4, 7, 2, -0.3, 0, 6.29); x.stroke(); }
+    if (o.theme === 'sea') { x.fillStyle = '#ff9a3d'; x.beginPath(); x.ellipse(bx + 14, by - 4, 5, 3, 0, 0, 6.29); x.fill(); x.beginPath(); x.moveTo(bx + 18, by - 4); x.lineTo(bx + 22, by - 7); x.lineTo(bx + 22, by - 1); x.fill(); }
+    if (o.theme === 'gold') { x.fillStyle = '#ffd23d'; x.beginPath(); x.moveTo(bx + 10, by - 1); x.lineTo(bx + 14, by - 7); x.lineTo(bx + 20, by - 6); x.lineTo(bx + 22, by - 1); x.fill(); }
+    if (o.theme === 'tiki') { paint(x, [[bx + 11, by - 9, 9, 10, '#8a5a2a']]); x.fillStyle = '#ffd23d'; x.fillRect(bx + 13, by - 6, 2, 2); x.fillRect(bx + 17, by - 6, 2, 2); x.fillStyle = OUT; x.fillRect(bx + 13, by - 2, 6, 1); }
     x.fillStyle = '#05040c'; x.fillRect(X + 9, Y + 18, o.w - 18, 10); x.fillStyle = '#ff9a3d'; x.font = '7px Silkscreen, monospace'; x.fillText(String(busy ? Math.floor(t / 37) % 100000 * 10 : 0).padStart(6, '0'), X + o.w / 2, Y + 23);
     const pf = x.createLinearGradient(0, Y + 34, 0, Y + o.h - 4); pf.addColorStop(0, shade(o.c, -0.55)); pf.addColorStop(1, shade(o.c, -0.75));
     x.fillStyle = pf; x.fillRect(X + 4, Y + 34, o.w - 8, o.h - 40);
@@ -1212,6 +1218,8 @@ window.Floor = (() => {
       dpr = Math.min(2, window.devicePixelRatio || 1); cv.width = VW * dpr; cv.height = VH * dpr;
       ctx = cv.getContext('2d');
       cv.addEventListener('pointerdown', tap);
+      cv.addEventListener('touchstart', e => e.preventDefault(), { passive: false }); // no long-press menus: they cancel held touches (skee-ball, flippers)
+      cv.addEventListener('contextmenu', e => e.preventDefault());
       ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => cv.addEventListener(ev, e => { if (mode && mode.untap) mode.untap(e.pointerId); }));
       cv.addEventListener('pointermove', e => { if (!mode || !mode.move) return; const r = cv.getBoundingClientRect(); mode.move((e.clientX - r.left) / r.width * VW, (e.clientY - r.top) / r.height * VH, e.buttons > 0); });
       play = window.FloorPlay ? window.FloorPlay(kit) : null;
