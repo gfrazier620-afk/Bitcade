@@ -25,6 +25,10 @@ window.Prizes = (() => {
     { id: 'retro', slot: 'skin', name: 'Beige 80s Plastic', price: 110, desc: 'Cream plastic, like the first home computers.', sw: ['#e8dcc0', '#a89878'] },
     { id: 'carbon', slot: 'skin', name: 'Carbon Fibre', price: 160, desc: 'A woven black weave, race-car light.', sw: ['#3a3a48', '#121218'] },
     { id: 'holo', slot: 'skin', name: 'Holographic', price: 320, desc: 'A rainbow sheen that never stops moving.', sw: ['#ff9ad8', '#9ad8ff'] },
+    { id: 'platinum', slot: 'skin', vip: true, name: 'Platinum Cabinet', price: 380, desc: 'Brushed platinum with an icy edge. VIP only.', sw: ['#f4f8ff', '#8a9ab8'] },
+    { id: 'tux', slot: 'outfit', vip: true, name: 'Tuxedo', price: 250, desc: 'Black tie for the VIP room.' },
+    { id: 'goldsuit', slot: 'outfit', vip: true, name: 'Golden Suit', price: 400, desc: 'A gold suit and a top hat. Subtle.' },
+    { id: 'velvet', slot: 'carpet', vip: true, name: 'Royal Velvet', price: 220, desc: 'Deep red velvet with gold diamonds.' },
     { id: 'cap', slot: 'outfit', name: 'Cap and Hoodie', price: 30, desc: 'Your arcade-goer, ready for a long session.' },
     { id: 'shades', slot: 'outfit', name: 'Cool Shades', price: 50, desc: 'Leather jacket, dark glasses, no fear.' },
     { id: 'astro', slot: 'outfit', name: 'Astronaut Suit', price: 120, desc: 'Fresh back from a lunar landing.' },
@@ -59,7 +63,7 @@ window.Prizes = (() => {
   const changed = () => fns.forEach(f => f());
   function buy(id) {
     const p = LIST.find(x => x.id === id);
-    if (!p || has(id) || !TICKETS.spend(p.price)) return false;
+    if (!p || has(id) || (p.vip && !(window.VIP && VIP.unlocked())) || !TICKETS.spend(p.price)) return false;
     set('arcade:prizes', JSON.stringify([...owned(), id]));
     if (p.slot !== 'decor') wear(id);
     changed(); return true;
@@ -100,7 +104,9 @@ window.Prizes = (() => {
     box.querySelectorAll('.pc-item').forEach(el => {
       const p = LIST.find(x => x.id === el.dataset.id), own = has(p.id), on = eq[p.slot] === p.id, btn = el.querySelector('button');
       el.classList.toggle('own', own); el.classList.toggle('on', on);
-      if (!own) { btn.textContent = bal >= p.price ? `BUY · ${p.price}` : `NEED ${p.price}`; btn.disabled = bal < p.price; }
+      const locked = p.vip && !(window.VIP && VIP.unlocked());
+      if (!own && locked) { btn.textContent = 'VIP ONLY'; btn.disabled = true; }
+      else if (!own) { btn.textContent = bal >= p.price ? `BUY · ${p.price}` : `NEED ${p.price}`; btn.disabled = bal < p.price; }
       else if (p.slot === 'decor') { btn.textContent = 'ON THE FLOOR'; btn.disabled = true; }
       else { btn.textContent = on ? 'WEARING ✓' : 'WEAR'; btn.disabled = false; }
     });
@@ -112,10 +118,10 @@ window.Prizes = (() => {
       <div class="pc-how">Win tickets in every game: a few per game, more for a top-10 score or a new record, 10 per badge, and double on the weekly tournament game.</div></div>
       <div class="pc-bal">TICKETS <b>0</b></div><button class="pc-x" aria-label="Close">✕</button></div><div class="pc-body"></div></div>`;
     const body = box.querySelector('.pc-body');
-    SLOTS.forEach(([slot, label]) => {
+    [...SLOTS, ['vip', '★ VIP EXCLUSIVES · unlock the VIP room on the arcade floor']].forEach(([slot, label]) => {
       const h = document.createElement('h3'); h.textContent = label; body.append(h);
       const row = document.createElement('div'); row.className = 'pc-row'; body.append(row);
-      LIST.filter(p => p.slot === slot).forEach(p => {
+      LIST.filter(p => slot === 'vip' ? p.vip : p.slot === slot && !p.vip).forEach(p => {
         const el = document.createElement('div'); el.className = 'pc-item'; el.dataset.id = p.id;
         el.innerHTML = '<canvas width="96" height="64"></canvas><b></b><small></small><button></button>';
         el.querySelector('b').textContent = p.name; el.querySelector('small').textContent = p.desc;

@@ -391,11 +391,18 @@ console.log('\nArcade floor');
     check((await page.evaluate(() => Floor.state().mode)) === m, `the ${m === 'skee' ? 'skee-ball lanes' : 'pinball machines'} are playable`);
     await page.keyboard.press('Escape'); await wait(100);
   }
+  await page.evaluate(() => Floor.goTo('vipdoor')); await wait(150);
+  check(/LOCKED/.test(await page.textContent('#floorCard')), 'the VIP room starts locked');
+  await page.evaluate(() => Floor.goTo([2210, 650])); await page.keyboard.down('ArrowRight'); await wait(600); await page.keyboard.up('ArrowRight');
+  check((await page.evaluate(() => Floor.state().x)) < 2236, 'the velvet rope keeps you out');
   await page.evaluate(() => Floor.goTo('crater-lander')); await wait(150);
   await Promise.all([page.waitForURL(/games\/crater-lander\//), page.keyboard.press('Enter')]);
   check(true, 'Enter at a cabinet opens that game');
   await page.goto(BASE + '/?feature=none');
   check(await page.isVisible('#arcadeFloor'), 'the floor view is remembered');
+  await page.goto(BASE + '/?feature=none&vip=1'); await wait(300);
+  await page.evaluate(() => Floor.goTo([2210, 650])); await page.keyboard.down('ArrowRight'); await wait(700); await page.keyboard.up('ArrowRight');
+  check((await page.evaluate(() => Floor.state().zone)) === 'VIP ROOM', 'once unlocked, you can walk into the VIP room');
   check(!errors.length && dirsOnFloor.length === 3, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
   await close();
 }

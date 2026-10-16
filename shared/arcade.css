@@ -225,6 +225,11 @@ body.skin-chrome .cabinet .marquee,body.skin-chrome .bezel{border-color:#9aa0b0;
   background:linear-gradient(90deg,#4a4e5c,#c8ccd8 18%,#6a6e7c 40%,#e8ecf4 62%,#5a5e6c 85%,#a8acb8)}
 body.skin-chrome .cpanel{background:linear-gradient(180deg,#e8ecf4 0 3px,#8a8e9c 3px,#4a4e5c 100%)}
 body.skin-chrome .bezel-top{color:#1a1830}
+body.skin-platinum .cabinet .marquee,body.skin-platinum .bezel{border-color:#c8d4ec;
+  background:linear-gradient(90deg,#8a9ab8,#f4f8ff 16%,#b8c4dc 38%,#ffffff 58%,#9aa8c4 82%,#dce4f4)}
+body.skin-platinum .cpanel{background:linear-gradient(180deg,#ffffff 0 3px,#b8c4dc 3px,#6a7a98 100%)}
+body.skin-platinum .bezel-top{color:#1a2240}
+body.skin-platinum .cabinet{filter:drop-shadow(0 0 18px rgba(170,210,255,.45)) drop-shadow(0 18px 40px rgba(0,0,0,.6))}
 body.skin-gold .cabinet .marquee,body.skin-gold .bezel{border-color:#c89a2a;
   background:linear-gradient(90deg,#7a5410,#ffd23d 20%,#b8860b 42%,#fff0a8 60%,#a07010 82%,#e8b830)}
 body.skin-gold .cpanel{background:linear-gradient(180deg,#fff0a8 0 3px,#c89a2a 3px,#7a5410 100%)}
@@ -285,6 +290,6 @@ body.skin-holo .bezel-top{color:#2a1a40}
 @keyframes holo-shift{to{background-position:300% 0}}
 @media (prefers-reduced-motion:reduce){body.skin-holo .cabinet .marquee,body.skin-holo .bezel,body.skin-holo .cpanel{animation:none}}
 /* light cabinet finishes: dark score-strip text, and a dark card behind the controls so both stay readable */
-:is(body.skin-holo,body.skin-retro,body.skin-chrome,body.skin-gold) .bezel-top .sc span,:is(body.skin-holo,body.skin-retro,body.skin-chrome,body.skin-gold) .freeplay{color:#2a1a40}
-:is(body.skin-holo,body.skin-retro,body.skin-chrome,body.skin-gold) .bezel-top .sc b{color:#120a1c}
-:is(body.skin-holo,body.skin-retro,body.skin-chrome,body.skin-gold) .card{background:rgba(10,6,18,.78);border-color:rgba(0,0,0,.4)}
+:is(body.skin-holo,body.skin-retro,body.skin-chrome,body.skin-gold,body.skin-platinum) .bezel-top .sc span,:is(body.skin-holo,body.skin-retro,body.skin-chrome,body.skin-gold,body.skin-platinum) .freeplay{color:#2a1a40}
+:is(body.skin-holo,body.skin-retro,body.skin-chrome,body.skin-gold,body.skin-platinum) .bezel-top .sc b{color:#120a1c}
+:is(body.skin-holo,body.skin-retro,body.skin-chrome,body.skin-gold,body.skin-platinum) .card{background:rgba(10,6,18,.78);border-color:rgba(0,0,0,.4)}

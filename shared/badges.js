@@ -260,3 +260,25 @@ window.MISSIONS = (() => {
   function left() { const n = new Date(), mid = new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1), m = Math.max(0, Math.floor((mid - n) / 6e4)); return `${Math.floor(m / 60)}H ${String(m % 60).padStart(2, '0')}M`; }
   return { list: () => load().list, bonus: () => load().bonus, record, text, where, left, REWARD, BONUS, TARGETS };
 })();
+
+/*
+ * The VIP room on the arcade floor. It opens for good (bitcade:vip) once you have 30 badges, or 3 mastered cabinets
+ * (every badge in a game), or 1,500 tickets earned in all. ?vip=1 opens it for testing. It unlocks VIP-only prizes too.
+ */
+window.VIP = (() => {
+  const get = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  const NEED = { badges: 30, mastered: 3, earned: 1500 };
+  function status() {
+    const all = window.BADGES || {}; let badges = 0, mastered = 0;
+    for (const slug of Object.keys(all)) {
+      let got = []; try { got = JSON.parse(get('arcade:badges:' + slug)) || []; } catch (e) {}
+      const n = all[slug].filter(b => got.includes(b.id)).length; badges += n; if (all[slug].length && n === all[slug].length) mastered++;
+    }
+    const earned = window.TICKETS ? TICKETS.earned() : 0;
+    const met = badges >= NEED.badges || mastered >= NEED.mastered || earned >= NEED.earned;
+    const test = /[?&]vip=1\b/.test(location.search);
+    if (met) try { localStorage.setItem('bitcade:vip', '1'); } catch (e) {}
+    return { unlocked: met || test || get('bitcade:vip') === '1', badges, mastered, earned, NEED };
+  }
+  return { status, unlocked: () => status().unlocked, NEED };
+})();

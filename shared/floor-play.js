@@ -581,12 +581,38 @@ window.FloorPlay = kit => {
     };
   }
 
+  /* ---------- the VIP room's records wall ---------- */
+  function records() {
+    const st = window.VIP ? VIP.status() : { badges: 0, mastered: 0, earned: 0 };
+    let plays = 0; try { Object.keys(localStorage).filter(k => k.startsWith('arcade:plays:')).forEach(k => { plays += +localStorage.getItem(k) || 0; }); } catch (e) {}
+    const rows = kit.cabs.filter(c => !c.vip).map(c => ({ n: c.g.name.toUpperCase(), b: kit.opt.info(c.g).best || 0, c: c.g.c, gold: kit.mastered.has(c.g.slug) })).sort((a, b) => b.b - a.b);
+    return {
+      name: 'records',
+      draw(x) {
+        const { X, Y, w } = panel(x, 'YOUR RECORDS', '#ffd23d', 720, 540);
+        x.font = '11px Silkscreen, monospace'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = '#fff6c2';
+        x.fillText(`${st.badges} BADGES · ${st.mastered} MASTERED · ${plays.toLocaleString()} GAMES PLAYED · ${st.earned.toLocaleString()} TICKETS EARNED`, VW / 2, Y + 64);
+        const half = Math.ceil(rows.length / 2);
+        rows.forEach((r, i) => {
+          const col = i < half ? 0 : 1, row = i % half, cx = X + 30 + col * (w / 2 - 10), y = Y + 96 + row * 30;
+          x.textAlign = 'left'; x.fillStyle = r.c; x.fillText((r.gold ? '★ ' : '') + r.n, cx, y, 190);
+          x.textAlign = 'right'; x.fillStyle = r.b ? '#fff6c2' : 'rgba(255,255,255,.3)'; x.fillText(r.b ? r.b.toLocaleString() : '—', cx + w / 2 - 50, y);
+        });
+        hint(x, '★ MASTERED · ENTER OR ESC TO CLOSE', Y + 520);
+      },
+      key(c) { if (c === 'Enter' || isClose(c)) { sound.back(); kit.close(); } },
+      tap() { kit.close(); }
+    };
+  }
+
   /* ---------- using things ---------- */
   function use(o) {
     if (o.kind === 'jukebox') return kit.open(jukebox());
     if (o.kind === 'board') return kit.open(board());
     if (o.kind === 'booth') return kit.open(photobooth());
     if (o.kind === 'claw') return kit.open(claw());
+    if (o.kind === 'records') return kit.open(records());
+    if (o.kind === 'vipbar') { kit.staffSay('bartender', pick(['ONE GOLDEN SODA, SIR OR MADAM.', 'ON THE HOUSE, VIP.', 'SPARKLING GOLD. ENJOY.'])); kit.me.prop = 'gold'; kit.me.propT = 90; sound.fizz(); return; }
     if (o.kind === 'skee') { o.user = kit.me; return kit.open(skee(o)); }
     if (o.kind === 'pinball') { o.user = kit.me; return kit.open(pinball(o)); }
     if (o.kind === 'snack') { kit.staffSay('snack', pick(['ONE BITCOLA, COMING UP!', 'HERE YOU GO!', 'ON THE HOUSE!', 'STAY HYDRATED!'])); kit.me.prop = 'soda'; kit.me.propT = 60; sound.fizz(); }
@@ -600,6 +626,8 @@ window.FloorPlay = kit => {
     const left = () => { let t = null; try { t = JSON.parse(get('bitcade:floortix') || 'null'); } catch (e) {} return FLOOR_CAP - (t && t.d === today() ? t.n : 0); };
     if (o.kind === 'skee') return { title: 'SKEE-BALL', sub: `NINE BALLS · BEST ${bestOf('bitcade:skee:best')} · a ticket per 100 points (${left()} more today)`, btn: 'PLAY ▶', c: ['#ff4f6d', '#5ee7ff', '#ffd23d'][o.i % 3] };
     if (o.kind === 'pinball') return { title: `${o.name} PINBALL`, sub: `THREE BALLS · BEST ${bestOf('bitcade:pinball:best').toLocaleString()} · a ticket per 4,000 (${left()} more today)`, btn: 'PLAY ▶', c: o.c };
+    if (o.kind === 'records') return { title: 'YOUR RECORDS', sub: 'Every best score you hold, your badges and your totals', btn: 'LOOK ▶', c: '#ffd23d' };
+    if (o.kind === 'vipbar') return { title: 'GOLDEN SODA BAR', sub: 'VIPs drink gold. It tastes like winning.', btn: 'ORDER ▶', c: '#ffd23d' };
     if (o.kind === 'snack') return { title: 'SNACK BAR', sub: 'Free sodas. It’s that kind of arcade.', btn: 'GRAB ONE ▶', c: '#ffb03d' };
     return { title: o.kind.toUpperCase(), sub: '', btn: 'USE ▶', c: '#5ee7ff' };
   }

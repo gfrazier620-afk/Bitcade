@@ -16,7 +16,7 @@
  * Floor.start() / Floor.stop() as the view is shown or hidden. Floor.preview(prize, ctx, w, h) draws prize previews.
  */
 window.Floor = (() => {
-  const VW = 960, VH = 600, WW = 2240, WH = 1320, WALL = 170, OUT = '#0a0612', CELL = 16;
+  const VW = 960, VH = 600, WW = 2880, WH = 1320, WALL = 170, OUT = '#0a0612', CELL = 16;
   const WALK = 150, RUN = 290;
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
   let PAL = {}, opt = null, cv = null, ctx = null, dpr = 1, running = false, raf = 0, last = 0, play = null;
@@ -62,7 +62,8 @@ window.Floor = (() => {
     { name: 'SHOOTING GALLERY', x: 1654, y: 0, w: 586, h: 620, c: '#7dd63d' },
     { name: 'LOUNGE', x: 0, y: 620, w: 640, h: 700, c: '#b48cff' },
     { name: 'ENTRANCE', x: 640, y: 620, w: 960, h: 700, c: '#5ee7ff' },
-    { name: 'PRIZE CORNER', x: 1600, y: 620, w: 640, h: 700, c: '#ffd23d' }
+    { name: 'PRIZE CORNER', x: 1600, y: 620, w: 640, h: 700, c: '#ffd23d' },
+    { name: 'VIP ROOM', x: 2240, y: 0, w: 640, h: 1320, c: '#ffd23d', vip: true }
   ];
   const zoneAt = (x, y) => ZONES.find(z => x >= z.x && x < z.x + z.w && y >= z.y && y < z.y + z.h);
 
@@ -113,6 +114,33 @@ window.Floor = (() => {
     rest.forEach((g, i) => addCab(g, 'upright', ...slots[Math.min(i, slots.length - 1)]));
     FIXED.forEach(o => objs.push({ ...o, base: o.y + o.h }));
   }
+  /*
+   * The VIP room, east of the shooting gallery and the prize corner, through a roped door (VIP in shared/badges.js
+   * says when it opens). Inside: the Hall of Masters (a gold cabinet for each game you've mastered, empty plinths
+   * for the rest), the VIP prize counter, your records wall, a golden soda bar, velvet sofas and VIP regulars.
+   */
+  const VIPX = 2248, DOOR = { y0: 606, y1: 704 };
+  const VWALL = [[2232, WALL, 16, DOOR.y0 - WALL], [2232, DOOR.y1, 16, WH - DOOR.y1]];
+  let vipOpen = false, vipNew = false;
+  function layoutVip() {
+    objs = objs.filter(o => !o.vip); cabs = cabs.filter(c => !c.vip);
+    vipOpen = !!(window.VIP && VIP.unlocked());
+    objs.push({ kind: 'vipdoor', vip: true, x: 2224, y: DOOR.y0 - 6, w: 32, h: DOOR.y1 - DOOR.y0 + 12, base: DOOR.y1 + 6, spot: [2192, 650], solid: vipOpen ? [] : [[2228, DOOR.y0, 24, DOOR.y1 - DOOR.y0]] });
+    const masters = cabs.filter(c => mastered.has(c.g.slug));
+    for (let i = 0; i < 12; i++) {
+      const x = 2276 + (i % 6) * 98, y = i < 6 ? 112 : 392;
+      if (masters[i]) { const before = cabs.length; addCab(masters[i].g, 'upright', x, y); const c = cabs[before]; c.vip = true; c.hall = true; }
+      else objs.push({ kind: 'plinth', vip: true, x, y: y + 40, w: 60, h: 64, base: y + 104, solid: [[x, y + 62, 60, 42]] });
+    }
+    objs.push(
+      { kind: 'vipcounter', vip: true, x: 2440, y: 690, w: 240, h: 72, spot: [2560, 786], solid: [[2440, 714, 240, 48]] },
+      { kind: 'records', vip: true, x: 2280, y: 960, w: 190, h: 140, spot: [2375, 1124], solid: [[2284, 1080, 182, 20]] },
+      { kind: 'vipbar', vip: true, x: 2620, y: 1000, w: 220, h: 62, spot: [2730, 1086], solid: [[2620, 1022, 220, 40]] },
+      { kind: 'sofa', vip: true, gold: true, x: 2300, y: 1210, w: 110, h: 44, solid: [[2300, 1222, 110, 32]], seats: [[2330, 1266], [2382, 1266]] },
+      { kind: 'sofa', vip: true, gold: true, x: 2560, y: 1210, w: 110, h: 44, solid: [[2560, 1222, 110, 32]], seats: [[2590, 1266], [2642, 1266]] }
+    );
+    objs.forEach(o => { if (o.vip && o.base === undefined) o.base = o.y + o.h; });
+  }
   /** Things you can walk up to and use. */
   const usable = () => objs.filter(o => o.spot);
   function buildSolids() {
@@ -120,7 +148,7 @@ window.Floor = (() => {
     for (const k of Object.keys(DECOR)) if (owns(k)) all.push({ kind: 'decor', id: k, ...DECOR[k], base: DECOR[k].y + DECOR[k].h, solid: [[DECOR[k].x, DECOR[k].y + DECOR[k].h * 0.55, DECOR[k].w, DECOR[k].h * 0.45]] });
     if (owns('plants')) PLANTS.forEach(([px, py]) => all.push({ kind: 'plant', x: px, y: py, w: 26, h: 44, base: py + 44, solid: [[px + 4, py + 30, 18, 14]] }));
     objs = all;
-    solids = objs.flatMap(o => o.solid || []).map(([x, y, w, h]) => ({ x, y, w, h }));
+    solids = [...objs.flatMap(o => o.solid || []), ...VWALL].map(([x, y, w, h]) => ({ x, y, w, h }));
     const C = Math.ceil(WW / CELL), R = Math.ceil(WH / CELL); blocked = new Uint8Array(C * R);
     for (let j = 0; j < R; j++) for (let i = 0; i < C; i++) blocked[j * C + i] = hit(i * CELL + CELL / 2, j * CELL + CELL / 2, 11) ? 1 : 0;
   }
@@ -176,6 +204,12 @@ window.Floor = (() => {
       for (let i = 0; i < n; i++) { const px = r() * w, py = y0 + r() * h, rr = 14 + r() * 26, g = x.createRadialGradient(px, py, 0, px, py, rr * 1.6); g.addColorStop(0, glow ? 'rgba(255,170,60,.8)' : '#ffb03d'); g.addColorStop(0.45, glow ? 'rgba(255,74,26,.4)' : '#ff4a1a'); g.addColorStop(1, 'rgba(120,10,10,0)'); x.fillStyle = g; x.beginPath(); x.ellipse(px, py, rr * 1.6, rr * 0.7, r() * 3, 0, 6.29); x.fill(); }
       return;
     }
+    if (kind === 'velvet') {
+      if (!glow) { x.fillStyle = '#3a0812'; x.fillRect(0, y0, w, h); }
+      x.strokeStyle = glow ? 'rgba(255,210,61,.45)' : 'rgba(255,210,61,.35)'; x.lineWidth = 1.5;
+      for (let j = 0; j < h; j += 36) for (let i = 0; i < w; i += 36) { x.beginPath(); x.moveTo(i + 18, y0 + j + 4); x.lineTo(i + 32, y0 + j + 18); x.lineTo(i + 18, y0 + j + 32); x.lineTo(i + 4, y0 + j + 18); x.closePath(); x.stroke(); }
+      return;
+    }
     if (kind === 'checker') {
       if (glow) return;
       for (let j = 0; j < h; j += 24) for (let i = 0; i < w; i += 24) { x.fillStyle = ((i + j) / 24) % 2 ? '#e8e4f0' : '#141020'; x.fillRect(i, y0 + j, 24, 24); }
@@ -207,7 +241,7 @@ window.Floor = (() => {
     x.shadowColor = c; x.shadowBlur = 18; x.fillStyle = c; x.fillText(text, cx, cy); x.shadowBlur = 6; x.fillStyle = '#fff'; x.globalAlpha = 0.7; x.fillText(text, cx, cy);
     x.globalAlpha = 1; x.shadowBlur = 0;
   }
-  const WALL_SIGNS = [['BITCADE', 1120, 56, 40, '#ff4fa3'], ['RACEWAY', 290, 56, 28, '#ff7a3d'], ['SHOOTING GALLERY', 1950, 50, 22, '#7dd63d']];
+  const WALL_SIGNS = [['BITCADE', 1120, 56, 40, '#ff4fa3'], ['RACEWAY', 290, 56, 28, '#ff7a3d'], ['SHOOTING GALLERY', 1950, 50, 22, '#7dd63d'], ['VIP ROOM', 2560, 46, 30, '#ffd23d']];
   function background() {
     const eq = equip(), key = (eq.carpet || '') + (owns('sign') ? 's' : '');
     if (bg && key === bgKey) return;
@@ -238,6 +272,16 @@ window.Floor = (() => {
     [[110, 36], [438, 36]].forEach(([fx, fy]) => { x.fillStyle = OUT; x.fillRect(fx - 2, fy - 2, 46, 34); for (let i = 0; i < 6; i++) for (let j = 0; j < 4; j++) { x.fillStyle = (i + j) % 2 ? '#fff' : '#111'; x.fillRect(fx + i * 7, fy + j * 7.5, 7, 7.5); } });
     x.fillStyle = OUT; x.fillRect(1700, 96, 500, 6); x.fillStyle = '#c0c6d0'; x.fillRect(1700, 97, 500, 3);
     // side and front walls, the glass doors
+    // the VIP room: black and gold diamonds, a gold-trimmed wall, the wall between with its doorway
+    x.fillStyle = '#0c0812'; x.fillRect(VIPX, WALL, WW - VIPX, WH - WALL); gx.clearRect(VIPX, WALL, WW - VIPX, WH - WALL);
+    for (let j = WALL; j < WH; j += 40) for (let i = VIPX; i < WW; i += 40) { const k = ((i - VIPX) / 40 + (j - WALL) / 40) % 2; x.fillStyle = k ? '#16101e' : '#0c0812'; x.beginPath(); x.moveTo(i + 20, j); x.lineTo(i + 40, j + 20); x.lineTo(i + 20, j + 40); x.lineTo(i, j + 20); x.fill(); }
+    gx.strokeStyle = 'rgba(255,210,61,.16)'; x.strokeStyle = 'rgba(255,210,61,.09)'; [x, gx].forEach(c => { c.lineWidth = 1; for (let i = VIPX; i < WW + WH; i += 80) { c.beginPath(); c.moveTo(i, WALL); c.lineTo(i - (WH - WALL), WH); c.stroke(); } });
+    x.save(); x.beginPath(); x.rect(VIPX, 0, WW - VIPX, WH); x.clip();
+    const vg = x.createLinearGradient(0, 0, 0, WALL); vg.addColorStop(0, '#120a06'); vg.addColorStop(1, '#2a1a0a'); x.fillStyle = vg; x.fillRect(VIPX, 0, WW - VIPX, WALL);
+    x.fillStyle = 'rgba(255,210,61,.08)'; for (let i = VIPX; i < WW; i += 64) x.fillRect(i, 0, 3, WALL);
+    x.fillStyle = '#ffd23d'; x.fillRect(VIPX, WALL - 3, WW - VIPX, 2); neon(x, 'VIP ROOM', 2560, 46, 30, '#ffd23d'); x.font = '11px Silkscreen, monospace'; x.textAlign = 'center'; x.fillStyle = '#c8a050'; x.fillText('★ HALL OF MASTERS ★', 2560, 84);
+    x.restore();
+    for (const [wx, wy, ww, wh] of VWALL) { x.fillStyle = OUT; x.fillRect(wx - 2, wy, ww + 4, wh); x.fillStyle = '#2a1a0a'; x.fillRect(wx, wy, ww, wh); x.fillStyle = '#ffd23d'; x.fillRect(wx + ww / 2 - 1, wy, 2, wh); gx.fillStyle = '#ffd23d'; gx.fillRect(wx + ww / 2 - 1, wy, 2, wh); }
     x.fillStyle = '#0c0920'; x.fillRect(0, WALL, 16, WH - WALL); x.fillRect(WW - 16, WALL, 16, WH - WALL);
     x.fillStyle = '#0c0920'; x.fillRect(0, WH - 24, WW, 24); x.fillStyle = '#ff4fa3'; x.fillRect(0, WH - 25, WW, 2); gx.fillStyle = '#ff4fa3'; gx.fillRect(0, WH - 25, WW, 2);
     x.fillStyle = OUT; x.fillRect(1052, WH - 26, 136, 26); x.fillStyle = 'rgba(94,231,255,.35)'; x.fillRect(1056, WH - 22, 62, 22); x.fillRect(1122, WH - 22, 62, 22);
@@ -324,7 +368,9 @@ window.Floor = (() => {
     punk: { top: '#2a2630', legs: '#3d5ab8', hair: '#ff4fa3', hat: 'mohawk' },
     ninja: { top: '#1a1a24', legs: '#1a1a24', hair: '#1a1a24', hat: 'band', mask: true },
     robot: { top: '#c0c6d0', legs: '#8a8ea0', hair: '#c0c6d0', hat: 'antenna', visor: true },
-    wizard: { top: '#4a2a9a', legs: '#4a2a9a', hair: '#e8e8f0', hat: 'wizard' }
+    wizard: { top: '#4a2a9a', legs: '#4a2a9a', hair: '#e8e8f0', hat: 'wizard' },
+    tux: { top: '#16161e', legs: '#16161e', hair: '#2a1a10', tux: true },
+    goldsuit: { top: '#ffd23d', legs: '#c89a2a', hair: '#3a2414', hat: 'tophat', tux: true, bow: '#16161e' }
   };
   const SKINS = ['#f0c090', '#e0a878', '#c08050', '#8a5634', '#ffd8b4', '#6a3e22'];
   /**
@@ -365,6 +411,9 @@ window.Floor = (() => {
     if (o.hat === 'wizard') { x.fillStyle = OUT; x.beginPath(); x.moveTo(-10, -38); x.lineTo(2, -62); x.lineTo(10, -38); x.fill(); x.fillStyle = '#4a2a9a'; x.beginPath(); x.moveTo(-8, -39); x.lineTo(2, -59); x.lineTo(8, -39); x.fill(); x.fillStyle = '#ffd23d'; x.fillRect(-1, -50, 2, 2); x.fillRect(3, -45, 2, 2); x.fillStyle = '#5a3aba'; x.fillRect(-10, -40, 20, 3);
       if (dir === 'down') { x.fillStyle = '#e8e8f0'; x.beginPath(); x.moveTo(-5, -28); x.lineTo(5, -28); x.lineTo(0, -18); x.fill(); } }
     if (o.hat === 'helmet') { x.strokeStyle = OUT; x.lineWidth = 3; x.beginPath(); x.arc(0, -33, 11, 0, 6.29); x.stroke(); x.fillStyle = 'rgba(160,220,255,.35)'; x.beginPath(); x.arc(0, -33, 10, 0, 6.29); x.fill(); x.fillStyle = 'rgba(255,255,255,.7)'; x.fillRect(-6, -40, 4, 2); }
+    if (o.tux && dir === 'down') { x.fillStyle = '#f4effd'; x.beginPath(); x.moveTo(-3, -26); x.lineTo(3, -26); x.lineTo(0, -16); x.fill(); x.fillStyle = o.bow || '#c8203a'; x.fillRect(-3, -26, 6, 3); }
+    if (o.hat === 'tophat') { paint(x, [[-7, -55, 14, 14, '#16161e'], [-10, -43, 20, 3, '#16161e']]); x.fillStyle = '#ffd23d'; x.fillRect(-7, -46, 14, 2); }
+    if (prop === 'gold' && dir !== 'up') { const hx = side ? 4 : 8; paint(x, [[hx, -24, 6, 9, 'rgba(255,230,160,.6)']]); x.fillStyle = '#ffd23d'; x.fillRect(hx + 1, -20, 4, 4); }
     if (prop === 'soda' && dir !== 'up') { const hx = side ? 4 : 8; paint(x, [[hx, -24, 6, 9, '#ff4f6d']]); x.fillStyle = '#fff'; x.fillRect(hx + 1, -21, 4, 2); x.fillStyle = '#e8e8f0'; x.fillRect(hx + 3, -29, 1, 5); }
     x.restore();
   }
@@ -381,11 +430,14 @@ window.Floor = (() => {
 
   /* ---------- other people: they wander, play, sit, watch the tournament and talk ---------- */
   const STAFF = [{ x: 175, y: 652, look: { top: '#ff4f6d', legs: '#2a2a4a', hair: '#3a2414', skin: '#e0a878', hat: 'cap', capC: '#fff' }, name: 'snack' },
-    { x: 1980, y: 700, look: { top: '#ffd23d', legs: '#2a2a4a', hair: '#111111', skin: '#8a5634', hat: 'cap', capC: '#ff4f6d' }, name: 'prizes' }];
+    { x: 1980, y: 700, look: { top: '#ffd23d', legs: '#2a2a4a', hair: '#111111', skin: '#8a5634', hat: 'cap', capC: '#ff4f6d' }, name: 'prizes' },
+    { x: 2214, y: 712, look: { top: '#16161e', legs: '#16161e', hair: '#111111', skin: '#6a3e22', glasses: true, tux: true }, name: 'bouncer', dir: 'right' },
+    { x: 2730, y: 990, look: { top: '#f4effd', legs: '#16161e', hair: '#c88a3a', skin: '#ffd8b4', tux: true }, name: 'bartender' }];
+  const MAIN_ZONES = ZONES.filter(z => !z.vip);
   function spawnPeople() {
     npcs.length = 0;
     for (let i = 0; i < 10; i++) {
-      const z = pick(ZONES); let px, py, k = 0;
+      const z = pick(MAIN_ZONES); let px, py, k = 0;
       do { px = rnd(z.x + 40, z.x + z.w - 40); py = rnd(Math.max(WALL + 40, z.y + 40), z.y + z.h - 40); } while (hit(px, py) && k++ < 40);
       npcs.push({ x: px, y: py, dir: 'down', walk: 0, moving: false, look: randomLook(), path: [], act: null, t: rnd(0, 3), pose: '', bubble: null, greetT: 0, speed: rnd(80, 110) });
     }
@@ -396,15 +448,31 @@ window.Floor = (() => {
     n.pose = ''; const r = Math.random(), feat = cabs.find(c => c.g.slug === opt.featured);
     const occupied = new Set(npcs.map(o => o.act && o.act.seat && o.act.seat.join()));
     let act = null;
-    if (r < 0.5) { const free = [...cabs, ...objs.filter(o => o.npcSpot)].filter(c => !c.user && near !== c && !(me.entering && me.entering.c === c)); const c = free.length && pick(free); if (c) { c.user = n; act = { type: 'play', obj: c, to: c.npcSpot || (c.type === 'racer' ? c.seat : c.spot), dur: rnd(10, 26) }; } }
+    if (n.vip) return planVip(n);
+    if (r < 0.5) { const free = [...cabs, ...objs.filter(o => o.npcSpot)].filter(c => !c.vip && !c.user && near !== c && !(me.entering && me.entering.c === c)); const c = free.length && pick(free); if (c) { c.user = n; act = { type: 'play', obj: c, to: c.npcSpot || (c.type === 'racer' ? c.seat : c.spot), dur: rnd(10, 26) }; } }
     else if (r < 0.62 && feat) act = { type: 'watch', obj: feat, to: [feat.spot[0] + pick([-34, 34, -18, 18]), feat.spot[1] + rnd(14, 34)], dur: rnd(8, 16) };
-    else if (r < 0.74) { const seats = objs.filter(o => o.seats).flatMap(o => o.seats).filter(s => !occupied.has(s.join())); if (seats.length) { const s = pick(seats); act = { type: 'sit', seat: s, to: s, dur: rnd(10, 22) }; } }
+    else if (r < 0.74) { const seats = objs.filter(o => o.seats && !o.vip).flatMap(o => o.seats).filter(s => !occupied.has(s.join())); if (seats.length) { const s = pick(seats); act = { type: 'sit', seat: s, to: s, dur: rnd(10, 22) }; } }
     else if (r < 0.8) act = { type: 'snack', to: [rnd(110, 250), 724], dur: rnd(3, 6) };
     else if (r < 0.86) act = { type: 'browse', to: [rnd(1880, 2080), 806], dur: rnd(4, 9) };
     else if (r < 0.9) { const claw = objs.find(o => o.kind === 'claw'); if (!claw.user) { claw.user = n; act = { type: 'claw', obj: claw, to: claw.spot, dur: rnd(6, 10) }; } }
     else if (r < 0.94) act = { type: 'watch', to: [rnd(1040, 1200), rnd(824, 860)], dur: rnd(4, 8) };
-    if (!act) { const z = pick(ZONES); act = { type: 'wander', to: [rnd(z.x + 40, z.x + z.w - 40), rnd(Math.max(WALL + 40, z.y + 40), z.y + z.h - 40)], dur: rnd(1, 3) }; }
+    if (!act) { const z = pick(MAIN_ZONES); act = { type: 'wander', to: [rnd(z.x + 40, z.x + z.w - 40), rnd(Math.max(WALL + 40, z.y + 40), z.y + z.h - 40)], dur: rnd(1, 3) }; }
     n.act = act; n.path = findPath(n.x, n.y, act.to[0], act.to[1]); n.t = act.dur;
+  }
+  /** VIP regulars: play the gold cabinets, sit on the velvet sofas, get golden sodas, wander the room. */
+  function planVip(n) {
+    const r = Math.random(), occupied = new Set(npcs.map(o => o.act && o.act.seat && o.act.seat.join())); let act = null;
+    if (r < 0.4) { const free = cabs.filter(c => c.vip && !c.user && near !== c); if (free.length) { const c = pick(free); c.user = n; act = { type: 'play', obj: c, to: c.spot, dur: rnd(10, 24) }; } }
+    else if (r < 0.7) { const seats = objs.filter(o => o.seats && o.vip).flatMap(o => o.seats).filter(s => !occupied.has(s.join())); if (seats.length) { const s = pick(seats); act = { type: 'sit', seat: s, to: s, dur: rnd(12, 24) }; } }
+    else if (r < 0.82) act = { type: 'snack', gold: true, to: [rnd(2650, 2810), 1086], dur: rnd(3, 6) };
+    if (!act) act = { type: 'wander', to: [rnd(2290, 2840), rnd(560, 1180)], dur: rnd(2, 4) };
+    n.act = act; n.path = findPath(n.x, n.y, act.to[0], act.to[1]); n.t = act.dur;
+  }
+  function spawnVipPeople() {
+    for (let i = npcs.length - 1; i >= 0; i--) if (npcs[i].vip) npcs.splice(i, 1);
+    if (!vipOpen) return;
+    const looks = [{ ...OUTFITS.tux, skin: pick(SKINS) }, { ...OUTFITS.goldsuit, skin: pick(SKINS) }, { top: '#c8203a', legs: '#16161e', hair: '#e8d090', skin: pick(SKINS), hat: 'bun', glasses: true }];
+    looks.forEach(look => npcs.push({ vip: true, x: rnd(2300, 2820), y: rnd(600, 1150), dir: 'down', walk: 0, moving: false, look, path: [], act: null, t: rnd(0, 2), pose: '', bubble: null, greetT: 0, speed: rnd(70, 90) }));
   }
   const LINES = {
     play: ['ONE MORE GO!', 'COME ON...', 'SO CLOSE!', 'NOOOO', 'YES! YES!', 'NEW HIGH SCORE!', 'HOW?!', 'THIS LEVEL...', 'BOSS FIGHT!', 'EXTRA LIFE!'],
@@ -455,7 +523,7 @@ window.Floor = (() => {
     if (a.type === 'sit') { n.dir = 'down'; n.pose = 'sit'; }
     if (a.type === 'play' && a.obj.type === 'racer') n.pose = 'sit';
     if (a.type === 'play' && a.obj.type === 'table') n.dir = 'up';
-    if (a.type === 'snack') { n.prop = 'soda'; n.propT = rnd(30, 60); }
+    if (a.type === 'snack') { n.prop = a.gold ? 'gold' : 'soda'; n.propT = rnd(30, 60); }
   }
   const initials = () => { try { const v = localStorage.getItem('arcade:initials'); return /^[A-Z]{3}$/.test(v || '') ? v : ''; } catch (e) { return ''; } };
 
@@ -498,6 +566,11 @@ window.Floor = (() => {
     near = null; let best = 30;
     for (const o of usable()) { const d = Math.hypot(me.x - o.spot[0], (me.y - o.spot[1]) * 1.4); if (d < best) { best = d; near = o; } }
     if (near !== shownNear) { shownNear = near; showCard(); if (near && play) play.sound.notice(near); }
+    if (vipOpen && vipNew && me.x > 2120 && Math.abs(me.y - 656) < 90) { // the first time through: a welcome
+      vipNew = false; try { localStorage.setItem('bitcade:vipseen', '1'); } catch (e) {}
+      const s = STAFF.find(s => s.name === 'bouncer'); say(s, 'WELCOME TO THE VIP ROOM!', 3.2); me.bubble = { text: 'WHOA!', t: 2, cheer: true };
+      if (play) play.sound.fanfare && play.sound.fanfare();
+    }
     const z = zoneAt(me.x, me.y); if (z && z.name !== zoneName) { zoneName = z.name; zoneT = 2.4; if (play && t > 1500) play.sound.zone(); }
   }
   const puffs = [];
@@ -512,7 +585,13 @@ window.Floor = (() => {
     if (!near) return;
     const o = near;
     if (o.kind === 'cab') return enter(o);
-    if (o.kind === 'counter') return opt.onCounter();
+    if (o.kind === 'counter' || o.kind === 'vipcounter') return opt.onCounter();
+    if (o.kind === 'vipdoor') {
+      const s = STAFF.find(s => s.name === 'bouncer');
+      if (vipOpen) say(s, pick(['WELCOME BACK, VIP.', 'GO ON IN.', 'LOOKING SHARP.']), 2.4);
+      else { const st = VIP.status(); say(s, `VIPS ONLY. ${st.badges}/${st.NEED.badges} BADGES.`, 3); }
+      return;
+    }
     if (play) play.use(o);
   }
   /** Step up to a cabinet (into the seat, for a racer) and dive into its screen, then open the game. */
@@ -534,7 +613,14 @@ window.Floor = (() => {
       const g = near.g, i = opt.info(g); b.textContent = g.name; c = g.c;
       small.textContent = `${g.kind.toUpperCase()} · ${i.label} ${i.best ? i.best.toLocaleString() : '—'} · ★ ${i.got}/${i.all}${opt.featured === g.slug ? ' · THIS WEEK’S TOURNAMENT' : ''}`;
       go.textContent = 'PLAY ▶';
-    } else if (near.kind === 'counter') { b.textContent = 'PRIZE COUNTER'; small.textContent = `TICKETS ${TICKETS.balance().toLocaleString()} · cosmetics for every game and this floor`; go.textContent = 'OPEN ▶'; c = '#ffd23d'; }
+    } else if (near.kind === 'vipdoor') {
+      const st = window.VIP ? VIP.status() : { badges: 0, mastered: 0, earned: 0, NEED: { badges: 30, mastered: 3, earned: 1500 } };
+      b.textContent = vipOpen ? 'VIP ROOM · OPEN' : 'VIP ROOM · LOCKED'; c = '#ffd23d';
+      small.textContent = vipOpen ? 'The Hall of Masters, VIP prizes, your records and golden sodas.' : `Get in with ${st.NEED.badges} badges (${st.badges}), or ${st.NEED.mastered} mastered cabinets (${st.mastered}), or ${st.NEED.earned.toLocaleString()} tickets earned (${st.earned.toLocaleString()}).`;
+      go.textContent = vipOpen ? 'GO IN ▶' : 'ASK ▶';
+    }
+    else if (near.kind === 'vipcounter') { b.textContent = 'VIP PRIZE COUNTER'; small.textContent = `TICKETS ${TICKETS.balance().toLocaleString()} · VIP exclusives: tuxedo, golden suit, velvet carpet, platinum cabinets`; go.textContent = 'OPEN ▶'; c = '#ffd23d'; }
+    else if (near.kind === 'counter') { b.textContent = 'PRIZE COUNTER'; small.textContent = `TICKETS ${TICKETS.balance().toLocaleString()} · cosmetics for every game and this floor`; go.textContent = 'OPEN ▶'; c = '#ffd23d'; }
     else if (play) { const k = play.card(near); b.textContent = k.title; small.textContent = k.sub; go.textContent = k.btn; c = k.c; }
     card.style.setProperty('--c', c);
     go.addEventListener('click', interact); info.append(b, small); card.append(info, go);
@@ -600,6 +686,8 @@ window.Floor = (() => {
     L.push({ x: 1980, y: 760, r: 220, a: 0.95, c: '#ffd23d' }, { x: 1738, y: 980, r: 150, a: 0.9, c: '#5ee7ff' }, { x: 501, y: 700, r: 140, a: 0.9, c: ['#ff4fd1', '#ffd23d', '#22e0ff', '#3dff8f'][Math.floor(t / 600) % 4] },
       { x: 1120, y: 740, r: 190, a: 0.95, c: '#5ee7ff' }, { x: 1452, y: 720, r: 120, a: 0.8 + (booth.flash > 0 ? 1 : 0), c: '#ff4fa3' }, { x: 175, y: 690, r: 190, a: 0.9, c: '#ffb03d' }, { x: 1120, y: WH - 40, r: 220, a: 0.7, c: '#5ee7ff' });
     const feat = cabs.find(c => c.g.slug === opt.featured); if (feat) L.push({ x: feat.spot[0], y: feat.spot[1] - 10, r: 170, a: 1, c: '#ffd23d' });
+    [[2400, 560], [2720, 560], [2400, 980], [2720, 980], [2560, 300]].forEach(([x, y]) => L.push({ x, y, r: 250, a: 0.7, c: '#ffd23d' }));
+    L.push({ x: 2240, y: 656, r: 120, a: 0.8, c: vipOpen ? '#ffd23d' : '#ff4f6d' }, { x: 2560, y: 760, r: 180, a: 0.9, c: '#ffd23d' });
     L.push({ x: me.x, y: me.y - 16, r: 110, a: 0.5 });
     return L;
   }
@@ -647,6 +735,13 @@ window.Floor = (() => {
       x.fillStyle = 'rgba(10,6,18,.85)'; x.fillRect(cx - w / 2, cy - 16, w, 30); x.strokeStyle = c; x.lineWidth = 2; x.strokeRect(cx - w / 2, cy - 16, w, 30);
       neon(x, text, cx, cy, size, c);
     };
+    [[2400, 560], [2720, 560], [2400, 980], [2720, 980]].forEach(([cx, cy]) => { // chandeliers
+      if (!visible(cx, cy, 120)) return;
+      x.strokeStyle = '#6a5020'; x.lineWidth = 1; x.beginPath(); x.moveTo(cx, cy - 90); x.lineTo(cx, cy - 30); x.stroke();
+      x.fillStyle = '#c89a2a'; x.fillRect(cx - 24, cy - 32, 48, 4);
+      for (let i = 0; i < 5; i++) { const px = cx - 22 + i * 11, tw = 0.6 + 0.4 * Math.sin(t / 200 + i + cx); x.fillStyle = `rgba(255,240,180,${tw})`; x.beginPath(); x.arc(px, cy - 22, 3, 0, 6.29); x.fill(); x.fillStyle = 'rgba(220,240,255,.7)'; x.fillRect(px - 1, cy - 18, 2, 6); }
+    });
+    if (!vipOpen) hang('VIP', 2240, 560, '#ffd23d', 16);
     hang('LOUNGE', 330, 760, '#b48cff'); hang('SNACKS', 175, 606, '#ffb03d', 14); hang('PRIZES', 1980, 580, '#ffd23d', 20);
     const feat = cabs.find(c => c.g.slug === opt.featured);
     if (feat && visible(feat.x, feat.y, 200)) {
@@ -879,19 +974,75 @@ window.Floor = (() => {
     paint(x, [[o.x, o.y, o.w, 14, '#5a4aa0'], [o.x + 6, o.y + 14, 8, 14, '#3a3060'], [o.x + o.w - 14, o.y + 14, 8, 14, '#3a3060']]);
     x.fillStyle = 'rgba(255,255,255,.15)'; for (let i = 0; i < 4; i++) x.fillRect(o.x + 4 + i * 23, o.y + 3, 18, 2);
   }
+  /** The doorway: gold posts, and while it's shut a velvet rope and a sign. */
+  function drawVipDoor(x, t, o) {
+    const cx = 2240, isNear = near === o;
+    [DOOR.y0 - 4, DOOR.y1 - 4].forEach(py => { x.fillStyle = OUT; x.fillRect(cx - 7, py - 22, 14, 28); paint(x, [[cx - 5, py - 20, 10, 24, '#ffd23d']]); x.fillStyle = '#fff6c2'; x.beginPath(); x.arc(cx, py - 22, 5, 0, 6.29); x.fill(); });
+    if (!vipOpen) {
+      if (isNear) { x.shadowColor = '#ff4f6d'; x.shadowBlur = 16; }
+      x.strokeStyle = OUT; x.lineWidth = 7; x.beginPath(); x.moveTo(cx, DOOR.y0 - 18); x.quadraticCurveTo(cx + 12, (DOOR.y0 + DOOR.y1) / 2, cx, DOOR.y1 - 22); x.stroke();
+      x.strokeStyle = '#c8203a'; x.lineWidth = 4; x.stroke(); x.shadowBlur = 0;
+      x.font = '8px Silkscreen, monospace'; x.textAlign = 'center'; x.textBaseline = 'middle'; paint(x, [[cx - 26, DOOR.y0 + 30, 22, 16, '#1a1020']]); x.fillStyle = '#ffd23d'; x.fillText('VIP', cx - 15, DOOR.y0 + 38);
+    }
+  }
+  function drawPlinth(x, t, o) {
+    shadow(x, o.x + 30, o.base, 34);
+    paint(x, [[o.x + 6, o.y + 22, 48, 42, '#2a1a24'], [o.x, o.y + 14, 60, 10, '#3a2430']]);
+    x.fillStyle = '#ffd23d'; x.fillRect(o.x + 6, o.y + 24, 48, 2);
+    x.font = '16px Bungee, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = 'rgba(255,210,61,.35)'; x.fillText('?', o.x + 30, o.y - 4 + Math.sin(t / 500 + o.x) * 2);
+    x.font = '6px Silkscreen, monospace'; x.fillStyle = '#c8a050'; x.fillText('MASTER ONE', o.x + 30, o.y + 40); x.fillText('TO FILL ME', o.x + 30, o.y + 48);
+  }
+  function drawVipCounter(x, t, o) {
+    const isNear = near === o;
+    if (isNear) { x.shadowColor = '#ffd23d'; x.shadowBlur = 24; }
+    paint(x, [[o.x, o.y + 18, o.w, o.h - 18, '#1a1020'], [o.x + 6, o.y + 2, o.w - 12, 18, 'rgba(255,230,160,.22)', true], [o.x - 2, o.y + 18, o.w + 4, 5, '#ffd23d']]);
+    x.shadowBlur = 0;
+    ['#ffd23d', '#e8ecf4', '#c8203a', '#ffd23d', '#9ad8ff', '#ffd23d'].forEach((c, i) => { x.fillStyle = c; x.beginPath(); x.arc(o.x + 26 + i * 38, o.y + 12, 5, 0, 6.29); x.fill(); x.fillStyle = 'rgba(255,255,255,.6)'; x.fillRect(o.x + 24 + i * 38, o.y + 9, 2, 2); });
+    x.font = '12px Bungee, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = '#ffd23d'; x.fillText('VIP PRIZES', o.x + o.w / 2, o.y + 46);
+  }
+  /** Your records: a gold-framed board of your best runs. */
+  function drawRecords(x, t, o) {
+    const isNear = near === o;
+    shadow(x, o.x + o.w / 2, o.y + o.h, o.w * 0.5, 7);
+    paint(x, [[o.x + 20, o.y + 110, 8, 30, '#6a4a20'], [o.x + o.w - 28, o.y + 110, 8, 30, '#6a4a20']]);
+    if (isNear) { x.shadowColor = '#ffd23d'; x.shadowBlur = 24; }
+    paint(x, [[o.x, o.y, o.w, 116, '#c89a2a']]); x.shadowBlur = 0;
+    x.fillStyle = '#120a06'; x.fillRect(o.x + 6, o.y + 6, o.w - 12, 104);
+    x.font = '11px Bungee, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = '#ffd23d'; x.fillText('YOUR RECORDS', o.x + o.w / 2, o.y + 18);
+    const rows = cabs.filter(c => !c.vip).map(c => ({ n: c.g.name.toUpperCase(), b: opt.info(c.g).best || 0, c: c.g.c })).filter(r => r.b).sort((a, b) => b.b - a.b).slice(0, 5);
+    x.font = '7px Silkscreen, monospace';
+    if (!rows.length) { x.fillStyle = '#c8a050'; x.fillText('PLAY TO FILL THIS', o.x + o.w / 2, o.y + 60); }
+    rows.forEach((r, i) => { const y = o.y + 36 + i * 15; x.textAlign = 'left'; x.fillStyle = r.c; x.fillText(r.n, o.x + 14, y, 110); x.textAlign = 'right'; x.fillStyle = '#fff6c2'; x.fillText(r.b.toLocaleString(), o.x + o.w - 14, y); });
+  }
+  /** The golden soda bar, with a fountain of gold and glasses on the shelf. */
+  function drawVipBar(x, t, o) {
+    const isNear = near === o;
+    if (isNear) { x.shadowColor = '#ffd23d'; x.shadowBlur = 22; }
+    paint(x, [[o.x, o.y + 14, o.w, o.h - 14, '#2a1a0a'], [o.x - 2, o.y + 10, o.w + 4, 7, '#ffd23d']]);
+    x.shadowBlur = 0;
+    paint(x, [[o.x + 20, o.y - 20, 44, 32, '#c0c6d0']]);
+    for (let i = 0; i < 3; i++) { x.fillStyle = '#ffd23d'; x.fillRect(o.x + 27 + i * 12, o.y - 14, 6, 10); x.fillStyle = 'rgba(255,240,170,.8)'; x.fillRect(o.x + 29 + i * 12, o.y - 4 + ((t / 90 + i * 3) % 8), 2, 3); }
+    for (let i = 0; i < 6; i++) { const gx = o.x + 90 + i * 20; paint(x, [[gx, o.y - 4, 8, 12, 'rgba(255,230,160,.45)']]); x.fillStyle = '#ffd23d'; x.fillRect(gx + 1, o.y + 2, 6, 5); }
+    x.font = '9px Silkscreen, monospace'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = '#ffd23d'; x.fillText('GOLDEN SODA', o.x + o.w / 2, o.y + 40);
+  }
   function drawObj(x, o, t) {
     switch (o.kind) {
       case 'cab': return drawCab(x, o, t);
       case 'seat': return drawSeat(x, o);
       case 'snack': return drawSnack(x, t, o);
       case 'jukebox': return drawJukeboxBig(x, t, o);
-      case 'sofa': return drawSofa(x, o.x, o.y, o.w, '#6a3aa8');
+      case 'sofa': return drawSofa(x, o.x, o.y, o.w, o.gold ? '#8a1a2a' : '#6a3aa8');
       case 'beanbag': return drawBeanbag(x, o);
       case 'board': return drawBoard(x, t, o);
       case 'booth': return drawBooth(x, t, o);
       case 'shelf': return drawShelf(x, t, o);
       case 'counter': return drawCounter(x, t, o.x, o.y, o.w, o.h);
       case 'claw': return drawBigClaw(x, t, o);
+      case 'vipdoor': return drawVipDoor(x, t, o);
+      case 'plinth': return drawPlinth(x, t, o);
+      case 'vipcounter': return drawVipCounter(x, t, o);
+      case 'records': return drawRecords(x, t, o);
+      case 'vipbar': return drawVipBar(x, t, o);
       case 'rail': return drawRail(x, t, o);
       case 'pinball': return drawPinball(x, t, o);
       case 'skee': return drawSkee(x, t, o);
@@ -958,7 +1109,7 @@ window.Floor = (() => {
     for (const p of puffs) { x.fillStyle = `rgba(200,190,230,${p.t})`; x.beginPath(); x.arc(p.x, p.y - (0.5 - p.t) * 10, 3 + (0.5 - p.t) * 8, 0, 6.29); x.fill(); }
     // everything standing, back to front
     const list = objs.filter(o => visible(o.x, o.y, 120)).map(o => [o.base, () => drawObj(x, o, t)]);
-    for (const s of STAFF) if (visible(s.x, s.y)) list.push([s.y, () => drawWalker(x, s.x, s.y, 'down', 0, false, s.look, s.bubble && s.bubble.t > 2 ? 'wave' : '')]);
+    for (const s of STAFF) if (visible(s.x, s.y)) list.push([s.y, () => drawWalker(x, s.x, s.y, s.dir || 'down', 0, false, s.look, s.bubble && s.bubble.t > 2 ? 'wave' : '')]);
     for (const n of npcs) if (visible(n.x, n.y)) list.push([n.y, () => drawWalker(x, n.x, n.y, n.dir, n.walk, n.moving, n.look, n.pose, n.prop)]);
     list.push([me.y, () => drawWalker(x, me.x, me.y, me.dir, me.walk, me.moving, equip().outfit || '', me.pose || (me.bubble && me.bubble.cheer ? 'cheer' : ''), me.prop)]);
     list.sort((a, b) => a[0] - b[0]).forEach(d => d[1]());
@@ -1025,6 +1176,9 @@ window.Floor = (() => {
     start() {
       if (running) return; running = true;
       mastered = new Set(cabs.filter(c => { const i = opt.info(c.g); return i.all && i.got === i.all; }).map(c => c.g.slug));
+      const wasOpen = vipOpen; layoutVip(); if (vipOpen !== wasOpen || !npcs.some(n => n.vip) !== !vipOpen) spawnVipPeople();
+      try { vipNew = vipOpen && localStorage.getItem('bitcade:vipseen') !== '1'; } catch (e) {}
+      const bouncer = STAFF.find(s => s.name === 'bouncer'); bouncer.y = vipOpen ? 590 : 712;
       buildSolids(); bgKey = null; shownNear = undefined; me.entering = null; me.pose = ''; mode = null;
       zoom = baseZoom = cv.clientWidth && cv.clientWidth < 700 ? 2.3 : 1.6; snapCamera();
       npcs.forEach(n => { if (!n.act) n.t = rnd(0, 2); });
@@ -1036,7 +1190,8 @@ window.Floor = (() => {
     state: () => ({ x: me.x, y: me.y, near: near && (near.kind === 'cab' ? near.g.slug : near.kind), mode: mode ? mode.name : null, people: npcs.length, zone: zoneName }),
     /** Put the walker in front of a cabinet (by slug) or a thing ('counter', 'claw', 'jukebox', 'board', 'booth', 'snack'). */
     goTo(what) {
-      const o = cabs.find(c => c.g.slug === what) || objs.find(o => o.kind === what && o.spot);
+      if (Array.isArray(what)) { me.x = what[0]; me.y = what[1]; route = []; if (running) snapCamera(); return; }
+      const o = cabs.find(c => c.g.slug === what && !c.vip) || objs.find(o => o.kind === what && o.spot);
       if (o) { me.x = o.spot[0]; me.y = o.spot[1]; me.vx = me.vy = 0; route = []; }
       me.dir = 'up'; if (running) snapCamera();
     },
