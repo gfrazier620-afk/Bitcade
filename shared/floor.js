@@ -92,8 +92,8 @@ window.Floor = (() => {
     { kind: 'claw', x: 1690, y: 896, w: 96, h: 140, spot: [1738, 1058], solid: [[1690, 994, 96, 42]] },
     { kind: 'bench', x: 700, y: 950, w: 96, h: 30, solid: [[700, 958, 96, 22]], seats: [[724, 990], [772, 990]] },
     { kind: 'bench', x: 1444, y: 950, w: 96, h: 30, solid: [[1444, 958, 96, 22]], seats: [[1468, 990], [1516, 990]] },
-    ...[0, 1, 2, 3].map(i => ({ kind: 'pinball', i, x: 48 + i * 82, y: 1080, w: 58, h: 104, npcSpot: [77 + i * 82, 1202], solid: [[48 + i * 82, 1140, 58, 44]], c: ['#ff4f6d', '#5ee7ff', '#ffd23d', '#3dff8f'][i], name: ['METEOR', 'DEEP SEA', 'GOLD RUSH', 'JUNGLE'][i] })),
-    ...[0, 1, 2].map(i => ({ kind: 'skee', i, x: 1870 + i * 80, y: 880, w: 64, h: 200, npcSpot: [1902 + i * 80, 1100], solid: [[1870 + i * 80, 920, 64, 160]] })),
+    ...[0, 1, 2, 3].map(i => ({ kind: 'pinball', i, x: 48 + i * 82, y: 1080, w: 58, h: 104, npcSpot: [77 + i * 82, 1202], spot: [77 + i * 82, 1202], solid: [[48 + i * 82, 1140, 58, 44]], c: ['#ff4f6d', '#5ee7ff', '#ffd23d', '#3dff8f'][i], name: ['METEOR', 'DEEP SEA', 'GOLD RUSH', 'JUNGLE'][i] })),
+    ...[0, 1, 2].map(i => ({ kind: 'skee', i, x: 1870 + i * 80, y: 880, w: 64, h: 200, npcSpot: [1902 + i * 80, 1100], spot: [1902 + i * 80, 1100], solid: [[1870 + i * 80, 920, 64, 160]] })),
     { kind: 'rail', x: 580, y: 196, w: 12, h: 230, solid: [[580, 196, 12, 230]] },
     { kind: 'rail', x: 1648, y: 196, w: 12, h: 230, solid: [[1648, 196, 12, 230]] }
   ];
@@ -554,7 +554,7 @@ window.Floor = (() => {
     } catch (e) {}
     const tapd = i => now[i] && !padWas[i];
     if (mode) {
-      if (tapd(0) || tapd(9)) mode.key('Enter'); if (tapd(1)) mode.key('Escape');
+      if (tapd(0) || tapd(9)) mode.key('Enter', 'pad'); if (tapd(1)) mode.key('Escape');
       if (tapd(12)) mode.key('ArrowUp'); if (tapd(13)) mode.key('ArrowDown'); if (tapd(14)) mode.key('ArrowLeft'); if (tapd(15)) mode.key('ArrowRight');
       if (mode && mode.held) mode.held(p.x);
     } else if (tapd(0) || tapd(9)) interact();
@@ -580,7 +580,7 @@ window.Floor = (() => {
   function tap(e) {
     if (off() || me.entering) return;
     const r = cv.getBoundingClientRect(), vx = (e.clientX - r.left) / r.width * VW, vy = (e.clientY - r.top) / r.height * VH;
-    if (mode) return mode.tap(vx, vy);
+    if (mode) return mode.tap(vx, vy, e.pointerId);
     if (vx > MAP.x && vx < MAP.x + MAP.w && vy > MAP.y && vy < MAP.y + MAP.h) { const wx = (vx - MAP.x) / MAP.w * WW, wy = (vy - MAP.y) / MAP.h * WH; return walkTo(wx, Math.max(WALL + 24, wy)); }
     const x = cam.x + vx / zoom, y = cam.y + vy / zoom;
     const o = usable().find(o => x > o.x && x < o.x + o.w && y > o.y - (o.kind === 'counter' ? 110 : 0) && y < o.y + o.h);
@@ -1016,6 +1016,7 @@ window.Floor = (() => {
       dpr = Math.min(2, window.devicePixelRatio || 1); cv.width = VW * dpr; cv.height = VH * dpr;
       ctx = cv.getContext('2d');
       cv.addEventListener('pointerdown', tap);
+      ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => cv.addEventListener(ev, e => { if (mode && mode.untap) mode.untap(e.pointerId); }));
       play = window.FloorPlay ? window.FloorPlay(kit) : null;
       if (window.Prizes) Prizes.onChange(() => { bgKey = null; buildSolids(); showCard(); });
       if (document.fonts) { document.fonts.ready.then(() => { bgKey = null; }); document.fonts.addEventListener('loadingdone', () => { bgKey = null; }); } // the neon signs use Bungee

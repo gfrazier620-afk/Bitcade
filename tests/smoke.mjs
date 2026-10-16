@@ -385,6 +385,11 @@ console.log('\nArcade floor');
   check((await page.evaluate(() => Floor.state().mode)) === 'jukebox' && !!(await page.evaluate(() => localStorage.getItem('bitcade:jukebox'))), 'the jukebox picks a game theme for the lobby');
   await page.keyboard.press('Escape'); await wait(100);
   check((await page.evaluate(() => Floor.state().mode)) === null, 'Escape closes it');
+  for (const m of ['skee', 'pinball']) {
+    await page.evaluate(m => Floor.goTo(m), m); await wait(150); await page.keyboard.press('Enter'); await wait(150);
+    check((await page.evaluate(() => Floor.state().mode)) === m, `the ${m === 'skee' ? 'skee-ball lanes' : 'pinball machines'} are playable`);
+    await page.keyboard.press('Escape'); await wait(100);
+  }
   await page.evaluate(() => Floor.goTo('crater-lander')); await wait(150);
   await Promise.all([page.waitForURL(/games\/crater-lander\//), page.keyboard.press('Enter')]);
   check(true, 'Enter at a cabinet opens that game');

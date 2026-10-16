@@ -341,12 +341,248 @@ window.FloorPlay = kit => {
     };
   }
 
+  /* ---------- tickets from skee-ball and pinball: a few per game, at most 30 a day between them ---------- */
+  const FLOOR_CAP = 30;
+  function award(n) {
+    let s = null; try { s = JSON.parse(get('bitcade:floortix') || 'null'); } catch (e) {}
+    const used = s && s.d === today() ? s.n : 0, give = Math.max(0, Math.min(n, FLOOR_CAP - used));
+    if (give) { set('bitcade:floortix', JSON.stringify({ d: today(), n: used + give })); TICKETS.add(give); kit.opt.onTickets && kit.opt.onTickets(); }
+    return { give, capped: give < n };
+  }
+  const bestOf = k => +get(k) || 0;
+  function gameOver(x, score, best, res, c) {
+    x.fillStyle = 'rgba(5,2,12,.78)'; x.fillRect(VW / 2 - 220, VH / 2 - 110, 440, 220); x.strokeStyle = c; x.lineWidth = 2; x.strokeRect(VW / 2 - 214, VH / 2 - 104, 428, 208);
+    kit.neon(x, 'GAME OVER', VW / 2, VH / 2 - 62, 30, c);
+    x.font = '14px Silkscreen, monospace'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = '#f4effd';
+    x.fillText(`SCORE ${score.toLocaleString()}${score >= best && score ? '  ★ NEW BEST' : ''}`, VW / 2, VH / 2 - 14);
+    x.fillStyle = '#ffd23d'; x.fillText(res.give ? `+${res.give} TICKETS` : res.capped ? 'TICKET LIMIT REACHED TODAY' : 'NO TICKETS THIS TIME', VW / 2, VH / 2 + 16);
+    hint(x, 'ENTER OR TAP TO PLAY AGAIN · ESC TO LEAVE', VH / 2 + 64);
+  }
+
+  /* ---------- skee-ball: aim, hold to charge, let go to roll; nine balls ---------- */
+  function skee(o) {
+    const LX = VW / 2 - 110, LW = 220, CX = VW / 2, TOP = 40, CY = 130, RAMP = 250, BOT = 560;
+    const RINGS = [[22, 50], [42, 40], [62, 30], [84, 20]], POCKETS = [[CX - 84, TOP + 26], [CX + 84, TOP + 26]], col = ['#ff4f6d', '#5ee7ff', '#ffd23d'][o.i % 3];
+    let balls, score, aim, power, pdir, charging, ball, pops, over, res, best, touchId = null, padX = 0, padCharge = false;
+    const reset = () => { balls = 9; score = 0; aim = 0; power = 0; pdir = 1; charging = false; ball = null; pops = []; over = false; res = null; best = bestOf('bitcade:skee:best'); };
+    reset();
+    const start = () => { if (ball || over) return; charging = true; power = 0; pdir = 1; };
+    function roll() {
+      if (!charging) return; charging = false; padCharge = false;
+      const p = power, x0 = CX + aim * 92;
+      let ly = RAMP - 20 - p * (RAMP - TOP - 30) * 1.05 + rnd(-10, 10), lx = x0 + rnd(-10, 10) * (0.6 + p);
+      if (ly < TOP + 8) ly = TOP + 8 + rnd(10, 70); // off the back wall
+      lx = Math.max(LX - 14, Math.min(LX + LW + 14, lx));
+      ball = { x: x0, y: BOT - 22, phase: 'roll', p, lx, ly, t: 0, sx: x0 };
+      sound.select();
+    }
+    function land() {
+      const { lx, ly } = ball; let pts = 10;
+      if (POCKETS.some(([px, py]) => Math.hypot(lx - px, ly - py) < 14)) pts = 100;
+      else { const d = Math.hypot(lx - CX, ly - CY); for (const [r, v] of RINGS) if (d < r) { pts = v; break; } }
+      score += pts; pops.push({ x: lx, y: ly, text: '+' + pts, t: 1 }); balls--;
+      if (pts >= 50) sound.fanfare(); else sound.clank();
+      if (!balls) setTimeout(() => {
+        over = true; res = award(Math.floor(score / 100));
+        if (score > best) { set('bitcade:skee:best', score); kit.say(`NEW SKEE-BALL BEST: ${score}!`, 2.6, true); }
+      }, 500);
+    }
+    function update(dt) {
+      const left = kit.held('ArrowLeft') || kit.held('KeyA'), right = kit.held('ArrowRight') || kit.held('KeyD');
+      const dir = (right ? 1 : 0) - (left ? 1 : 0) + padX;
+      if (!ball && !over && dir) aim = Math.max(-1, Math.min(1, aim + dir * dt * 1.4));
+      if (charging) {
+        power += pdir * dt * 1.25; if (power > 1) { power = 1; pdir = -1; } if (power < 0) { power = 0; pdir = 1; }
+        if (touchId === null && !padCharge && !kit.held('Space') && !kit.held('Enter') && !kit.held('ArrowUp') && !kit.held('KeyW')) roll();
+      }
+      if (ball) {
+        ball.t += dt;
+        if (ball.phase === 'roll') { ball.y -= (420 + ball.p * 520) * dt; if (ball.y <= RAMP) { ball.y = RAMP; ball.phase = 'air'; ball.t = 0; sound.thud(); } }
+        else if (ball.phase === 'air') { const k = Math.min(1, ball.t / 0.45); ball.x = ball.sx + (ball.lx - ball.sx) * k; ball.y = RAMP + (ball.ly - RAMP) * k; ball.h = Math.sin(k * Math.PI); if (k >= 1) { ball.phase = 'drop'; ball.t = 0; land(); } }
+        else if (ball.t > 0.45) ball = null;
+      }
+      for (const p of pops) p.t -= dt; pops = pops.filter(p => p.t > 0);
+    }
+    return {
+      name: 'skee',
+      held(ax) { padX = Math.abs(ax) > 0.3 ? Math.sign(ax) : 0; },
+      draw(x, t, dt) {
+        update(dt || 0.016);
+        x.fillStyle = 'rgba(5,2,12,.95)'; x.fillRect(0, 0, VW, VH);
+        // the machine: target box, rings and pockets, the ramp, the lane
+        x.fillStyle = OUT; x.fillRect(LX - 34, TOP - 26, LW + 68, BOT - TOP + 40); x.fillStyle = col; x.fillRect(LX - 30, TOP - 22, LW + 60, 18);
+        x.font = '12px Bungee, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = OUT; x.fillText('SKEE-BALL', CX, TOP - 13);
+        x.fillStyle = '#1a1430'; x.fillRect(LX - 30, TOP - 4, LW + 60, RAMP - TOP - 12);
+        [...RINGS].reverse().forEach(([r, v], i) => { x.fillStyle = ['#3a3060', '#4a3a80', '#5a4aa0', '#6a5ac0'][i]; x.beginPath(); x.arc(CX, CY, r, 0, 6.29); x.fill(); x.strokeStyle = col; x.lineWidth = 1.5; x.stroke(); });
+        x.fillStyle = '#05040c'; x.beginPath(); x.arc(CX, CY, 12, 0, 6.29); x.fill();
+        x.font = '10px Silkscreen, monospace'; x.fillStyle = '#fff';
+        RINGS.forEach(([r, v], i) => { const inner = i ? RINGS[i - 1][0] : 12; x.fillText(String(v), CX, CY + (inner + r) / 2); });
+        POCKETS.forEach(([px, py]) => { x.fillStyle = '#05040c'; x.beginPath(); x.arc(px, py, 13, 0, 6.29); x.fill(); x.strokeStyle = '#ffd23d'; x.lineWidth = 2; x.stroke(); x.fillStyle = '#ffd23d'; x.fillText('100', px, py + 22); });
+        x.font = '9px Silkscreen, monospace'; x.fillStyle = 'rgba(255,255,255,.5)'; x.fillText('10', LX - 6, RAMP - 30); x.fillText('10', LX + LW + 6, RAMP - 30);
+        const rg = x.createLinearGradient(0, RAMP - 18, 0, RAMP + 4); rg.addColorStop(0, '#2a1a10'); rg.addColorStop(1, '#a0683a'); x.fillStyle = rg; x.fillRect(LX, RAMP - 18, LW, 22);
+        x.fillStyle = '#7a4c2c'; x.fillRect(LX, RAMP + 4, LW, BOT - RAMP - 4);
+        for (let i = 0; i < 9; i++) { x.fillStyle = 'rgba(0,0,0,.16)'; x.fillRect(LX, RAMP + 20 + i * 34, LW, 2); }
+        x.fillStyle = '#c0c6d0'; x.fillRect(LX - 6, RAMP - 18, 6, BOT - RAMP + 18); x.fillRect(LX + LW, RAMP - 18, 6, BOT - RAMP + 18);
+        // aim arrow and the ball waiting
+        if (!ball && !over) {
+          const ax = CX + aim * 92; x.strokeStyle = 'rgba(255,255,255,.35)'; x.setLineDash([4, 6]); x.beginPath(); x.moveTo(ax, BOT - 30); x.lineTo(ax, RAMP + 10); x.stroke(); x.setLineDash([]);
+          x.fillStyle = OUT; x.beginPath(); x.arc(ax, BOT - 22, 10, 0, 6.29); x.fill(); x.fillStyle = '#c87a3a'; x.beginPath(); x.arc(ax, BOT - 22, 8, 0, 6.29); x.fill(); x.fillStyle = 'rgba(255,255,255,.5)'; x.fillRect(ax - 4, BOT - 27, 3, 3);
+        }
+        if (ball && ball.phase !== 'drop') {
+          const r = 8 * (1 + (ball.h || 0) * 0.6);
+          if (ball.phase === 'air') { x.fillStyle = 'rgba(0,0,0,.4)'; x.beginPath(); x.ellipse(ball.x, ball.y + 4, 8, 4, 0, 0, 6.29); x.fill(); }
+          const by = ball.y - (ball.h || 0) * 26;
+          x.fillStyle = OUT; x.beginPath(); x.arc(ball.x, by, r + 2, 0, 6.29); x.fill(); x.fillStyle = '#c87a3a'; x.beginPath(); x.arc(ball.x, by, r, 0, 6.29); x.fill(); x.fillStyle = 'rgba(255,255,255,.5)'; x.fillRect(ball.x - r / 2, by - r / 2, 3, 3);
+        }
+        for (const p of pops) { x.globalAlpha = Math.min(1, p.t * 2); kit.neon(x, p.text, p.x, p.y - (1 - p.t) * 30, 20, '#ffd23d'); x.globalAlpha = 1; }
+        // the side: score, balls left, best; the power meter
+        const SX = LX - 230; x.textAlign = 'left'; x.font = '12px Silkscreen, monospace'; x.fillStyle = 'rgba(255,255,255,.6)'; x.fillText('SCORE', SX, 90); x.fillText('BALLS', SX, 170); x.fillText('BEST', SX, 250);
+        kit.neon(x, String(score), SX + 60, 120, 28, col); x.textAlign = 'left';
+        for (let i = 0; i < 9; i++) { x.fillStyle = i < balls ? '#c87a3a' : 'rgba(255,255,255,.12)'; x.beginPath(); x.arc(SX + 8 + (i % 5) * 20, 194 + Math.floor(i / 5) * 20, 7, 0, 6.29); x.fill(); }
+        x.font = '14px Silkscreen, monospace'; x.fillStyle = '#ffd23d'; x.textAlign = 'left'; x.fillText(String(Math.max(best, 0)), SX, 278);
+        const MX = LX + LW + 70; x.fillStyle = OUT; x.fillRect(MX - 2, 220, 28, 300); x.fillStyle = '#140c24'; x.fillRect(MX, 222, 24, 296);
+        const pg = x.createLinearGradient(0, 518, 0, 222); pg.addColorStop(0, '#3dff8f'); pg.addColorStop(0.6, '#ffd23d'); pg.addColorStop(1, '#ff4f6d');
+        x.fillStyle = pg; x.fillRect(MX, 518 - 296 * power, 24, 296 * power);
+        x.font = '10px Silkscreen, monospace'; x.textAlign = 'center'; x.fillStyle = 'rgba(255,255,255,.6)'; x.fillText('POWER', MX + 12, 208);
+        hint(x, '← → AIM · HOLD ENTER (OR THE LANE), LET GO TO ROLL · ESC LEAVE', VH - 14);
+        if (over) gameOver(x, score, best, res, col);
+      },
+      key(c, src) {
+        if (isClose(c)) { if (charging) return; sound.back(); o.user = null; return kit.close(); }
+        if (over) { if (c === 'Enter') reset(); return; }
+        if (c === 'Enter' || c === 'ArrowUp' || c === 'KeyW') { if (src === 'pad') { if (charging) roll(); else { start(); padCharge = true; } } else start(); }
+      },
+      tap(px, py, id) {
+        if (over) { reset(); return; }
+        if (px > LX - 40 && px < LX + LW + 40 && py > RAMP && py < BOT + 10) { if (!ball) { aim = Math.max(-1, Math.min(1, (px - CX) / 92)); touchId = id; start(); } }
+        else if (px < LX - 260 || px > LX + LW + 140) { o.user = null; kit.close(); }
+      },
+      untap(id) { if (id === touchId) { touchId = null; } }
+    };
+  }
+
+  /* ---------- pinball: a small real table — plunger, flippers, bumpers, slingshots, rollover lanes; three balls ---------- */
+  function pinball(o) {
+    const K = 1.12, TW = 300, TH = 480, OX = VW / 2 - TW * K / 2, OY = 26, c = o.c, BR = 7, G = 620;
+    const W = [ // walls: [x1, y1, x2, y2, kind]
+      [12, 470, 12, 70], [12, 70, 70, 14], [70, 14, 230, 14], [230, 14, 288, 72], [288, 72, 288, 480], [262, 150, 262, 480],
+      [12, 362, 74, 418], [262, 362, 200, 418],
+      [44, 296, 44, 348], [44, 348, 76, 370], [44, 296, 76, 370, 'sling'],
+      [230, 296, 230, 348], [230, 348, 198, 370], [230, 296, 198, 370, 'sling'],
+      [68, 40, 68, 66], [116, 40, 116, 66], [160, 40, 160, 66], [206, 40, 206, 66]
+    ];
+    const BUMP = [[96, 142, 16], [180, 142, 16], [138, 206, 16]], LANES = [92, 138, 183];
+    const FL = [{ px: 76, py: 424, len: 48, side: 1, a: 0.6, w: 0 }, { px: 198, py: 424, len: 48, side: -1, a: 0.6, w: 0 }];
+    const REST = 0.6, UP = -0.45;
+    let ball, balls, score, lit, over, res, best, flash = [0, 0, 0], plunge = 0, pdir = 1, pops = [], touches = {}, padX = 0;
+    const reset = () => { balls = 3; score = 0; lit = [0, 0, 0]; over = false; res = null; best = bestOf('bitcade:pinball:best'); serve(); };
+    const serve = () => { ball = { x: 275, y: 452, vx: 0, vy: 0, lane: true }; }, serveBack = () => { ball.x = 275; ball.y = 452; ball.vx = ball.vy = 0; ball.lane = true; };
+    reset();
+    const add = (n, x, y) => { score += n; if (n >= 100) pops.push({ x, y, text: '+' + n, t: 0.8 }); };
+    function seg(ax, ay, bx, by, rad, e, kick) {
+      const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy, k = Math.max(0, Math.min(1, ((ball.x - ax) * dx + (ball.y - ay) * dy) / l2));
+      const qx = ax + dx * k, qy = ay + dy * k, ex = ball.x - qx, ey = ball.y - qy, d = Math.hypot(ex, ey);
+      if (d >= BR + rad || d === 0) return false;
+      const nx = ex / d, ny = ey / d; ball.x = qx + nx * (BR + rad); ball.y = qy + ny * (BR + rad);
+      const vn = ball.vx * nx + ball.vy * ny;
+      if (vn < 0) { ball.vx -= (1 + e) * vn * nx; ball.vy -= (1 + e) * vn * ny; if (kick) { ball.vx += nx * kick; ball.vy += ny * kick; } return true; }
+      return false;
+    }
+    function flipper(f) {
+      const ca = Math.cos(f.a), sa = Math.sin(f.a), tx = f.px + f.side * f.len * ca, ty = f.py + f.len * sa;
+      const dx = tx - f.px, dy = ty - f.py, l2 = dx * dx + dy * dy, k = Math.max(0, Math.min(1, ((ball.x - f.px) * dx + (ball.y - f.py) * dy) / l2));
+      const qx = f.px + dx * k, qy = f.py + dy * k, ex = ball.x - qx, ey = ball.y - qy, d = Math.hypot(ex, ey), R = BR + 5;
+      if (d >= R || d === 0) return;
+      const nx = ex / d, ny = ey / d, s = f.len * k;
+      // the flipper's surface speed where the ball touches it
+      const svx = f.w * s * (f.side > 0 ? -sa : sa), svy = f.w * s * ca;
+      ball.x = qx + nx * R; ball.y = qy + ny * R;
+      const rvx = ball.vx - svx, rvy = ball.vy - svy, vn = rvx * nx + rvy * ny;
+      if (vn < 0) { ball.vx = svx + rvx - 1.35 * vn * nx; ball.vy = svy + rvy - 1.35 * vn * ny; }
+    }
+    function physics(dt) {
+      const L = kit.held('ArrowLeft') || kit.held('KeyA') || kit.held('KeyZ') || padX < 0 || Object.values(touches).includes('L');
+      const R = kit.held('ArrowRight') || kit.held('KeyD') || kit.held('Slash') || padX > 0 || Object.values(touches).includes('R');
+      [[FL[0], L], [FL[1], R]].forEach(([f, held]) => {
+        const target = held ? UP : REST, before = f.a;
+        if (held && f.a > UP) { f.a = Math.max(UP, f.a - 22 * dt); if (before === REST) sound.thud(); }
+        else if (!held && f.a < REST) f.a = Math.min(REST, f.a + 12 * dt);
+        f.w = (f.a - before) / dt; void target;
+      });
+      if (!ball || ball.lane) return;
+      ball.vy += G * dt; ball.x += ball.vx * dt; ball.y += ball.vy * dt;
+      if (ball.x > 262 && ball.y > 448 && ball.vy > -40) { serveBack(); return; } // rolled back down the plunger lane
+      for (const w of W) if (seg(w[0], w[1], w[2], w[3], 2, w[4] ? 0.2 : 0.45, w[4] ? 260 : 0) && w[4]) { add(10); sound.clank(); }
+      BUMP.forEach(([bx, by, r], i) => {
+        const ex = ball.x - bx, ey = ball.y - by, d = Math.hypot(ex, ey);
+        if (d < r + BR && d > 0) { const nx = ex / d, ny = ey / d; ball.x = bx + nx * (r + BR); ball.y = by + ny * (r + BR); const vn = ball.vx * nx + ball.vy * ny; ball.vx -= 2 * vn * nx; ball.vy -= 2 * vn * ny; ball.vx += nx * 330; ball.vy += ny * 330; flash[i] = 0.2; add(100, bx, by - 20); sound.beep(true); }
+      });
+      FL.forEach(flipper);
+      LANES.forEach((lx, i) => { if (!lit[i] && Math.abs(ball.x - lx) < 14 && ball.y < 60 && ball.y > 30) { lit[i] = 1; add(50); sound.select(); if (lit.every(Boolean)) { lit = [0, 0, 0]; add(1000, 138, 90); sound.fanfare(); } } });
+      const sp = Math.hypot(ball.vx, ball.vy); if (sp > 1100) { ball.vx *= 1100 / sp; ball.vy *= 1100 / sp; }
+      if (ball.y > TH + 20) { // drained
+        balls--; sound.back();
+        if (balls > 0) serve();
+        else { ball = null; over = true; res = award(Math.floor(score / 4000)); if (score > best) { set('bitcade:pinball:best', score); kit.say(`NEW PINBALL BEST: ${score.toLocaleString()}!`, 2.6, true); } }
+      }
+    }
+    function launch() { if (!ball || !ball.lane) return; ball.lane = false; ball.vy = -(760 + plunge * 440); ball.vx = 0; sound.clank(); }
+    return {
+      name: 'pinball',
+      held(ax) { padX = Math.abs(ax) > 0.3 ? Math.sign(ax) : 0; },
+      draw(x, t, dt) {
+        dt = Math.min(0.033, dt || 0.016);
+        if (ball && ball.lane) { plunge += pdir * dt * 1.4; if (plunge > 1) { plunge = 1; pdir = -1; } if (plunge < 0) { plunge = 0; pdir = 1; } }
+        for (let i = 0; i < 8; i++) physics(dt / 8);
+        flash = flash.map(f => Math.max(0, f - dt)); for (const p of pops) p.t -= dt; pops = pops.filter(p => p.t > 0);
+        x.fillStyle = 'rgba(5,2,12,.95)'; x.fillRect(0, 0, VW, VH);
+        x.save(); x.translate(OX, OY); x.scale(K, K);
+        // the playfield
+        x.fillStyle = OUT; x.fillRect(-8, -8, TW + 16, TH + 16);
+        const pf = x.createLinearGradient(0, 0, 0, TH); pf.addColorStop(0, kit.shade(c, -0.55)); pf.addColorStop(1, kit.shade(c, -0.82)); x.fillStyle = pf; x.fillRect(0, 0, TW, TH);
+        x.save(); x.globalAlpha = 0.12; x.font = '40px Bungee, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = '#fff'; x.translate(138, 300); x.rotate(-0.2); x.fillText(o.name, 0, 0); x.restore();
+        LANES.forEach((lx, i) => { x.fillStyle = lit[i] ? '#ffd23d' : 'rgba(255,255,255,.15)'; x.beginPath(); x.arc(lx, 48, 5, 0, 6.29); x.fill(); });
+        x.strokeStyle = '#e8e4f0'; x.lineCap = 'round';
+        for (const w of W) { x.lineWidth = w[4] ? 5 : 4; x.strokeStyle = w[4] ? c : '#c0c6d0'; x.beginPath(); x.moveTo(w[0], w[1]); x.lineTo(w[2], w[3]); x.stroke(); }
+        BUMP.forEach(([bx, by, r], i) => { x.fillStyle = OUT; x.beginPath(); x.arc(bx, by, r + 2, 0, 6.29); x.fill(); x.fillStyle = flash[i] ? '#fff' : c; x.beginPath(); x.arc(bx, by, r, 0, 6.29); x.fill(); x.fillStyle = kit.shade(c, -0.4); x.beginPath(); x.arc(bx, by, r * 0.55, 0, 6.29); x.fill(); x.fillStyle = '#fff'; x.font = '8px Silkscreen, monospace'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('100', bx, by + 1); });
+        FL.forEach(f => { const tx = f.px + f.side * f.len * Math.cos(f.a), ty = f.py + f.len * Math.sin(f.a); x.strokeStyle = OUT; x.lineWidth = 13; x.beginPath(); x.moveTo(f.px, f.py); x.lineTo(tx, ty); x.stroke(); x.strokeStyle = '#f4effd'; x.lineWidth = 9; x.stroke(); x.strokeStyle = c; x.lineWidth = 3; x.stroke(); });
+        // the plunger lane and its spring
+        x.fillStyle = '#05040c'; x.fillRect(264, 150, 22, TH - 150);
+        const pull = ball && ball.lane ? plunge : 0; x.fillStyle = '#c0c6d0'; for (let i = 0; i < 5; i++) x.fillRect(268, 462 + pull * 12 + i * 3, 14, 1.5); x.fillStyle = c; x.fillRect(266, 460 + pull * 12, 18, 4);
+        if (ball) { x.fillStyle = OUT; x.beginPath(); x.arc(ball.x, ball.y, BR + 1.5, 0, 6.29); x.fill(); const bg = x.createRadialGradient(ball.x - 2, ball.y - 2, 1, ball.x, ball.y, BR); bg.addColorStop(0, '#fff'); bg.addColorStop(1, '#8a8ea0'); x.fillStyle = bg; x.beginPath(); x.arc(ball.x, ball.y, BR, 0, 6.29); x.fill(); }
+        for (const p of pops) { x.globalAlpha = Math.min(1, p.t * 2); x.font = '12px Silkscreen, monospace'; x.textAlign = 'center'; x.fillStyle = '#ffd23d'; x.fillText(p.text, p.x, p.y - (0.8 - p.t) * 30); x.globalAlpha = 1; }
+        x.restore();
+        // the backglass beside the table: name, score, balls, best, plunger power
+        const SX = OX - 210; kit.neon(x, o.name, SX + 90, 70, 22, c);
+        x.textAlign = 'left'; x.font = '12px Silkscreen, monospace'; x.fillStyle = 'rgba(255,255,255,.6)'; x.fillText('SCORE', SX, 120); x.fillText('BALL', SX, 200); x.fillText('BEST', SX, 260);
+        x.font = '26px Silkscreen, monospace'; x.fillStyle = '#ff9a3d'; x.fillText(score.toLocaleString(), SX, 152);
+        x.font = '16px Silkscreen, monospace'; x.fillStyle = '#f4effd'; x.fillText(over ? '-' : `${4 - balls} OF 3`, SX, 224); x.fillStyle = '#ffd23d'; x.fillText(best.toLocaleString(), SX, 284);
+        if (ball && ball.lane) { const MX = OX + TW * K + 40; x.fillStyle = OUT; x.fillRect(MX - 2, 300, 28, 220); x.fillStyle = '#140c24'; x.fillRect(MX, 302, 24, 216); x.fillStyle = '#3dff8f'; x.fillRect(MX, 518 - 216 * plunge, 24, 216 * plunge); x.font = '10px Silkscreen, monospace'; x.textAlign = 'center'; x.fillStyle = 'rgba(255,255,255,.7)'; x.fillText('LAUNCH', MX + 12, 288); }
+        hint(x, ball && ball.lane ? 'ENTER OR TAP TO LAUNCH' : '← → FLIPPERS (OR Z AND /) · TAP LEFT OR RIGHT HALF · ESC LEAVE', VH - 12);
+        if (over) gameOver(x, score, best, res, c);
+      },
+      key(c2) {
+        if (isClose(c2)) { sound.back(); o.user = null; return kit.close(); }
+        if (over) { if (c2 === 'Enter') reset(); return; }
+        if (c2 === 'Enter' || c2 === 'ArrowDown' || c2 === 'KeyS') launch();
+      },
+      tap(px, py, id) {
+        if (over) { reset(); return; }
+        if (ball && ball.lane) return launch();
+        touches[id] = px < VW / 2 ? 'L' : 'R';
+      },
+      untap(id) { delete touches[id]; }
+    };
+  }
+
   /* ---------- using things ---------- */
   function use(o) {
     if (o.kind === 'jukebox') return kit.open(jukebox());
     if (o.kind === 'board') return kit.open(board());
     if (o.kind === 'booth') return kit.open(photobooth());
     if (o.kind === 'claw') return kit.open(claw());
+    if (o.kind === 'skee') { o.user = kit.me; return kit.open(skee(o)); }
+    if (o.kind === 'pinball') { o.user = kit.me; return kit.open(pinball(o)); }
     if (o.kind === 'snack') { kit.staffSay('snack', pick(['ONE BITCOLA, COMING UP!', 'HERE YOU GO!', 'ON THE HOUSE!', 'STAY HYDRATED!'])); kit.me.prop = 'soda'; kit.me.propT = 60; sound.fizz(); }
   }
   function card(o) {
@@ -355,6 +591,9 @@ window.FloorPlay = kit => {
     if (o.kind === 'board') return { title: 'HIGH-SCORE WALL', sub: 'World records for every cabinet, and your bests', btn: 'LOOK ▶', c: '#5ee7ff' };
     if (o.kind === 'booth') return { title: 'PHOTO BOOTH', sub: 'Four shots of you in your outfit, as a strip to save', btn: 'SNAP ▶', c: '#ff4fa3' };
     if (o.kind === 'claw') { const n = goesToday(); return { title: 'MEGA CLAW', sub: n ? `${n} FREE GO${n === 1 ? '' : 'ES'} LEFT TODAY · win 2 to 50 tickets` : 'NO GOES LEFT TODAY · come back tomorrow', btn: n ? 'PLAY ▶' : 'LOOK ▶', c: '#5ee7ff' }; }
+    const left = () => { let t = null; try { t = JSON.parse(get('bitcade:floortix') || 'null'); } catch (e) {} return FLOOR_CAP - (t && t.d === today() ? t.n : 0); };
+    if (o.kind === 'skee') return { title: 'SKEE-BALL', sub: `NINE BALLS · BEST ${bestOf('bitcade:skee:best')} · a ticket per 100 points (${left()} more today)`, btn: 'PLAY ▶', c: ['#ff4f6d', '#5ee7ff', '#ffd23d'][o.i % 3] };
+    if (o.kind === 'pinball') return { title: `${o.name} PINBALL`, sub: `THREE BALLS · BEST ${bestOf('bitcade:pinball:best').toLocaleString()} · a ticket per 4,000 (${left()} more today)`, btn: 'PLAY ▶', c: o.c };
     if (o.kind === 'snack') return { title: 'SNACK BAR', sub: 'Free sodas. It’s that kind of arcade.', btn: 'GRAB ONE ▶', c: '#ffb03d' };
     return { title: o.kind.toUpperCase(), sub: '', btn: 'USE ▶', c: '#5ee7ff' };
   }
