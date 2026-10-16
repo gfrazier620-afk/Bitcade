@@ -325,7 +325,11 @@ A.attract({
     const pit = !floorBelow(c) && !movers.some(m => ahead > m.x - 8 && ahead < m.x + m.w + 8), wall = solid(tile(c, Math.floor((me.y + 4) / T))), spike = tile(c, r - 1) === 6 || tile(c2, r - 1) === 6;
     const foe = ents.some(e => e.alive && e.x > me.x && e.x - me.x < 44 && Math.abs(e.y - me.y) < 30);
     if (botJump > 0) { botJump -= dt; keys.push('Space'); }
-    else if (me.onGround && (pit || wall || spike || foe)) { botJump = 0.3; keys.push('Space'); }
+    else if (me.onGround && (pit || wall || spike || foe)) {
+      // size the jump: a short hop over a narrow pit (there may be another just after), a full one for walls and wide gaps
+      let gap = 0; while (gap < 8 && !floorBelow(c + gap)) gap++;
+      botJump = wall ? 0.3 : pit ? (gap <= 2 ? 0.06 : gap <= 3 ? 0.14 : 0.3) : 0.12; keys.push('Space');
+    }
     return keys;
   }
 });
