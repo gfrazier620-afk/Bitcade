@@ -68,16 +68,17 @@ window.Floor = (() => {
   const zoneAt = (x, y) => ZONES.find(z => x >= z.x && x < z.x + z.w && y >= z.y && y < z.y + z.h);
 
   /* ---------- layout ---------- */
-  const RACERS = ['turbo-tour', 'nitro-lane', 'light-trail'], GUNS = ['raptor-ridge', 'marsh-marksman'], TABLE = 'blip-sports';
-  const SIZE = { upright: [60, 104], racer: [104, 96], gun: [86, 108], table: [100, 46] };
+  const RACERS = ['turbo-tour', 'nitro-lane', 'light-trail'], GUNS = ['raptor-ridge', 'marsh-marksman'], TABLE = 'blip-sports', DANCE = 'neon-steps';
+  const SIZE = { upright: [60, 104], racer: [104, 96], gun: [86, 108], table: [100, 46], dance: [104, 104] };
   function addCab(g, type, x, y) {
     const [w, h] = SIZE[type], c = { kind: 'cab', type, g, x, y, w, h, base: y + h, user: null };
     if (type === 'racer') {
       c.seat = [x + w / 2, y + 128]; c.spot = [x + w / 2, y + 154]; c.solid = [[x, y + h - 40, w, 40]];
       objs.push({ kind: 'seat', x: x + 30, y: y + 104, w: 44, h: 30, base: y + 134, cab: c, solid: [[x + 32, y + 112, 40, 22]] });
     } else if (type === 'table') { c.spot = [x + w / 2, y + 68]; c.solid = [[x, y + 12, w, 34]]; }
+    else if (type === 'dance') { c.spot = [x + w / 2, y + h + 40]; c.solid = [[x, y + h - 40, w, 40]]; objs.push({ kind: 'dancepad', x: x + 8, y: y + h + 8, w: w - 16, h: 52, base: y + h + 8, cab: c }); }
     else { c.spot = [x + w / 2, c.base + 18]; c.solid = [[x, c.base - 42, w, 42]]; }
-    c.screen = type === 'racer' ? [x + 10, y + 20, 84, 46] : type === 'gun' ? [x + 9, y + 24, 68, 40] : type === 'table' ? [x + 38, y + 13, 24, 13] : [x + 8, y + 25, 44, 34];
+    c.screen = type === 'dance' ? [x + 16, y + 24, 72, 40] : type === 'racer' ? [x + 10, y + 20, 84, 46] : type === 'gun' ? [x + 9, y + 24, 68, 40] : type === 'table' ? [x + 38, y + 13, 24, 13] : [x + 8, y + 25, 44, 34];
     cabs.push(c); objs.push(c);
   }
   const FIXED = [
@@ -95,6 +96,8 @@ window.Floor = (() => {
     { kind: 'bench', x: 1444, y: 950, w: 96, h: 30, solid: [[1444, 958, 96, 22]], seats: [[1468, 990], [1516, 990]] },
     ...[0, 1, 2, 3].map(i => ({ kind: 'pinball', i, x: 48 + i * 82, y: 1080, w: 58, h: 104, npcSpot: [77 + i * 82, 1202], spot: [77 + i * 82, 1202], solid: [[48 + i * 82, 1140, 58, 44]], c: ['#ff4f6d', '#5ee7ff', '#ffd23d', '#3dff8f'][i], name: ['METEOR', 'DEEP SEA', 'GOLD RUSH', 'JUNGLE'][i] })),
     ...[0, 1, 2].map(i => ({ kind: 'skee', i, x: 1870 + i * 80, y: 880, w: 64, h: 200, npcSpot: [1902 + i * 80, 1100], spot: [1902 + i * 80, 1100], solid: [[1870 + i * 80, 920, 64, 160]] })),
+    { kind: 'hockey', x: 1700, y: 1150, w: 74, h: 112, spot: [1737, 1278], solid: [[1700, 1166, 74, 96]] },
+    { kind: 'golf', x: 1296, y: 1100, w: 270, h: 150, spot: [1431, 1276], solid: [[1296, 1110, 270, 140]] },
     { kind: 'rail', x: 580, y: 196, w: 12, h: 230, solid: [[580, 196, 12, 230]] },
     { kind: 'rail', x: 1648, y: 196, w: 12, h: 230, solid: [[1648, 196, 12, 230]] }
   ];
@@ -106,11 +109,13 @@ window.Floor = (() => {
     RACERS.map(by).filter(Boolean).forEach((g, i) => addCab(g, 'racer', 52 + i * 172, 112));
     GUNS.map(by).filter(Boolean).forEach((g, i) => addCab(g, 'gun', 1712 + i * 150, 116));
     const blip = by(TABLE); if (blip) addCab(blip, 'table', 160, 880);
-    const rest = games.filter(g => !RACERS.includes(g.slug) && !GUNS.includes(g.slug) && g.slug !== TABLE), slots = [];
+    const dance = by(DANCE); if (dance) addCab(dance, 'dance', 860, 1100);
+    const rest = games.filter(g => !RACERS.includes(g.slug) && !GUNS.includes(g.slug) && g.slug !== TABLE && g.slug !== DANCE), slots = [];
     for (let i = 0; i < 10; i++) slots.push([618 + i * 102, 116]);
     for (let i = 0; i < 5; i++) slots.push([640 + i * 94, 400]);
     for (let i = 0; i < 4; i++) slots.push([1244 + i * 94, 400]);
-    for (let i = 0; i < 12; i++) slots.push([1260 + (i % 4) * 82, 1100 + Math.floor(i / 4) * 150]); // if the arcade grows
+    slots.push([680, 1110], [762, 1110]); // the newest cabinets, by the entrance
+    for (let i = 0; i < 5; i++) slots.push([60 + i * 98, 400]); // and below the raceway, if the arcade grows
     rest.forEach((g, i) => addCab(g, 'upright', ...slots[Math.min(i, slots.length - 1)]));
     FIXED.forEach(o => objs.push({ ...o, base: o.y + o.h }));
   }
@@ -295,6 +300,7 @@ window.Floor = (() => {
     shadow(x, X + w / 2, Y + h, w * 0.62);
     if (isNear) { x.shadowColor = col; x.shadowBlur = 26; }
     if (c.type === 'racer') paint(x, [[X, Y + 14, w, h - 14, '#241c48'], [X - 2, Y, w + 4, 16, shade(col, -0.4)], [X + 4, Y + 70, w - 8, 22, '#3a3072']]);
+    else if (c.type === 'dance') paint(x, [[X, Y + 16, w, h - 16, '#241c48'], [X - 2, Y, w + 4, 18, shade(col, -0.4)], [X - 10, Y + 30, 14, 60, '#1a1430'], [X + w - 4, Y + 30, 14, 60, '#1a1430']]);
     else paint(x, [[X, Y + 16, w, h - 16, '#241c48'], [X - 2, Y, w + 4, 18, shade(col, -0.4)], [X + 3, Y + 64, w - 6, 12, '#3a3072'], [X + w / 2 - 12, Y + 82, 24, 16, '#17122e', true]]);
     x.shadowBlur = 0;
     x.fillStyle = 'rgba(0,0,0,.35)'; x.fillRect(X + w - 5, Y + 18, 5, h - 18); // the side panel, in shadow
@@ -303,7 +309,11 @@ window.Floor = (() => {
     x.fillStyle = 'rgba(255,255,255,.45)'; x.fillRect(X + 4, Y + 3, w - 8, 1);
     x.fillStyle = col; x.fillRect(X, Y + 18, 3, h - 20); x.fillRect(X + w - 8, Y + 18, 3, h - 20); // side-art trim
     screen(x, c, t);
-    if (c.type === 'racer') { // a dashboard and a steering wheel
+    if (c.type === 'dance') { // speakers thumping, a light bar
+      const thump = (c.user || near === c) ? Math.abs(Math.sin(t / 120)) * 2 : 0;
+      [[X - 3, Y + 46], [X + w + 3, Y + 46], [X - 3, Y + 74], [X + w + 3, Y + 74]].forEach(([sx, sy]) => { x.fillStyle = OUT; x.beginPath(); x.arc(sx, sy, 6 + thump, 0, 6.29); x.fill(); x.fillStyle = '#3a3060'; x.beginPath(); x.arc(sx, sy, 4 + thump, 0, 6.29); x.fill(); });
+      for (let i = 0; i < 8; i++) { x.fillStyle = ['#ff4fd1', '#5ee7ff', '#3dff8f', '#ffd23d'][(i + Math.floor(t / 150)) % 4]; x.fillRect(X + 10 + i * 11, Y + 72, 8, 4); }
+    } else if (c.type === 'racer') { // a dashboard and a steering wheel
       x.fillStyle = OUT; x.beginPath(); x.arc(X + w / 2, Y + 82, 12, 0, 6.29); x.fill();
       x.strokeStyle = '#c0c6d0'; x.lineWidth = 3; x.beginPath(); x.arc(X + w / 2, Y + 82, 9, 0, 6.29); x.stroke();
       x.fillStyle = col; x.fillRect(X + w / 2 - 2, Y + 80, 4, 4);
@@ -503,7 +513,8 @@ window.Floor = (() => {
     }
     n.moving = false; n.t -= dt;
     const a = n.act;
-    if (a && a.type === 'play') { n.pose = ''; if (Math.random() < dt * 0.08) { const yay = Math.random() < 0.5; say(n, pick(LINES.play)); if (yay) { n.pose = 'cheer'; setTimeout(() => { if (n.pose === 'cheer') n.pose = ''; }, 900); } if (play) play.sound.react(n.x, yay); } }
+    if (a && a.type === 'play' && a.obj.type === 'dance') { const k = Math.floor(t / 260 + n.x) % 4; n.pose = k === 1 ? 'cheer' : k === 3 ? 'wave' : ''; n.dir = k === 2 ? 'left' : 'up'; }
+    else if (a && a.type === 'play') { n.pose = ''; if (Math.random() < dt * 0.08) { const yay = Math.random() < 0.5; say(n, pick(LINES.play)); if (yay) { n.pose = 'cheer'; setTimeout(() => { if (n.pose === 'cheer') n.pose = ''; }, 900); } if (play) play.sound.react(n.x, yay); } }
     else if (a && a.type === 'watch' && a.obj && Math.random() < dt * 0.5) n.pose = n.pose === 'cheer' ? '' : (Math.random() < 0.3 ? 'cheer' : '');
     else if (a && Math.random() < dt * 0.02) say(n, pick(LINES[a.type] || LINES.wander));
     // greet the player now and then
@@ -642,7 +653,7 @@ window.Floor = (() => {
     if (mode) {
       if (tapd(0) || tapd(9)) mode.key('Enter', 'pad'); if (tapd(1)) mode.key('Escape');
       if (tapd(12)) mode.key('ArrowUp'); if (tapd(13)) mode.key('ArrowDown'); if (tapd(14)) mode.key('ArrowLeft'); if (tapd(15)) mode.key('ArrowRight');
-      if (mode && mode.held) mode.held(p.x);
+      if (mode && mode.held) mode.held(p.x, p.y);
     } else if (tapd(0) || tapd(9)) interact();
     padWas = now;
     if ((p.x || p.y || now.length) && performance.now() - idlePing > 1000) { idlePing = performance.now(); dispatchEvent(new Event('pointermove')); } // keeps attract mode away
@@ -974,6 +985,37 @@ window.Floor = (() => {
     paint(x, [[o.x, o.y, o.w, 14, '#5a4aa0'], [o.x + 6, o.y + 14, 8, 14, '#3a3060'], [o.x + o.w - 14, o.y + 14, 8, 14, '#3a3060']]);
     x.fillStyle = 'rgba(255,255,255,.15)'; for (let i = 0; i < 4; i++) x.fillRect(o.x + 4 + i * 23, o.y + 3, 18, 2);
   }
+  /** The dance machine's pad: four arrow panels that light up as someone dances on it. */
+  function drawDancePad(x, t, o) {
+    paint(x, [[o.x, o.y, o.w, o.h, '#2a2054']]);
+    const busy = o.cab.user || (me.entering && me.entering.c === o.cab), cols = ['#ff4fd1', '#5ee7ff', '#3dff8f', '#ffd23d'], cw = (o.w - 12) / 3, ch = (o.h - 8) / 3;
+    [[0, 1, 0], [1, 2, 1], [1, 0, 2], [2, 1, 3]].forEach(([cx, cy, k]) => { const on = busy && Math.floor(t / 230 + k * 1.7) % 4 === 0; x.fillStyle = on ? cols[k] : shade(cols[k], -0.6); x.fillRect(o.x + 4 + cx * (cw + 2), o.y + 3 + cy * (ch + 1), cw, ch); });
+    x.fillStyle = '#16122e'; x.fillRect(o.x + 4 + cw + 2, o.y + 3 + ch + 1, cw, ch);
+  }
+  /** The air hockey table, seen from above: a white top with red rails and the two goals. */
+  function drawHockey(x, t, o) {
+    const isNear = near === o; shadow(x, o.x + o.w / 2, o.y + o.h, o.w * 0.7, 8);
+    if (isNear) { x.shadowColor = '#5ee7ff'; x.shadowBlur = 22; }
+    paint(x, [[o.x, o.y, o.w, o.h, '#c8304a'], [o.x + 6, o.y + 6, o.w - 12, o.h - 12, '#e8f4ff']]); x.shadowBlur = 0;
+    x.fillStyle = '#ff4f6d'; x.fillRect(o.x + 6, o.y + o.h / 2 - 1, o.w - 12, 2); x.strokeStyle = '#5ee7ff'; x.lineWidth = 1.5; x.beginPath(); x.arc(o.x + o.w / 2, o.y + o.h / 2, 10, 0, 6.29); x.stroke();
+    x.fillStyle = OUT; x.fillRect(o.x + o.w / 2 - 12, o.y + 3, 24, 4); x.fillRect(o.x + o.w / 2 - 12, o.y + o.h - 7, 24, 4);
+    const px = o.x + o.w / 2 + Math.sin(t / 300) * 18, py = o.y + o.h / 2 + Math.cos(t / 410) * 30;
+    x.fillStyle = '#1a1a24'; x.beginPath(); x.arc(px, py, 4, 0, 6.29); x.fill();
+    [[o.y + 18, '#ff4f6d'], [o.y + o.h - 18, '#3dd6ff']].forEach(([my, c]) => { x.fillStyle = OUT; x.beginPath(); x.arc(o.x + o.w / 2, my, 7, 0, 6.29); x.fill(); x.fillStyle = c; x.beginPath(); x.arc(o.x + o.w / 2, my, 5.5, 0, 6.29); x.fill(); });
+  }
+  /** The putting green: a little course with a flag, a windmill bar and a bunker. */
+  function drawGolf(x, t, o) {
+    const isNear = near === o; shadow(x, o.x + o.w / 2, o.y + o.h, o.w * 0.55, 10);
+    if (isNear) { x.shadowColor = '#3dff8f'; x.shadowBlur = 22; }
+    paint(x, [[o.x, o.y, o.w, o.h, '#c87a3a'], [o.x + 6, o.y + 6, o.w - 12, o.h - 12, '#2f9a48']]); x.shadowBlur = 0;
+    x.fillStyle = 'rgba(255,255,255,.05)'; for (let i = o.x + 6; i < o.x + o.w - 6; i += 20) x.fillRect(i, o.y + 6, 10, o.h - 12);
+    x.fillStyle = '#e8c890'; x.beginPath(); x.ellipse(o.x + 70, o.y + 100, 34, 18, 0, 0, 6.29); x.fill();
+    x.fillStyle = OUT; x.beginPath(); x.arc(o.x + o.w - 50, o.y + 40, 6, 0, 6.29); x.fill();
+    x.fillStyle = '#e8e4f0'; x.fillRect(o.x + o.w - 51, o.y + 12, 2, 28); x.fillStyle = '#ff4f6d'; x.beginPath(); x.moveTo(o.x + o.w - 49, o.y + 12); x.lineTo(o.x + o.w - 34, o.y + 17 + Math.sin(t / 220) * 2); x.lineTo(o.x + o.w - 49, o.y + 22); x.fill();
+    const a = t / 600, cx = o.x + o.w / 2, cy = o.y + o.h / 2; x.strokeStyle = OUT; x.lineWidth = 7; x.beginPath(); x.moveTo(cx - Math.cos(a) * 32, cy - Math.sin(a) * 32); x.lineTo(cx + Math.cos(a) * 32, cy + Math.sin(a) * 32); x.stroke(); x.strokeStyle = '#ffd23d'; x.lineWidth = 4; x.stroke();
+    x.fillStyle = '#fff'; x.beginPath(); x.arc(o.x + 40, o.y + o.h - 30, 3.5, 0, 6.29); x.fill();
+    x.font = '10px Bungee, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = '#fff6c2'; x.fillText('MINI GOLF', cx, o.y + o.h - 14);
+  }
   /** The doorway: gold posts, and while it's shut a velvet rope and a sign. */
   function drawVipDoor(x, t, o) {
     const cx = 2240, isNear = near === o;
@@ -1039,6 +1081,9 @@ window.Floor = (() => {
       case 'counter': return drawCounter(x, t, o.x, o.y, o.w, o.h);
       case 'claw': return drawBigClaw(x, t, o);
       case 'vipdoor': return drawVipDoor(x, t, o);
+      case 'dancepad': return drawDancePad(x, t, o);
+      case 'hockey': return drawHockey(x, t, o);
+      case 'golf': return drawGolf(x, t, o);
       case 'plinth': return drawPlinth(x, t, o);
       case 'vipcounter': return drawVipCounter(x, t, o);
       case 'records': return drawRecords(x, t, o);
@@ -1168,6 +1213,7 @@ window.Floor = (() => {
       ctx = cv.getContext('2d');
       cv.addEventListener('pointerdown', tap);
       ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => cv.addEventListener(ev, e => { if (mode && mode.untap) mode.untap(e.pointerId); }));
+      cv.addEventListener('pointermove', e => { if (!mode || !mode.move) return; const r = cv.getBoundingClientRect(); mode.move((e.clientX - r.left) / r.width * VW, (e.clientY - r.top) / r.height * VH, e.buttons > 0); });
       play = window.FloorPlay ? window.FloorPlay(kit) : null;
       if (window.Prizes) Prizes.onChange(() => { bgKey = null; buildSolids(); showCard(); });
       if (document.fonts) { document.fonts.ready.then(() => { bgKey = null; }); document.fonts.addEventListener('loadingdone', () => { bgKey = null; }); } // the neon signs use Bungee

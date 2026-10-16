@@ -68,7 +68,7 @@ console.log('\nLobby');
   check(slugs.length === dirs.length, `lobby lists ${slugs.length} cabinets for ${dirs.length} game folders`);
   check(JSON.stringify([...slugs].sort()) === JSON.stringify(dirs), 'every cabinet links to a game folder and every folder has a cabinet');
   const tag = (await page.textContent('.tag')).trim();
-  const WORDS = ['ZERO', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE', 'TEN', 'ELEVEN', 'TWELVE', 'THIRTEEN', 'FOURTEEN', 'FIFTEEN', 'SIXTEEN', 'SEVENTEEN', 'EIGHTEEN', 'NINETEEN', 'TWENTY', 'TWENTY-ONE', 'TWENTY-TWO', 'TWENTY-THREE', 'TWENTY-FOUR', 'TWENTY-FIVE', 'TWENTY-SIX'];
+  const WORDS = ['ZERO', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE', 'TEN', 'ELEVEN', 'TWELVE', 'THIRTEEN', 'FOURTEEN', 'FIFTEEN', 'SIXTEEN', 'SEVENTEEN', 'EIGHTEEN', 'NINETEEN', 'TWENTY', 'TWENTY-ONE', 'TWENTY-TWO', 'TWENTY-THREE', 'TWENTY-FOUR', 'TWENTY-FIVE', 'TWENTY-SIX', 'TWENTY-SEVEN', 'TWENTY-EIGHT', 'TWENTY-NINE'];
   check(tag.startsWith(WORDS[slugs.length] + ' '), `lobby tagline says ${WORDS[slugs.length]} games ("${tag}")`);
   // the lobby header once picked up the game cabinet's .marquee styles (a short, clipped box) and cut the logo off
   const logo = await page.evaluate(() => { const L = document.querySelector('.logo'), H = document.querySelector('.lobby > header'), l = L.getBoundingClientRect(), h = H.getBoundingClientRect(); return { top: l.top, headerTall: h.height > l.height, clipped: getComputedStyle(H).overflow === 'hidden' }; });
@@ -386,9 +386,9 @@ console.log('\nArcade floor');
   check((await page.evaluate(() => Floor.state().mode)) === 'jukebox' && !!(await page.evaluate(() => localStorage.getItem('bitcade:jukebox'))), 'the jukebox picks a game theme for the lobby');
   await page.keyboard.press('Escape'); await wait(100);
   check((await page.evaluate(() => Floor.state().mode)) === null, 'Escape closes it');
-  for (const m of ['skee', 'pinball']) {
+  for (const m of ['skee', 'pinball', 'hockey', 'golf']) {
     await page.evaluate(m => Floor.goTo(m), m); await wait(150); await page.keyboard.press('Enter'); await wait(150);
-    check((await page.evaluate(() => Floor.state().mode)) === m, `the ${m === 'skee' ? 'skee-ball lanes' : 'pinball machines'} are playable`);
+    check((await page.evaluate(() => Floor.state().mode)) === m, `the ${{ skee: 'skee-ball lanes', pinball: 'pinball machines', hockey: 'air hockey table', golf: 'mini-golf course' }[m]} ${m === 'hockey' || m === 'golf' ? 'is' : 'are'} playable`);
     await page.keyboard.press('Escape'); await wait(100);
   }
   await page.evaluate(() => Floor.goTo('vipdoor')); await wait(150);

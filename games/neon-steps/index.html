@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Neon Steps</title>
+<link rel="manifest" href="../../manifest.json">
+<meta name="theme-color" content="#0f0c1f">
+<link rel="icon" type="image/png" href="../../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../../icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Rubik:wght@400;500;700&family=Silkscreen&display=swap">
+<link rel="stylesheet" href="../../shared/arcade.css">
+<style>
+  .pad.steps{justify-content:center}
+  .pad.steps .ab{margin:0;gap:10px}
+  .pad.steps button{width:72px;height:72px;border-radius:14px;font-size:24px}
+</style>
+</head>
+<body data-game="neon-steps" style="--game:#ff4fd1">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>NEON STEPS</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <div class="pad steps">
+    <div class="ab"><button data-k="ArrowLeft" aria-label="Left">◀</button><button data-k="ArrowDown" aria-label="Down">▼</button><button data-k="ArrowUp" aria-label="Up">▲</button><button data-k="ArrowRight" aria-label="Right">▶</button></div>
+  </div>
+  <p class="help">Hit <kbd>←</kbd><kbd>↓</kbd><kbd>↑</kbd><kbd>→</kbd> (or <kbd>D</kbd><kbd>F</kbd><kbd>J</kbd><kbd>K</kbd>) as each arrow reaches the targets · <kbd>P</kbd> pause · tap the lanes on touch screens · gamepad: the d-pad</p>
+</main>
+<script src="../../shared/chip.js"></script>
+<script src="../../shared/badges.js"></script>
+<script src="../../shared/arcade.js"></script>
+<script>
+(() => {
+/*
+ * Neon Steps: a dance machine. Arrows rise up the four lanes in time with the song; hit each one as it crosses the
+ * targets. PERFECT 300, GREAT 200, GOOD 100, plus a combo bonus; a MISS breaks the combo and drains the life bar,
+ * and an empty bar fails the stage. Three original songs, made here from a seed: Neon Nights (easy), Laser Love
+ * (normal) and Hyper Drive (hard). The grade at the end goes from S down to D.
+ */
+const A = Arcade, cv = document.getElementById('cv');
+const W = 400, H = 560, ctx = A.canvas(cv, W, H), OUT = '#0a0612';
+const LANES = 4, LW = 66, LX = (W - LANES * LW) / 2, RECEPT = 86, LANE_COL = ['#ff4fd1', '#5ee7ff', '#3dff8f', '#ffd23d'], ROT = [-Math.PI / 2, Math.PI, 0, Math.PI / 2];
+const KEYS = { ArrowLeft: 0, ArrowDown: 1, ArrowUp: 2, ArrowRight: 3, KeyD: 0, KeyF: 1, KeyJ: 2, KeyK: 3, KeyA: 0, KeyS: 1, KeyW: 2 };
+const WIN = { perfect: 0.045, great: 0.09, good: 0.135 }, PTS = { perfect: 300, great: 200, good: 100 };
+const SONGS = [
+  { name: 'NEON NIGHTS', diff: 'EASY', bpm: 112, bars: 32, speed: 300, key: 57, seed: 'nights', density: 0 },
+  { name: 'LASER LOVE', diff: 'NORMAL', bpm: 128, bars: 36, speed: 380, key: 60, seed: 'laser', density: 1 },
+  { name: 'HYPER DRIVE', diff: 'HARD', bpm: 148, bars: 44, speed: 470, key: 62, seed: 'hyper', density: 2 }
+];
+function shade(hex, k) {
+  let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join('');
+  const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+
+/* ---------- songs: a chord loop, bass, drums and a lead, all from a seed; the chart follows the lead ---------- */
+const hz = m => 440 * Math.pow(2, (m - 69) / 12);
+function compose(song) {
+  const rnd = A.seeded('neon-steps:' + song.seed), beat = 60 / song.bpm, s16 = beat / 4;
+  const prog = [[0, 3, 7], [-4, 0, 3], [-9, -5, 0], [-2, 2, 5]]; // i, VI, III, VII (minor)
+  const scale = [0, 3, 5, 7, 10, 12, 15, 17];
+  const lead = [], notes = [];
+  // a rhythm cell per bar, from busier pools as it gets harder
+  const CELLS = [
+    [[0, 4, 8, 12], [0, 8, 12], [0, 4, 8], [0, 6, 8, 12]],
+    [[0, 4, 6, 8, 12, 14], [0, 2, 4, 8, 10, 12], [0, 3, 6, 8, 12], [0, 4, 8, 10, 12, 14]],
+    [[0, 2, 4, 6, 8, 10, 12, 14], [0, 3, 4, 6, 8, 11, 12, 14], [0, 2, 3, 4, 8, 10, 11, 12, 14], [0, 2, 4, 6, 7, 8, 12, 13, 14]]
+  ][song.density];
+  let deg = 2, lastLane = -1;
+  for (let b = 0; b < song.bars; b++) {
+    const intro = b < 2, cell = CELLS[Math.floor(rnd() * CELLS.length)], chord = prog[b % 4];
+    for (const p of cell) {
+      deg = Math.max(0, Math.min(scale.length - 1, deg + Math.floor(rnd() * 5) - 2));
+      const t = (b * 16 + p) * s16, m = song.key + 12 + scale[deg] + (p === 0 ? chord[0] - scale[deg] + scale[deg] : 0);
+      lead.push({ t, m, d: s16 * (p % 4 === 0 ? 3 : 1.8) });
+      if (intro) continue;
+      if (song.density === 0 && p % 4) continue; // easy: on the beat only
+      let lane = (deg + b) % 4; if (lane === lastLane && rnd() < 0.7) lane = (lane + 1 + Math.floor(rnd() * 3)) % 4; lastLane = lane;
+      notes.push({ t, lane, kind: p % 4 === 0 ? 0 : p % 2 === 0 ? 1 : 2 });
+      if (song.density === 2 && p === 0 && b % 2 === 0) notes.push({ t, lane: (lane + 2) % 4, kind: 0 }); // jumps on the big beats
+    }
+  }
+  return { lead, notes, beat, s16, prog, length: song.bars * 16 * s16 + 1.5 };
+}
+
+/* ---------- audio: its own little synth, scheduled ahead so the beat never drifts ---------- */
+let ac = null, master = null, track = null, song = null, schedS = 0, schedIdx = 0, nb = null, clockStart = 0, pausedAt = null;
+// the game runs on the page clock (so it moves even before the browser lets sound play); the music is fitted to it
+function audio() {
+  if (ac) return ac;
+  try { ac = new (window.AudioContext || window.webkitAudioContext)(); const comp = ac.createDynamicsCompressor(); comp.connect(ac.destination); master = ac.createGain(); master.connect(comp);
+    nb = ac.createBuffer(1, ac.sampleRate, ac.sampleRate); const d = nb.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; } catch (e) { ac = null; }
+  return ac;
+}
+const now = () => ac ? ac.currentTime : performance.now() / 1000;
+function voice(type, f, at, dur, vol, f1) { const o = ac.createOscillator(), g = ac.createGain(); o.type = type; o.frequency.setValueAtTime(f, at); if (f1) o.frequency.exponentialRampToValueAtTime(f1, at + dur); g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(vol, at + 0.006); g.gain.exponentialRampToValueAtTime(0.0001, at + dur); o.connect(g).connect(master); o.start(at); o.stop(at + dur + 0.02); }
+function hit(at, dur, vol, hp) { const s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain(); s.buffer = nb; f.type = 'highpass'; f.frequency.value = hp; g.gain.setValueAtTime(vol, at); g.gain.exponentialRampToValueAtTime(0.0001, at + dur); s.connect(f).connect(g).connect(master); s.start(at, Math.random() * 0.5); s.stop(at + dur + 0.02); }
+/** Schedule the next stretch of the song (drums every 16th, bass on 8ths, chords every bar, the lead). */
+function schedule() {
+  if (!ac || !track || ac.state !== 'running') return;
+  const st = songTime(), t0 = ac.currentTime - st, until = st + 0.15;
+  if (schedS < st - 0.05) { schedS = Math.max(0, Math.ceil(st / track.s16) * track.s16); while (schedIdx < track.lead.length && track.lead[schedIdx].t < st) schedIdx++; } // skip anything already past
+  while (schedS < until && schedS < track.length - 1.5) {
+    const step = Math.round(schedS / track.s16), at = t0 + schedS, bar = Math.floor(step / 16), p = step % 16, chord = track.prog[bar % 4], root = song.key - 24 + chord[0];
+    if (p % 4 === 0) voice('sine', 150, at, 0.18, 0.5, 40); // kick
+    if (p === 4 || p === 12) hit(at, 0.14, 0.32, 1200); // snare
+    if (p % 2 === 0) hit(at, 0.04, 0.09, 7000); // hats
+    if (p % 2 === 0) voice('triangle', hz(root + (p % 8 === 4 ? 12 : 0)), at, track.s16 * 1.8, 0.22); // bass
+    if (p === 0) chord.forEach(c => voice('sawtooth', hz(song.key + c), at, track.beat * 3.6, 0.025)); // pad
+    schedS += track.s16;
+  }
+  while (schedIdx < track.lead.length && track.lead[schedIdx].t < until) { const l = track.lead[schedIdx++]; voice('square', hz(l.m), t0 + l.t, l.d, 0.05); }
+}
+
+/* ---------- the game ---------- */
+let state = 'title', score = 0, combo = 0, maxCombo = 0, life = 0.5, notes = [], judge = null, counts = null, flash = [0, 0, 0, 0], pulse = 0, songIdx = 0, failed = false, demoSong = false;
+function start(i) {
+  songIdx = i; song = SONGS[i]; track = compose(song); notes = track.notes.map(n => ({ ...n, done: false }));
+  score = 0; combo = 0; maxCombo = 0; life = 0.5; counts = { perfect: 0, great: 0, good: 0, miss: 0 }; failed = false; judge = null; A.setScore(0);
+  if (window.Chip) Chip.stop(0.3);
+  audio(); if (ac && ac.state === 'suspended') ac.resume();
+  if (master) master.gain.value = A.muted || A.demo ? 0 : 0.8;
+  schedS = 0; schedIdx = 0; pausedAt = null; clockStart = performance.now() / 1000 + 1.2; state = 'play';
+}
+const songTime = () => pausedAt !== null ? pausedAt : performance.now() / 1000 - clockStart;
+function stopAudio() { if (master && ac) { const t = ac.currentTime; master.gain.cancelScheduledValues(t); master.gain.setValueAtTime(master.gain.value, t); master.gain.linearRampToValueAtTime(0, t + 0.15); } track = null; }
+function pause() {
+  if (state !== 'play') return; state = 'paused'; pausedAt = songTime(); if (master) master.gain.value = 0;
+  A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => { clockStart = performance.now() / 1000 - pausedAt; pausedAt = null; schedS = Math.max(0, Math.ceil(songTime() / track.s16) * track.s16); if (master) master.gain.value = A.muted ? 0 : 0.8; state = 'play'; } });
+}
+function press(lane) {
+  if (state !== 'play') return;
+  flash[lane] = 0.12;
+  const t = songTime(); let best = null;
+  for (const n of notes) { if (n.done || n.lane !== lane) continue; const d = Math.abs(n.t - t); if (d <= WIN.good && (!best || d < Math.abs(best.t - t))) best = n; if (n.t - t > WIN.good) break; }
+  if (!best) return;
+  best.done = true; const d = Math.abs(best.t - t), j = d <= WIN.perfect ? 'perfect' : d <= WIN.great ? 'great' : 'good';
+  counts[j]++; combo++; maxCombo = Math.max(maxCombo, combo);
+  score += PTS[j] + Math.min(combo, 100) * (j === 'perfect' ? 3 : 1); A.setScore(score);
+  life = Math.min(1, life + (j === 'good' ? 0.01 : 0.025));
+  judge = { j, t: 0.5 }; best.hitT = 0.25;
+  A.burst(LX + lane * LW + LW / 2, RECEPT, { n: j === 'perfect' ? 10 : 5, color: LANE_COL[lane], speed: 140, life: 0.35, size: 3 });
+}
+function miss(n) {
+  n.done = true; counts.miss++; combo = 0; life -= 0.08; judge = { j: 'miss', t: 0.5 };
+  if (life <= 0 && !A.easy) { life = 0; failed = true; finish(); }
+}
+A.onPress(c => { if (c === 'KeyP' || c === 'Escape') return pause(); if (c in KEYS) press(KEYS[c]); });
+A.onHide(pause);
+cv.addEventListener('pointerdown', e => { const p = A.pointer(cv, e); const lane = Math.floor((p.x - LX) / LW); if (lane >= 0 && lane < LANES) press(lane); });
+function finish() {
+  if (state !== 'play') return;
+  state = 'over'; stopAudio();
+  const total = notes.length, acc = total ? (counts.perfect * 300 + counts.great * 200 + counts.good * 100) / (total * 300) : 0;
+  const grade = failed ? 'E' : acc >= 0.95 && !counts.miss ? 'S' : acc >= 0.88 ? 'A' : acc >= 0.75 ? 'B' : acc >= 0.55 ? 'C' : 'D';
+  if (!failed) { score += Math.round(acc * 5000 * (songIdx + 1)); A.setScore(score); }
+  if (!failed && !counts.miss && total) A.badge('fullcombo');
+  if (!failed && (grade === 'S' || grade === 'A')) A.badge('grade_a');
+  if (!failed && songIdx === 2) A.badge('hard');
+  const rec = A.submit(score);
+  A.overlay({ title: failed ? 'STAGE FAILED' : `GRADE ${grade}`, big: `SCORE ${score.toLocaleString()} · ${song.name}`,
+    sub: `PERFECT ${counts.perfect} · GREAT ${counts.great} · GOOD ${counts.good} · MISS ${counts.miss} · MAX COMBO ${maxCombo}${rec ? ' · New high score!' : ''}`,
+    btn: 'Dance again', onGo: () => start(songIdx) });
+}
+function update(dt) {
+  for (let i = 0; i < 4; i++) flash[i] = Math.max(0, flash[i] - dt);
+  if (judge) judge.t -= dt;
+  if (state !== 'play') return;
+  schedule();
+  const t = songTime();
+  pulse = track ? 1 - ((t / track.beat) % 1 + 1) % 1 : 0;
+  for (const n of notes) { if (n.hitT > 0) n.hitT -= dt; if (!n.done && t - n.t > WIN.good) miss(n); if (state !== 'play') return; }
+  if (t > track.length) finish();
+}
+
+/* ---------- drawing ---------- */
+function arrow(x, y, rot, size, fill, glow) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot); const s = size / 28;
+  ctx.beginPath(); ctx.moveTo(0, -14 * s); ctx.lineTo(13 * s, 0); ctx.lineTo(6 * s, 0); ctx.lineTo(6 * s, 13 * s); ctx.lineTo(-6 * s, 13 * s); ctx.lineTo(-6 * s, 0); ctx.lineTo(-13 * s, 0); ctx.closePath();
+  ctx.lineJoin = 'round'; ctx.lineWidth = 4; ctx.strokeStyle = OUT; ctx.stroke();
+  if (fill) { const g = ctx.createLinearGradient(0, -14 * s, 0, 13 * s); g.addColorStop(0, shade(fill, 0.45)); g.addColorStop(1, shade(fill, -0.3)); ctx.fillStyle = g; ctx.fill(); }
+  if (glow) { ctx.lineWidth = 2; ctx.strokeStyle = glow; ctx.stroke(); }
+  ctx.restore();
+}
+const KIND_COL = ['#ff4f6d', '#5ee7ff', '#ffd23d'];
+function render(t) {
+  // the dance floor: dark, a grid pulsing with the beat
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#12062a'); g.addColorStop(1, '#2a0a3a'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = `rgba(255,79,209,${0.12 + pulse * 0.18})`; ctx.lineWidth = 1;
+  for (let i = 0; i <= W; i += 40) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, H); ctx.stroke(); }
+  const st = state === 'play' ? songTime() : t / 1000;
+  for (let j = -1; j < H / 40 + 1; j++) { const y = j * 40 - ((st * 80) % 40); ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+  // equalizer bars down the sides
+  for (let i = 0; i < 10; i++) { const h = 10 + (Math.sin(st * 6 + i * 1.3) * 0.5 + 0.5) * 40 * (0.4 + pulse * 0.6); ctx.fillStyle = LANE_COL[i % 4]; ctx.globalAlpha = 0.5; ctx.fillRect(6, H - 40 - i * 46, h * 0.5, 30); ctx.fillRect(W - 6 - h * 0.5, H - 40 - i * 46, h * 0.5, 30); ctx.globalAlpha = 1; }
+  // lanes
+  for (let i = 0; i < LANES; i++) { ctx.fillStyle = i % 2 ? 'rgba(10,6,18,.55)' : 'rgba(10,6,18,.45)'; ctx.fillRect(LX + i * LW, 0, LW, H); if (flash[i] > 0) { ctx.fillStyle = `rgba(255,255,255,${flash[i]})`; ctx.fillRect(LX + i * LW, 0, LW, H); } }
+  ctx.strokeStyle = 'rgba(255,255,255,.12)'; ctx.strokeRect(LX, 0, LW * LANES, H);
+  // targets
+  for (let i = 0; i < LANES; i++) arrow(LX + i * LW + LW / 2, RECEPT, ROT[i], 44 + (flash[i] > 0 ? 6 : pulse * 4), null, flash[i] > 0 ? '#fff' : shade(LANE_COL[i], -0.1));
+  // notes, rising
+  if (state === 'play' || state === 'paused') {
+    const speed = song.speed;
+    for (const n of notes) {
+      if (n.done && !(n.hitT > 0)) continue;
+      const y = RECEPT + (n.t - st) * speed; if (y > H + 30) break; if (y < -30) continue;
+      if (n.hitT > 0) { ctx.globalAlpha = n.hitT * 4; arrow(LX + n.lane * LW + LW / 2, RECEPT, ROT[n.lane], 52 + (0.25 - n.hitT) * 60, null, '#fff'); ctx.globalAlpha = 1; continue; }
+      arrow(LX + n.lane * LW + LW / 2, y, ROT[n.lane], 44, KIND_COL[n.kind]);
+    }
+  }
+  // life bar, progress, combo, judgement
+  if (state !== 'title') {
+    ctx.fillStyle = OUT; ctx.fillRect(LX - 2, 10, LW * LANES + 4, 14); const lg = ctx.createLinearGradient(LX, 0, LX + LW * LANES, 0); lg.addColorStop(0, '#ff4f6d'); lg.addColorStop(0.5, '#ffd23d'); lg.addColorStop(1, '#3dff8f');
+    ctx.fillStyle = lg; ctx.fillRect(LX, 12, LW * LANES * Math.max(0, life), 10);
+    if (track) { ctx.fillStyle = 'rgba(255,255,255,.4)'; ctx.fillRect(LX, 28, LW * LANES * Math.min(1, Math.max(0, st / track.length)), 2); }
+    ctx.font = '9px Silkscreen, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff'; ctx.fillText(song ? `${song.name} · ${song.diff}` : '', LX, 40);
+    if (combo >= 4) { ctx.font = '30px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = OUT; ctx.fillText(combo, W / 2 + 2, H * 0.55 + 2); ctx.fillStyle = '#fff'; ctx.fillText(combo, W / 2, H * 0.55); ctx.font = '10px Silkscreen, monospace'; ctx.fillText('COMBO', W / 2, H * 0.55 + 26); }
+    if (judge && judge.t > 0) {
+      const c = { perfect: '#ffd23d', great: '#3dff8f', good: '#5ee7ff', miss: '#ff4f6d' }[judge.j], s = 1 + Math.max(0, judge.t - 0.4) * 3;
+      ctx.save(); ctx.translate(W / 2, H * 0.42); ctx.scale(s, s); ctx.font = '26px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.globalAlpha = Math.min(1, judge.t * 3);
+      ctx.fillStyle = OUT; ctx.fillText(judge.j.toUpperCase(), 2, 2); ctx.fillStyle = c; ctx.shadowColor = c; ctx.shadowBlur = 12; ctx.fillText(judge.j.toUpperCase(), 0, 0); ctx.restore();
+    }
+    if (state === 'play' && songTime() < 0) { ctx.font = '22px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.fillText('READY?', W / 2, H * 0.5); }
+  }
+}
+A.loop(update, render);
+
+/* Attract demo: dance the easy song, hitting every arrow on the beat. */
+A.attract({
+  start: () => start(0),
+  stop: () => { stopAudio(); state = 'title'; notes = []; judge = null; },
+  bot: () => {
+    if (state !== 'play') return [];
+    const t = songTime(), keys = [];
+    for (const n of notes) { if (n.done) continue; if (n.t - t > 0.02) break; if (Math.abs(n.t - t) <= 0.02) keys.push('!' + ['ArrowLeft', 'ArrowDown', 'ArrowUp', 'ArrowRight'][n.lane]); }
+    return keys;
+  }
+});
+const titleSub = 'Arrows rise up the lanes in time with the music: hit each one as it crosses the targets at the top. Keep the combo going and the life bar up. Pick a song:';
+A.overlay({ title: 'NEON STEPS', sub: titleSub, btn: 'EASY · Neon Nights', onGo: () => start(0), alt: { btn: 'NORMAL · Laser Love', onGo: () => start(1) }, alt2: { btn: 'HARD · Hyper Drive', onGo: () => start(2) }, scores: true });
+})();
+</script>
+</body>
+</html>

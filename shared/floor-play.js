@@ -581,6 +581,229 @@ window.FloorPlay = kit => {
     };
   }
 
+  /* ---------- air hockey: you (bottom) against the house (top), first to 7 ---------- */
+  function hockey() {
+    const TW = 300, TH = 470, OX = VW / 2 - TW / 2, OY = 66, GOAL = 110, PR = 12, MR = 22, WIN_AT = 7;
+    let puck, me, cpu, sMe, sCpu, over, res, msg, msgT, serveT, padX = 0, padY = 0, pointer = null;
+    const reset = () => { sMe = 0; sCpu = 0; over = false; res = null; me = { x: TW / 2, y: TH - 70, vx: 0, vy: 0 }; cpu = { x: TW / 2, y: 70, vx: 0, vy: 0 }; serve(1); };
+    const serve = toMe => { puck = { x: TW / 2, y: toMe ? TH / 2 + 50 : TH / 2 - 50, vx: 0, vy: 0 }; serveT = 0.8; };
+    reset();
+    function mallet(m, tx, ty, speed, dt, half) {
+      const dx = tx - m.x, dy = ty - m.y, d = Math.hypot(dx, dy), step = Math.min(d, speed * dt);
+      const nx = d ? m.x + dx / d * step : m.x, ny = d ? m.y + dy / d * step : m.y;
+      const cx = Math.max(MR, Math.min(TW - MR, nx)), cy = half === 'bottom' ? Math.max(TH / 2 + MR, Math.min(TH - MR, ny)) : Math.max(MR, Math.min(TH / 2 - MR, ny));
+      m.vx = (cx - m.x) / dt; m.vy = (cy - m.y) / dt; m.x = cx; m.y = cy;
+    }
+    function strike(m) {
+      const dx = puck.x - m.x, dy = puck.y - m.y, d = Math.hypot(dx, dy);
+      if (d >= PR + MR || d === 0) return;
+      const nx = dx / d, ny = dy / d; puck.x = m.x + nx * (PR + MR); puck.y = m.y + ny * (PR + MR);
+      const rvx = puck.vx - m.vx, rvy = puck.vy - m.vy, vn = rvx * nx + rvy * ny;
+      if (vn < 0) { puck.vx -= 1.9 * vn * nx; puck.vy -= 1.9 * vn * ny; puck.vx += m.vx * 0.35; puck.vy += m.vy * 0.35; sound.clank(); }
+      const sp = Math.hypot(puck.vx, puck.vy); if (sp > 1100) { puck.vx *= 1100 / sp; puck.vy *= 1100 / sp; }
+    }
+    function step(dt) {
+      if (over) return;
+      if (msgT > 0) msgT -= dt;
+      // you: the pointer, or the arrows / stick
+      if (pointer) mallet(me, pointer.x, pointer.y, 1400, dt, 'bottom');
+      else {
+        const kx = (kit.held('ArrowRight') || kit.held('KeyD') ? 1 : 0) - (kit.held('ArrowLeft') || kit.held('KeyA') ? 1 : 0) + padX;
+        const ky = (kit.held('ArrowDown') || kit.held('KeyS') ? 1 : 0) - (kit.held('ArrowUp') || kit.held('KeyW') ? 1 : 0) + padY;
+        mallet(me, me.x + kx * 60, me.y + ky * 60, 460, dt, 'bottom');
+      }
+      // the house: chase the puck in its half, otherwise guard the goal
+      const attack = puck.y < TH / 2 + 30 && (puck.vy < 120 || puck.y < TH / 2 - 40);
+      const tx = attack ? puck.x : TW / 2 + (puck.x - TW / 2) * 0.4, ty = attack ? puck.y - 6 : 54;
+      mallet(cpu, tx, ty, 330 + Math.min(sMe, 5) * 18, dt, 'top');
+      if (serveT > 0) { serveT -= dt; return; }
+      for (let i = 0; i < 4; i++) {
+        const h = dt / 4; puck.x += puck.vx * h; puck.y += puck.vy * h;
+        if (puck.x < PR) { puck.x = PR; puck.vx = Math.abs(puck.vx) * 0.9; sound.thud(); }
+        if (puck.x > TW - PR) { puck.x = TW - PR; puck.vx = -Math.abs(puck.vx) * 0.9; sound.thud(); }
+        const inMouth = Math.abs(puck.x - TW / 2) < GOAL / 2;
+        if (puck.y < PR && !inMouth) { puck.y = PR; puck.vy = Math.abs(puck.vy) * 0.9; sound.thud(); }
+        if (puck.y > TH - PR && !inMouth) { puck.y = TH - PR; puck.vy = -Math.abs(puck.vy) * 0.9; sound.thud(); }
+        strike(me); strike(cpu);
+      }
+      puck.vx *= 1 - 0.25 * dt; puck.vy *= 1 - 0.25 * dt;
+      if (puck.y < -PR) goal(true); else if (puck.y > TH + PR) goal(false);
+    }
+    function goal(mine) {
+      if (mine) sMe++; else sCpu++;
+      msg = mine ? 'GOAL!' : 'THEIR GOAL'; msgT = 1.2; if (mine) sound.fanfare(); else sound.back();
+      if (sMe >= WIN_AT || sCpu >= WIN_AT) {
+        over = true; const won = sMe > sCpu;
+        res = won ? award(3) : { give: 0, capped: false };
+        if (won) { set('bitcade:hockey:wins', (+get('bitcade:hockey:wins') || 0) + 1); kit.say('I WON AT AIR HOCKEY!', 2.6, true); }
+        return;
+      }
+      serve(!mine);
+    }
+    const toTable = (px, py) => ({ x: px - OX, y: py - OY });
+    return {
+      name: 'hockey',
+      held(ax, ay) { padX = Math.abs(ax) > 0.25 ? ax : 0; padY = Math.abs(ay || 0) > 0.25 ? ay : 0; },
+      draw(x, t, dt) {
+        step(Math.min(0.033, dt || 0.016));
+        x.fillStyle = 'rgba(5,2,12,.95)'; x.fillRect(0, 0, VW, VH);
+        x.save(); x.translate(OX, OY);
+        x.fillStyle = OUT; x.fillRect(-14, -14, TW + 28, TH + 28); x.fillStyle = '#c8304a'; x.fillRect(-10, -10, TW + 20, TH + 20);
+        x.fillStyle = '#e8f4ff'; x.fillRect(0, 0, TW, TH);
+        x.fillStyle = 'rgba(80,140,220,.12)'; for (let i = 8; i < TW; i += 16) for (let j = 8; j < TH; j += 16) x.fillRect(i, j, 2, 2); // the air holes
+        x.strokeStyle = '#ff4f6d'; x.lineWidth = 3; x.beginPath(); x.moveTo(0, TH / 2); x.lineTo(TW, TH / 2); x.stroke();
+        x.strokeStyle = '#5ee7ff'; x.beginPath(); x.arc(TW / 2, TH / 2, 40, 0, 6.29); x.stroke();
+        x.beginPath(); x.arc(TW / 2, 0, GOAL / 2, 0, Math.PI); x.stroke(); x.beginPath(); x.arc(TW / 2, TH, GOAL / 2, Math.PI, 0); x.stroke();
+        x.fillStyle = OUT; x.fillRect(TW / 2 - GOAL / 2, -10, GOAL, 10); x.fillRect(TW / 2 - GOAL / 2, TH, GOAL, 10);
+        // puck and mallets
+        x.fillStyle = 'rgba(0,0,0,.2)'; x.beginPath(); x.arc(puck.x + 2, puck.y + 3, PR, 0, 6.29); x.fill();
+        x.fillStyle = OUT; x.beginPath(); x.arc(puck.x, puck.y, PR + 2, 0, 6.29); x.fill(); x.fillStyle = '#1a1a24'; x.beginPath(); x.arc(puck.x, puck.y, PR, 0, 6.29); x.fill(); x.fillStyle = '#4a4a5a'; x.beginPath(); x.arc(puck.x - 3, puck.y - 3, 4, 0, 6.29); x.fill();
+        [[cpu, '#ff4f6d'], [me, '#3dd6ff']].forEach(([m, c]) => {
+          x.fillStyle = 'rgba(0,0,0,.2)'; x.beginPath(); x.arc(m.x + 3, m.y + 4, MR, 0, 6.29); x.fill();
+          x.fillStyle = OUT; x.beginPath(); x.arc(m.x, m.y, MR + 2, 0, 6.29); x.fill(); x.fillStyle = c; x.beginPath(); x.arc(m.x, m.y, MR, 0, 6.29); x.fill();
+          x.fillStyle = kit.shade(c, -0.3); x.beginPath(); x.arc(m.x, m.y, MR * 0.55, 0, 6.29); x.fill(); x.fillStyle = 'rgba(255,255,255,.5)'; x.beginPath(); x.arc(m.x - 6, m.y - 7, 4, 0, 6.29); x.fill();
+        });
+        x.restore();
+        // the scoreboard beside the table
+        const SX = OX - 190; kit.neon(x, 'AIR HOCKEY', SX + 80, 90, 20, '#5ee7ff');
+        x.font = '12px Silkscreen, monospace'; x.textAlign = 'left'; x.textBaseline = 'middle'; x.fillStyle = 'rgba(255,255,255,.6)'; x.fillText('HOUSE', SX, 150); x.fillText('YOU', SX, 230);
+        x.font = '40px Bungee, sans-serif'; x.fillStyle = '#ff4f6d'; x.fillText(String(sCpu), SX, 190); x.fillStyle = '#3dd6ff'; x.fillText(String(sMe), SX, 270);
+        x.font = '10px Silkscreen, monospace'; x.fillStyle = '#ffd23d'; x.fillText(`FIRST TO ${WIN_AT} · WINS ${+get('bitcade:hockey:wins') || 0}`, SX, 316);
+        if (msgT > 0 && !over) kit.neon(x, msg, VW / 2, OY + TH / 2, 30, msg === 'GOAL!' ? '#3dff8f' : '#ff4f6d');
+        hint(x, 'MOVE: MOUSE, DRAG, ARROWS OR STICK · ESC LEAVE', VH - 12);
+        if (over) {
+          x.fillStyle = 'rgba(5,2,12,.8)'; x.fillRect(VW / 2 - 220, VH / 2 - 100, 440, 200); x.strokeStyle = '#5ee7ff'; x.lineWidth = 2; x.strokeRect(VW / 2 - 214, VH / 2 - 94, 428, 188);
+          kit.neon(x, sMe > sCpu ? 'YOU WIN!' : 'THE HOUSE WINS', VW / 2, VH / 2 - 50, 28, sMe > sCpu ? '#3dff8f' : '#ff4f6d');
+          x.font = '14px Silkscreen, monospace'; x.textAlign = 'center'; x.fillStyle = '#ffd23d'; x.fillText(`${sMe} - ${sCpu}${res.give ? ` · +${res.give} TICKETS` : res.capped ? ' · TICKET LIMIT REACHED TODAY' : ''}`, VW / 2, VH / 2);
+          hint(x, 'ENTER OR TAP FOR A REMATCH · ESC TO LEAVE', VH / 2 + 50);
+        }
+      },
+      key(c) { if (isClose(c)) { sound.back(); return kit.close(); } if (over && c === 'Enter') reset(); },
+      tap(px, py) { if (over) return reset(); const p = toTable(px, py); if (p.x > -40 && p.x < TW + 40 && p.y > -40 && p.y < TH + 40) pointer = p; else kit.close(); },
+      move(px, py, down) { const p = toTable(px, py); if (down || pointer) pointer = p; },
+      untap() { pointer = null; }
+    };
+  }
+
+  /* ---------- mini-golf: six holes; drag back from the ball and let go, or hold Enter for power ---------- */
+  const HOLES = [
+    { par: 2, start: [260, 330], cup: [260, 70], walls: [[180, 30, 340, 30], [340, 30, 340, 370], [340, 370, 180, 370], [180, 370, 180, 30]] },
+    { par: 3, start: [120, 330], cup: [400, 80], shape: [[60, 370], [60, 30], [460, 30], [460, 150], [190, 150], [190, 370]], walls: [[60, 370, 60, 30], [60, 30, 460, 30], [460, 30, 460, 150], [460, 150, 190, 150], [190, 150, 190, 370], [190, 370, 60, 370]] },
+    { par: 2, start: [260, 340], cup: [260, 60], bumpers: [[200, 200, 18], [320, 200, 18], [260, 140, 18], [260, 260, 14]], walls: [[140, 20, 380, 20], [380, 20, 380, 380], [380, 380, 140, 380], [140, 380, 140, 20]] },
+    { par: 3, start: [90, 200], cup: [440, 200], spinner: { x: 265, y: 200, len: 70, speed: 1.6 }, walls: [[40, 120, 490, 120], [490, 120, 490, 280], [490, 280, 40, 280], [40, 280, 40, 120]] },
+    { par: 3, start: [260, 350], cup: [260, 50], sand: [[160, 150, 200, 70]], bumpers: [[150, 240, 14], [370, 240, 14]], walls: [[100, 20, 420, 20], [420, 20, 420, 390], [420, 390, 100, 390], [100, 390, 100, 20], [100, 120, 200, 140], [420, 120, 320, 140]] },
+    { par: 4, start: [80, 330], cup: [440, 70], walls: [[30, 380, 490, 380], [490, 380, 490, 20], [490, 20, 30, 20], [30, 20, 30, 380], [30, 260, 400, 260], [120, 140, 490, 140]], bumpers: [[300, 320, 12], [200, 200, 12]] }
+  ];
+  function golf() {
+    const OX = VW / 2 - 270, OY = 92, BR = 6, CUP = 9;
+    let hole, ball, strokes, card, aim, power, pdir, charging, drag, sunk, over, res, best, msg, msgT, padX = 0, spinA = 0, still = true;
+    const reset = () => { card = []; best = +get('bitcade:golf:best') || 0; over = false; res = null; load(0); };
+    function load(i) { hole = i; const h = HOLES[i]; ball = { x: h.start[0], y: h.start[1], vx: 0, vy: 0 }; strokes = 0; aim = -Math.PI / 2; power = 0; pdir = 1; charging = false; drag = null; sunk = false; msg = `HOLE ${i + 1} · PAR ${h.par}`; msgT = 1.6; }
+    reset();
+    const H = () => HOLES[hole];
+    function seg(ax, ay, bx, by) {
+      const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy, k = Math.max(0, Math.min(1, ((ball.x - ax) * dx + (ball.y - ay) * dy) / l2));
+      const qx = ax + dx * k, qy = ay + dy * k, ex = ball.x - qx, ey = ball.y - qy, d = Math.hypot(ex, ey);
+      if (d >= BR + 2 || d === 0) return; const nx = ex / d, ny = ey / d; ball.x = qx + nx * (BR + 2); ball.y = qy + ny * (BR + 2);
+      const vn = ball.vx * nx + ball.vy * ny; if (vn < 0) { ball.vx -= 1.75 * vn * nx; ball.vy -= 1.75 * vn * ny; if (vn < -60) sound.thud(); }
+    }
+    function putt(p) {
+      if (!still || sunk || over) return;
+      const sp = 80 + p * 620; ball.vx = Math.cos(aim) * sp; ball.vy = Math.sin(aim) * sp; strokes++; still = false; charging = false; sound.clank();
+    }
+    function step(dt) {
+      if (msgT > 0) msgT -= dt;
+      const h = H(); if (h.spinner) spinA += h.spinner.speed * dt;
+      if (over || sunk) return;
+      if (still) {
+        const turn = (kit.held('ArrowRight') || kit.held('KeyD') ? 1 : 0) - (kit.held('ArrowLeft') || kit.held('KeyA') ? 1 : 0) + padX;
+        if (turn) aim += turn * dt * 2.2;
+        if (charging) { power += pdir * dt * 1.1; if (power > 1) { power = 1; pdir = -1; } if (power < 0) { power = 0; pdir = 1; } if (charging === 'key' && !kit.held('Space') && !kit.held('Enter')) putt(power); }
+        return;
+      }
+      for (let i = 0; i < 6; i++) {
+        const s = dt / 6; ball.x += ball.vx * s; ball.y += ball.vy * s;
+        for (const w of h.walls) seg(...w);
+        for (const [bx, by, r] of h.bumpers || []) { const ex = ball.x - bx, ey = ball.y - by, d = Math.hypot(ex, ey); if (d < r + BR && d) { const nx = ex / d, ny = ey / d; ball.x = bx + nx * (r + BR); ball.y = by + ny * (r + BR); const vn = ball.vx * nx + ball.vy * ny; if (vn < 0) { ball.vx -= 2.2 * vn * nx; ball.vy -= 2.2 * vn * ny; sound.beep(true); } } }
+        if (h.spinner) { const sp = h.spinner, ca = Math.cos(spinA) * sp.len, sa = Math.sin(spinA) * sp.len; seg(sp.x - ca, sp.y - sa, sp.x + ca, sp.y + sa); }
+      }
+      const inSand = (h.sand || []).some(([sx, sy, sw, sh]) => ball.x > sx && ball.x < sx + sw && ball.y > sy && ball.y < sy + sh);
+      const f = inSand ? 3.2 : 0.9; ball.vx *= Math.max(0, 1 - f * dt); ball.vy *= Math.max(0, 1 - f * dt);
+      let sp = Math.hypot(ball.vx, ball.vy); if (sp > 0) { const dec = Math.min(sp, 26 * dt); ball.vx -= ball.vx / sp * dec; ball.vy -= ball.vy / sp * dec; sp -= dec; }
+      const dc = Math.hypot(ball.x - h.cup[0], ball.y - h.cup[1]);
+      if (dc < CUP && sp < 330) { sunk = true; ball.x = h.cup[0]; ball.y = h.cup[1]; holeDone(); return; }
+      if (dc < CUP + 4 && sp < 500) { ball.vx += (h.cup[0] - ball.x) * 6 * dt; ball.vy += (h.cup[1] - ball.y) * 6 * dt; } // the lip pulls it in
+      if (sp < 6) { ball.vx = ball.vy = 0; still = true; if (strokes >= 8) { card.push(strokes + 1); msg = 'PICKED UP'; msgT = 1.4; setTimeout(next, 1200); still = false; sunk = true; } }
+    }
+    function holeDone() {
+      card.push(strokes); const d = strokes - H().par;
+      msg = strokes === 1 ? 'HOLE IN ONE!' : d <= -2 ? 'EAGLE!' : d === -1 ? 'BIRDIE!' : d === 0 ? 'PAR' : d === 1 ? 'BOGEY' : `+${d}`; msgT = 1.6;
+      if (d < 0) sound.fanfare(); else sound.select();
+      if (strokes === 1) kit.say('HOLE IN ONE!', 2.4, true);
+      setTimeout(next, 1400);
+    }
+    function next() {
+      if (hole + 1 < HOLES.length) return load(hole + 1);
+      over = true; const total = card.reduce((a, b) => a + b, 0), par = HOLES.reduce((a, b) => a + b.par, 0);
+      res = award(Math.max(1, Math.floor((par + 8 - total) / 2)));
+      if (!best || total < best) { set('bitcade:golf:best', total); best = total; kit.say(`NEW GOLF BEST: ${total}!`, 2.6, true); }
+    }
+    const aimFromDrag = (px, py) => { const dx = drag.x - px, dy = drag.y - py, d = Math.hypot(dx, dy); if (d > 4) { aim = Math.atan2(dy, dx); power = Math.min(1, d / 160); } };
+    return {
+      name: 'golf',
+      held(ax) { padX = Math.abs(ax) > 0.3 ? Math.sign(ax) : 0; },
+      draw(x, t, dt) {
+        step(Math.min(0.033, dt || 0.016));
+        const h = H();
+        x.fillStyle = 'rgba(5,2,12,.95)'; x.fillRect(0, 0, VW, VH);
+        x.save(); x.translate(OX, OY);
+        // the green: fill inside the walls (drawn as a felt rectangle under them), sand, bumpers, the spinner, the cup
+        const xs = h.walls.flatMap(w => [w[0], w[2]]), ys = h.walls.flatMap(w => [w[1], w[3]]), minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+        const shape = h.shape || [[minX, minY], [maxX, minY], [maxX, maxY], [minX, maxY]];
+        const outline = grow => { x.beginPath(); shape.forEach(([px, py], i) => { const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2, gx = px + Math.sign(px - cx) * grow, gy = py + Math.sign(py - cy) * grow; i ? x.lineTo(gx, gy) : x.moveTo(gx, gy); }); x.closePath(); };
+        outline(12); x.fillStyle = '#0a3a1a'; x.fill(); outline(0); x.fillStyle = '#2f9a48'; x.fill();
+        x.save(); outline(0); x.clip(); x.fillStyle = 'rgba(255,255,255,.04)'; for (let i = minX; i < maxX; i += 24) x.fillRect(i, minY, 12, maxY - minY); x.restore();
+        for (const [sx, sy, sw, sh] of h.sand || []) { x.fillStyle = '#e8c890'; x.beginPath(); x.ellipse(sx + sw / 2, sy + sh / 2, sw / 2, sh / 2, 0, 0, 6.29); x.fill(); x.fillStyle = 'rgba(160,120,60,.3)'; for (let k = 0; k < 14; k++) x.fillRect(sx + 10 + (k * 37) % (sw - 20), sy + 8 + (k * 23) % (sh - 16), 2, 2); }
+        x.fillStyle = OUT; x.beginPath(); x.arc(h.cup[0], h.cup[1], CUP + 2, 0, 6.29); x.fill(); x.fillStyle = '#05140a'; x.beginPath(); x.arc(h.cup[0], h.cup[1], CUP, 0, 6.29); x.fill();
+        x.fillStyle = '#e8e4f0'; x.fillRect(h.cup[0] - 1, h.cup[1] - 34, 2, 34); x.fillStyle = '#ff4f6d'; x.beginPath(); x.moveTo(h.cup[0] + 1, h.cup[1] - 34); x.lineTo(h.cup[0] + 18, h.cup[1] - 28 + Math.sin(t / 200) * 2); x.lineTo(h.cup[0] + 1, h.cup[1] - 22); x.fill();
+        x.lineCap = 'round';
+        for (const w of h.walls) { x.strokeStyle = OUT; x.lineWidth = 10; x.beginPath(); x.moveTo(w[0], w[1]); x.lineTo(w[2], w[3]); x.stroke(); x.strokeStyle = '#c87a3a'; x.lineWidth = 6; x.stroke(); }
+        for (const [bx, by, r] of h.bumpers || []) { x.fillStyle = OUT; x.beginPath(); x.arc(bx, by, r + 2, 0, 6.29); x.fill(); x.fillStyle = '#ff4fd1'; x.beginPath(); x.arc(bx, by, r, 0, 6.29); x.fill(); x.fillStyle = '#fff'; x.beginPath(); x.arc(bx - r / 3, by - r / 3, r / 4, 0, 6.29); x.fill(); }
+        if (h.spinner) { const sp = h.spinner, ca = Math.cos(spinA) * sp.len, sa = Math.sin(spinA) * sp.len; x.strokeStyle = OUT; x.lineWidth = 12; x.beginPath(); x.moveTo(sp.x - ca, sp.y - sa); x.lineTo(sp.x + ca, sp.y + sa); x.stroke(); x.strokeStyle = '#ffd23d'; x.lineWidth = 8; x.stroke(); x.fillStyle = OUT; x.beginPath(); x.arc(sp.x, sp.y, 7, 0, 6.29); x.fill(); x.fillStyle = '#c0c6d0'; x.beginPath(); x.arc(sp.x, sp.y, 5, 0, 6.29); x.fill(); }
+        // the aim line and the ball
+        if (still && !sunk && !over) {
+          const len = 30 + power * 90; x.strokeStyle = 'rgba(255,255,255,.7)'; x.setLineDash([5, 5]); x.lineWidth = 2; x.beginPath(); x.moveTo(ball.x, ball.y); x.lineTo(ball.x + Math.cos(aim) * len, ball.y + Math.sin(aim) * len); x.stroke(); x.setLineDash([]);
+        }
+        if (!sunk || msgT > 1.2) { x.fillStyle = 'rgba(0,0,0,.3)'; x.beginPath(); x.arc(ball.x + 2, ball.y + 3, BR, 0, 6.29); x.fill(); x.fillStyle = OUT; x.beginPath(); x.arc(ball.x, ball.y, BR + 1.5, 0, 6.29); x.fill(); x.fillStyle = '#fff'; x.beginPath(); x.arc(ball.x, ball.y, BR, 0, 6.29); x.fill(); }
+        x.restore();
+        // the scorecard along the top, the power meter
+        kit.neon(x, 'MINI GOLF', VW / 2, 26, 20, '#3dff8f');
+        x.font = '11px Silkscreen, monospace'; x.textAlign = 'center'; x.textBaseline = 'middle';
+        HOLES.forEach((hh, i) => { const cx = VW / 2 - 165 + i * 66; x.fillStyle = i === hole && !over ? '#ffd23d' : 'rgba(255,255,255,.5)'; x.fillText(`${i + 1}·P${hh.par}`, cx, 54); x.fillStyle = '#fff'; x.fillText(card[i] !== undefined ? String(card[i]) : i === hole && !over ? String(strokes) : '-', cx, 72); });
+        x.textAlign = 'left'; x.fillStyle = 'rgba(255,255,255,.55)'; x.fillText(`BEST ${best || '-'}`, 20, 54);
+        if (still && !over) { const MX = VW - 54; x.fillStyle = OUT; x.fillRect(MX - 2, 200, 28, 240); x.fillStyle = '#140c24'; x.fillRect(MX, 202, 24, 236); x.fillStyle = power > 0.75 ? '#ff4f6d' : power > 0.4 ? '#ffd23d' : '#3dff8f'; x.fillRect(MX, 438 - 236 * power, 24, 236 * power); x.textAlign = 'center'; x.fillStyle = 'rgba(255,255,255,.6)'; x.fillText('POWER', MX + 12, 188); }
+        if (msgT > 0) kit.neon(x, msg, VW / 2, VH / 2, 30, '#ffd23d');
+        hint(x, 'DRAG BACK FROM THE BALL AND LET GO · OR ← → AIM, HOLD ENTER FOR POWER · ESC LEAVE', VH - 12);
+        if (over) {
+          const total = card.reduce((a, b) => a + b, 0), par = HOLES.reduce((a, b) => a + b.par, 0);
+          x.fillStyle = 'rgba(5,2,12,.85)'; x.fillRect(VW / 2 - 220, VH / 2 - 100, 440, 200); x.strokeStyle = '#3dff8f'; x.lineWidth = 2; x.strokeRect(VW / 2 - 214, VH / 2 - 94, 428, 188);
+          kit.neon(x, `${total} STROKES`, VW / 2, VH / 2 - 50, 28, '#3dff8f');
+          x.font = '13px Silkscreen, monospace'; x.textAlign = 'center'; x.fillStyle = '#f4effd'; x.fillText(total < par ? `${par - total} UNDER PAR!` : total === par ? 'EVEN PAR' : `${total - par} OVER PAR`, VW / 2, VH / 2 - 10);
+          x.fillStyle = '#ffd23d'; x.fillText(res.give ? `+${res.give} TICKETS` : res.capped ? 'TICKET LIMIT REACHED TODAY' : '', VW / 2, VH / 2 + 16);
+          hint(x, 'ENTER OR TAP TO PLAY AGAIN · ESC TO LEAVE', VH / 2 + 60);
+        }
+      },
+      key(c, src) {
+        if (isClose(c)) { sound.back(); return kit.close(); }
+        if (over) { if (c === 'Enter') reset(); return; }
+        if (c === 'Enter' && still && !sunk) { if (src === 'pad') { if (charging) putt(power); else { charging = 'pad'; power = 0; pdir = 1; } } else if (!charging) { charging = 'key'; power = 0; pdir = 1; } }
+      },
+      tap(px, py) { if (over) return reset(); if (!still || sunk) return; drag = { x: px, y: py }; },
+      move(px, py) { if (drag) aimFromDrag(px, py); },
+      untap() { if (drag && still && power > 0.03) putt(power); drag = null; }
+    };
+  }
+
   /* ---------- the VIP room's records wall ---------- */
   function records() {
     const st = window.VIP ? VIP.status() : { badges: 0, mastered: 0, earned: 0 };
@@ -612,6 +835,8 @@ window.FloorPlay = kit => {
     if (o.kind === 'booth') return kit.open(photobooth());
     if (o.kind === 'claw') return kit.open(claw());
     if (o.kind === 'records') return kit.open(records());
+    if (o.kind === 'hockey') return kit.open(hockey());
+    if (o.kind === 'golf') return kit.open(golf());
     if (o.kind === 'vipbar') { kit.staffSay('bartender', pick(['ONE GOLDEN SODA, SIR OR MADAM.', 'ON THE HOUSE, VIP.', 'SPARKLING GOLD. ENJOY.'])); kit.me.prop = 'gold'; kit.me.propT = 90; sound.fizz(); return; }
     if (o.kind === 'skee') { o.user = kit.me; return kit.open(skee(o)); }
     if (o.kind === 'pinball') { o.user = kit.me; return kit.open(pinball(o)); }
@@ -626,6 +851,8 @@ window.FloorPlay = kit => {
     const left = () => { let t = null; try { t = JSON.parse(get('bitcade:floortix') || 'null'); } catch (e) {} return FLOOR_CAP - (t && t.d === today() ? t.n : 0); };
     if (o.kind === 'skee') return { title: 'SKEE-BALL', sub: `NINE BALLS · BEST ${bestOf('bitcade:skee:best')} · a ticket per 100 points (${left()} more today)`, btn: 'PLAY ▶', c: ['#ff4f6d', '#5ee7ff', '#ffd23d'][o.i % 3] };
     if (o.kind === 'pinball') return { title: `${o.name} PINBALL`, sub: `THREE BALLS · BEST ${bestOf('bitcade:pinball:best').toLocaleString()} · a ticket per 4,000 (${left()} more today)`, btn: 'PLAY ▶', c: o.c };
+    if (o.kind === 'hockey') return { title: 'AIR HOCKEY', sub: `YOU AGAINST THE HOUSE · FIRST TO 7 · WINS ${+get('bitcade:hockey:wins') || 0} · 3 tickets a win (${left()} more today)`, btn: 'PLAY ▶', c: '#5ee7ff' };
+    if (o.kind === 'golf') return { title: 'MINI GOLF', sub: `SIX HOLES, PAR ${HOLES.reduce((a, b) => a + b.par, 0)} · BEST ${+get('bitcade:golf:best') || '—'} · tickets for going under par (${left()} more today)`, btn: 'PLAY ▶', c: '#3dff8f' };
     if (o.kind === 'records') return { title: 'YOUR RECORDS', sub: 'Every best score you hold, your badges and your totals', btn: 'LOOK ▶', c: '#ffd23d' };
     if (o.kind === 'vipbar') return { title: 'GOLDEN SODA BAR', sub: 'VIPs drink gold. It tastes like winning.', btn: 'ORDER ▶', c: '#ffd23d' };
     if (o.kind === 'snack') return { title: 'SNACK BAR', sub: 'Free sodas. It’s that kind of arcade.', btn: 'GRAB ONE ▶', c: '#ffb03d' };

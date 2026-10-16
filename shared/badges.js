@@ -100,6 +100,18 @@ window.BADGES = {
     { id: 'pair', name: 'Double Up', desc: 'Hit both birds of a pair with two shots' },
     { id: 'perfect', name: 'Ten for Ten', desc: 'Hit every bird in a round' },
     { id: 'round10', name: 'Season Pro', desc: 'Reach round 10' }],
+  'pixel-peaks': [
+    { id: 'gems100', name: 'Gem Hoarder', desc: 'Collect 100 gems in one climb' },
+    { id: 'stomp10', name: 'Critter Crusher', desc: 'Stomp 10 critters in one climb' },
+    { id: 'peak5', name: 'Mountaineer', desc: 'Reach level 5' }],
+  'pop-lagoon': [
+    { id: 'drop10', name: 'Avalanche', desc: 'Drop 10 bubbles with one shot' },
+    { id: 'clear', name: 'Clean Sweep', desc: 'Clear a whole board' },
+    { id: 'level5', name: 'Deep Diver', desc: 'Reach level 5' }],
+  'neon-steps': [
+    { id: 'fullcombo', name: 'Full Combo', desc: 'Finish a song without a single miss' },
+    { id: 'grade_a', name: 'Star Dancer', desc: 'Get an A or an S grade' },
+    { id: 'hard', name: 'Hyper Drive', desc: 'Clear the hard song' }],
   'blip-sports': [
     { id: 'fbwin', name: 'Gridiron Win', desc: 'Win a football game' },
     { id: 'bbwin', name: 'Ballpark Win', desc: 'Win a baseball game' },
@@ -115,7 +127,7 @@ window.WEEKLY = (() => {
   // Single-player score games, mixed so neighbouring weeks feel different. Blip Sports counts wins, so it sits out.
   const ROTATION = ['twin-blast', 'stackdown', 'hedge-hop', 'wing-duel', 'neon-noodle', 'sky-shield', 'mole-patrol', 'star-siege',
     'nitro-lane', 'cube-hopper', 'rock-rift', 'light-trail', 'wallbuster', 'garden-gunner', 'crater-lander', 'circuit-chase',
-    'scaffold-scramble', 'back-alley-brawl', 'swarm-strike', 'highrise-handyman', 'volley-duel', 'turbo-tour', 'raptor-ridge', 'marsh-marksman'];
+    'scaffold-scramble', 'back-alley-brawl', 'swarm-strike', 'highrise-handyman', 'volley-duel', 'turbo-tour', 'raptor-ridge', 'marsh-marksman', 'pixel-peaks', 'pop-lagoon', 'neon-steps'];
   const DAY = 864e5, EPOCH = Date.UTC(2024, 0, 1); // a Monday
   const index = (now = Date.now()) => Math.floor((now - EPOCH) / (7 * DAY));
   const start = (now = Date.now()) => EPOCH + index(now) * 7 * DAY;
@@ -187,7 +199,8 @@ window.MISSIONS = (() => {
     'neon-noodle': 300, wallbuster: 500, 'star-siege': 800, 'rock-rift': 3000, stackdown: 2000, 'back-alley-brawl': 1500,
     'circuit-chase': 1500, 'highrise-handyman': 8000, 'nitro-lane': 1500, 'volley-duel': 60, 'crater-lander': 800, 'sky-shield': 1000,
     'hedge-hop': 1500, 'scaffold-scramble': 500, 'swarm-strike': 4000, 'garden-gunner': 1500, 'cube-hopper': 1200, 'light-trail': 500,
-    'wing-duel': 1500, 'twin-blast': 5000, 'mole-patrol': 1500, 'turbo-tour': 6000, 'raptor-ridge': 4000, 'marsh-marksman': 8000
+    'wing-duel': 1500, 'twin-blast': 5000, 'mole-patrol': 1500, 'turbo-tour': 6000, 'raptor-ridge': 4000, 'marsh-marksman': 8000,
+    'pixel-peaks': 3000, 'pop-lagoon': 3000, 'neon-steps': 25000
   };
   const AREAS = { RACEWAY: ['turbo-tour', 'nitro-lane', 'light-trail'], 'SHOOTING GALLERY': ['raptor-ridge', 'marsh-marksman'] };
   const DAILY = ['stackdown', 'wallbuster', 'twin-blast', 'mole-patrol', 'wing-duel'];

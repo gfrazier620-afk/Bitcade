@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Pixel Peaks</title>
+<link rel="manifest" href="../../manifest.json">
+<meta name="theme-color" content="#0f0c1f">
+<link rel="icon" type="image/png" href="../../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../../icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Rubik:wght@400;500;700&family=Silkscreen&display=swap">
+<link rel="stylesheet" href="../../shared/arcade.css">
+</head>
+<body data-game="pixel-peaks" style="--game:#3dd6ff">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>PIXEL PEAKS</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <div class="pad">
+    <div class="ab"><button data-k="ArrowLeft" aria-label="Left">◀</button><button data-k="ArrowRight" aria-label="Right">▶</button></div>
+    <div class="ab"><button data-k="Space">JUMP</button></div>
+  </div>
+  <p class="help"><kbd>←</kbd><kbd>→</kbd> run · <kbd>Space</kbd> or <kbd>↑</kbd> jump (hold for higher) · <kbd>P</kbd> pause · gamepad: A jumps</p>
+</main>
+<script src="../../shared/chip.js"></script>
+<script src="../../shared/badges.js"></script>
+<script src="../../shared/arcade.js"></script>
+<script>
+(() => {
+/*
+ * Pixel Peaks: run and jump through hill country to the flag on each peak. Gems are 100, stomping a critter 200
+ * (more if you chain stomps without landing), hitting a ? block pops a gem out, and the flag pays 1000 plus 10 for
+ * every second left. Fall in a pit, touch spikes or a critter from the side and you lose a life, back at the last
+ * checkpoint. Levels are built the same way every time (seeded), each a little harder.
+ */
+const A = Arcade, cv = document.getElementById('cv');
+const W = 480, H = 270, ctx = A.canvas(cv, W, H), OUT = '#0a0612', T = 16, ROWS = 17;
+const GRAV = 1500, JUMP = 430, RUN = 135, ACC = 950, FRIC = 1300;
+function shade(hex, k) {
+  let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join('');
+  const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+/** Boxes [x, y, w, h, colour]: an outline pass, then fills lit from above. */
+function paint(x, list) {
+  x.fillStyle = OUT; for (const q of list) x.fillRect(q[0] - 1, q[1] - 1, q[2] + 2, q[3] + 2);
+  for (const [px, py, w, h, c] of list) { x.fillStyle = c; x.fillRect(px, py, w, h); if (w > 3 && h > 3) { x.fillStyle = shade(c, 0.28); x.fillRect(px, py, w, 1); x.fillStyle = shade(c, -0.3); x.fillRect(px, py + h - 1, w, 1); } }
+}
+const THEMES = [
+  { name: 'MEADOW', sky: ['#5ec8ff', '#bdf0ff'], far: '#7aa8d8', near: '#4fa860', grass: '#5ad86a', dirt: '#a8683a' },
+  { name: 'SUNSET RIDGE', sky: ['#ff8a5a', '#ffd88a'], far: '#a8607a', near: '#6a4a7a', grass: '#ffb84d', dirt: '#8a4a3a' },
+  { name: 'MOONLIT PASS', sky: ['#0c1440', '#3a3a8a'], far: '#2a2a6a', near: '#1a3a4a', grass: '#3dd6ff', dirt: '#3a4a6a' },
+  { name: 'FROST PEAK', sky: ['#8ab8e8', '#e8f4ff'], far: '#b8cce8', near: '#88a8c8', grass: '#f4f8ff', dirt: '#6a7a9a' }
+];
+
+/* ---------- levels: built from a seed, wider gaps and more critters as you climb ---------- */
+let map = [], L = 0, ents = [], gems = [], movers = [], flagX = 0, checkX = 0, levelCv = null, theme = THEMES[0], level = 1;
+const tile = (c, r) => (c < 0 || c >= L) ? (r >= ROWS - 1 ? 0 : 0) : r < 0 ? 0 : r >= ROWS ? 0 : map[r * L + c];
+// 0 air, 1 ground, 2 brick, 3 ? block, 4 used block, 5 one-way ledge, 6 spikes
+const solid = v => v === 1 || v === 2 || v === 3 || v === 4;
+function build(lv) {
+  const rnd = A.seeded('pixel-peaks:' + lv), r = (a, b) => a + Math.floor(rnd() * (b - a + 1));
+  theme = THEMES[(lv - 1) % THEMES.length];
+  L = 170 + Math.min(lv, 6) * 14; map = new Array(L * ROWS).fill(0); ents = []; gems = []; movers = [];
+  const set = (c, rr, v) => { if (c >= 0 && c < L && rr >= 0 && rr < ROWS) map[rr * L + c] = v; };
+  const ground = (c, g) => { for (let rr = g; rr < ROWS; rr++) set(c, rr, 1); };
+  let x = 0, g = 13;
+  for (; x < 14; x++) ground(x, g);
+  checkX = 0;
+  while (x < L - 22) {
+    const k = rnd();
+    if (!checkX && x > L / 2) { checkX = x + 2; for (let i = 0; i < 6; i++) ground(x++, g); continue; }
+    if (k < 0.24) { // flat run, maybe a beetle and a row of gems
+      const n = r(4, 8); for (let i = 0; i < n; i++) ground(x + i, g);
+      if (rnd() < 0.6 + lv * 0.05) ents.push({ type: 'beetle', x: (x + n - 2) * T, y: g * T - 12 });
+      if (rnd() < 0.5) for (let i = 1; i < n - 1; i++) gems.push({ x: (x + i) * T + 8, y: (g - 2) * T + 8 });
+      x += n;
+    } else if (k < 0.44) { // a pit
+      const n = Math.min(2 + Math.floor(lv / 2) + r(0, 1), 6);
+      if (n >= 4 && lv >= 2) movers.push({ x: (x + 1) * T, y: (g - 1) * T, w: T * 2, h: 6, x0: (x + 0.5) * T, x1: (x + n - 2.5) * T, v: 40 + lv * 4, dir: 1, dx: 0 });
+      else if (n >= 4) for (let i = 1; i < n - 1; i++) set(x + i, g - 2, 5);
+      if (rnd() < 0.5) gems.push({ x: (x + n / 2) * T, y: (g - 4) * T });
+      x += n; ground(x, g); ground(x + 1, g); x += 2;
+    } else if (k < 0.58) { // a step up or down
+      g = Math.max(8, Math.min(14, g + (rnd() < 0.5 ? -1 : 1) * r(1, 2))); const n = r(3, 6); for (let i = 0; i < n; i++) ground(x + i, g); x += n;
+    } else if (k < 0.74) { // ledges and ? blocks over the ground
+      const n = r(6, 10); for (let i = 0; i < n; i++) ground(x + i, g);
+      const bx = x + r(1, 3); set(bx, g - 4, 3); set(bx + 1, g - 4, 2); set(bx + 2, g - 4, 3);
+      if (rnd() < 0.6) { for (let i = 0; i < 3; i++) set(bx + 4 + i, g - 6, 5); gems.push({ x: (bx + 5) * T + 8, y: (g - 7) * T + 8 }); }
+      if (rnd() < 0.4 + lv * 0.06) ents.push({ type: lv >= 3 && rnd() < 0.4 ? 'hopper' : 'beetle', x: (x + n - 2) * T, y: g * T - 12 });
+      x += n;
+    } else if (k < 0.86 && lv >= 2) { // spikes to hop
+      const n = r(5, 7); for (let i = 0; i < n; i++) ground(x + i, g);
+      const sx = x + r(2, 3), sn = r(1, 2); for (let i = 0; i < sn; i++) set(sx + i, g - 1, 6);
+      x += n;
+    } else { // a brick wall with a bat over it
+      const n = r(5, 7); for (let i = 0; i < n; i++) ground(x + i, g);
+      const h = r(1, 2); for (let i = 0; i < h; i++) { set(x + 3, g - 1 - i, 2); set(x + 4, g - 1 - i, 2); }
+      if (lv >= 2 && rnd() < 0.7) ents.push({ type: 'bat', x: (x + 4) * T, y: (g - 5) * T, y0: (g - 5) * T });
+      gems.push({ x: (x + 3.5) * T + 8, y: (g - 2 - h) * T });
+      x += n;
+    }
+  }
+  for (; x < L; x++) ground(x, Math.min(g, 12));
+  flagX = (L - 10) * T;
+  ents.forEach(e => { e.vx = e.type === 'bat' ? 0 : -30 - lv * 3; e.alive = true; e.t = rnd() * 6; e.w = 14; e.h = 12; e.vy = 0; });
+  gems.forEach(q => { q.got = false; });
+  drawLevel();
+}
+/** The tiles go on one long canvas, redrawn only when a ? block is hit. */
+function drawLevel() {
+  levelCv = document.createElement('canvas'); levelCv.width = L * T; levelCv.height = ROWS * T;
+  const x = levelCv.getContext('2d');
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < L; c++) drawTile(x, c, r);
+}
+function drawTile(x, c, r) {
+  const v = tile(c, r), X = c * T, Y = r * T;
+  x.clearRect(X, Y, T, T);
+  if (v === 1) {
+    const top = !solid(tile(c, r - 1));
+    x.fillStyle = shade(theme.dirt, (r + c) % 2 ? -0.05 : 0); x.fillRect(X, Y, T, T);
+    x.fillStyle = shade(theme.dirt, -0.25); x.fillRect(X + 3 + (c * 7 % 9), Y + 6 + (r * 5 % 7), 2, 2);
+    if (top) { x.fillStyle = OUT; x.fillRect(X, Y, T, 2); x.fillStyle = theme.grass; x.fillRect(X, Y + 1, T, 5); x.fillStyle = shade(theme.grass, 0.35); x.fillRect(X, Y + 1, T, 1); x.fillStyle = shade(theme.grass, -0.25); x.fillRect(X + (c % 3) * 5, Y + 6, 3, 2); }
+    if (!solid(tile(c - 1, r))) { x.fillStyle = OUT; x.fillRect(X, Y, 1, T); }
+    if (!solid(tile(c + 1, r))) { x.fillStyle = OUT; x.fillRect(X + T - 1, Y, 1, T); }
+  } else if (v === 2) {
+    paint(x, [[X + 1, Y + 1, T - 2, T - 2, '#c8603a']]); x.fillStyle = shade('#c8603a', -0.35); x.fillRect(X + 1, Y + 8, T - 2, 1); x.fillRect(X + 8, Y + 1, 1, 7); x.fillRect(X + 4, Y + 9, 1, 6);
+  } else if (v === 3 || v === 4) {
+    paint(x, [[X + 1, Y + 1, T - 2, T - 2, v === 3 ? '#ffd23d' : '#8a6a4a']]);
+    if (v === 3) { x.fillStyle = OUT; x.font = '10px Silkscreen, monospace'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('?', X + 8, Y + 8); }
+  } else if (v === 5) {
+    paint(x, [[X, Y, T, 5, '#b48cff']]); x.fillStyle = shade('#b48cff', -0.4); x.fillRect(X + 3, Y + 5, 2, 3); x.fillRect(X + T - 5, Y + 5, 2, 3);
+  } else if (v === 6) {
+    for (let i = 0; i < 3; i++) { x.fillStyle = OUT; x.beginPath(); x.moveTo(X + i * 5 + 0.5, Y + T); x.lineTo(X + i * 5 + 3, Y + 5); x.lineTo(X + i * 5 + 5.5, Y + T); x.fill(); x.fillStyle = '#d8dce8'; x.beginPath(); x.moveTo(X + i * 5 + 1.5, Y + T); x.lineTo(X + i * 5 + 3, Y + 7); x.lineTo(X + i * 5 + 4.5, Y + T); x.fill(); }
+  }
+}
+// background layers, drawn once per theme
+let bgCv = null, bgTheme = null;
+function background() {
+  if (bgTheme === theme) return; bgTheme = theme;
+  bgCv = document.createElement('canvas'); bgCv.width = W * 2; bgCv.height = H; const x = bgCv.getContext('2d');
+  const g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, theme.sky[0]); g.addColorStop(1, theme.sky[1]); x.fillStyle = g; x.fillRect(0, 0, W * 2, H);
+  if (theme.name === 'MOONLIT PASS') { for (let i = 0; i < 60; i++) { x.fillStyle = 'rgba(255,255,255,.8)'; x.fillRect((i * 97) % (W * 2), (i * 53) % 140, 1, 1); } x.fillStyle = '#fff6c2'; x.beginPath(); x.arc(380, 50, 18, 0, 6.29); x.fill(); }
+}
+function mountains(x, off, col, base, amp, step, seed) {
+  x.fillStyle = col; x.beginPath(); x.moveTo(-2, H);
+  for (let i = -1; i <= W / step + 2; i++) { const wx = i * step - (off % step), k = Math.floor((off) / step) + i; const h = amp * (0.5 + 0.5 * Math.sin(k * 1.7 + seed) * Math.cos(k * 0.6 + seed)); x.lineTo(wx, base - h); }
+  x.lineTo(W + 2, H); x.fill();
+}
+
+/* ---------- the hero, Pip: a round little climber in a cyan cap and a red scarf ---------- */
+const me = { x: 40, y: 0, vx: 0, vy: 0, w: 10, h: 14, onGround: false, face: 1, coyote: 0, buffer: 0, inv: 0, walk: 0, dead: 0, chain: 0 };
+function drawPip(x, px, py, t) {
+  const X = Math.round(px), Y = Math.round(py), f = me.face, run = me.onGround && Math.abs(me.vx) > 20, leg = run ? Math.sin(me.walk) * 2 : 0;
+  if (me.inv > 0 && Math.floor(t / 70) % 2) return;
+  x.save(); x.translate(X + 5, Y); x.scale(f, 1);
+  const scarf = Math.sin(t / 90) * 2;
+  paint(x, [[-6 - 4, 6 + scarf / 2, 5, 3, '#ff4f6d'], [-4 + leg, 11, 3, 3, '#3a2a5a'], [1 - leg, 11, 3, 3, '#3a2a5a'], [-5, 2, 10, 10, '#ffd8a8'], [-5, 6, 10, 2, '#ff4f6d'], [-6, -1, 11, 4, '#3dd6ff'], [3, 1, 4, 2, '#3dd6ff']]);
+  x.fillStyle = OUT; x.fillRect(1, 3, 2, 2); x.fillStyle = '#ff9a8a'; x.fillRect(2, 6, 2, 1);
+  x.restore();
+}
+function drawEnemy(x, e, t) {
+  const X = Math.round(e.x), Y = Math.round(e.y);
+  if (!e.alive) { if (e.squish > 0) paint(x, [[X, Y + 8, 14, 4, e.type === 'hopper' ? '#3dff8f' : '#b86bff']]); return; }
+  if (e.type === 'beetle') {
+    const l = Math.floor(t / 120) % 2;
+    paint(x, [[X + 1, Y + 2, 12, 8, '#b86bff'], [X + 2 + l, Y + 10, 2, 2, OUT], [X + 9 - l, Y + 10, 2, 2, OUT]]);
+    x.fillStyle = shade('#b86bff', 0.4); x.fillRect(X + 3, Y + 3, 4, 2); x.fillStyle = '#fff'; x.fillRect(e.vx < 0 ? X + 2 : X + 9, Y + 5, 3, 3); x.fillStyle = OUT; x.fillRect(e.vx < 0 ? X + 2 : X + 10, Y + 6, 2, 2);
+  } else if (e.type === 'hopper') {
+    paint(x, [[X + 1, Y + 3, 12, 9, '#3dff8f']]); x.fillStyle = '#fff'; x.fillRect(X + 2, Y + 1, 3, 3); x.fillRect(X + 9, Y + 1, 3, 3); x.fillStyle = OUT; x.fillRect(X + 3, Y + 2, 1, 1); x.fillRect(X + 10, Y + 2, 1, 1);
+  } else {
+    const fl = Math.floor(t / 100) % 2;
+    paint(x, [[X + 4, Y + 3, 6, 6, '#6a4a8a'], [X - 1, Y + (fl ? 1 : 5), 5, 3, '#8a6aaa'], [X + 10, Y + (fl ? 1 : 5), 5, 3, '#8a6aaa']]);
+    x.fillStyle = '#ff4f6d'; x.fillRect(X + 5, Y + 5, 1, 1); x.fillRect(X + 8, Y + 5, 1, 1);
+  }
+}
+
+/* ---------- game state ---------- */
+let state = 'title', score = 0, lives = 3, gemCount = 0, stomps = 0, timeLeft = 200, camX = 0, camY = 0, msg = '', msgT = 0, respawnX = 40, endT = 0, pops = [];
+const say = (t, s = 2) => { msg = t; msgT = s; };
+function spawnAt(px) {
+  me.x = px; let r = 0; const c = Math.floor((px + 5) / T); while (r < ROWS && !solid(tile(c, r)) && tile(c, r) !== 5) r++;
+  me.y = (r - 1) * T + (T - me.h) - 1; me.vx = me.vy = 0; me.inv = 1.2; me.dead = 0; me.chain = 0;
+  if (timeLeft <= 0) timeLeft = 100;
+}
+function startLevel() {
+  build(level); respawnX = 40; spawnAt(40); timeLeft = 200; camX = 0; state = 'play';
+  say(`LEVEL ${level} · ${theme.name}`, 2.4); A.jingle([523, 659, 784, 1047], 0.09);
+}
+function newGame() { level = 1; score = 0; lives = A.easy ? 5 : 3; gemCount = 0; stomps = 0; A.setScore(0); startLevel(); }
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+A.onPress(c => { if (c === 'KeyP' || c === 'Escape') pause(); if ((c === 'Space' || c === 'ArrowUp' || c === 'KeyW' || c === 'KeyZ') && state === 'play') me.buffer = 0.12; });
+A.onHide(pause);
+const addScore = (n, x, y) => { score += n; A.setScore(score); if (x !== undefined) A.pop(x - camX, y - camY, '+' + n, '#ffd23d'); };
+function hurt() {
+  if (me.inv > 0 || me.dead) return;
+  me.dead = 1; me.vy = -360; me.vx = 0; lives--; A.shake(6, 0.3); A.sfx('hurt'); A.flash('#ff4f6d', 0.2);
+}
+function gameOver() {
+  state = 'over'; const rec = A.submit(score);
+  A.overlay({ title: 'GAME OVER', big: `SCORE ${score.toLocaleString()} · LEVEL ${level}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, btn: 'Climb again', onGo: newGame });
+}
+/** Move a box through the tiles, one axis at a time; ledges only hold you from above. */
+function collide(o, dt) {
+  o.x += o.vx * dt;
+  let c0 = Math.floor(o.x / T), c1 = Math.floor((o.x + o.w - 0.01) / T), r0 = Math.floor(o.y / T), r1 = Math.floor((o.y + o.h - 0.01) / T), hitX = false;
+  for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) if (solid(tile(c, r))) { if (o.vx > 0) o.x = c * T - o.w; else if (o.vx < 0) o.x = (c + 1) * T; o.vx = 0; hitX = true; }
+  const prevBottom = o.y + o.h; o.y += o.vy * dt; o.onGround = false;
+  c0 = Math.floor(o.x / T); c1 = Math.floor((o.x + o.w - 0.01) / T); r0 = Math.floor(o.y / T); r1 = Math.floor((o.y + o.h - 0.01) / T);
+  let bumped = null;
+  for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+    const v = tile(c, r);
+    if (solid(v)) { if (o.vy > 0) { o.y = r * T - o.h; o.vy = 0; o.onGround = true; } else if (o.vy < 0) { o.y = (r + 1) * T; o.vy = 0; bumped = bumped || [c, r]; } }
+    else if (v === 5 && o.vy >= 0 && prevBottom <= r * T + 1) { o.y = r * T - o.h; o.vy = 0; o.onGround = true; }
+  }
+  for (const m of movers) if (o.vy >= 0 && o.x + o.w > m.x && o.x < m.x + m.w && prevBottom <= m.y + 2 && o.y + o.h >= m.y) { o.y = m.y - o.h; o.vy = 0; o.onGround = true; o.x += m.dx; }
+  return { hitX, bumped };
+}
+function update(dt) {
+  if (msgT > 0) msgT -= dt;
+  for (const p of pops) p.t -= dt;
+  for (const m of movers) { const nx = m.x + m.v * m.dir * dt; if (nx < m.x0 || nx > m.x1) m.dir *= -1; m.dx = m.v * m.dir * dt; m.x += m.dx; }
+  if (state === 'clear') {
+    endT -= dt; me.vx = 60; me.face = 1; me.vy += GRAV * dt; collide(me, dt); me.walk += dt * 12;
+    if (timeLeft > 0 && endT < 2.2) { const k = Math.min(timeLeft, Math.ceil(dt * 120)); timeLeft -= k; addScore(10 * k); if (Math.random() < 0.3) A.tone(1200, 0.02, 'square', 0.02); }
+    if (endT <= 0) { level++; if (level >= 5) A.badge('peak5'); startLevel(); }
+    camera(dt); return;
+  }
+  if (state !== 'play') return;
+  if (me.dead) {
+    me.vy += GRAV * dt; me.y += me.vy * dt; me.dead += dt;
+    if (me.dead > 1.4) { if (lives <= 0) return gameOver(); spawnAt(respawnX); }
+    return;
+  }
+  timeLeft -= dt; if (timeLeft <= 0) { timeLeft = 0; hurt(); say('TIME UP!'); }
+  const left = A.held('ArrowLeft', 'KeyA'), right = A.held('ArrowRight', 'KeyD'), jumpHeld = A.held('Space', 'ArrowUp', 'KeyW', 'KeyZ');
+  const dir = (right ? 1 : 0) - (left ? 1 : 0);
+  if (dir) { me.vx += dir * ACC * dt; me.face = dir; } else { const f = FRIC * dt * (me.onGround ? 1 : 0.35); me.vx = Math.abs(me.vx) < f ? 0 : me.vx - Math.sign(me.vx) * f; }
+  me.vx = Math.max(-RUN, Math.min(RUN, me.vx));
+  me.coyote = me.onGround ? 0.09 : me.coyote - dt; me.buffer -= dt;
+  if (me.buffer > 0 && me.coyote > 0) { me.vy = -JUMP; me.coyote = 0; me.buffer = 0; A.sfx('jump'); }
+  if (!jumpHeld && me.vy < -160) me.vy = -160; // let go early for a short hop
+  me.vy = Math.min(me.vy + GRAV * dt, 620);
+  const wasGround = me.onGround, res = collide(me, dt);
+  if (me.onGround) me.chain = 0; if (!wasGround && me.onGround) A.burst(me.x + 5 - camX, me.y + me.h - camY, { n: 4, kind: 'smoke', color: '#e8e4f0', speed: 30, life: 0.3, size: 2 });
+  if (Math.abs(me.vx) > 20 && me.onGround) me.walk += dt * 14;
+  me.x = Math.max(0, me.x); if (me.inv > 0) me.inv -= dt;
+  if (res.bumped) { const [c, r] = res.bumped; if (tile(c, r) === 3) { map[r * L + c] = 4; drawTile(levelCv.getContext('2d'), c, r); addScore(50); gems.push({ x: c * T + 8, y: r * T - 10, got: false, pop: 0.4 }); A.sfx('pickup'); } else A.tone(180, 0.05, 'square', 0.03); }
+  // spikes and pits
+  const fc = Math.floor((me.x + me.w / 2) / T), fr = Math.floor((me.y + me.h - 1) / T);
+  if (tile(fc, fr) === 6) hurt();
+  if (me.y > ROWS * T + 20) { me.dead = 1.2; lives--; A.sfx('hurt'); }
+  // gems
+  for (const q of gems) { if (q.got) continue; if (q.pop > 0) { q.pop -= dt; q.y -= dt * 30; continue; } if (Math.abs(q.x - (me.x + 5)) < 10 && Math.abs(q.y - (me.y + 7)) < 12) { q.got = true; gemCount++; addScore(100); A.sfx('pickup'); if (gemCount % 50 === 0) { lives++; say('EXTRA LIFE!'); A.jingle([784, 988, 1319], 0.08); } if (gemCount >= 100) A.badge('gems100'); } }
+  // critters
+  for (const e of ents) {
+    if (!e.alive) { if (e.squish > 0) e.squish -= dt; continue; }
+    if (Math.abs(e.x - me.x) > W) continue;
+    e.t += dt;
+    if (e.type === 'bat') { e.x += Math.sin(e.t * 1.3) * 40 * dt; e.y = e.y0 + Math.sin(e.t * 2.4) * 18; }
+    else {
+      e.vy = Math.min(e.vy + GRAV * dt, 600);
+      if (e.type === 'hopper' && e.onGround && e.t > 1.4) { e.vy = -340; e.t = 0; }
+      const r = collide(e, dt); if (r.hitX) e.vx = -(e.vx || 30);
+      if (e.onGround && e.type === 'beetle') { const ahead = Math.floor((e.x + (e.vx > 0 ? e.w + 1 : -1)) / T), below = Math.floor((e.y + e.h + 2) / T); if (!solid(tile(ahead, below)) && tile(ahead, below) !== 5) e.vx = -e.vx; }
+      if (e.y > ROWS * T) e.alive = false;
+    }
+    if (me.x + me.w > e.x + 1 && me.x < e.x + e.w - 1 && me.y + me.h > e.y + 2 && me.y < e.y + e.h) {
+      if (me.vy > 40 && me.y + me.h - e.y < 10) { e.alive = false; e.squish = 0.5; me.vy = -300; me.chain++; stomps++; addScore(200 * me.chain, e.x + 7, e.y); A.sfx('select'); A.burst(e.x + 7 - camX, e.y + 8 - camY, { n: 8, colors: ['#b86bff', '#fff'], speed: 90, life: 0.4 }); if (stomps >= 10) A.badge('stomp10'); }
+      else hurt();
+    }
+  }
+  if (checkX && me.x > checkX * T && respawnX < checkX * T) { respawnX = checkX * T; say('CHECKPOINT!'); A.jingle([659, 784], 0.08); }
+  if (me.x > flagX) { state = 'clear'; endT = 3.2; addScore(1000, flagX + 8, 100); A.jingle([523, 659, 784, 1047, 1319, 1568], 0.1, 'square'); A.flash('#fff', 0.25); say('PEAK REACHED!', 3); }
+  camera(dt);
+}
+function camera(dt) {
+  const tx = Math.max(0, Math.min(L * T - W, me.x - W * 0.38)), ty = Math.max(0, Math.min(ROWS * T - H, me.y - H * 0.55));
+  camX += (tx - camX) * Math.min(1, dt * 8); camY += (ty - camY) * Math.min(1, dt * 5);
+}
+
+/* ---------- drawing ---------- */
+function render(t) {
+  if (!levelCv) build(1);
+  background();
+  ctx.drawImage(bgCv, 0, 0);
+  mountains(ctx, camX * 0.15, theme.far, H - 70, 70, 60, 1.3);
+  mountains(ctx, camX * 0.35, theme.near, H - 30, 40, 34, 4.1);
+  const cx = Math.round(camX), cy = Math.round(camY);
+  ctx.drawImage(levelCv, cx, cy, W, H, 0, 0, W, H);
+  ctx.save(); ctx.translate(-cx, -cy);
+  for (const m of movers) paint(ctx, [[m.x, m.y, m.w, m.h, '#ff9a3d']]);
+  // the flag on the peak, and the checkpoint post
+  const fy = (() => { const c = Math.floor(flagX / T); let r = 0; while (r < ROWS && !solid(tile(c, r))) r++; return r * T; })();
+  paint(ctx, [[flagX + 6, fy - 80, 3, 80, '#e8e4f0']]); const wav = Math.sin(t / 150) * 2;
+  ctx.fillStyle = OUT; ctx.beginPath(); ctx.moveTo(flagX + 9, fy - 80); ctx.lineTo(flagX + 33, fy - 72 + wav); ctx.lineTo(flagX + 9, fy - 62); ctx.fill();
+  ctx.fillStyle = '#ff4f6d'; ctx.beginPath(); ctx.moveTo(flagX + 9, fy - 78); ctx.lineTo(flagX + 30, fy - 72 + wav); ctx.lineTo(flagX + 9, fy - 64); ctx.fill();
+  if (checkX) { const px = checkX * T, c = Math.floor(px / T); let r = 0; while (r < ROWS && !solid(tile(c, r))) r++; paint(ctx, [[px, r * T - 28, 3, 28, '#c0c6d0'], [px + 3, r * T - 28, 10, 7, respawnX >= px ? '#3dff8f' : '#8a8ea0']]); }
+  for (const q of gems) { if (q.got) continue; const bob = Math.sin(t / 200 + q.x) * 2; ctx.fillStyle = OUT; ctx.beginPath(); ctx.moveTo(q.x, q.y - 6 + bob); ctx.lineTo(q.x + 6, q.y + bob); ctx.lineTo(q.x, q.y + 6 + bob); ctx.lineTo(q.x - 6, q.y + bob); ctx.fill(); ctx.fillStyle = '#3dd6ff'; ctx.beginPath(); ctx.moveTo(q.x, q.y - 4 + bob); ctx.lineTo(q.x + 4, q.y + bob); ctx.lineTo(q.x, q.y + 4 + bob); ctx.lineTo(q.x - 4, q.y + bob); ctx.fill(); ctx.fillStyle = '#fff'; ctx.fillRect(q.x - 2, q.y - 2 + bob, 2, 2); }
+  for (const e of ents) if (Math.abs(e.x - camX - W / 2) < W) drawEnemy(ctx, e, t);
+  if (state !== 'title') drawPip(ctx, me.x, me.y, t);
+  ctx.restore();
+  // the strip along the top
+  ctx.fillStyle = 'rgba(10,6,18,.55)'; ctx.fillRect(0, 0, W, 18);
+  ctx.font = '9px Silkscreen, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.fillStyle = '#fff';
+  ctx.fillText(`LIVES ${Math.max(0, lives)}`, 8, 9); ctx.fillStyle = '#3dd6ff'; ctx.fillText(`◆ ${gemCount}`, 80, 9);
+  ctx.fillStyle = '#fff'; ctx.fillText(`LEVEL ${level}`, 150, 9); ctx.textAlign = 'right'; ctx.fillStyle = timeLeft < 30 ? '#ff4f6d' : '#ffd23d'; ctx.fillText(`TIME ${Math.ceil(timeLeft)}`, W - 8, 9);
+  if (msgT > 0 && state !== 'title') { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '16px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = OUT; ctx.fillText(msg, W / 2 + 2, 52); ctx.fillStyle = '#fff'; ctx.fillText(msg, W / 2, 50); ctx.globalAlpha = 1; }
+}
+A.loop(dt => { if (state === 'title') { camX = (camX + dt * 30) % Math.max(1, L * T - W); return; } update(dt); }, render);
+
+/* Attract demo: run right, jump at pits, walls, spikes and critters. */
+let botJump = 0;
+A.attract({
+  start: newGame,
+  stop: () => { state = 'title'; build(1); camX = 0; },
+  bot: dt => {
+    if (state !== 'play' || me.dead) return [];
+    const keys = ['ArrowRight'], ahead = me.x + me.w + 10, c = Math.floor(ahead / T), c2 = Math.floor((ahead + 18) / T), r = Math.floor((me.y + me.h + 2) / T);
+    const floorBelow = cc => { for (let rr = r; rr < ROWS; rr++) if (solid(tile(cc, rr)) || tile(cc, rr) === 5) return true; return false; };
+    const pit = !floorBelow(c) && !movers.some(m => ahead > m.x - 8 && ahead < m.x + m.w + 8), wall = solid(tile(c, Math.floor((me.y + 4) / T))), spike = tile(c, r - 1) === 6 || tile(c2, r - 1) === 6;
+    const foe = ents.some(e => e.alive && e.x > me.x && e.x - me.x < 44 && Math.abs(e.y - me.y) < 30);
+    if (botJump > 0) { botJump -= dt; keys.push('Space'); }
+    else if (me.onGround && (pit || wall || spike || foe)) { botJump = 0.3; keys.push('Space'); }
+    return keys;
+  }
+});
+build(1);
+A.overlay({ title: 'PIXEL PEAKS', sub: 'Run and jump Pip up to the flag on every peak. Grab gems, bop critters from above, and hit ? blocks from below. Hold jump to go higher. Pits, spikes and a critter from the side cost a life.', btn: 'Start', scores: true, onGo: newGame });
+})();
+</script>
+</body>
+</html>

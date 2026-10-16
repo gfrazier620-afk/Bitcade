@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Pop Lagoon</title>
+<link rel="manifest" href="../../manifest.json">
+<meta name="theme-color" content="#0f0c1f">
+<link rel="icon" type="image/png" href="../../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../../icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Rubik:wght@400;500;700&family=Silkscreen&display=swap">
+<link rel="stylesheet" href="../../shared/arcade.css">
+</head>
+<body data-game="pop-lagoon" data-pad="2:KeyX" style="--game:#ff7bf0">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>POP LAGOON</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <div class="pad">
+    <div class="ab"><button data-k="ArrowLeft" aria-label="Aim left">◀</button><button data-k="ArrowRight" aria-label="Aim right">▶</button></div>
+    <div class="ab"><button class="sm" data-k="KeyX">SWAP</button><button data-k="Space">FIRE</button></div>
+  </div>
+  <p class="help">Aim with the mouse and click to fire · or <kbd>←</kbd><kbd>→</kbd> aim, <kbd>Space</kbd> fire, <kbd>X</kbd> swap · <kbd>P</kbd> pause · on touch, drag to aim and let go to fire</p>
+</main>
+<script src="../../shared/chip.js"></script>
+<script src="../../shared/badges.js"></script>
+<script src="../../shared/arcade.js"></script>
+<script>
+(() => {
+/*
+ * Pop Lagoon: fire bubbles up from the shell launcher. Three or more of a colour touching pop (10 each); anything
+ * left hanging with nothing above it drops, and drops score big (20, then doubling for each extra bubble). Every few
+ * shots a new row pushes in from the top. Clear the board for a bonus and the next level; let the bubbles reach the
+ * sand line and it's over. Bubbles bounce off the side walls.
+ */
+const A = Arcade, cv = document.getElementById('cv');
+const W = 360, H = 540, ctx = A.canvas(cv, W, H), OUT = '#0a0612';
+const R = 15, D = 30, ROWH = Math.round(R * Math.sqrt(3)), TOP = 34, LINE = 450, GX = W / 2, GY = 492, SPEED = 820;
+const COLORS = ['#ff4f6d', '#3dd6ff', '#ffd23d', '#3dff8f', '#b86bff', '#ff9a3d'];
+function shade(hex, k) {
+  let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join('');
+  const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+// bubble sprites, one per colour, drawn once: outline, a shaded ball, a shine
+const SPR = COLORS.map(c => { const s = document.createElement('canvas'); s.width = s.height = D + 4; const x = s.getContext('2d'), m = D / 2 + 2;
+  x.fillStyle = OUT; x.beginPath(); x.arc(m, m, R + 1.5, 0, 6.29); x.fill();
+  const g = x.createRadialGradient(m - 5, m - 6, 2, m, m, R); g.addColorStop(0, shade(c, 0.55)); g.addColorStop(0.55, c); g.addColorStop(1, shade(c, -0.45)); x.fillStyle = g; x.beginPath(); x.arc(m, m, R, 0, 6.29); x.fill();
+  x.fillStyle = 'rgba(255,255,255,.75)'; x.beginPath(); x.ellipse(m - 5, m - 6, 4, 2.6, -0.6, 0, 6.29); x.fill(); return s; });
+const drawBubble = (c, x, y, s = 1) => { const sz = (D + 4) * s; ctx.drawImage(SPR[c], x - sz / 2, y - sz / 2, sz, sz); };
+
+/* ---------- the grid: rows of 12 and 11 (the short rows sit half a bubble in) ---------- */
+let rows = [], top = TOP, nColors = 4;
+const rowLen = row => row.odd ? 11 : 12;
+const cellX = (row, c) => R + c * D + (row.odd ? R : 0), cellY = r => top + R + r * ROWH;
+function neighbours(r, c) {
+  const row = rows[r], out = [[r, c - 1], [r, c + 1]];
+  for (const rr of [r - 1, r + 1]) { if (!rows[rr]) continue; if (row.odd) out.push([rr, c], [rr, c + 1]); else out.push([rr, c - 1], [rr, c]); }
+  return out.filter(([rr, cc]) => rows[rr] && cc >= 0 && cc < rowLen(rows[rr]));
+}
+const randColor = () => { const left = new Set(); rows.forEach(row => row.cells.forEach(v => v >= 0 && left.add(v))); const pool = left.size ? [...left] : COLORS.slice(0, nColors).map((_, i) => i); return pool[Math.floor(Math.random() * pool.length)]; };
+function newRow(odd) { const row = { odd, cells: [] }; for (let i = 0; i < (odd ? 11 : 12); i++) row.cells.push(Math.floor(Math.random() * nColors)); return row; }
+/** A new row pushes in from the top: everything moves down a row. */
+function pushRow() { const odd = rows.length ? !rows[0].odd : false; rows.unshift(newRow(odd)); A.shake(3, 0.15); A.tone(110, 0.12, 'triangle', 0.06); }
+function trim() { while (rows.length && rows[rows.length - 1].cells.every(v => v < 0)) rows.pop(); }
+
+/* ---------- state ---------- */
+let state = 'title', score = 0, level = 1, aim = 0, cur = 0, next = 1, shot = null, shots = 0, every = 7, falling = [], pops = [], msg = '', msgT = 0, cleared = false;
+const say = (t, s = 2) => { msg = t; msgT = s; };
+function setup() {
+  nColors = Math.min(6, 3 + Math.ceil(level / 2)); rows = []; top = TOP;
+  for (let i = 0; i < Math.min(9, 4 + level); i++) rows.push(newRow(i % 2 === 1));
+  every = Math.max(4, (A.easy ? 11 : 8) - Math.floor(level / 2)); shots = 0; cur = randColor(); next = randColor(); shot = null; falling = []; aim = 0;
+  say(`LEVEL ${level}`, 1.6);
+}
+function newGame() { score = 0; level = 1; A.setScore(0); setup(); state = 'play'; }
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+function fire() {
+  if (state !== 'play' || shot) return;
+  shot = { x: GX, y: GY, vx: Math.sin(aim) * SPEED, vy: -Math.cos(aim) * SPEED, c: cur };
+  cur = next; next = randColor(); A.tone(520, 0.06, 'square', 0.04, 0, 900);
+}
+function swap() { if (state !== 'play' || shot) return; [cur, next] = [next, cur]; A.sfx('select'); }
+A.onPress(c => {
+  if (c === 'KeyP' || c === 'Escape') return pause();
+  if (c === 'Space' || c === 'ArrowUp' || c === 'KeyW') fire();
+  if (c === 'KeyX' || c === 'KeyC' || c === 'ArrowDown' || c === 'KeyS') swap();
+});
+A.onHide(pause);
+// mouse and touch: point to aim, click or let go to fire
+let dragging = false;
+const aimAt = e => { const p = A.pointer(cv, e); if (p.y < GY - 10) aim = Math.max(-1.35, Math.min(1.35, Math.atan2(p.x - GX, GY - p.y))); };
+cv.addEventListener('pointerdown', e => { if (state !== 'play') return; dragging = true; aimAt(e); });
+cv.addEventListener('pointermove', e => { if (state === 'play' && (dragging || e.pointerType === 'mouse')) aimAt(e); });
+cv.addEventListener('pointerup', e => { if (dragging && state === 'play') { aimAt(e); fire(); } dragging = false; });
+
+/* ---------- a bubble lands: snap it in, pop matches, drop what's left hanging ---------- */
+function land(px, py, hit) {
+  // candidate empty cells: next to whatever it hit, or along the top row
+  let cands = [];
+  if (hit) cands = neighbours(hit[0], hit[1]).filter(([r, c]) => rows[r].cells[c] < 0);
+  if (hit) { const below = hit[0] + 1; if (!rows[below]) { rows.push({ odd: !rows[hit[0]].odd, cells: new Array(rows[hit[0]].odd ? 12 : 11).fill(-1) }); } cands = neighbours(hit[0], hit[1]).filter(([r, c]) => rows[r].cells[c] < 0); }
+  if (!hit || !cands.length) { if (!rows.length) rows.push({ odd: false, cells: new Array(12).fill(-1) }); rows[0].cells.forEach((v, c) => { if (v < 0) cands.push([0, c]); }); }
+  if (!cands.length) return;
+  cands.sort((a, b) => Math.hypot(cellX(rows[a[0]], a[1]) - px, cellY(a[0]) - py) - Math.hypot(cellX(rows[b[0]], b[1]) - px, cellY(b[0]) - py));
+  const [r, c] = cands[0]; rows[r].cells[c] = shot.c;
+  // the same colour, touching
+  const key = (a, b) => a + ':' + b, seen = new Set([key(r, c)]), group = [[r, c]];
+  for (let i = 0; i < group.length; i++) for (const [rr, cc] of neighbours(...group[i])) if (!seen.has(key(rr, cc)) && rows[rr].cells[cc] === shot.c) { seen.add(key(rr, cc)); group.push([rr, cc]); }
+  if (group.length >= 3) {
+    group.forEach(([rr, cc]) => { const x = cellX(rows[rr], cc), y = cellY(rr); A.burst(x, y, { n: 6, color: COLORS[rows[rr].cells[cc]], speed: 120, life: 0.4, size: 3 }); rows[rr].cells[cc] = -1; });
+    score += group.length * 10; A.sfx('pickup'); A.pop(cellX(rows[r], c), cellY(r), '+' + group.length * 10, '#fff');
+    // anything not hanging from the top row falls
+    const held = new Set(), q = [];
+    rows[0] && rows[0].cells.forEach((v, cc) => { if (v >= 0) { held.add(key(0, cc)); q.push([0, cc]); } });
+    for (let i = 0; i < q.length; i++) for (const [rr, cc] of neighbours(...q[i])) if (!held.has(key(rr, cc)) && rows[rr].cells[cc] >= 0) { held.add(key(rr, cc)); q.push([rr, cc]); }
+    let n = 0;
+    rows.forEach((row, rr) => row.cells.forEach((v, cc) => { if (v >= 0 && !held.has(key(rr, cc))) { falling.push({ x: cellX(row, cc), y: cellY(rr), vx: (Math.random() - 0.5) * 80, vy: -60 - Math.random() * 80, c: v }); row.cells[cc] = -1; n++; } }));
+    if (n) { const pts = 20 * Math.pow(2, Math.min(n, 10) - 1); score += pts; A.pop(W / 2, LINE - 60, `DROP ×${n} +${pts}`, '#ffd23d'); A.jingle([659, 784, 988, 1319].slice(0, Math.min(4, 1 + n)), 0.06); if (n >= 10) A.badge('drop10'); if (n >= 5) A.shake(4, 0.2); }
+    A.setScore(score); trim();
+  } else { A.tone(260, 0.05, 'triangle', 0.04); shots++; if (shots >= every) { shots = 0; pushRow(); } }
+  if (!rows.some(row => row.cells.some(v => v >= 0))) { // cleared!
+    const bonus = 1000 * level; score += bonus; A.setScore(score); A.badge('clear'); A.flash('#fff', 0.25); A.jingle([523, 659, 784, 1047, 1319, 1568], 0.08, 'square');
+    say(`CLEAR! +${bonus}`, 2); level++; if (level >= 5) A.badge('level5'); setTimeout(() => { if (state === 'play') setup(); }, 900);
+  }
+  if (rows.some((row, rr) => cellY(rr) + R > LINE && row.cells.some(v => v >= 0))) gameOver();
+}
+function gameOver() {
+  state = 'over'; A.shake(6, 0.4); A.sfx('boom');
+  const rec = A.submit(score);
+  A.overlay({ title: 'WASHED UP', big: `SCORE ${score.toLocaleString()} · LEVEL ${level}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, btn: 'Dive again', onGo: newGame });
+}
+function update(dt) {
+  if (msgT > 0) msgT -= dt;
+  for (const f of falling) { f.vy += 1100 * dt; f.x += f.vx * dt; f.y += f.vy * dt; }
+  falling = falling.filter(f => f.y < H + 30);
+  if (state !== 'play') return;
+  const turn = (A.held('ArrowRight', 'KeyD') ? 1 : 0) - (A.held('ArrowLeft', 'KeyA') ? 1 : 0);
+  if (turn) aim = Math.max(-1.35, Math.min(1.35, aim + turn * dt * 1.7));
+  if (!shot) return;
+  const steps = 6;
+  for (let i = 0; i < steps && shot; i++) {
+    shot.x += shot.vx * dt / steps; shot.y += shot.vy * dt / steps;
+    if (shot.x < R) { shot.x = R; shot.vx = Math.abs(shot.vx); A.tone(700, 0.02, 'square', 0.02); }
+    if (shot.x > W - R) { shot.x = W - R; shot.vx = -Math.abs(shot.vx); A.tone(700, 0.02, 'square', 0.02); }
+    if (shot.y < top + R) { land(shot.x, shot.y, null); shot = null; break; }
+    let hit = null;
+    rows.forEach((row, rr) => row.cells.forEach((v, cc) => { if (v >= 0 && !hit && Math.hypot(cellX(row, cc) - shot.x, cellY(rr) - shot.y) < D * 0.86) hit = [rr, cc]; }));
+    if (hit) { land(shot.x, shot.y, hit); shot = null; }
+  }
+}
+
+/* ---------- drawing: an underwater lagoon ---------- */
+const bg = (() => { const s = document.createElement('canvas'); s.width = W; s.height = H; const x = s.getContext('2d');
+  const g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#0a3a5a'); g.addColorStop(0.6, '#08263f'); g.addColorStop(1, '#061a2c'); x.fillStyle = g; x.fillRect(0, 0, W, H);
+  x.globalAlpha = 0.07; x.fillStyle = '#bff4ff'; for (let i = 0; i < 6; i++) { x.beginPath(); x.moveTo(40 + i * 60, 0); x.lineTo(70 + i * 60, 0); x.lineTo(20 + i * 70, H); x.lineTo(-10 + i * 70, H); x.fill(); } x.globalAlpha = 1;
+  x.fillStyle = '#c8a86a'; x.beginPath(); x.moveTo(0, H); x.lineTo(0, H - 34); for (let i = 0; i <= W; i += 20) x.lineTo(i, H - 34 + Math.sin(i / 30) * 5); x.lineTo(W, H); x.fill();
+  x.fillStyle = '#a8884a'; for (let i = 0; i < 30; i++) x.fillRect((i * 47) % W, H - 20 + (i * 13) % 14, 2, 2);
+  [[20, '#2a9a5a'], [338, '#1f8a6a'], [60, '#3aaa6a']].forEach(([sx, c]) => { x.strokeStyle = c; x.lineWidth = 5; x.lineCap = 'round'; x.beginPath(); x.moveTo(sx, H - 30); for (let k = 1; k <= 5; k++) x.lineTo(sx + Math.sin(k) * 8, H - 30 - k * 18); x.stroke(); });
+  return s; })();
+function render(t) {
+  ctx.drawImage(bg, 0, 0);
+  for (let i = 0; i < 8; i++) { const by = H - ((t / 30 + i * 70) % H), bx = 30 + (i * 53) % 300 + Math.sin(t / 600 + i) * 6; ctx.strokeStyle = 'rgba(190,240,255,.25)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(bx, by, 2 + (i % 3), 0, 6.29); ctx.stroke(); }
+  // the ceiling and the sand line
+  ctx.fillStyle = '#1a4a6a'; ctx.fillRect(0, 0, W, top); ctx.fillStyle = OUT; ctx.fillRect(0, top - 3, W, 3); ctx.fillStyle = '#3dd6ff'; ctx.fillRect(0, top - 2, W, 1);
+  ctx.strokeStyle = 'rgba(255,79,109,.55)'; ctx.setLineDash([6, 6]); ctx.beginPath(); ctx.moveTo(0, LINE); ctx.lineTo(W, LINE); ctx.stroke(); ctx.setLineDash([]);
+  rows.forEach((row, r) => row.cells.forEach((v, c) => { if (v >= 0) drawBubble(v, cellX(row, c), cellY(r)); }));
+  for (const f of falling) drawBubble(f.c, f.x, f.y);
+  // the aim guide: dots along the path, with one bounce
+  if (state === 'play' && !shot) {
+    let x = GX, y = GY, vx = Math.sin(aim), vy = -Math.cos(aim); ctx.fillStyle = 'rgba(255,255,255,.55)';
+    for (let i = 0; i < 26 && y > top + R; i++) { x += vx * 14; y += vy * 14; if (x < R || x > W - R) { vx = -vx; x = Math.max(R, Math.min(W - R, x)); } if (i % 2 === 0) ctx.fillRect(x - 1.5, y - 1.5, 3, 3); }
+  }
+  // the launcher: a shell cannon on the sand
+  ctx.save(); ctx.translate(GX, GY); ctx.rotate(aim);
+  ctx.fillStyle = OUT; ctx.fillRect(-9, -40, 18, 40); ctx.fillStyle = '#c0c6d0'; ctx.fillRect(-7, -38, 14, 38); ctx.fillStyle = '#ff7bf0'; ctx.fillRect(-7, -38, 14, 5);
+  ctx.restore();
+  ctx.fillStyle = OUT; ctx.beginPath(); ctx.ellipse(GX, GY + 8, 32, 18, 0, Math.PI, 0); ctx.fill(); ctx.fillStyle = '#ff9ab8'; ctx.beginPath(); ctx.ellipse(GX, GY + 8, 30, 16, 0, Math.PI, 0); ctx.fill();
+  ctx.strokeStyle = shade('#ff9ab8', -0.3); ctx.lineWidth = 2; for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(GX, GY + 8); ctx.lineTo(GX + i * 12, GY - 6 + Math.abs(i) * 3); ctx.stroke(); }
+  if (state !== 'title' && !shot) drawBubble(cur, GX, GY - 2);
+  if (shot) drawBubble(shot.c, shot.x, shot.y);
+  // next bubble, shots until the next row
+  ctx.font = '9px Silkscreen, monospace'; ctx.fillStyle = '#bff4ff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('NEXT', 64, H - 50); if (state !== 'title') drawBubble(next, 64, H - 28, 0.8);
+  ctx.fillText('NEW ROW', W - 64, H - 50);
+  for (let i = 0; i < every; i++) { ctx.fillStyle = i < every - shots ? '#3dd6ff' : 'rgba(255,255,255,.15)'; ctx.fillRect(W - 64 - every * 4 + i * 8 + 1, H - 30, 6, 6); }
+  ctx.textAlign = 'left'; ctx.fillStyle = '#fff'; ctx.fillText(`LEVEL ${level}`, 8, 14); ctx.textAlign = 'right'; ctx.fillText(score.toLocaleString(), W - 8, 14);
+  if (msgT > 0 && state === 'play') { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '22px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = OUT; ctx.fillText(msg, W / 2 + 2, H / 2 + 2); ctx.fillStyle = '#fff'; ctx.fillText(msg, W / 2, H / 2); ctx.globalAlpha = 1; }
+}
+A.loop(update, render);
+
+/* Attract demo: try angles, picture where each shot would stick, and go for the biggest match. */
+let botTarget = null;
+function plan() {
+  let best = null;
+  for (let a = -1.25; a <= 1.25; a += 0.05) {
+    let x = GX, y = GY, vx = Math.sin(a), vy = -Math.cos(a), hit = null, n = 0;
+    while (y > top + R && n++ < 400 && !hit) { x += vx * 5; y += vy * 5; if (x < R || x > W - R) vx = -vx; rows.forEach((row, rr) => row.cells.forEach((v, cc) => { if (v >= 0 && !hit && Math.hypot(cellX(row, cc) - x, cellY(rr) - y) < D * 0.86) hit = [rr, cc, v]; })); }
+    const sc = hit ? (hit[2] === cur ? 3 + hit[0] * 0.1 : 0) : 0.5;
+    if (!best || sc > best.sc) best = { a, sc };
+  }
+  return best ? best.a : 0;
+}
+A.attract({
+  start: () => { newGame(); botTarget = null; },
+  stop: () => { state = 'title'; rows = []; falling = []; shot = null; setup(); },
+  bot: () => {
+    if (state !== 'play' || shot) { botTarget = null; return []; }
+    if (botTarget === null) botTarget = plan();
+    const d = botTarget - aim;
+    if (Math.abs(d) < 0.03) { botTarget = null; return ['!Space']; }
+    return [d > 0 ? 'ArrowRight' : 'ArrowLeft'];
+  }
+});
+setup();
+A.overlay({ title: 'POP LAGOON', sub: 'Fire bubbles up from the shell. Three of a colour pop; anything left hanging drops for big points. A new row pushes in every few shots, so keep it clear of the sand line. Bounce shots off the walls.', btn: 'Start', scores: true, onGo: newGame });
+})();
+</script>
+</body>
+</html>
