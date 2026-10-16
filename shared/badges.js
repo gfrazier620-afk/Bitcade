@@ -125,17 +125,20 @@ window.BADGES = {
  */
 window.WEEKLY = (() => {
   // Single-player score games, mixed so neighbouring weeks feel different. Blip Sports counts wins, so it sits out.
-  const ROTATION = ['twin-blast', 'stackdown', 'hedge-hop', 'wing-duel', 'neon-noodle', 'sky-shield', 'mole-patrol', 'star-siege',
-    'nitro-lane', 'cube-hopper', 'rock-rift', 'light-trail', 'wallbuster', 'garden-gunner', 'crater-lander', 'circuit-chase',
-    'scaffold-scramble', 'back-alley-brawl', 'swarm-strike', 'highrise-handyman', 'volley-duel', 'turbo-tour', 'raptor-ridge', 'marsh-marksman', 'pixel-peaks', 'pop-lagoon', 'neon-steps'];
-  const DAY = 864e5, EPOCH = Date.UTC(2024, 0, 1); // a Monday
+  // The schedule runs down this list from the week of 12 October 2026 (Rock Rift), one game a week, then starts over.
+  // Add new games at the END: that never changes the current week or the weeks before the list wraps round.
+  const ROTATION = ['rock-rift', 'light-trail', 'wallbuster', 'garden-gunner', 'crater-lander', 'circuit-chase',
+    'scaffold-scramble', 'back-alley-brawl', 'swarm-strike', 'highrise-handyman', 'volley-duel', 'turbo-tour', 'raptor-ridge', 'marsh-marksman',
+    'pixel-peaks', 'pop-lagoon', 'neon-steps', 'twin-blast', 'stackdown', 'hedge-hop', 'wing-duel', 'neon-noodle', 'sky-shield', 'mole-patrol',
+    'star-siege', 'nitro-lane', 'cube-hopper'];
+  const DAY = 864e5, EPOCH = Date.UTC(2024, 0, 1), FIRST = 145; // EPOCH is a Monday; week 145 is the one starting 2026-10-12
   const index = (now = Date.now()) => Math.floor((now - EPOCH) / (7 * DAY));
   const start = (now = Date.now()) => EPOCH + index(now) * 7 * DAY;
   let override = null; try { override = new URLSearchParams(location.search).get('feature'); } catch (e) {}
   return {
     rotation: ROTATION,
     /** This week's featured game slug. */
-    game: (now = Date.now()) => override !== null ? override : ROTATION[index(now) % ROTATION.length],
+    game: (now = Date.now()) => override !== null ? override : ROTATION[(((index(now) - FIRST) % ROTATION.length) + ROTATION.length) % ROTATION.length],
     /** This week's id: the Monday it started, as YYYY-MM-DD (UTC). */
     key: (now = Date.now()) => new Date(start(now)).toISOString().slice(0, 10),
     /** Milliseconds until the tournament ends and the next game takes over. */

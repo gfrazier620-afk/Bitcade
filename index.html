@@ -803,7 +803,7 @@ reset.addEventListener('click', () => {
     const check = async (label, value) => { const d = line(); await type(d, label + value); if (gone()) return; await sleep(70); d.insertAdjacentHTML('beforeend', '  <span class="ok">OK</span>'); snd.ok(); };
     await sleep(620); if (gone()) return;
     await type(line(), 'BITCADE SYSTEMS INC.   BIOS V1.84'); if (gone()) return;
-    await type(line('dim'), '(C) 1984 BITCADE. ALL RIGHTS RESERVED.'); if (gone()) return;
+    await type(line('dim'), '(C) 1989 BITCADE. ALL RIGHTS RESERVED.'); if (gone()) return;
     line(); await sleep(120);
     await check('CPU ......... ', '8-BIT TURBO @ 4.77 MHZ'); if (gone()) return;
     const mem = line();
