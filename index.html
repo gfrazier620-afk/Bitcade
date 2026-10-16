@@ -80,6 +80,23 @@ body{display:block;overflow-x:hidden;
 .tourney .play{grid-column:3;justify-self:end;font-family:var(--f-pixel)}
 [hidden]{display:none!important}
 /* view switch: cabinets grid or the walkable arcade floor (shared/floor.js), and the prize counter (shared/prizes.js) */
+.missions{--c:#3dff8f;max-width:900px;margin:0 auto 22px;padding:12px 14px 14px;border-radius:14px;background:var(--bg2);border:1px solid var(--line)}
+.missions header{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:10px;font-family:var(--f-pixel);font-size:11px;color:var(--muted)}
+.missions header b{font-family:var(--f-marquee);font-weight:400;font-size:17px;color:var(--c);letter-spacing:.04em}
+.ms-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.ms{display:flex;flex-direction:column;gap:7px;padding:10px 12px;border-radius:10px;background:var(--panel);border:1px solid var(--line);color:var(--ink);text-align:left;font:inherit;cursor:pointer}
+.ms:hover{border-color:var(--c)}
+.ms span{font-size:13.5px;line-height:1.3}
+.ms small{display:flex;justify-content:space-between;font-family:var(--f-pixel);font-size:10px;color:var(--muted)}
+.ms small i{font-style:normal;color:#ffd23d}
+.ms-bar{height:6px;border-radius:3px;background:rgba(255,255,255,.08);overflow:hidden}
+.ms-bar b{display:block;height:100%;background:var(--c);border-radius:3px}
+.ms.done{border-color:#ffd23d;background:color-mix(in srgb,#ffd23d 10%,var(--panel))}
+.ms.done span::before{content:"✓ ";color:#ffd23d}
+.ms.done .ms-bar b{background:#ffd23d}
+.ms-bonus{margin-top:9px;font-family:var(--f-pixel);font-size:10px;color:var(--muted);text-align:center}
+.ms-bonus.on{color:#ffd23d}
+@media (max-width:640px){.ms-list{grid-template-columns:1fr}.ms{flex-direction:row;flex-wrap:wrap;align-items:center}.ms span{flex:1 1 60%}.ms small{flex:1 1 100%}.ms-bar{flex:1 1 100%}}
 .viewbar{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin:0 auto 22px}
 .viewbar button{font-family:var(--f-pixel);font-size:12px;letter-spacing:.06em;color:var(--muted);background:var(--bg2);border:1px solid var(--line);border-radius:999px;padding:8px 14px;cursor:pointer}
 .viewbar button[aria-pressed="true"]{color:#120a1c;background:#5ee7ff;border-color:#5ee7ff}
@@ -315,6 +332,7 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
     <div class="coin" aria-hidden="true">▶ PICK A CABINET ◀</div>
     <div class="stats" id="stats"></div>
   </header>
+  <section class="missions" id="missions" aria-label="Daily missions"></section>
   <div class="viewbar" role="group" aria-label="View">
     <button id="vGrid" aria-pressed="true">▦ CABINETS</button><button id="vFloor" aria-pressed="false">⌂ WALK THE ARCADE</button><button id="vProfile" aria-pressed="false">★ PROFILE</button><button class="prize" id="vPrize">PRIZE COUNTER · <b id="tixN">0</b> TICKETS</button>
   </div>
@@ -571,15 +589,42 @@ Floor.init({
   onPlay: g => enterGame(`games/${g.slug}/`),
   onCounter: () => Prizes.open(),
   onTickets: () => tixShow(),
+  onMissions: () => renderMissions(),
   onJukebox: slug => { try { localStorage.setItem('bitcade:jukebox', slug); } catch (e) {} if (window.Chip) { Chip.enabled = true; Chip.play(slug ? Chip.theme(slug) : Chip.lobby); } document.getElementById('musicBtn').textContent = '♪ MUSIC ON'; }
 });
 // The player profile and cloud save (shared/profile.js, shared/save.js).
 const profileView = document.getElementById('profileView'), vProfile = document.getElementById('vProfile');
 const prices = Object.fromEntries(Prizes.LIST.map(p => [p.id, p.price]));
 Profile.init({ el: profileView, games: GAMES, paint, prices, onSynced: changed => { if (changed) location.replace('?view=profile'); } });
+/* Daily missions (MISSIONS in shared/badges.js): three cards with progress, a countdown, and a tap goes to do it. */
+const missionsEl = document.getElementById('missions');
+function renderMissions() {
+  if (!window.MISSIONS) { missionsEl.hidden = true; return; }
+  const list = MISSIONS.list(), done = list.filter(m => m.done).length;
+  missionsEl.innerHTML = `<header><b>DAILY MISSIONS</b><span>${done}/3 DONE · NEW MISSIONS IN ${MISSIONS.left()}</span></header><div class="ms-list"></div><div class="ms-bonus${MISSIONS.bonus() ? ' on' : ''}">${MISSIONS.bonus() ? '★ ALL THREE DONE · BONUS COLLECTED' : `FINISH ALL THREE FOR +${MISSIONS.BONUS} BONUS TICKETS`}</div>`;
+  const box = missionsEl.querySelector('.ms-list');
+  list.forEach(m => {
+    const b = document.createElement('button'), big = m.n >= 100, pct = Math.min(100, m.prog / m.n * 100);
+    b.className = 'ms' + (m.done ? ' done' : '');
+    b.innerHTML = '<span></span><div class="ms-bar"><b></b></div><small><em></em><i></i></small>';
+    b.querySelector('span').textContent = MISSIONS.text(m);
+    b.querySelector('.ms-bar b').style.width = pct + '%';
+    b.querySelector('em').textContent = m.done ? 'DONE' : big ? `${Math.min(m.prog, m.n).toLocaleString()} / ${m.n.toLocaleString()}` : `${Math.min(m.prog, m.n)} / ${m.n}`;
+    b.querySelector('em').style.fontStyle = 'normal';
+    b.querySelector('i').textContent = `+${MISSIONS.REWARD} TICKETS`;
+    b.addEventListener('click', () => {
+      const w = MISSIONS.where(m);
+      if (w === 'floor') { setView('floor'); Floor.goTo({ photo: 'booth' }[m.kind] || m.kind); document.getElementById('floorCv').focus({ preventScroll: true }); }
+      else if (w) enterGame(w);
+      else setView('grid');
+    });
+    box.append(b);
+  });
+}
+renderMissions(); setInterval(renderMissions, 60000);
 function setView(v) {
   const walk = v === 'floor', prof = v === 'profile';
-  floorView.hidden = !walk; floor.hidden = walk || prof; profileView.hidden = !prof;
+  floorView.hidden = !walk; floor.hidden = walk || prof; profileView.hidden = !prof; missionsEl.hidden = prof || !window.MISSIONS;
   if (feat) tourney.hidden = prof;
   vGrid.setAttribute('aria-pressed', String(!walk && !prof)); vFloor.setAttribute('aria-pressed', String(walk)); vProfile.setAttribute('aria-pressed', String(prof));
   if (walk) Floor.start(); else Floor.stop();

@@ -205,7 +205,7 @@ window.FloorPlay = kit => {
           const el = (performance.now() - t0) / 1000, n = 3 - Math.floor(el / 0.7);
           photoFrame(x, shot, VW / 2 - 140, Y + 70, 280, 250, t);
           if (n > 0) { if (n !== k) { k = n; sound.beep(false); } kit.neon(x, String(n), VW / 2, Y + 360, 54, '#fff'); }
-          else { sound.shutter(); kit.booth.flash = 1; shot++; t0 = performance.now(); k = 0; if (shot >= 4) { st = 'done'; result = strip(); sound.fanfare(); kit.say('LOOKING GOOD!', 2, true); } }
+          else { sound.shutter(); kit.booth.flash = 1; shot++; t0 = performance.now(); k = 0; if (shot >= 4) { st = 'done'; result = strip(); sound.fanfare(); kit.say('LOOKING GOOD!', 2, true); mission({ type: 'photo' }); } }
           x.font = '11px Silkscreen, monospace'; x.textAlign = 'center'; x.fillStyle = '#f4effd'; x.fillText(`SHOT ${Math.min(4, shot + 1)} OF 4`, VW / 2, Y + 420);
           if (kit.booth.flash > 0) { x.fillStyle = `rgba(255,255,255,${kit.booth.flash})`; x.fillRect(X, Y, w, h); }
         } else {
@@ -269,7 +269,7 @@ window.FloorPlay = kit => {
         open += dt * 3; if (open >= 1) { open = 1; if (got) { got.held = false; got.vy = 0; got.won = true; } st = 'fall'; }
       } else if (st === 'fall') {
         if (!got) st = 'miss';
-        else { got.vy += 900 * dt; got.y += got.vy * dt; if (got.y > BY + BH + 40) { won = got.v; caps.splice(caps.indexOf(got), 1); got = null; wonT = 2.6; st = 'won'; TICKETS.add(won); kit.opt.onTickets && kit.opt.onTickets(); sound.fanfare(); kit.say(`+${won} TICKETS!`, 2.6, true); kit.refreshCard(); } }
+        else { got.vy += 900 * dt; got.y += got.vy * dt; if (got.y > BY + BH + 40) { won = got.v; caps.splice(caps.indexOf(got), 1); got = null; wonT = 2.6; st = 'won'; TICKETS.add(won); kit.opt.onTickets && kit.opt.onTickets(); sound.fanfare(); kit.say(`+${won} TICKETS!`, 2.6, true); kit.refreshCard(); mission({ type: 'claw', won }); } }
       } else if (st === 'miss') { cx += ((BX + BW / 2) - cx) * Math.min(1, dt * 3); if (Math.abs(cx - (BX + BW / 2)) < 2) { st = goesToday() ? 'aim' : 'out'; aimT = 15; } }
       else if (st === 'won') { if ((wonT -= dt) <= 0) { st = goesToday() ? 'aim' : 'out'; aimT = 15; cx = BX + BW / 2; } }
       // loose capsules fall back onto the pile
@@ -350,6 +350,12 @@ window.FloorPlay = kit => {
     return { give, capped: give < n };
   }
   const bestOf = k => +get(k) || 0;
+  /** Daily missions (shared/badges.js): count something done on the floor, and say so when one's finished. */
+  function mission(ev) {
+    if (!window.MISSIONS) return; const r = MISSIONS.record(ev); if (!r.tickets) return;
+    setTimeout(() => { kit.say(r.all ? `ALL 3 MISSIONS! +${r.tickets} TICKETS` : `MISSION DONE! +${r.tickets} TICKETS`, 3, true); sound.fanfare(); }, 900);
+    kit.opt.onTickets && kit.opt.onTickets(); kit.opt.onMissions && kit.opt.onMissions();
+  }
   function gameOver(x, score, best, res, c) {
     x.fillStyle = 'rgba(5,2,12,.78)'; x.fillRect(VW / 2 - 220, VH / 2 - 110, 440, 220); x.strokeStyle = c; x.lineWidth = 2; x.strokeRect(VW / 2 - 214, VH / 2 - 104, 428, 208);
     kit.neon(x, 'GAME OVER', VW / 2, VH / 2 - 62, 30, c);
@@ -383,7 +389,7 @@ window.FloorPlay = kit => {
       score += pts; pops.push({ x: lx, y: ly, text: '+' + pts, t: 1 }); balls--;
       if (pts >= 50) sound.fanfare(); else sound.clank();
       if (!balls) setTimeout(() => {
-        over = true; res = award(Math.floor(score / 100));
+        over = true; res = award(Math.floor(score / 100)); mission({ type: 'skee', score });
         if (score > best) { set('bitcade:skee:best', score); kit.say(`NEW SKEE-BALL BEST: ${score}!`, 2.6, true); }
       }, 500);
     }
@@ -523,7 +529,7 @@ window.FloorPlay = kit => {
       if (ball.y > TH + 20) { // drained
         balls--; sound.back();
         if (balls > 0) serve();
-        else { ball = null; over = true; res = award(Math.floor(score / 4000)); if (score > best) { set('bitcade:pinball:best', score); kit.say(`NEW PINBALL BEST: ${score.toLocaleString()}!`, 2.6, true); } }
+        else { ball = null; over = true; res = award(Math.floor(score / 4000)); mission({ type: 'pinball', score }); if (score > best) { set('bitcade:pinball:best', score); kit.say(`NEW PINBALL BEST: ${score.toLocaleString()}!`, 2.6, true); } }
       }
     }
     function launch() { if (!ball || !ball.lane) return; ball.lane = false; ball.vy = -(760 + plunge * 440); ball.vx = 0; sound.clank(); }

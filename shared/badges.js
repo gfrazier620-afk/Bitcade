@@ -170,3 +170,93 @@ window.TICKETS = (() => {
     spend(n) { const t = totals(); if (t.e - t.s < n) return false; set('arcade:tickets:spent', t.s + n); set('arcade:tickets', t.e - t.s - n); return true; }
   };
 })();
+
+/*
+ * Daily missions: three a day (local date), the same for everyone that day: a score to reach in one game, a kind of
+ * play (different games, an area, the tournament, a daily challenge) and something on the arcade floor. Each pays
+ * 10 tickets, and all three pay 20 more. Progress comes from MISSIONS.record(event): arcade.js sends
+ * { type: 'run', slug, score, daily } after every game that counts (not easy mode, not demos); the floor sends
+ * skee, pinball, claw and photo events; Blip Sports sends blip-win. Kept per device in bitcade:missions.
+ */
+window.MISSIONS = (() => {
+  const get = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  const set = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+  const today = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+  // a score you can reach with a decent run (about two or three times what the demo bot gets in fifteen seconds)
+  const TARGETS = {
+    'neon-noodle': 300, wallbuster: 500, 'star-siege': 800, 'rock-rift': 3000, stackdown: 2000, 'back-alley-brawl': 1500,
+    'circuit-chase': 1500, 'highrise-handyman': 8000, 'nitro-lane': 1500, 'volley-duel': 60, 'crater-lander': 800, 'sky-shield': 1000,
+    'hedge-hop': 1500, 'scaffold-scramble': 500, 'swarm-strike': 4000, 'garden-gunner': 1500, 'cube-hopper': 1200, 'light-trail': 500,
+    'wing-duel': 1500, 'twin-blast': 5000, 'mole-patrol': 1500, 'turbo-tour': 6000, 'raptor-ridge': 4000, 'marsh-marksman': 8000
+  };
+  const AREAS = { RACEWAY: ['turbo-tour', 'nitro-lane', 'light-trail'], 'SHOOTING GALLERY': ['raptor-ridge', 'marsh-marksman'] };
+  const DAILY = ['stackdown', 'wallbuster', 'twin-blast', 'mole-patrol', 'wing-duel'];
+  const name = slug => slug.split('-').map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
+  const REWARD = 10, BONUS = 20;
+  function rng(seed) { let h = 2166136261; for (const ch of seed) h = Math.imul(h ^ ch.charCodeAt(0), 16777619); return () => { h += 0x6d2b79f5; let t = h; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+  function make(d) {
+    const r = rng('missions:' + d), pick = a => a[Math.floor(r() * a.length)];
+    const slugs = Object.keys(TARGETS), g = pick(slugs);
+    const feat = window.WEEKLY && WEEKLY.game ? WEEKLY.game() : null;
+    const plays = [
+      { kind: 'variety', n: 3 }, { kind: 'variety', n: 4 }, { kind: 'plays', n: 5 },
+      { kind: 'area', area: 'RACEWAY', n: 2 }, { kind: 'area', area: 'SHOOTING GALLERY', n: 2 },
+      { kind: 'daily', game: pick(DAILY), n: 1 }
+    ];
+    if (feat && TARGETS[feat]) plays.push({ kind: 'tour', game: feat, n: 1 }, { kind: 'tour', game: feat, n: 1 });
+    const floor = [{ kind: 'skee', n: 250 }, { kind: 'skee', n: 300 }, { kind: 'pinball', n: 8000 }, { kind: 'pinball', n: 12000 }, { kind: 'claw', n: 1 }, { kind: 'photo', n: 1 }, { kind: 'blip', n: 1 }];
+    const t = TARGETS[g] * (r() < 0.3 ? 2 : 1);
+    return { d, list: [{ kind: 'score', game: g, n: t }, pick(plays), pick(floor)].map((m, i) => ({ id: i, prog: 0, done: false, seen: [], ...m })), bonus: false };
+  }
+  function load() {
+    let m = null; try { m = JSON.parse(get('bitcade:missions')); } catch (e) {}
+    if (!m || m.d !== today() || !Array.isArray(m.list)) { m = make(today()); set('bitcade:missions', JSON.stringify(m)); }
+    return m;
+  }
+  const text = m => ({
+    score: () => `Score ${m.n.toLocaleString()} in ${name(m.game)}`,
+    variety: () => `Play ${m.n} different games`,
+    plays: () => `Play ${m.n} games`,
+    area: () => `Play ${m.n} ${m.area === 'RACEWAY' ? 'Raceway' : 'Shooting Gallery'} games`,
+    daily: () => `Play today's ${name(m.game)} daily challenge`,
+    tour: () => `Play this week's tournament: ${name(m.game)}`,
+    skee: () => `Roll ${m.n} or more in skee-ball`,
+    pinball: () => `Score ${m.n.toLocaleString()} in pinball`,
+    claw: () => 'Win tickets at the Mega Claw',
+    photo: () => 'Take a photo booth strip',
+    blip: () => 'Win a game of Blip Sports'
+  }[m.kind] || (() => 'Mission'))();
+  /** Where you go to do it: a game page, or the arcade floor. */
+  const where = m => m.game ? `games/${m.game}/` : ['skee', 'pinball', 'claw', 'photo'].includes(m.kind) ? 'floor' : m.kind === 'blip' ? 'games/blip-sports/' : null;
+  /** Count an event; returns { done: [missions just finished], tickets, all }. */
+  function record(ev) {
+    const m = load(), done = [];
+    for (const x of m.list) {
+      if (x.done) continue;
+      let p = x.prog;
+      if (ev.type === 'run') {
+        if (x.kind === 'score' && ev.slug === x.game) p = Math.max(p, ev.score);
+        if (x.kind === 'plays') p++;
+        if (x.kind === 'variety' && !x.seen.includes(ev.slug)) { x.seen.push(ev.slug); p = x.seen.length; }
+        if (x.kind === 'area' && AREAS[x.area].includes(ev.slug)) p++;
+        if (x.kind === 'daily' && ev.daily && ev.slug === x.game) p = 1;
+        if (x.kind === 'tour' && ev.slug === x.game) p = 1;
+      }
+      if (ev.type === 'skee' && x.kind === 'skee') p = Math.max(p, ev.score);
+      if (ev.type === 'pinball' && x.kind === 'pinball') p = Math.max(p, ev.score);
+      if (ev.type === 'claw' && x.kind === 'claw' && ev.won) p = 1;
+      if (ev.type === 'photo' && x.kind === 'photo') p = 1;
+      if (ev.type === 'blip-win' && x.kind === 'blip') p = 1;
+      x.prog = p;
+      if (p >= x.n) { x.done = true; done.push(x); }
+    }
+    let tickets = done.length * REWARD, all = false;
+    if (!m.bonus && m.list.every(x => x.done)) { m.bonus = true; all = true; tickets += BONUS; }
+    set('bitcade:missions', JSON.stringify(m));
+    if (tickets && window.TICKETS) TICKETS.add(tickets);
+    return { done, tickets, all };
+  }
+  /** Time left until new missions (local midnight), like 5H 12M. */
+  function left() { const n = new Date(), mid = new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1), m = Math.max(0, Math.floor((mid - n) / 6e4)); return `${Math.floor(m / 60)}H ${String(m % 60).padStart(2, '0')}M`; }
+  return { list: () => load().list, bonus: () => load().bonus, record, text, where, left, REWARD, BONUS, TARGETS };
+})();

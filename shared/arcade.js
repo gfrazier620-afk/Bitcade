@@ -175,7 +175,15 @@
       if (window.TICKETS) TICKETS.add(tix); else tix = 0;
     }
     lastResult = { s, rank, top, day, week, tix };
+    A.mission({ type: 'run', slug: A.id, score: s, daily: !!daily });
     return rec;
+  };
+  /** Report to the daily missions (shared/badges.js); a toast for each one finished. */
+  A.mission = ev => {
+    if (!window.MISSIONS || A.demo || runEasy) return;
+    const r = MISSIONS.record(ev);
+    r.done.forEach((m, i) => setTimeout(() => { toast(`✓ MISSION · ${MISSIONS.text(m)} · +${MISSIONS.REWARD} TICKETS`); A.jingle([784, 988, 1319], 0.07, 'square'); }, 400 + i * 900));
+    if (r.all) setTimeout(() => { toast(`★ ALL 3 DAILY MISSIONS · +${MISSIONS.BONUS} BONUS TICKETS`); A.jingle([523, 659, 784, 1047, 1319, 1568], 0.08, 'square'); }, 400 + r.done.length * 900);
   };
 
   /* ---------- sound ---------- */
