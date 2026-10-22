@@ -32,7 +32,7 @@
 const A = Arcade, cv = document.getElementById('cv');
 const W = 640, H = 480, ctx = A.canvas(cv, W, H);
 const SAFE_VY = 45, SAFE_VX = 30, SAFE_A = 0.26; // landing limits: px/s and radians
-let state = 'title', ship, ground = [], pads = [], parts = [], stars, score, lives, level, fuel, tank, phaseT = 0, msg = '', msgT = 0, burnT = 0;
+let state = 'title', ship, ground = [], pads = [], parts = [], stars, score, lives, level, fuel, tank, phaseT = 0, msg = '', msgT = 0, burnT = 0, terrainCv = null, rcsT = 0;
 stars = Array.from({ length: 80 }, () => ({ x: Math.random() * W, y: Math.random() * H * 0.7, s: Math.random() < 0.15 ? 2 : 1 }));
 const gravity = () => 26 * (1 + (level - 1) * 0.08);
 
@@ -49,6 +49,7 @@ function makeTerrain() {
   ground = pts.filter(p => pads.every(pd => p.x < pd.x0 - 6 || p.x > pd.x1 + 6));
   pads.forEach(p => ground.push({ x: p.x0, y: p.y }, { x: p.x1, y: p.y }));
   ground.sort((a, b) => a.x - b.x);
+  terrainCv = null;
 }
 function groundY(x) {
   for (let i = 1; i < ground.length; i++) {
@@ -103,7 +104,7 @@ A.loop(dt => {
   if (state === 'crashed') { phaseT -= dt; if (phaseT <= 0) { if (lives <= 0) return gameOver(); startLevel(false); } return; }
   if (state !== 'play') return;
   const rot = (A.held('ArrowRight', 'KeyD') ? 1 : 0) - (A.held('ArrowLeft', 'KeyA') ? 1 : 0);
-  ship.a = A.clamp(ship.a + rot * 2.6 * dt, -Math.PI / 2, Math.PI / 2);
+  ship.a = A.clamp(ship.a + rot * 2.6 * dt, -Math.PI / 2, Math.PI / 2); ship.rcs = rot && Math.floor(performance.now() / 70) % 2 ? rot : 0;
   ship.thrust = fuel > 0 && A.held('ArrowUp', 'KeyW', 'Space');
   if (ship.thrust) {
     ship.vx += Math.sin(ship.a) * 75 * dt; ship.vy -= Math.cos(ship.a) * 75 * dt; fuel = Math.max(0, fuel - 10 * dt);
@@ -118,6 +119,8 @@ A.loop(dt => {
 }, t => {
   ctx.drawImage(sky, 0, 0);
   stars.forEach(s => { ctx.globalAlpha = 0.45 + Math.sin(t / 400 + s.x) * 0.2; ctx.fillStyle = '#dce4ff'; ctx.fillRect(s.x, s.y, s.s, s.s); }); ctx.globalAlpha = 1;
+  { const k = (t % 7000) / 7000; if (k < 0.12) { const q = k / 0.12, sx = 80 + q * 300, sy = 40 + q * 90; const g = ctx.createLinearGradient(sx - 40, sy - 12, sx, sy); g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(1, `rgba(255,255,255,${1 - q})`); ctx.strokeStyle = g; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(sx - 40, sy - 12); ctx.lineTo(sx, sy); ctx.stroke(); } }
+  { const k = (t % 26000) / 26000, sx = -20 + k * (W + 40), sy = 30 + k * 40; ctx.fillStyle = '#c0c6d0'; ctx.fillRect(sx - 1, sy - 1, 3, 3); ctx.fillStyle = '#5ee7ff'; ctx.fillRect(sx - 6, sy, 4, 1); ctx.fillRect(sx + 3, sy, 4, 1); if (Math.floor(t / 500) % 2) { ctx.fillStyle = '#ff4f6d'; ctx.fillRect(sx, sy - 2, 1, 1); } }
   drawTerrain();
   pads.forEach(p => drawPad(p, t));
   parts.forEach(p => { ctx.globalAlpha = Math.min(1, p.t * 2); ctx.fillStyle = p.c; ctx.fillRect(p.x - 1.5, p.y - 1.5, 3, 3); }); ctx.globalAlpha = 1;
@@ -138,6 +141,14 @@ function shade(hex, k) {
 const sky = (() => {
   const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
   const g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#02020a'); g.addColorStop(1, '#0e0c22'); x.fillStyle = g; x.fillRect(0, 0, W, H);
+  let sd = 5; const r = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+  // the milky way: a soft band of tiny stars and dust across the sky
+  x.save(); x.translate(W / 2, H * 0.3); x.rotate(-0.35);
+  const mw = x.createLinearGradient(0, -70, 0, 70); mw.addColorStop(0, 'rgba(150,140,220,0)'); mw.addColorStop(0.5, 'rgba(150,140,220,.13)'); mw.addColorStop(1, 'rgba(150,140,220,0)'); x.fillStyle = mw; x.fillRect(-W, -70, W * 2, 140);
+  for (let i = 0; i < 700; i++) { const px = (r() - 0.5) * W * 1.6, py = (r() + r() + r() - 1.5) * 50; x.fillStyle = `rgba(230,230,255,${0.2 + r() * 0.5})`; x.fillRect(px, py, 1, 1); }
+  x.restore();
+  // a nebula
+  [[150, 110, 120, 'rgba(255,79,209,.10)'], [210, 150, 90, 'rgba(94,231,255,.08)'], [120, 170, 70, 'rgba(180,120,255,.10)']].forEach(([nx, ny, nr, c]) => { const ng = x.createRadialGradient(nx, ny, 0, nx, ny, nr); ng.addColorStop(0, c); ng.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = ng; x.fillRect(nx - nr, ny - nr, nr * 2, nr * 2); });
   const px = 540, py = 80, pr = 34;
   const halo = x.createRadialGradient(px, py, pr, px, py, pr * 2); halo.addColorStop(0, 'rgba(120,180,255,.25)'); halo.addColorStop(1, 'rgba(120,180,255,0)'); x.fillStyle = halo; x.fillRect(px - pr * 2, py - pr * 2, pr * 4, pr * 4);
   const pg = x.createRadialGradient(px - 12, py - 12, 4, px, py, pr); pg.addColorStop(0, '#9adcff'); pg.addColorStop(0.5, '#2a7acc'); pg.addColorStop(1, '#0a2a5a');
@@ -147,17 +158,48 @@ const sky = (() => {
   x.fillStyle = 'rgba(255,255,255,.6)'; [[-18, -16, 10, 2.5, 0.2], [6, -20, 8, 2, -0.1], [-6, 2, 12, 2.5, 0.15], [12, 18, 9, 2, -0.2], [-20, 14, 6, 2, 0.1]].forEach(([dx, dy, w, h, r]) => { x.beginPath(); x.ellipse(px + dx, py + dy, w, h, r, 0, 6.29); x.fill(); });
   x.fillStyle = 'rgba(0,0,10,.55)'; x.beginPath(); x.arc(px + 18, py + 12, pr, 0, 6.29); x.fill(); // night side
   x.restore();
-  x.fillStyle = '#100e24'; x.beginPath(); x.moveTo(0, H); for (let i = 0; i <= W; i += 10) x.lineTo(i, H - 150 - Math.abs(Math.sin(i * 0.012 + 1)) * 60 - Math.sin(i * 0.05) * 10); x.lineTo(W, H); x.fill();
+  // two far ridges, the nearer one with a moon base on it
+  x.fillStyle = '#16142e'; x.beginPath(); x.moveTo(0, H); for (let i = 0; i <= W; i += 8) x.lineTo(i, H - 190 - Math.abs(Math.sin(i * 0.008 + 3)) * 70 - Math.sin(i * 0.04) * 8); x.lineTo(W, H); x.fill();
+  const ridge = i => H - 150 - Math.abs(Math.sin(i * 0.012 + 1)) * 60 - Math.sin(i * 0.05) * 10;
+  x.fillStyle = '#100e24'; x.beginPath(); x.moveTo(0, H); for (let i = 0; i <= W; i += 10) x.lineTo(i, ridge(i)); x.lineTo(W, H); x.fill();
+  x.strokeStyle = 'rgba(160,170,255,.18)'; x.lineWidth = 1.5; x.beginPath(); for (let i = 0; i <= W; i += 10) i ? x.lineTo(i, ridge(i)) : x.moveTo(i, ridge(i)); x.stroke();
+  const bx = 300, by = ridge(300) + 4;
+  x.fillStyle = '#2a2850'; x.beginPath(); x.arc(bx, by, 14, Math.PI, 0); x.fill(); x.beginPath(); x.arc(bx + 26, by, 9, Math.PI, 0); x.fill(); x.fillRect(bx + 8, by - 4, 14, 4);
+  x.fillStyle = 'rgba(160,200,255,.25)'; x.beginPath(); x.arc(bx - 4, by - 6, 4, 0, 6.29); x.fill();
+  x.strokeStyle = '#2a2850'; x.lineWidth = 2; x.beginPath(); x.moveTo(bx - 22, by); x.lineTo(bx - 22, by - 22); x.stroke(); x.beginPath(); x.ellipse(bx - 22, by - 24, 7, 3, -0.4, 0, 6.29); x.stroke();
+  x.fillStyle = '#ffd23d'; for (const [wx, wy] of [[bx - 6, by - 3], [bx, by - 3], [bx + 6, by - 3], [bx + 24, by - 3]]) x.fillRect(wx, wy, 2, 2);
   return c;
 })();
 /** The terrain: rock shaded from a lit rim down into shadow, with darker strata following the surface. */
 function drawTerrain() {
-  const path = (dy) => { ctx.beginPath(); ctx.moveTo(0, H); ground.forEach(p => ctx.lineTo(p.x, p.y + dy)); ctx.lineTo(W, H); ctx.closePath(); };
-  const g = ctx.createLinearGradient(0, H * 0.45, 0, H); g.addColorStop(0, '#3a3858'); g.addColorStop(1, '#14122a');
-  path(0); ctx.fillStyle = g; ctx.fill();
-  ctx.strokeStyle = 'rgba(0,0,0,.25)'; ctx.lineWidth = 2; for (const dy of [10, 22, 38]) { path(dy); ctx.stroke(); }
-  ctx.beginPath(); ground.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.strokeStyle = '#0a0612'; ctx.lineWidth = 5; ctx.stroke();
-  ctx.strokeStyle = '#b8c4ff'; ctx.lineWidth = 2; ctx.stroke();
+  if (!terrainCv) {
+    terrainCv = document.createElement('canvas'); terrainCv.width = W; terrainCv.height = H; const x = terrainCv.getContext('2d');
+    let sd = level * 97 + 13; const r = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+    const path = (dy) => { x.beginPath(); x.moveTo(0, H); ground.forEach(p => x.lineTo(p.x, p.y + dy)); x.lineTo(W, H); x.closePath(); };
+    const g = x.createLinearGradient(0, H * 0.45, 0, H); g.addColorStop(0, '#4a4868'); g.addColorStop(0.5, '#2a2844'); g.addColorStop(1, '#100e22');
+    path(0); x.fillStyle = g; x.fill();
+    x.save(); path(0); x.clip();
+    for (let i = 0; i < 1600; i++) { x.fillStyle = r() < 0.5 ? 'rgba(255,255,255,.05)' : 'rgba(0,0,0,.18)'; x.fillRect(r() * W, H * 0.4 + r() * H * 0.6, 1 + r() * 2, 1 + r() * 2); } // regolith
+    x.strokeStyle = 'rgba(0,0,0,.22)'; x.lineWidth = 2; for (const dy of [12, 26, 44, 66]) { path(dy); x.stroke(); }
+    for (let i = 0; i < 14; i++) { // craters: a dark bowl with a lit rim, below the surface line
+      const cx = r() * W, gy = groundY(cx); if (pads.some(p => cx > p.x0 - 20 && cx < p.x1 + 20)) continue;
+      const cy = gy + 12 + r() * 60, cr = 6 + r() * 18;
+      x.fillStyle = 'rgba(0,0,0,.35)'; x.beginPath(); x.ellipse(cx, cy, cr, cr * 0.38, 0, 0, 6.29); x.fill();
+      x.strokeStyle = 'rgba(200,210,255,.25)'; x.lineWidth = 1.5; x.beginPath(); x.ellipse(cx, cy, cr, cr * 0.38, 0, Math.PI * 0.1, Math.PI * 0.9); x.stroke();
+      x.strokeStyle = 'rgba(0,0,0,.4)'; x.beginPath(); x.ellipse(cx, cy, cr, cr * 0.38, 0, Math.PI * 1.1, Math.PI * 1.9); x.stroke();
+    }
+    x.restore();
+    for (let i = 0; i < 18; i++) { // boulders sitting on the surface
+      const bx = r() * W; if (pads.some(p => bx > p.x0 - 12 && bx < p.x1 + 12)) continue;
+      const by = groundY(bx), br = 2 + r() * 5;
+      x.fillStyle = '#0a0612'; x.beginPath(); x.ellipse(bx, by - br * 0.5, br + 1.5, br * 0.8 + 1.5, 0, 0, 6.29); x.fill();
+      const bg = x.createLinearGradient(0, by - br * 1.3, 0, by); bg.addColorStop(0, '#9a98b8'); bg.addColorStop(1, '#3a3858'); x.fillStyle = bg; x.beginPath(); x.ellipse(bx, by - br * 0.5, br, br * 0.8, 0, 0, 6.29); x.fill();
+    }
+    x.beginPath(); ground.forEach((p, i) => i ? x.lineTo(p.x, p.y) : x.moveTo(p.x, p.y)); x.strokeStyle = '#0a0612'; x.lineWidth = 5; x.stroke();
+    x.strokeStyle = '#c8d0ff'; x.lineWidth = 2; x.stroke();
+    x.strokeStyle = 'rgba(200,210,255,.25)'; x.lineWidth = 6; x.stroke();
+  }
+  ctx.drawImage(terrainCv, 0, 0);
 }
 /** A landing pad: an outlined metal deck on legs, hazard stripes, blinking beacons and its multiplier sign. */
 function drawPad(p, t) {
@@ -167,14 +209,22 @@ function drawPad(p, t) {
   ctx.fillStyle = '#0a0612'; ctx.fillRect(p.x0 - 1, p.y - 3, w + 2, 7);
   const g = ctx.createLinearGradient(0, p.y - 2, 0, p.y + 3); g.addColorStop(0, '#e8ecf4'); g.addColorStop(1, '#6a6e80'); ctx.fillStyle = g; ctx.fillRect(p.x0, p.y - 2, w, 5);
   ctx.fillStyle = '#ffd23d'; for (let i = p.x0 + 2; i < p.x1 - 4; i += 10) ctx.fillRect(i, p.y - 2, 4, 2);
+  const pg = ctx.createRadialGradient((p.x0 + p.x1) / 2, p.y, 2, (p.x0 + p.x1) / 2, p.y, w * 0.9); pg.addColorStop(0, 'rgba(255,210,61,.18)'); pg.addColorStop(1, 'rgba(255,210,61,0)'); ctx.fillStyle = pg; ctx.fillRect(p.x0 - w, p.y - w, w * 3, w * 2);
+  const n = Math.floor(w / 8), chase = Math.floor(t / 90) % (n + 4); for (let i = 0; i < n; i++) { const on = Math.abs(i - chase) < 1 || Math.abs(n - 1 - i - chase) < 1; ctx.fillStyle = on ? '#5ee7ff' : 'rgba(94,231,255,.2)'; ctx.fillRect(p.x0 + 3 + i * 8, p.y + 4, 3, 2); }
   for (const bx of [p.x0, p.x1]) { ctx.fillStyle = lit ? '#ff4f6d' : '#5a1a2a'; ctx.shadowColor = '#ff4f6d'; ctx.shadowBlur = lit ? 8 : 0; ctx.fillRect(bx - 2, p.y - 6, 3, 3); ctx.shadowBlur = 0; }
   ctx.font = '12px Silkscreen, monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#0a0612'; ctx.fillText('×' + p.m, (p.x0 + p.x1) / 2 + 1, p.y + 19); ctx.fillStyle = lit ? '#ffd23d' : '#ffe98a'; ctx.fillText('×' + p.m, (p.x0 + p.x1) / 2, p.y + 18);
 }
 /** The lander: an outlined gold-foil descent stage, a silver cabin with a lit window, legs with footpads, and a flame. */
 function drawShip(s, t) {
+  if (ground.length) { const gy = groundY(s.x), alt = gy - s.y; if (alt < 220) { const k = 1 - alt / 220; ctx.fillStyle = `rgba(0,0,0,${0.45 * k})`; ctx.beginPath(); ctx.ellipse(s.x, gy, 6 + k * 12, 2 + k * 2, 0, 0, 6.29); ctx.fill(); } }
   ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(s.a);
-  if (s.thrust) { const f = 10 + Math.random() * 10, g = ctx.createLinearGradient(0, 7, 0, 8 + f); g.addColorStop(0, '#fff6c2'); g.addColorStop(0.4, '#ffb03d'); g.addColorStop(1, 'rgba(255,79,109,0)');
-    ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(-5, 7); ctx.lineTo(0, 8 + f); ctx.lineTo(5, 7); ctx.fill(); }
+  if (s.thrust) {
+    const f = 14 + Math.random() * 12, glow = ctx.createRadialGradient(0, 14, 2, 0, 14, 26); glow.addColorStop(0, 'rgba(255,190,90,.45)'); glow.addColorStop(1, 'rgba(255,120,60,0)'); ctx.fillStyle = glow; ctx.fillRect(-26, -10, 52, 52);
+    const g = ctx.createLinearGradient(0, 7, 0, 8 + f); g.addColorStop(0, '#ffffff'); g.addColorStop(0.25, '#fff6c2'); g.addColorStop(0.55, '#ffb03d'); g.addColorStop(1, 'rgba(255,79,109,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(-6, 7); ctx.quadraticCurveTo(-3, 8 + f * 0.6, 0, 8 + f); ctx.quadraticCurveTo(3, 8 + f * 0.6, 6, 7); ctx.fill();
+  }
+  if (s.rcs) { ctx.fillStyle = 'rgba(220,230,255,.8)'; const sd = s.rcs; ctx.beginPath(); ctx.arc(-sd * 11, -6, 2.5, 0, 6.29); ctx.arc(-sd * 15, -7, 1.6, 0, 6.29); ctx.fill(); }
+  ctx.strokeStyle = '#0a0612'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(4, -10); ctx.lineTo(7, -18); ctx.stroke(); ctx.strokeStyle = '#c0c6d0'; ctx.lineWidth = 1; ctx.stroke(); ctx.fillStyle = '#c0c6d0'; ctx.beginPath(); ctx.arc(7, -18, 2, 0, 6.29); ctx.fill();
   // legs
   ctx.strokeStyle = '#0a0612'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(-6, 4); ctx.lineTo(-10, 11); ctx.moveTo(6, 4); ctx.lineTo(10, 11); ctx.stroke();
   ctx.strokeStyle = '#c0c6d0'; ctx.lineWidth = 2; ctx.stroke();

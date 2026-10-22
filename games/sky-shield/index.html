@@ -142,7 +142,15 @@ A.loop(dt => {
     ctx.strokeStyle = c; ctx.globalAlpha = 0.07 + Math.sin(t / 1700 + i) * 0.03; ctx.lineWidth = 34; ctx.stroke(); ctx.globalAlpha = 0.12; ctx.lineWidth = 10; ctx.stroke();
   }
   ctx.globalAlpha = 1; ctx.lineCap = 'butt';
+  for (let i = 0; i < 5; i++) { const cx = ((i * 157 + t / (60 + i * 15)) % (W + 240)) - 120, cy = 60 + (i * 53) % 150, k = 0.8 + (i % 3) * 0.3;
+    ctx.fillStyle = 'rgba(60,40,90,.55)'; for (const [dx, dy, r] of [[0, 0, 20], [22, -7, 24], [46, 0, 18], [20, 6, 20]]) { ctx.beginPath(); ctx.arc(cx + dx * k, cy + dy * k, r * k, 0, 6.29); ctx.fill(); }
+    ctx.fillStyle = 'rgba(255,230,200,.10)'; ctx.beginPath(); ctx.arc(cx + 22 * k, cy - 12 * k, 16 * k, 0, 6.29); ctx.fill(); }
+  ctx.globalCompositeOperation = 'lighter';
+  for (const [i, bx] of BASE_X.entries()) { const a = -Math.PI / 2 + Math.sin(t / (2600 + i * 400) + i * 2) * 0.6, L = 520; ctx.fillStyle = 'rgba(200,220,255,.05)'; ctx.beginPath(); ctx.moveTo(bx, GROUND - 20); ctx.lineTo(bx + Math.cos(a - 0.05) * L, GROUND - 20 + Math.sin(a - 0.05) * L); ctx.lineTo(bx + Math.cos(a + 0.05) * L, GROUND - 20 + Math.sin(a + 0.05) * L); ctx.fill(); }
+  for (const b of blasts) { const r = blastR(b); if (r <= 0) continue; const lg = ctx.createRadialGradient(b.x, b.y, r, b.x, b.y, r * 4); lg.addColorStop(0, 'rgba(255,170,90,.18)'); lg.addColorStop(1, 'rgba(255,170,90,0)'); ctx.fillStyle = lg; ctx.fillRect(b.x - r * 4, b.y - r * 4, r * 8, r * 8); }
+  ctx.globalCompositeOperation = 'source-over';
   ctx.drawImage(land, 0, 0);
+  for (let i = 0; i < 6; i++) { const dir = i % 2 ? 1 : -1, k = ((t / (5200 + i * 700) + i / 6) % 1), cx = dir > 0 ? k * W : W - k * W, cy = GROUND + 17 + (dir > 0 ? 0 : 4); ctx.fillStyle = dir > 0 ? '#fff6c2' : '#ff4f6d'; ctx.fillRect(cx, cy, 3, 2); ctx.fillStyle = dir > 0 ? 'rgba(255,246,194,.25)' : 'rgba(255,79,109,.2)'; ctx.fillRect(cx + (dir > 0 ? 3 : -8), cy, 8, 2); }
   const cs = cities.length ? cities : CITY_X.map(x => ({ x, alive: true })), bs = bases.length ? bases : BASE_X.map(x => ({ x, alive: true, ammo: 10 }));
   cs.forEach(c => drawCity(c, t));
   bs.forEach(b => drawBase(b, t));
@@ -150,6 +158,7 @@ A.loop(dt => {
   for (const f of foes) {
     const g = ctx.createLinearGradient(f.ox, f.oy, f.x, f.y); g.addColorStop(0, 'rgba(255,79,109,0)'); g.addColorStop(1, 'rgba(255,79,109,.9)');
     ctx.strokeStyle = g; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(f.ox, f.oy); ctx.lineTo(f.x, f.y); ctx.stroke();
+    const len = Math.hypot(f.x - f.ox, f.y - f.oy); for (let k = 0; k < 6; k++) { const d = ((k * 18 + t / 30) % 110), u = d / Math.max(1, len); if (u > 1) continue; const px = f.x - (f.x - f.ox) * u, py = f.y - (f.y - f.oy) * u; ctx.fillStyle = `rgba(170,150,170,${0.28 * (1 - d / 110)})`; ctx.beginPath(); ctx.arc(px + Math.sin(k + t / 300) * 2, py, 2 + d / 22, 0, 6.29); ctx.fill(); }
     ctx.shadowColor = '#ff4f6d'; ctx.shadowBlur = 12; ctx.fillStyle = Math.floor(t / 60) % 2 ? '#fff' : '#ffd0d8'; ctx.beginPath(); ctx.arc(f.x, f.y, 2.6, 0, 6.29); ctx.fill(); ctx.shadowBlur = 0;
   }
   if (state === 'title') { // attract: a few missiles drifting down
@@ -194,15 +203,34 @@ const sky = (() => {
 const land = (() => {
   const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
   const ridge = (base, amp, f, col, seed) => { x.fillStyle = col; x.beginPath(); x.moveTo(0, GROUND); for (let i = 0; i <= W; i += 8) x.lineTo(i, base - Math.abs(Math.sin(i * f + seed)) * amp - Math.sin(i * f * 3.1 + seed * 2) * amp * 0.25); x.lineTo(W, GROUND); x.fill(); };
-  ridge(GROUND - 40, 70, 0.009, '#1e1034', 1); ridge(GROUND - 14, 36, 0.017, '#140a24', 3);
+  ridge(GROUND - 40, 70, 0.009, '#1e1034', 1);
+  // the metropolis on the horizon: a band of towers with lit windows, hazy with distance
+  let q = 21; const rq = () => (q = (q * 16807) % 2147483647) / 2147483647;
+  for (let bx = 0; bx < W; ) { const bw = 8 + rq() * 18, bh = 18 + rq() * 54 * (0.5 + 0.5 * Math.sin(bx / 90)), by = GROUND - 22 - bh;
+    x.fillStyle = '#1a0e30'; x.fillRect(bx, by, bw, bh + 22); if (rq() < 0.3) { x.fillRect(bx + bw / 2 - 1, by - 10, 2, 10); }
+    for (let wy = by + 3; wy < GROUND - 22; wy += 4) for (let wx = bx + 2; wx < bx + bw - 2; wx += 3) if (rq() < 0.3) { x.fillStyle = rq() < 0.8 ? 'rgba(255,220,140,.55)' : 'rgba(94,231,255,.5)'; x.fillRect(wx, wy, 1, 1.5); }
+    bx += bw + rq() * 3; }
+  const haze = x.createLinearGradient(0, GROUND - 100, 0, GROUND); haze.addColorStop(0, 'rgba(58,22,56,0)'); haze.addColorStop(1, 'rgba(90,40,80,.55)'); x.fillStyle = haze; x.fillRect(0, GROUND - 100, W, 100);
+  ridge(GROUND - 14, 36, 0.017, '#140a24', 3);
   const g = x.createLinearGradient(0, GROUND, 0, H); g.addColorStop(0, '#4a3020'); g.addColorStop(1, '#1a0f0a'); x.fillStyle = g; x.fillRect(0, GROUND, W, H - GROUND);
   let s = 5; const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
   for (let i = 0; i < 90; i++) { x.fillStyle = r() < 0.5 ? '#2a1a10' : '#6b4a2a'; x.fillRect(r() * W, GROUND + 4 + r() * (H - GROUND - 6), 3 + r() * 4, 2); }
   x.shadowColor = '#ffe14d'; x.shadowBlur = 8; x.fillStyle = '#ffe14d'; x.fillRect(0, GROUND, W, 2); x.shadowBlur = 0;
+  x.fillStyle = '#1a1018'; x.fillRect(0, GROUND + 14, W, 10); x.fillStyle = 'rgba(255,225,77,.35)'; for (let i = 0; i < W; i += 22) x.fillRect(i, GROUND + 18, 10, 1.5); // the highway
   return c;
 })();
 /** A city: a cluster of outlined towers, lit on the left and shaded on the right, with twinkling windows and a red beacon. */
 const TOWERS = [[-17, 14, 22], [-5, 11, 32], [5, 13, 24], [-11, 7, 14], [11, 8, 16]];
+// each city its own skyline: [dx, width, height, roof] (roof: 0 flat, 1 spire, 2 dome, 3 antenna, 4 stepped)
+const SKYLINES = [
+  [[-19, 12, 26, 0], [-8, 12, 44, 1], [4, 11, 30, 2], [-14, 7, 16, 0], [13, 8, 20, 3]],
+  [[-18, 10, 30, 4], [-7, 14, 38, 3], [7, 12, 26, 0], [-12, 6, 14, 0], [17, 6, 18, 0]],
+  [[-17, 13, 20, 2], [-4, 10, 48, 1], [6, 12, 34, 4], [-12, 7, 12, 0], [14, 7, 22, 3]],
+  [[-19, 9, 24, 3], [-9, 13, 36, 4], [5, 11, 42, 1], [-13, 6, 14, 0], [15, 7, 18, 0]],
+  [[-18, 12, 30, 1], [-6, 12, 26, 2], [6, 13, 38, 3], [-12, 6, 12, 0], [16, 6, 16, 4]],
+  [[-17, 11, 34, 4], [-6, 12, 46, 3], [6, 11, 28, 2], [-13, 6, 16, 0], [14, 8, 22, 1]]
+];
+const CITY_COL = [['#4f7bff', '#3d5fd8', '#5a88ff'], ['#3dc8b8', '#2a9a9a', '#4fdcc8'], ['#b86bff', '#8a4ad8', '#c88aff'], ['#ff8a3d', '#d86a2a', '#ffa860'], ['#4fa8ff', '#3a80d8', '#6abaff'], ['#ff6aa8', '#d84a88', '#ff8ac0']];
 function drawCity(c, t) {
   if (!c.alive) { // rubble, still smouldering
     ctx.fillStyle = '#0a0612'; ctx.fillRect(c.x - 18, GROUND - 7, 36, 7);
@@ -211,9 +239,17 @@ function drawCity(c, t) {
     for (let i = 0; i < 3; i++) { const k = ((t / 2200 + i / 3 + c.x / 97) % 1); ctx.globalAlpha = 0.3 * (1 - k); ctx.fillStyle = '#5a4a5a'; ctx.beginPath(); ctx.arc(c.x - 4 + i * 5 + Math.sin(k * 6) * 4, GROUND - 8 - k * 40, 4 + k * 8, 0, 6.29); ctx.fill(); }
     ctx.globalAlpha = 1; return;
   }
-  ctx.fillStyle = '#0a0612'; TOWERS.forEach(([dx, w, h]) => ctx.fillRect(c.x + dx - 1, GROUND - h - 1, w + 2, h + 1));
-  TOWERS.forEach(([dx, w, h], i) => {
-    const X = c.x + dx, Y = GROUND - h, col = ['#4f7bff', '#3d5fd8', '#5a88ff', '#2f4ab8', '#4670f0'][i];
+  const ci = Math.max(0, CITY_X.indexOf(c.x)), sk = SKYLINES[ci % SKYLINES.length], pal = CITY_COL[ci % CITY_COL.length];
+  // a soft glow of city light on the sky above it
+  const cg = ctx.createRadialGradient(c.x, GROUND - 10, 4, c.x, GROUND - 10, 60); cg.addColorStop(0, 'rgba(255,200,120,.16)'); cg.addColorStop(1, 'rgba(255,200,120,0)'); ctx.fillStyle = cg; ctx.fillRect(c.x - 60, GROUND - 70, 120, 70);
+  const sorted = [...sk].sort((a, b) => b[2] - a[2]);
+  ctx.fillStyle = '#0a0612'; sorted.forEach(([dx, w, h, roof]) => { ctx.fillRect(c.x + dx - 1, GROUND - h - 1, w + 2, h + 1); if (roof === 1) { ctx.beginPath(); ctx.moveTo(c.x + dx - 1, GROUND - h); ctx.lineTo(c.x + dx + w / 2, GROUND - h - 14); ctx.lineTo(c.x + dx + w + 1, GROUND - h); ctx.fill(); } if (roof === 2) { ctx.beginPath(); ctx.arc(c.x + dx + w / 2, GROUND - h, w / 2 + 1, Math.PI, 0); ctx.fill(); } if (roof === 4) ctx.fillRect(c.x + dx + 2, GROUND - h - 6, w - 4, 6); });
+  sorted.forEach(([dx, w, h, roof], i) => {
+    const X = c.x + dx, Y = GROUND - h, col = pal[i % pal.length];
+    if (roof === 1) { ctx.fillStyle = shade(col, 0.2); ctx.beginPath(); ctx.moveTo(X, Y); ctx.lineTo(X + w / 2, Y - 12); ctx.lineTo(X + w, Y); ctx.fill(); }
+    if (roof === 2) { const dg = ctx.createRadialGradient(X + w / 2 - 2, Y - 3, 1, X + w / 2, Y, w / 2); dg.addColorStop(0, '#e8f0ff'); dg.addColorStop(1, shade(col, -0.2)); ctx.fillStyle = dg; ctx.beginPath(); ctx.arc(X + w / 2, Y, w / 2, Math.PI, 0); ctx.fill(); }
+    if (roof === 3) { ctx.fillStyle = '#c0c6d0'; ctx.fillRect(X + w / 2 - 0.5, Y - 12, 1, 12); if (Math.floor(t / 500 + X) % 2) { ctx.fillStyle = '#ff4f6d'; ctx.shadowColor = '#ff4f6d'; ctx.shadowBlur = 8; ctx.fillRect(X + w / 2 - 1, Y - 13, 2, 2); ctx.shadowBlur = 0; } }
+    if (roof === 4) { ctx.fillStyle = shade(col, -0.15); ctx.fillRect(X + 3, Y - 5, w - 6, 5); }
     ctx.fillStyle = col; ctx.fillRect(X, Y, w, h);
     ctx.fillStyle = shade(col, 0.25); ctx.fillRect(X, Y, Math.ceil(w * 0.35), h);
     ctx.fillStyle = shade(col, -0.35); ctx.fillRect(X + w - 2, Y, 2, h);
@@ -223,8 +259,8 @@ function drawCity(c, t) {
       ctx.fillStyle = on ? '#ffe98a' : '#1a2450'; ctx.fillRect(wx, wy, 2, 2);
     }
   });
-  if (Math.floor(t / 500 + c.x) % 2) { ctx.fillStyle = '#ff4f6d'; ctx.shadowColor = '#ff4f6d'; ctx.shadowBlur = 8; ctx.fillRect(c.x - 5, GROUND - 35, 2, 2); ctx.shadowBlur = 0; }
-  ctx.fillStyle = '#9aa0b0'; ctx.fillRect(c.x - 5, GROUND - 34, 1, 2);
+  const sign = ['BITCO', 'NEON', 'ZAP', 'MEGA', 'ORBIT', 'NOVA'][ci % 6], tall = sorted[0], on = Math.sin(t / 77 + ci) < 0.96;
+  ctx.font = '6px Silkscreen, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = on ? '#ff4fd8' : '#5a2a4a'; ctx.shadowColor = '#ff4fd8'; ctx.shadowBlur = on ? 8 : 0; ctx.fillText(sign, c.x + tall[0] + tall[1] / 2, GROUND - tall[2] + 8); ctx.shadowBlur = 0; ctx.textBaseline = 'alphabetic';
 }
 /** A missile base: an outlined, shaded bunker with a turret that tracks the crosshair, and its missiles standing in racks. */
 function drawBase(b, t) {
@@ -241,6 +277,7 @@ function drawBase(b, t) {
   ctx.fillStyle = '#0a0612'; ctx.beginPath(); ctx.arc(b.x, GROUND - 19, 6, Math.PI, 0); ctx.fill(); ctx.fillStyle = '#6a7080'; ctx.beginPath(); ctx.arc(b.x, GROUND - 19, 4.5, Math.PI, 0); ctx.fill();
   // missiles in the racks
   for (let i = 0; i < b.ammo; i++) { const mx = b.x - 20 + (i % 5) * 4 + (i >= 5 ? 22 : 0), my = GROUND - 9 + (i % 5 === 2 ? -1 : 0); ctx.fillStyle = '#0a0612'; ctx.fillRect(mx - 1, my - 1, 3, 9); ctx.fillStyle = '#e8ecf4'; ctx.fillRect(mx, my, 1, 7); ctx.fillStyle = '#ff4f6d'; ctx.fillRect(mx, my, 1, 2); }
+  { const sp = Math.cos(t / 700 + b.x); ctx.fillStyle = '#0a0612'; ctx.fillRect(b.x + 15, GROUND - 26, 2, 9); ctx.fillStyle = '#c0c6d0'; ctx.beginPath(); ctx.ellipse(b.x + 16, GROUND - 27, 6 * Math.abs(sp) + 1, 3, 0, 0, 6.29); ctx.fill(); ctx.strokeStyle = '#0a0612'; ctx.lineWidth = 1; ctx.stroke(); }
   if (state === 'play' && b.ammo <= 2) { ctx.fillStyle = Math.floor(t / 250) % 2 ? '#ff4f6d' : '#ffe14d'; ctx.font = '10px Silkscreen, monospace'; ctx.textAlign = 'center'; ctx.fillText(b.ammo ? 'LOW' : 'OUT', b.x, GROUND + 18); }
 }
 /** An explosion: a white-hot core inside layered fire, wobbling at the edge. */
@@ -252,6 +289,7 @@ function drawBlast(b, t) {
   for (let i = 0; i <= 16; i++) { const a = i / 16 * Math.PI * 2, w = r * (0.9 + Math.sin(a * 5 + t / 60 + b.seed) * 0.1); i ? ctx.lineTo(b.x + Math.cos(a) * w, b.y + Math.sin(a) * w) : ctx.moveTo(b.x + Math.cos(a) * w, b.y + Math.sin(a) * w); }
   ctx.fill();
   ctx.globalAlpha = 0.5; ctx.strokeStyle = '#ff4fd8'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, 6.29); ctx.stroke(); ctx.globalAlpha = 1;
+  if (b.t < 0.5) { ctx.globalAlpha = 0.6 * (1 - b.t / 0.5); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(b.x, b.y, b.r * (0.4 + b.t * 2.4), 0, 6.29); ctx.stroke(); ctx.globalAlpha = 1; }
 }
 /** The crosshair: corner brackets that slowly turn, around a dot. */
 function drawCross(t) {

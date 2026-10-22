@@ -118,6 +118,8 @@ A.loop(dt => {
 }, t => {
   ctx.drawImage(ground, 0, 0);
   // water ripples drift with the current
+  for (let i = 0; i < 18; i++) { const sx = (i * 131 + t / 25 * (i % 2 ? 1 : -1)) % W, sy = T + ((i * 53) % (5 * T)), tw = Math.sin(t / 180 + i * 2); if (tw > 0.6) { ctx.fillStyle = `rgba(255,255,255,${(tw - 0.6) * 2})`; ctx.fillRect((sx + W) % W, sy, 2, 2); ctx.fillRect((sx + W) % W - 2, sy + 0.5, 6, 1); } }
+  BURROWS.forEach(b => { const lx = b * T + T / 2 + 16, gl = 0.6 + 0.4 * Math.sin(t / 300 + b); ctx.fillStyle = `rgba(255,200,100,${0.2 * gl})`; ctx.beginPath(); ctx.arc(lx, 10, 12, 0, 6.29); ctx.fill(); ctx.fillStyle = '#0a0612'; ctx.fillRect(lx - 3, 5, 6, 8); ctx.fillStyle = `rgba(255,220,120,${gl})`; ctx.fillRect(lx - 2, 6, 4, 6); });
   for (let r = 1; r <= 5; r++) { const y = r * T; ctx.fillStyle = 'rgba(190,230,255,.16)'; for (let i = 0; i < 7; i++) ctx.fillRect(((i * 97 + t / 30 * (r % 2 ? 1 : -1)) % (W + 40) + W + 40) % (W + 40) - 20, y + 9 + (i % 3) * 10, 16 + (i % 2) * 8, 2); }
   BURROWS.forEach((b, i) => {
     const cx = b * T + T / 2; if (homes[i]) drawHog(cx, T / 2 + 4, 'down', 0.8);
@@ -125,14 +127,17 @@ A.loop(dt => {
   });
   for (const o of objs) {
     const x = o.x * T, y = o.l.row * T, w = o.l.len * T;
-    if (o.l.kind === 'log') drawLog(x, y, w, o.l.dir);
+    if (o.l.kind === 'log') { const fx = o.l.dir > 0 ? x : x + w; ctx.fillStyle = 'rgba(230,245,255,.55)'; for (let i = 0; i < 4; i++) { const k = ((t / 300 + i / 4) % 1); ctx.beginPath(); ctx.arc(fx - o.l.dir * k * 18, y + 12 + i * 5, 2.5 * (1 - k) + 1, 0, 6.29); ctx.fill(); } drawLog(x, y, w, o.l.dir); }
     else if (o.l.kind === 'leaf') {
       const sub = submerged(o, clock), warn = o.dip && ((clock + o.ph) % 6) > 4.1;
       ctx.globalAlpha = sub ? 0.18 : warn && Math.floor(t / 120) % 2 ? 0.55 : 1;
       for (let i = 0; i < o.l.len; i++) drawPad(x + i * T + T / 2, y + T / 2, i + o.ph);
       ctx.globalAlpha = 1;
-    } else drawVehicle(o, x, y, w);
+    } else { drawVehicle(o, x, y, w); if (o.l.kind !== 'car') { const ex = o.l.dir > 0 ? x - 2 : x + w + 2; for (let i = 0; i < 3; i++) { const k = ((t / 500 + i / 3 + o.ph) % 1); ctx.fillStyle = `rgba(180,175,190,${0.4 * (1 - k)})`; ctx.beginPath(); ctx.arc(ex - o.l.dir * k * 16, y + T - 12 - k * 6, 2 + k * 5, 0, 6.29); ctx.fill(); } } }
   }
+  // butterflies over the grass, a dragonfly over the water
+  for (let i = 0; i < 3; i++) { const bx = (i * 173 + t / 18 + Math.sin(t / 700 + i) * 40) % (W + 40) - 20, by = (i === 0 ? 6 : 12) * T + 12 + Math.sin(t / 300 + i * 2) * 8, fl = Math.abs(Math.sin(t / 60 + i)); ctx.fillStyle = ['#ffd23d', '#ff7bf0', '#5ee7ff'][i]; ctx.beginPath(); ctx.ellipse(bx - 3, by, 3 * fl + 0.5, 3, 0, 0, 6.29); ctx.ellipse(bx + 3, by, 3 * fl + 0.5, 3, 0, 0, 6.29); ctx.fill(); ctx.fillStyle = '#0a0612'; ctx.fillRect(bx - 0.5, by - 2, 1, 4); }
+  { const dx = W / 2 + Math.sin(t / 1300) * W * 0.4 + Math.sin(t / 210) * 6, dy = 3.5 * T + Math.sin(t / 900) * T * 1.6; ctx.fillStyle = '#3dd6ff'; ctx.fillRect(dx - 6, dy - 1, 12, 2); ctx.fillStyle = 'rgba(220,240,255,.55)'; const fw = Math.sin(t / 25) > 0 ? 3 : 1; ctx.beginPath(); ctx.ellipse(dx - 1, dy - fw, 4, fw, 0.3, 0, 6.29); ctx.ellipse(dx - 1, dy + fw, 4, fw, -0.3, 0, 6.29); ctx.fill(); }
   if (state !== 'title') {
     const k = hog.hop > 0 ? 1 - hog.hop / 0.12 : 1, hx = (hog.fx + (hog.x - hog.fx) * k) * T + T / 2, hy = (hog.fy + (hog.y - hog.fy) * k) * T + T / 2 - Math.sin(k * Math.PI) * 8;
     if (state === 'dying') { ctx.globalAlpha = Math.floor(t / 90) % 2 ? 0.35 : 1; ctx.save(); ctx.translate(hx, hy); ctx.scale(1.3, 0.55); drawHog(0, 0, hog.face, 1); ctx.restore(); ctx.globalAlpha = 1; } // flattened
@@ -159,7 +164,7 @@ const ground = (() => {
   let s = 4; const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
   for (let row = 0; row < ROWS; row++) {
     const y = row * T;
-    if (isStream(row)) { const g = x.createLinearGradient(0, y, 0, y + T); g.addColorStop(0, '#1a4a7e'); g.addColorStop(1, '#123662'); x.fillStyle = g; x.fillRect(0, y, W, T); }
+    if (isStream(row)) { const g = x.createLinearGradient(0, y, 0, y + T); g.addColorStop(0, row === 3 ? '#143e6c' : '#1a4a7e'); g.addColorStop(1, row === 3 ? '#0e2c52' : '#123662'); x.fillStyle = g; x.fillRect(0, y, W, T); x.fillStyle = 'rgba(0,0,0,.08)'; for (let i = 0; i < 12; i++) { x.beginPath(); x.ellipse(r() * W, y + r() * T, 20 + r() * 30, 4, 0, 0, 6.29); x.fill(); } }
     else if (isRoad(row)) {
       x.fillStyle = '#26242e'; x.fillRect(0, y, W, T);
       for (let i = 0; i < 60; i++) { x.fillStyle = r() < 0.5 ? '#2e2c38' : '#1e1c26'; x.fillRect(r() * W, y + r() * T, 2, 2); }
@@ -170,11 +175,27 @@ const ground = (() => {
       if (row !== 0) for (let i = 0; i < 4; i++) { const px = r() * W, py = y + 8 + r() * (T - 16); x.fillStyle = ['#fff', '#ffd23d', '#ff7bf0'][i % 3]; x.fillRect(px, py, 2, 2); x.fillRect(px + 2, py + 1, 2, 2); }
     }
     if (row === 6 || row === 12) { x.fillStyle = '#0a0612'; x.fillRect(0, y, W, 2); x.fillStyle = '#8a8098'; x.fillRect(0, y + (row === 6 ? T - 4 : 0), W, 4); } // kerbs
+    if (isRoad(row)) for (let i = 0; i < 2; i++) { x.fillStyle = 'rgba(10,8,20,.35)'; x.beginPath(); x.ellipse(r() * W, y + 10 + r() * 20, 8 + r() * 8, 4, 0, 0, 6.29); x.fill(); x.fillStyle = 'rgba(120,80,200,.12)'; x.beginPath(); x.ellipse(r() * W, y + 14, 5, 2, 0, 0, 6.29); x.fill(); } // oil stains
+  }
+  // the zebra crossing up from the start, where the road begins
+  for (let row = 7; row <= 11; row++) for (let i = 0; i < 3; i++) { x.fillStyle = 'rgba(240,236,224,.55)'; x.fillRect(5 * T + 6 + i * 26, row * T + 6, 14, T - 12); }
+  // the river banks: mud, pebbles and reeds along the edge of the water
+  for (const [by, dir] of [[T, 1], [6 * T, -1]]) {
+    x.fillStyle = '#4a3420'; x.fillRect(0, by - (dir > 0 ? 0 : 5), W, 5);
+    for (let i = 0; i < 40; i++) { x.fillStyle = r() < 0.5 ? '#8a7a68' : '#6a5a4a'; x.beginPath(); x.ellipse(r() * W, by + (dir > 0 ? 2 : -3), 2 + r() * 2, 1.5, 0, 0, 6.29); x.fill(); }
+    for (let i = 0; i < 9; i++) { const rx = r() * W; for (let k = 0; k < 4; k++) { x.strokeStyle = k % 2 ? '#4a7a3a' : '#6a9a4a'; x.lineWidth = 1.5; x.beginPath(); x.moveTo(rx + k * 3, by + dir * 2); x.lineTo(rx + k * 3 + (k - 1.5), by + dir * 2 - dir * (8 + k * 2)); x.stroke(); } x.fillStyle = '#6a4a2a'; x.fillRect(rx + 2, by + dir * 2 - dir * 14 - 2, 3, 5); }
+  }
+  // the middle verge: mushrooms; the start: a little fence
+  for (let i = 0; i < 6; i++) { const mx = 20 + r() * (W - 40), my = 6 * T + 14 + r() * 10; x.fillStyle = '#e8e4d0'; x.fillRect(mx - 1, my, 3, 5); x.fillStyle = '#c8203a'; x.beginPath(); x.arc(mx + 0.5, my, 4, Math.PI, 0); x.fill(); x.fillStyle = '#fff'; x.fillRect(mx - 2, my - 2, 1, 1); x.fillRect(mx + 2, my - 3, 1, 1); }
+  for (let i = 0; i < W; i += 18) { x.fillStyle = '#0a0612'; x.fillRect(i + 3, 12 * T + 26, 4, 14); x.fillStyle = '#c8a878'; x.fillRect(i + 4, 12 * T + 27, 2, 12); }
+  x.fillStyle = '#0a0612'; x.fillRect(0, 12 * T + 30, W, 3); x.fillStyle = '#a8885a'; x.fillRect(0, 12 * T + 30, W, 2);
+  { const row = 0;
   }
   // the hedge: rounded bushes, shaded, with berries; dark burrow mouths in it
   for (let px = -6; px < W + 10; px += 14) { x.fillStyle = '#0a1a0c'; x.beginPath(); x.arc(px + 7, 9, 11, 0, 6.29); x.fill(); }
   for (let px = -6; px < W + 10; px += 14) { const g = x.createRadialGradient(px + 4, 4, 1, px + 7, 9, 10); g.addColorStop(0, '#3d8a3a'); g.addColorStop(1, '#16381b'); x.fillStyle = g; x.beginPath(); x.arc(px + 7, 9, 9.5, 0, 6.29); x.fill(); }
   for (let i = 0; i < 16; i++) { x.fillStyle = '#c81a3a'; x.fillRect(r() * W, 4 + r() * 12, 2, 2); }
+  for (let i = 0; i < 14; i++) { const fx = r() * W, fy = 3 + r() * 12; x.fillStyle = ['#fff', '#ffd23d', '#ff7bf0', '#b48cff'][i % 4]; for (const [dx, dy] of [[-2, 0], [2, 0], [0, -2], [0, 2]]) x.fillRect(fx + dx, fy + dy, 2, 2); x.fillStyle = '#ffd23d'; x.fillRect(fx, fy, 2, 2); }
   BURROWS.forEach(b => { const cx = b * T + T / 2; x.fillStyle = '#3a2416'; x.beginPath(); x.ellipse(cx, T / 2 + 4, 18, 15, 0, 0, 6.29); x.fill(); x.fillStyle = '#120a06'; x.beginPath(); x.ellipse(cx, T / 2 + 6, 15, 12, 0, 0, 6.29); x.fill(); });
   return c;
 })();
@@ -193,6 +214,7 @@ function drawLog(x, y, w, dir) {
 /** A lily pad: outlined, shaded green with veins and a notch, bobbing slightly. */
 function drawPad(cx, cy, ph) {
   const b = Math.sin(performance.now() / 500 + ph) * 1.2;
+  const rk = ((performance.now() / 1600 + ph) % 1); ctx.strokeStyle = `rgba(190,230,255,${0.35 * (1 - rk)})`; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(cx, cy + 2, 18 + rk * 10, 13 + rk * 7, 0.4, 0, 6.29); ctx.stroke();
   ctx.fillStyle = '#0a1a0c'; ctx.beginPath(); ctx.ellipse(cx, cy + b, 18.5, 14.5, 0.4, 0, 6.29); ctx.fill();
   const g = ctx.createRadialGradient(cx - 5, cy - 5 + b, 2, cx, cy + b, 18); g.addColorStop(0, '#8ae878'); g.addColorStop(0.6, '#4fbf4a'); g.addColorStop(1, '#2f7a2c');
   ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(cx, cy + b, 17, 13, 0.4, 0, 6.29); ctx.fill();
