@@ -55,8 +55,8 @@ export function merge(a, b, prices, joining) {
   for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) {
     const x = a[k], y = b[k];
     if (x == null || y == null) continue;
-    if (joining && (/^arcade:(plays|time):/.test(k) || k === 'arcade:tickets:earned' || k === 'arcade:tickets:spent')) out[k] = String((+x || 0) + (+y || 0));
-    else if (/^arcade:(best|plays|time):/.test(k) || k === 'arcade:tickets:earned' || k === 'arcade:tickets:spent') out[k] = String(Math.max(+x || 0, +y || 0));
+    if (joining && (/^arcade:(plays|time):/.test(k) || k === 'arcade:tickets:earned' || k === 'arcade:tickets:spent' || k === 'arcade:xp')) out[k] = String((+x || 0) + (+y || 0));
+    else if (/^arcade:(best|plays|time):/.test(k) || k === 'arcade:tickets:earned' || k === 'arcade:tickets:spent' || k === 'arcade:xp') out[k] = String(Math.max(+x || 0, +y || 0));
     else if (/^arcade:top:/.test(k)) {
       const seen = new Set(), all = [...json(x, []), ...json(y, [])].filter(e => e && typeof e.s === 'number').sort((p, q) => q.s - p.s)
         .filter(e => { const id = e.n + ':' + e.s; if (seen.has(id)) return false; seen.add(id); return true; });

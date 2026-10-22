@@ -756,6 +756,7 @@ function recordWin(){
   const k='arcade:best:blip-sports';store.set(k,(+store.get(k)||0)+1);
   if(window.TICKETS)TICKETS.add(5); // a win is worth 5 tickets at the lobby's prize counter
   if(A.mission)A.mission({type:'blip-win'}); // daily missions
+  if(A.gainXP)A.gainXP(20,'win');
   const n=myIni(); if(n)A.postWin(n); else log('Set your initials under World wins to count wins on the world board.');
   renderBadges(); setTimeout(renderWorld,4000);
 }

@@ -298,3 +298,55 @@ window.VIP = (() => {
   }
   return { status, unlocked: () => status().unlocked, NEED };
 })();
+
+/*
+ * Player level: XP from everything you do (window.XP). arcade:xp is the lifetime total (cloud save adds it up when
+ * a device joins, otherwise keeps the higher). Level n needs 50 + 20n more XP than the last, up to 50. Levels give
+ * titles, a nameplate on the arcade floor and free prizes (prizes.js items with a `level`), which are added to
+ * arcade:prizes as soon as you reach them. Sources: a scoring run 10 (+10 top 10, +15 new record, +5 daily, double
+ * on the tournament game), a badge 50, a mission 30 (+50 for all three), a floor game 8, a Blip Sports win 20.
+ */
+window.XP = (() => {
+  const get = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  const set = (k, v) => { try { localStorage.setItem(k, String(v)); } catch (e) {} };
+  const MAX = 50, need = n => 50 + 20 * n; // XP to go from level n to n + 1
+  const TITLES = [[1, 'ROOKIE'], [3, 'COIN SLINGER'], [5, 'BUTTON MASHER'], [8, 'JOYSTICK JOCKEY'], [12, 'HIGH SCORER'], [16, 'ARCADE RAT'],
+    [20, 'COMBO CRUSHER'], [25, 'PIXEL PRO'], [30, 'CABINET CHAMPION'], [35, 'NEON LEGEND'], [40, 'GRAND MASTER'], [45, 'HALL OF FAMER'], [50, 'BITCADE LEGEND']];
+  // what each level unlocks besides titles: prize ids (see prizes.js), and the floor nameplate at 3
+  const REWARDS = { 3: 'nameplate', 6: 'varsity', 10: 'starfield', 14: 'skater', 18: 'racetrack', 24: 'captain', 32: 'synthwave', 40: 'aurora', 50: 'legend' };
+  function total() {
+    let x = get('arcade:xp');
+    if (x === null) { // first visit since levels arrived: back pay for games played and badges earned
+      let v = 0;
+      try { Object.keys(localStorage).forEach(k => { if (k.startsWith('arcade:plays:')) v += (+localStorage.getItem(k) || 0) * 12; if (k.startsWith('arcade:badges:')) { try { v += (JSON.parse(localStorage.getItem(k)) || []).length * 50; } catch (e) {} } }); } catch (e) {}
+      set('arcade:xp', v); x = v;
+    }
+    return +x || 0;
+  }
+  function info(xp = total()) {
+    let level = 1, rest = xp;
+    while (level < MAX && rest >= need(level)) { rest -= need(level); level++; }
+    const title = TITLES.filter(t => t[0] <= level).pop()[1];
+    const next = Object.keys(REWARDS).map(Number).find(l => l > level);
+    return { xp, level, into: rest, need: level < MAX ? need(level) : 0, pct: level < MAX ? rest / need(level) : 1, title, nextReward: next ? { level: next, id: REWARDS[next] } : null };
+  }
+  /** Prize ids unlocked by level so far: make sure they're in arcade:prizes (free). */
+  function grant(level) {
+    let owned = []; try { owned = JSON.parse(get('arcade:prizes')) || []; } catch (e) {}
+    const want = Object.entries(REWARDS).filter(([l, id]) => +l <= level && id !== 'nameplate').map(([, id]) => id).filter(id => !owned.includes(id));
+    if (want.length) set('arcade:prizes', JSON.stringify([...owned, ...want]));
+    return want;
+  }
+  const fns = [];
+  /** Add XP; returns { gained, level, up (levels gained), unlocked (prize ids), title }. */
+  function add(n, why) {
+    n = Math.max(0, Math.round(n)); const before = info();
+    set('arcade:xp', before.xp + n);
+    const after = info(), up = after.level - before.level, unlocked = up ? grant(after.level) : [];
+    const r = { gained: n, why, before, after, up, unlocked, newTitle: after.title !== before.title ? after.title : null };
+    fns.forEach(f => { try { f(r); } catch (e) {} });
+    return r;
+  }
+  grant(info().level);
+  return { total, info, add, need, MAX, TITLES, REWARDS, onChange: fn => fns.push(fn), titleAt: l => TITLES.filter(t => t[0] <= l).pop()[1] };
+})();

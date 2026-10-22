@@ -347,12 +347,15 @@ window.FloorPlay = kit => {
     let s = null; try { s = JSON.parse(get('bitcade:floortix') || 'null'); } catch (e) {}
     const used = s && s.d === today() ? s.n : 0, give = Math.max(0, Math.min(n, FLOOR_CAP - used));
     if (give) { set('bitcade:floortix', JSON.stringify({ d: today(), n: used + give })); TICKETS.add(give); kit.opt.onTickets && kit.opt.onTickets(); }
+    xp(8);
     return { give, capped: give < n };
   }
   const bestOf = k => +get(k) || 0;
   /** Daily missions (shared/badges.js): count something done on the floor, and say so when one's finished. */
+  function xp(n) { if (!window.XP) return; const r = XP.add(n); if (r.up) setTimeout(() => { kit.say(`LEVEL ${r.after.level}!${r.newTitle ? ' ' + r.newTitle : ''}`, 3.2, true); sound.fanfare(); kit.opt.onLevel && kit.opt.onLevel(r); }, 600); }
   function mission(ev) {
     if (!window.MISSIONS) return; const r = MISSIONS.record(ev); if (!r.tickets) return;
+    xp(r.done.length * 30 + (r.all ? 50 : 0));
     setTimeout(() => { kit.say(r.all ? `ALL 3 MISSIONS! +${r.tickets} TICKETS` : `MISSION DONE! +${r.tickets} TICKETS`, 3, true); sound.fanfare(); }, 900);
     kit.opt.onTickets && kit.opt.onTickets(); kit.opt.onMissions && kit.opt.onMissions();
   }

@@ -365,6 +365,7 @@ console.log('\nArcade floor');
   await skipBoot(page);
   check(await page.isVisible('#floor') && !(await page.isVisible('#arcadeFloor')), 'the lobby opens on the cabinets grid');
   check(await page.evaluate(() => document.querySelectorAll('#missions .ms').length) === 3, 'the lobby shows three daily missions');
+  check(/LEVEL/.test(await page.textContent('#lvl')) && await page.evaluate(() => XP.info().level >= 1), 'the lobby shows your level and XP');
   await page.click('#vFloor');
   check(await page.isVisible('#arcadeFloor') && !(await page.isVisible('#floor')), 'WALK THE ARCADE shows the floor');
   const y0 = await page.evaluate(() => Floor.state().y);

@@ -33,11 +33,12 @@ window.Profile = (() => {
     const st = stats(), ini = /^[A-Z]{3}$/.test(get('arcade:initials') || '') ? get('arcade:initials') : '';
     const rank = RANKS.filter(([n]) => st.got >= n).pop()[1], next = RANKS.find(([n]) => n > st.got);
     const prizes = window.Prizes ? Prizes.LIST.filter(p => Prizes.has(p.id)) : [];
+    const lvl = window.XP ? XP.info() : null;
     const el = opt.el;
     el.innerHTML = `
       <div class="pf-card">
         <div class="pf-id"><label class="pf-ini"><input id="pfIni" maxlength="3" autocomplete="off" spellcheck="false" placeholder="???" aria-label="Your initials" value="${esc(ini)}"></label>
-          <div><div class="pf-rank">${rank}</div><div class="pf-next">${next ? `${next[0] - st.got} more badge${next[0] - st.got === 1 ? '' : 's'} to ${next[1]}` : 'Every badge in the arcade. Legendary.'}</div></div></div>
+          <div>${lvl ? `<div class="pf-level">LEVEL ${lvl.level} · <b>${lvl.title}</b></div><div class="pf-xp"><i><b style="width:${Math.round(lvl.pct * 100)}%"></b></i><span>${lvl.need ? `${lvl.into.toLocaleString()} / ${lvl.need.toLocaleString()} XP` : 'MAX LEVEL'}</span></div>` : ''}<div class="pf-rank">${rank}</div><div class="pf-next">${next ? `${next[0] - st.got} more badge${next[0] - st.got === 1 ? '' : 's'} to ${next[1]}` : 'Every badge in the arcade. Legendary.'}</div></div></div>
         <div class="pf-stats">
           <span>GAMES PLAYED<b>${st.plays.toLocaleString()}</b></span><span>CABINETS TRIED<b>${st.tried}/${st.rows.length}</b></span>
           <span>BADGES<b>${st.got}/${st.all}</b></span><span>TICKETS EARNED<b>${window.TICKETS ? TICKETS.earned().toLocaleString() : 0}</b></span>

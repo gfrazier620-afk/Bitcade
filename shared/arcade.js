@@ -81,6 +81,7 @@
     if (!def) return;
     gotCache = [...got, id]; store.set(badgeKey, JSON.stringify(gotCache));
     if (window.TICKETS) TICKETS.add(10);
+    A.gainXP(50, 'badge');
     toast(`★ BADGE · ${def.name} · +10 TICKETS`); A.jingle([659, 880, 1175, 1568], 0.07, 'triangle');
     if (mastered()) { // the last badge: this cabinet turns gold
       setTimeout(() => { toast('★ CABINET MASTERED · GOLD MARQUEE UNLOCKED'); A.jingle([523, 659, 784, 1047, 1319, 1568], 0.08, 'square'); A.flash('#ffd23d', 0.3); }, 900);
@@ -174,14 +175,27 @@
       if (A.featured()) tix *= 2;
       if (window.TICKETS) TICKETS.add(tix); else tix = 0;
     }
-    lastResult = { s, rank, top, day, week, tix };
+    let xp = null;
+    if (window.XP) { let n = 10 + (rank >= 0 ? 10 : 0) + (rec && prevBest > 0 ? 15 : 0) + (daily ? 5 : 0); if (A.featured()) n *= 2; xp = A.gainXP(n, 'run', true); }
+    lastResult = { s, rank, top, day, week, tix, xp };
     A.mission({ type: 'run', slug: A.id, score: s, daily: !!daily });
     return rec;
+  };
+  /** Add XP (shared/badges.js); a level-up gets a toast and fanfare, unless quiet (the game-over screen shows it). */
+  A.gainXP = (n, why, quiet) => {
+    if (!window.XP || A.demo || runEasy || !n) return null;
+    const r = XP.add(n, why);
+    if (r.up) setTimeout(() => {
+      toast(`▲ LEVEL ${r.after.level}${r.newTitle ? ' · ' + r.newTitle : ''}${r.unlocked.length ? ' · NEW PRIZE UNLOCKED' : ''}`);
+      A.jingle([523, 659, 784, 1047, 1319, 1047, 1319, 1568], 0.07, 'square'); A.flash('#5ee7ff', 0.25);
+    }, quiet ? 1400 : 1100);
+    return r;
   };
   /** Report to the daily missions (shared/badges.js); a toast for each one finished. */
   A.mission = ev => {
     if (!window.MISSIONS || A.demo || runEasy) return;
     const r = MISSIONS.record(ev);
+    if (r.done.length) A.gainXP(r.done.length * 30 + (r.all ? 50 : 0), 'mission');
     r.done.forEach((m, i) => setTimeout(() => { toast(`✓ MISSION · ${MISSIONS.text(m)} · +${MISSIONS.REWARD} TICKETS`); A.jingle([784, 988, 1319], 0.07, 'square'); }, 400 + i * 900));
     if (r.all) setTimeout(() => { toast(`★ ALL 3 DAILY MISSIONS · +${MISSIONS.BONUS} BONUS TICKETS`); A.jingle([523, 659, 784, 1047, 1319, 1568], 0.08, 'square'); }, 400 + r.done.length * 900);
   };
@@ -471,10 +485,12 @@
     clearInterval(contT);
     o.innerHTML = (isTitle && A.featured() ? `<div class="weekly">★ WEEKLY TOURNAMENT · ENDS IN ${WK.leftText()}</div>` : '') + `<h2></h2>${big ? '<div class="big"></div>' : ''}${sub ? '<p></p>' : ''}` +
       (res && res.easy ? '<div class="tix easy">EASY MODE · SCORE NOT RECORDED</div>' : isTitle && A.easy ? '<div class="tix easy">EASY MODE ON · SCORES WON\u2019T COUNT</div>' : '') +
-      (res && res.tix ? `<div class="tix">+${res.tix} TICKETS${A.featured() ? ' · DOUBLE THIS WEEK' : ''} · ${TICKETS.balance()} TOTAL</div>` : '') + `<div class="hs"></div>` +
+      (res && res.tix ? `<div class="tix">+${res.tix} TICKETS${A.featured() ? ' · DOUBLE THIS WEEK' : ''} · ${TICKETS.balance()} TOTAL</div>` : '') +
+      (res && res.xp ? `<div class="xpbar"><span>LV ${res.xp.after.level}</span><i><b style="width:${res.xp.up ? 0 : Math.round(res.xp.before.pct * 100)}%"></b></i><em>+${res.xp.gained} XP${res.xp.up ? ' · LEVEL UP!' : ''}</em></div>` : '') + `<div class="hs"></div>` +
       (isTitle ? '<div class="push">PUSH START</div>' : '') + (res ? '<div class="cont" hidden></div>' : '') +
       `<div class="btns"><button class="go"></button>${alt ? '<button class="go2"></button>' : ''}${alt2 ? '<button class="go2 go3"></button>' : ''}</div>` +
       (canShare ? '<button class="share">Share score</button>' : '') + (isTitle ? '<div class="credit">FREE PLAY · CREDIT 99</div>' : '');
+    const xb = o.querySelector('.xpbar b'); if (xb && res && res.xp) requestAnimationFrame(() => requestAnimationFrame(() => { xb.style.width = Math.round(res.xp.after.pct * 100) + '%'; }));
     if (canShare) { const sb = o.querySelector('.share'); sb.addEventListener('click', () => shareScore(res.s, res.day && res.day.d, sb)); }
     o.querySelector('h2').textContent = title;
     if (isTitle && A.id !== 'game') { const lc = document.createElement('canvas'); lc.className = 'logo'; lc.setAttribute('aria-hidden', 'true'); o.querySelector('h2').before(lc); o.querySelector('h2').classList.add('sr'); startLogo(lc, title); }

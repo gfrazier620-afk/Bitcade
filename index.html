@@ -80,6 +80,18 @@ body{display:block;overflow-x:hidden;
 .tourney .play{grid-column:3;justify-self:end;font-family:var(--f-pixel)}
 [hidden]{display:none!important}
 /* view switch: cabinets grid or the walkable arcade floor (shared/floor.js), and the prize counter (shared/prizes.js) */
+.lvl{max-width:900px;margin:0 auto 12px;display:flex;align-items:center;gap:12px 16px;flex-wrap:wrap;padding:10px 14px;border-radius:14px;background:var(--bg2);border:1px solid var(--line)}
+.lvl .lv-n{font-family:var(--f-marquee);font-size:26px;line-height:1;color:#5ee7ff;text-shadow:0 0 12px rgba(94,231,255,.5)}
+.lvl .lv-n small{display:block;font-family:var(--f-pixel);font-size:9px;color:var(--muted);letter-spacing:.1em}
+.lvl .lv-t{font-family:var(--f-marquee);font-size:15px;color:#fff}
+.lvl .lv-bar{flex:1 1 220px;display:flex;flex-direction:column;gap:4px}
+.lvl .lv-bar i{display:block;height:10px;border-radius:5px;background:rgba(255,255,255,.08);overflow:hidden;border:1px solid rgba(94,231,255,.35)}
+.lvl .lv-bar b{display:block;height:100%;background:linear-gradient(90deg,#3dd6ff,#b86bff);border-radius:5px;transition:width .8s}
+.lvl .lv-bar span,.lvl .lv-next{font-family:var(--f-pixel);font-size:10px;color:var(--muted)}
+.lvl .lv-next b{color:#ffd23d;font-weight:400}
+.pf-level{font-family:var(--f-pixel);font-size:12px;color:#5ee7ff;letter-spacing:.06em}.pf-level b{color:#fff;font-weight:400}
+.pf-xp{display:flex;align-items:center;gap:8px;margin:4px 0 8px;font-family:var(--f-pixel);font-size:10px;color:var(--muted)}
+.pf-xp i{display:block;width:160px;height:8px;border-radius:4px;background:rgba(255,255,255,.08);overflow:hidden}.pf-xp b{display:block;height:100%;background:linear-gradient(90deg,#3dd6ff,#b86bff)}
 .missions{--c:#3dff8f;max-width:900px;margin:0 auto 22px;padding:12px 14px 14px;border-radius:14px;background:var(--bg2);border:1px solid var(--line)}
 .missions header{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:10px;font-family:var(--f-pixel);font-size:11px;color:var(--muted)}
 .missions header b{font-family:var(--f-marquee);font-weight:400;font-size:17px;color:var(--c);letter-spacing:.04em}
@@ -333,6 +345,7 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
     <div class="coin" aria-hidden="true">▶ PICK A CABINET ◀</div>
     <div class="stats" id="stats"></div>
   </header>
+  <section class="lvl" id="lvl" aria-label="Your level"></section>
   <section class="missions" id="missions" aria-label="Daily missions"></section>
   <div class="viewbar" role="group" aria-label="View">
     <button id="vGrid" aria-pressed="true">▦ CABINETS</button><button id="vFloor" aria-pressed="false">⌂ WALK THE ARCADE</button><button id="vProfile" aria-pressed="false">★ PROFILE</button><button class="prize" id="vPrize">PRIZE COUNTER · <b id="tixN">0</b> TICKETS</button>
@@ -599,7 +612,8 @@ Floor.init({
   onPlay: g => enterGame(`games/${g.slug}/`),
   onCounter: () => Prizes.open(),
   onTickets: () => tixShow(),
-  onMissions: () => renderMissions(),
+  onMissions: () => { renderMissions(); renderLevel(); },
+  onLevel: () => { renderLevel(); tixShow(); },
   onJukebox: slug => { try { localStorage.setItem('bitcade:jukebox', slug); } catch (e) {} if (window.Chip) { Chip.enabled = true; Chip.play(slug ? Chip.theme(slug) : Chip.lobby); } document.getElementById('musicBtn').textContent = '♪ MUSIC ON'; }
 });
 // The player profile and cloud save (shared/profile.js, shared/save.js).
@@ -632,9 +646,20 @@ function renderMissions() {
   });
 }
 renderMissions(); setInterval(renderMissions, 60000);
+/* Your level (XP in shared/badges.js): the bar, your title and the next level reward. */
+const lvlEl = document.getElementById('lvl');
+function renderLevel() {
+  if (!window.XP) { lvlEl.hidden = true; return; }
+  const v = XP.info(), nr = v.nextReward, prize = nr && nr.id !== 'nameplate' && window.Prizes ? Prizes.LIST.find(p => p.id === nr.id) : null;
+  lvlEl.innerHTML = `<div class="lv-n"><small>LEVEL</small>${v.level}</div><div class="lv-t"></div><div class="lv-bar"><i><b style="width:${Math.round(v.pct * 100)}%"></b></i><span>${v.need ? `${v.into.toLocaleString()} / ${v.need.toLocaleString()} XP TO LEVEL ${v.level + 1}` : 'MAX LEVEL · A TRUE LEGEND'}</span></div>` +
+    (nr ? `<div class="lv-next">NEXT REWARD · LEVEL ${nr.level}: <b></b></div>` : '');
+  lvlEl.querySelector('.lv-t').textContent = v.title;
+  if (nr) lvlEl.querySelector('.lv-next b').textContent = nr.id === 'nameplate' ? 'A nameplate on the arcade floor' : prize ? prize.name : nr.id;
+}
+renderLevel();
 function setView(v) {
   const walk = v === 'floor', prof = v === 'profile';
-  floorView.hidden = !walk; floor.hidden = walk || prof; profileView.hidden = !prof; missionsEl.hidden = prof || !window.MISSIONS;
+  floorView.hidden = !walk; floor.hidden = walk || prof; profileView.hidden = !prof; missionsEl.hidden = prof || !window.MISSIONS; lvlEl.hidden = prof || !window.XP; if (!prof) renderLevel();
   if (feat) tourney.hidden = prof;
   vGrid.setAttribute('aria-pressed', String(!walk && !prof)); vFloor.setAttribute('aria-pressed', String(walk)); vProfile.setAttribute('aria-pressed', String(prof));
   if (walk) Floor.start(); else Floor.stop();

@@ -29,6 +29,14 @@ window.Prizes = (() => {
     { id: 'tux', slot: 'outfit', vip: true, name: 'Tuxedo', price: 250, desc: 'Black tie for the VIP room.' },
     { id: 'goldsuit', slot: 'outfit', vip: true, name: 'Golden Suit', price: 400, desc: 'A gold suit and a top hat. Subtle.' },
     { id: 'velvet', slot: 'carpet', vip: true, name: 'Royal Velvet', price: 220, desc: 'Deep red velvet with gold diamonds.' },
+    { id: 'varsity', slot: 'outfit', level: 6, name: 'Varsity Jacket', price: 0, desc: 'A letterman jacket with a big B. Reach level 6.' },
+    { id: 'starfield', slot: 'carpet', level: 10, name: 'Starfield', price: 0, desc: 'Deep space underfoot, twinkling. Reach level 10.' },
+    { id: 'skater', slot: 'outfit', level: 14, name: 'Skater', price: 0, desc: 'Beanie, flannel and a board on your back. Reach level 14.' },
+    { id: 'racetrack', slot: 'carpet', level: 18, name: 'Race Track', price: 0, desc: 'Asphalt, kerbs and a chequered line. Reach level 18.' },
+    { id: 'captain', slot: 'outfit', level: 24, name: 'Space Captain', price: 0, desc: 'A starship captain\'s uniform and cape. Reach level 24.' },
+    { id: 'synthwave', slot: 'carpet', level: 32, name: 'Synthwave Sunset', price: 0, desc: 'A neon sun setting over a pink grid. Reach level 32.' },
+    { id: 'aurora', slot: 'carpet', level: 40, name: 'Aurora', price: 0, desc: 'Northern lights rippling across the floor. Reach level 40.' },
+    { id: 'legend', slot: 'outfit', level: 50, name: 'Bitcade Legend', price: 0, desc: 'A glowing gold suit and a crown of light. Reach level 50.' },
     { id: 'cap', slot: 'outfit', name: 'Cap and Hoodie', price: 30, desc: 'Your arcade-goer, ready for a long session.' },
     { id: 'shades', slot: 'outfit', name: 'Cool Shades', price: 50, desc: 'Leather jacket, dark glasses, no fear.' },
     { id: 'astro', slot: 'outfit', name: 'Astronaut Suit', price: 120, desc: 'Fresh back from a lunar landing.' },
@@ -63,7 +71,7 @@ window.Prizes = (() => {
   const changed = () => fns.forEach(f => f());
   function buy(id) {
     const p = LIST.find(x => x.id === id);
-    if (!p || has(id) || (p.vip && !(window.VIP && VIP.unlocked())) || !TICKETS.spend(p.price)) return false;
+    if (!p || has(id) || p.level || (p.vip && !(window.VIP && VIP.unlocked())) || !TICKETS.spend(p.price)) return false;
     set('arcade:prizes', JSON.stringify([...owned(), id]));
     if (p.slot !== 'decor') wear(id);
     changed(); return true;
@@ -105,7 +113,8 @@ window.Prizes = (() => {
       const p = LIST.find(x => x.id === el.dataset.id), own = has(p.id), on = eq[p.slot] === p.id, btn = el.querySelector('button');
       el.classList.toggle('own', own); el.classList.toggle('on', on);
       const locked = p.vip && !(window.VIP && VIP.unlocked());
-      if (!own && locked) { btn.textContent = 'VIP ONLY'; btn.disabled = true; }
+      if (!own && p.level) { btn.textContent = `LEVEL ${p.level}`; btn.disabled = true; }
+      else if (!own && locked) { btn.textContent = 'VIP ONLY'; btn.disabled = true; }
       else if (!own) { btn.textContent = bal >= p.price ? `BUY · ${p.price}` : `NEED ${p.price}`; btn.disabled = bal < p.price; }
       else if (p.slot === 'decor') { btn.textContent = 'ON THE FLOOR'; btn.disabled = true; }
       else { btn.textContent = on ? 'WEARING ✓' : 'WEAR'; btn.disabled = false; }
@@ -118,10 +127,10 @@ window.Prizes = (() => {
       <div class="pc-how">Win tickets in every game: a few per game, more for a top-10 score or a new record, 10 per badge, and double on the weekly tournament game.</div></div>
       <div class="pc-bal">TICKETS <b>0</b></div><button class="pc-x" aria-label="Close">✕</button></div><div class="pc-body"></div></div>`;
     const body = box.querySelector('.pc-body');
-    [...SLOTS, ['vip', '★ VIP EXCLUSIVES · unlock the VIP room on the arcade floor']].forEach(([slot, label]) => {
+    [...SLOTS, ['vip', '★ VIP EXCLUSIVES · unlock the VIP room on the arcade floor'], ['level', '▲ LEVEL REWARDS · free when you reach the level']].forEach(([slot, label]) => {
       const h = document.createElement('h3'); h.textContent = label; body.append(h);
       const row = document.createElement('div'); row.className = 'pc-row'; body.append(row);
-      LIST.filter(p => slot === 'vip' ? p.vip : p.slot === slot && !p.vip).forEach(p => {
+      LIST.filter(p => slot === 'vip' ? p.vip : slot === 'level' ? p.level : p.slot === slot && !p.vip && !p.level).forEach(p => {
         const el = document.createElement('div'); el.className = 'pc-item'; el.dataset.id = p.id;
         el.innerHTML = '<canvas width="96" height="64"></canvas><b></b><small></small><button></button>';
         el.querySelector('b').textContent = p.name; el.querySelector('small').textContent = p.desc;
