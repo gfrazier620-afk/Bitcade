@@ -137,7 +137,9 @@ function hurtMe(n, fx, fy) {
 }
 function gameOver() { const rec = A.submit(score); A.overlay({ title: 'FALLEN', big: `SCORE ${score.toLocaleString()} · FLOOR ${floorN}`, sub: `${gems} GEMS${rec ? ' · New high score!' : ''}`, btn: 'Delve again', onGo: newGame }); }
 function move(o, dx, dy, rad) {
-  const ok = (x, y) => ![[-rad, -rad], [rad, -rad], [-rad, rad], [rad, rad]].some(([ox, oy]) => solid(cur, x + ox, y + oy) || (o === me && doorShut(cur, x + ox, y + oy)));
+  const inDoor = (x, y) => [[-rad, -rad], [rad, -rad], [-rad, rad], [rad, rad]].some(([ox, oy]) => doorShut(cur, x + ox, y + oy));
+  const stuck = o === me && inDoor(o.x, o.y);
+  const ok = (x, y) => ![[-rad, -rad], [rad, -rad], [-rad, rad], [rad, rad]].some(([ox, oy]) => solid(cur, x + ox, y + oy)) && !(o === me && !stuck && inDoor(x, y));
   if (ok(o.x + dx, o.y)) o.x += dx; if (ok(o.x, o.y + dy)) o.y += dy;
 }
 function update(dt) {
@@ -154,7 +156,7 @@ function update(dt) {
   if (me.inv > 0) me.inv -= dt;
   // leaving through a doorway
   const off = me.x < 4 ? [-1, 0] : me.x > W - 4 ? [1, 0] : me.y < 4 ? [0, -1] : me.y > RR * T - 4 ? [0, 1] : null;
-  if (off) { trans = { d: off, t: 0, nx: off[0] ? (off[0] > 0 ? 20 : W - 20) : me.x, ny: off[1] ? (off[1] > 0 ? 20 : RR * T - 20) : me.y }; return; }
+  if (off) { trans = { d: off, t: 0, nx: off[0] ? (off[0] > 0 ? T + 16 : W - T - 16) : me.x, ny: off[1] ? (off[1] > 0 ? T + 16 : RR * T - T - 16) : me.y }; return; }
   // the sword
   if (me.swing > 0) {
     me.swing -= dt; const sb = swordBox();
