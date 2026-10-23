@@ -65,8 +65,7 @@ body{display:block;overflow-x:hidden;
 .sizes{display:flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;flex:none}
 .sizes button{background:var(--bg2);color:var(--muted);border:0;font-size:17px;line-height:1;padding:8px 12px;cursor:pointer}
 .sizes button[aria-pressed="true"]{background:var(--hi);color:#120a1c}
-.gchips{display:flex;gap:8px;max-width:900px;margin:0 auto 22px;overflow-x:auto;scrollbar-width:none;padding:2px 2px 4px;-webkit-mask-image:linear-gradient(90deg,#000 92%,transparent);mask-image:linear-gradient(90deg,#000 92%,transparent)}
-.gchips::-webkit-scrollbar{display:none}
+.gchips{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;max-width:900px;margin:0 auto 22px}
 .gchip{flex:none;display:flex;align-items:center;gap:6px;font-family:var(--f-pixel);font-size:11px;letter-spacing:.06em;color:var(--muted);background:var(--bg2);border:1px solid var(--line);border-radius:999px;padding:7px 12px;cursor:pointer;white-space:nowrap}
 .gchip small{font-size:10px;opacity:.7}
 .gchip:hover{border-color:var(--hi);color:var(--ink)}
@@ -116,6 +115,7 @@ body{display:block;overflow-x:hidden;
 .floor.small .cab-screen .fav{width:26px;height:26px;font-size:14px;top:5px;left:5px}
 @media (max-width:640px){
   .finder{flex-wrap:wrap}.finder .q{flex-basis:100%}.finder select{flex:1}
+  .gchips{gap:6px}.gchip{padding:6px 9px;font-size:10px}
   .tile{width:152px}.t-name{font-size:13.5px}
   .shelf h3,.gridhead h3{font-size:16px;white-space:nowrap}
   .floor.small{grid-template-columns:repeat(auto-fill,minmax(136px,1fr));gap:10px}
