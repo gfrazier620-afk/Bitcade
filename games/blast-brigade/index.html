@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Blast Brigade</title>
+<link rel="manifest" href="../../manifest.json">
+<meta name="theme-color" content="#0f0c1f">
+<link rel="icon" type="image/png" href="../../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../../icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Rubik:wght@400;500;700&family=Silkscreen&display=swap">
+<link rel="stylesheet" href="../../shared/arcade.css">
+</head>
+<body data-game="blast-brigade" data-pad="0:Space 2:KeyX 1:KeyC 3:KeyC" style="--game:#ff8a3d">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>BLAST BRIGADE</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <div class="pad">
+    <div class="dp"><button class="u" data-k="ArrowUp" aria-label="Aim up">▲</button><button class="l" data-k="ArrowLeft" aria-label="Left">◀</button><button class="r" data-k="ArrowRight" aria-label="Right">▶</button><button class="d" data-k="ArrowDown" aria-label="Crouch">▼</button></div>
+    <div class="ab"><button class="sm" data-k="KeyC">BOMB</button><button data-k="Space">JUMP</button><button data-k="KeyX">FIRE</button></div>
+  </div>
+  <p class="help"><kbd>←</kbd><kbd>→</kbd> run · <kbd>↑</kbd> aim up · <kbd>↓</kbd> crouch · <kbd>Space</kbd> or <kbd>Z</kbd> jump · <kbd>X</kbd> or <kbd>J</kbd> fire (hold) · <kbd>C</kbd> or <kbd>K</kbd> grenade · <kbd>P</kbd> pause</p>
+</main>
+<script src="../../shared/chip.js"></script>
+<script src="../../shared/badges.js"></script>
+<script src="../../shared/arcade.js"></script>
+<script>
+(() => {
+/*
+ * Blast Brigade: run and gun to the right through three fronts (desert, jungle, ruined city), each ending in a
+ * heavy tank. Shoot the troopers, turrets and gunships, free the tied-up hostages (each one drops a new weapon:
+ * H heavy gun, S spread, R rockets) and lob grenades. One hit costs a life. Stages repeat harder after the third.
+ */
+const A = Arcade, cv = document.getElementById('cv');
+const W = 480, H = 270, GY = 226, ctx = A.canvas(cv, W, H), OUT = '#0a0612';
+function shade(hex, k) {
+  let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join('');
+  const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+/** Boxes [x, y, w, h, colour]: an outline pass, then fills lit from above. */
+function paint(x, list) {
+  x.fillStyle = OUT; for (const q of list) x.fillRect(q[0] - 1, q[1] - 1, q[2] + 2, q[3] + 2);
+  for (const [px, py, w, h, c] of list) { x.fillStyle = c; x.fillRect(px, py, w, h); if (w > 2 && h > 2) { x.fillStyle = shade(c, 0.3); x.fillRect(px, py, w, 1); x.fillStyle = shade(c, -0.3); x.fillRect(px, py + h - 1, w, 1); } }
+}
+const sprite = (w, h, fn) => { const c = document.createElement('canvas'); c.width = w; c.height = h; fn(c.getContext('2d'), w, h); return c; };
+const WEAPONS = { P: { name: 'PISTOL', rate: 0.2, ammo: Infinity, col: '#fff6c2' }, H: { name: 'HEAVY GUN', rate: 0.075, ammo: 160, col: '#ffd23d' }, S: { name: 'SPREAD', rate: 0.22, ammo: 50, col: '#ff4fd1' }, R: { name: 'ROCKETS', rate: 0.42, ammo: 24, col: '#ff8a3d' } };
+
+/* ---------- three fronts: sky, a far layer and a near layer, drawn once each ---------- */
+const FRONTS = [
+  { name: 'DESERT FRONT', sky: ['#f0a050', '#ffe0a0'], far: '#c8805a', near: '#a86a3a', ground: '#d8a868', dirt: '#a87a48', kind: 'desert' },
+  { name: 'JUNGLE FRONT', sky: ['#5aa0a0', '#d0f0c0'], far: '#3a7a5a', near: '#2a5a3a', ground: '#5a8a3a', dirt: '#4a3a24', kind: 'jungle' },
+  { name: 'CITY FRONT', sky: ['#3a2a4a', '#c87a6a'], far: '#4a3a50', near: '#2a2234', ground: '#6a6a72', dirt: '#3a3a42', kind: 'city' }
+];
+FRONTS.forEach((f, fi) => {
+  let s = 7 + fi * 13; const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  f.sky_ = sprite(W, H, x => { const g = x.createLinearGradient(0, 0, 0, GY); g.addColorStop(0, f.sky[0]); g.addColorStop(1, f.sky[1]); x.fillStyle = g; x.fillRect(0, 0, W, H);
+    if (f.kind === 'desert') { const sg = x.createRadialGradient(370, 60, 6, 370, 60, 70); sg.addColorStop(0, 'rgba(255,255,230,1)'); sg.addColorStop(0.25, 'rgba(255,240,180,.8)'); sg.addColorStop(1, 'rgba(255,220,150,0)'); x.fillStyle = sg; x.fillRect(290, -20, 160, 160); }
+    if (f.kind === 'city') for (let i = 0; i < 6; i++) { x.fillStyle = 'rgba(40,20,30,.35)'; x.beginPath(); x.ellipse(r() * W, 40 + r() * 80, 60, 14, 0, 0, 6.29); x.fill(); } });
+  f.farL = sprite(W * 2, H, x => {
+    x.fillStyle = f.far;
+    if (f.kind === 'city') { for (let bx = 0; bx < W * 2;) { const bw = 20 + r() * 40, bh = 50 + r() * 90; x.fillRect(bx, GY - 40 - bh, bw, bh + 40); if (r() < 0.5) { x.fillStyle = shade(f.far, -0.2); x.beginPath(); x.moveTo(bx + bw * 0.3, GY - 40 - bh); x.lineTo(bx + bw * 0.6, GY - 50 - bh); x.lineTo(bx + bw, GY - 40 - bh); x.fill(); x.fillStyle = f.far; } bx += bw + 4; } }
+    else { x.beginPath(); x.moveTo(0, H); for (let i = 0; i <= W * 2; i += 8) x.lineTo(i, GY - 60 - Math.abs(Math.sin(i * 0.008 + fi)) * 60 - Math.sin(i * 0.03) * 6); x.lineTo(W * 2, H); x.fill(); }
+  });
+  f.nearL = sprite(W * 2, H, x => {
+    x.fillStyle = f.near;
+    if (f.kind === 'desert') { x.beginPath(); x.moveTo(0, H); for (let i = 0; i <= W * 2; i += 8) x.lineTo(i, GY - 14 - Math.abs(Math.sin(i * 0.012)) * 24); x.lineTo(W * 2, H); x.fill(); for (let i = 0; i < 6; i++) { const cx = r() * W * 2; x.fillStyle = '#3a6a3a'; x.fillRect(cx, GY - 46, 6, 34); x.fillRect(cx - 7, GY - 38, 7, 4); x.fillRect(cx - 7, GY - 44, 3, 8); x.fillRect(cx + 6, GY - 34, 6, 4); x.fillRect(cx + 9, GY - 42, 3, 10); } }
+    if (f.kind === 'jungle') for (let i = 0; i < 16; i++) { const tx = r() * W * 2, th = 60 + r() * 60; x.fillStyle = '#3a2a1a'; x.fillRect(tx, GY - th, 6, th); for (const [c, k] of [['#1f4a2a', 1], ['#2f6a3a', 0.7]]) { x.fillStyle = c; for (let k2 = 0; k2 < 5; k2++) { x.beginPath(); x.ellipse(tx + 3 + Math.cos(k2 * 1.3) * 18 * k, GY - th + Math.sin(k2 * 1.3) * 6, 22 * k, 8 * k, k2 * 0.6, 0, 6.29); x.fill(); } } }
+    if (f.kind === 'city') for (let bx = 0; bx < W * 2;) { const bw = 40 + r() * 50, bh = 30 + r() * 60; x.fillStyle = f.near; x.fillRect(bx, GY - bh, bw, bh); x.fillStyle = '#1a1420'; for (let wy = GY - bh + 6; wy < GY - 8; wy += 12) for (let wx = bx + 5; wx < bx + bw - 6; wx += 10) x.fillRect(wx, wy, 5, 6); x.fillStyle = 'rgba(255,140,60,.6)'; if (r() < 0.6) x.fillRect(bx + 5 + Math.floor(r() * 3) * 10, GY - bh + 6, 5, 6); x.fillStyle = f.near; x.beginPath(); x.moveTo(bx + bw - 12, GY - bh); x.lineTo(bx + bw, GY - bh + 14); x.lineTo(bx + bw, GY - bh); x.fill(); bx += bw + 14 + r() * 20; }
+  });
+  f.groundT = sprite(64, H - GY, x => { x.fillStyle = f.ground; x.fillRect(0, 0, 64, H - GY); x.fillStyle = shade(f.ground, 0.2); x.fillRect(0, 0, 64, 3); x.fillStyle = OUT; x.fillRect(0, 0, 64, 1); x.fillStyle = f.dirt; for (let i = 0; i < 20; i++) x.fillRect(r() * 64, 6 + r() * (H - GY - 6), 3, 2); if (f.kind === 'jungle') { x.fillStyle = '#3a7a2a'; for (let i = 0; i < 8; i++) x.fillRect(r() * 64, 0, 2, 4); } if (f.kind === 'city') { x.fillStyle = 'rgba(255,255,255,.25)'; x.fillRect(10, 18, 20, 2); } });
+});
+
+/* ---------- people: the hero (red bandana, blue vest) and the troopers (olive, round helmets) ---------- */
+function soldier(x, px, py, o) {
+  const { face = 1, run = 0, crouch = false, up = false, enemy = false, dead = 0, hit = 0 } = o;
+  const skin = '#f0c090', top = enemy ? '#6a7a3a' : '#3d6aff', legs = enemy ? '#4a5a2a' : '#4a3a2a';
+  x.save(); x.translate(Math.round(px), Math.round(py)); x.scale(face, 1);
+  if (dead) { x.rotate(-Math.min(1.4, dead * 4)); x.globalAlpha = Math.max(0, 1 - Math.max(0, dead - 0.5) * 2); }
+  const step = Math.sin(run), h = crouch ? 6 : 0;
+  // legs
+  if (crouch) paint(x, [[-6, -8, 6, 8, legs], [0, -6, 7, 6, shade(legs, -0.1)]]);
+  else paint(x, [[-5 + step * 3, -11, 4, 11, legs], [1 - step * 3, -11, 4, 11, shade(legs, -0.12)]]);
+  x.fillStyle = OUT; x.fillRect(-6 + (crouch ? 0 : step * 3), -2, 6, 3); x.fillRect(1 - (crouch ? -1 : step * 3), -2, 6, 3);
+  // body, head, helmet or bandana
+  paint(x, [[-5, -22 + h, 10, 12, top], [-4, -31 + h, 9, 9, skin]]);
+  if (!enemy) { paint(x, [[-3, -20 + h, 6, 8, '#2a4ad8']]); x.fillStyle = '#c8203a'; x.fillRect(-5, -31 + h, 11, 3); x.fillRect(-8, -30 + h + Math.sin(run * 2) * 1, 4, 2); }
+  else { paint(x, [[-6, -34 + h, 12, 5, '#5a6a2a']]); x.fillStyle = shade('#5a6a2a', -0.3); x.fillRect(-6, -30 + h, 12, 1); }
+  x.fillStyle = OUT; x.fillRect(2, -28 + h, 2, 2);
+  // arm and gun: forward, or straight up
+  if (up) { paint(x, [[0, -40 + h, 4, 18, '#3a3a48'], [-1, -24 + h, 5, 6, skin]]); }
+  else { paint(x, [[1, -21 + h, 13, 4, '#3a3a48'], [0, -19 + h, 5, 4, skin]]); x.fillStyle = '#8a8ea0'; x.fillRect(4, -21 + h, 8, 1); }
+  if (hit > 0) { x.globalCompositeOperation = 'lighter'; x.fillStyle = `rgba(255,255,255,${hit * 4})`; x.fillRect(-7, -36 + h, 22, 36 - h); x.globalCompositeOperation = 'source-over'; }
+  x.restore();
+}
+function hostage(x, px, py, freed, t) {
+  x.save(); x.translate(Math.round(px), Math.round(py));
+  if (!freed) { // tied to a post, bearded, waving for help
+    paint(x, [[-1, -34, 3, 34, '#7a5a3a'], [-6, -22, 12, 12, '#d8c8a0'], [-5, -31, 10, 9, '#f0c090'], [-5, -11, 10, 11, '#8a7a5a']]);
+    x.fillStyle = '#8a5a2a'; x.fillRect(-5, -26, 10, 4); x.fillStyle = '#5a3a1a'; x.fillRect(-6, -18, 12, 2); x.fillRect(-6, -14, 12, 2);
+    x.fillStyle = OUT; x.fillRect(-2, -28, 1, 1); x.fillRect(2, -28, 1, 1);
+    x.font = '8px Bungee, sans-serif'; x.textAlign = 'center'; x.fillStyle = '#ffd23d'; x.fillText('HELP!', 0, -40 + Math.sin(t / 200) * 2);
+  } else { // saluting
+    paint(x, [[-5, -11, 4, 11, '#8a7a5a'], [1, -11, 4, 11, '#8a7a5a'], [-6, -22, 12, 12, '#d8c8a0'], [-5, -31, 10, 9, '#f0c090'], [3, -32, 3, 10, '#d8c8a0']]);
+    x.fillStyle = '#8a5a2a'; x.fillRect(-5, -26, 10, 4); x.fillStyle = OUT; x.fillRect(1, -29, 1, 1);
+  }
+  x.restore();
+}
+function drawTurret(x, e, t) {
+  const X = Math.round(e.x), Y = GY;
+  paint(x, [[X - 18, Y - 12, 36, 12, '#c8b080'], [X - 14, Y - 18, 28, 7, '#b8a070']]);
+  x.fillStyle = 'rgba(0,0,0,.2)'; for (let i = 0; i < 4; i++) x.fillRect(X - 16 + i * 9, Y - 12, 1, 12);
+  x.save(); x.translate(X, Y - 22); x.rotate(e.aim || Math.PI);
+  paint(x, [[0, -3, 20, 6, '#4a4e5a']]); x.restore();
+  paint(x, [[X - 8, Y - 28, 16, 10, e.hit > 0 ? '#ffffff' : '#5a6a3a']]);
+}
+function drawHeli(x, e, t) {
+  const X = Math.round(e.x), Y = Math.round(e.y), blade = Math.sin(t / 30) * 34;
+  x.fillStyle = OUT; x.fillRect(X - 36, Y - 18, 72, 3); x.fillStyle = 'rgba(200,200,210,.7)'; x.fillRect(X - Math.abs(blade), Y - 17, Math.abs(blade) * 2, 1);
+  paint(x, [[X - 22, Y - 12, 36, 18, e.hit > 0 ? '#ffffff' : '#5a6a3a'], [X + 12, Y - 8, 30, 6, '#4a5a2a'], [X + 38, Y - 14, 4, 14, '#4a5a2a'], [X - 2, Y - 16, 4, 4, '#3a3a48']]);
+  x.fillStyle = '#5ee7ff'; x.fillRect(X - 20, Y - 9, 10, 7); x.fillStyle = 'rgba(255,255,255,.5)'; x.fillRect(X - 19, Y - 8, 3, 2);
+  x.fillStyle = OUT; x.fillRect(X - 18, Y + 6, 28, 2); x.fillRect(X - 14, Y + 3, 2, 4); x.fillRect(X + 4, Y + 3, 2, 4);
+  x.fillStyle = '#ffd23d'; x.fillRect(X - 6, Y - 4, 8, 2);
+}
+function drawTank(x, e, t) {
+  const X = Math.round(e.x), Y = GY, hurt = e.hit > 0, body = hurt ? '#ffffff' : e.hp < e.max / 2 ? '#7a6a3a' : '#6a7a3a';
+  // treads, rolling
+  paint(x, [[X - 52, Y - 18, 104, 18, '#2a2a32']]);
+  for (let i = 0; i < 7; i++) { x.fillStyle = OUT; x.beginPath(); x.arc(X - 42 + i * 14, Y - 8, 6, 0, 6.29); x.fill(); x.fillStyle = '#5a5e70'; x.beginPath(); x.arc(X - 42 + i * 14, Y - 8, 4.5, 0, 6.29); x.fill(); x.fillStyle = OUT; const a = t / 100 * (e.vx || 0) / 30 + i; x.fillRect(X - 42 + i * 14 + Math.cos(a) * 3 - 1, Y - 8 + Math.sin(a) * 3 - 1, 2, 2); }
+  paint(x, [[X - 48, Y - 34, 96, 18, body], [X - 26, Y - 52, 44, 20, shade(body, 0.08)]]);
+  x.fillStyle = 'rgba(0,0,0,.25)'; for (let i = 0; i < 6; i++) x.fillRect(X - 44 + i * 16, Y - 30, 2, 10);
+  x.save(); x.translate(X - 26, Y - 44); x.rotate(e.gun || 0); paint(x, [[-44, -4, 46, 8, '#4a4e5a']]); x.restore();
+  paint(x, [[X - 10, Y - 60, 14, 8, '#4a5a2a']]);
+  x.fillStyle = '#ffd23d'; x.font = '9px Bungee, sans-serif'; x.textAlign = 'center'; x.fillText('★', X + 10, Y - 38);
+  if (e.hp < e.max / 2) for (let i = 0; i < 3; i++) { const k = ((t / 700 + i / 3) % 1); x.fillStyle = `rgba(60,50,50,${0.5 * (1 - k)})`; x.beginPath(); x.arc(X + 20 + i * 6, Y - 54 - k * 30, 4 + k * 8, 0, 6.29); x.fill(); }
+}
+
+/* ---------- state ---------- */
+let state = 'title', stage = 0, round = 0, score = 0, lives = 3, cam = 0, endX = 0, bossLock = false, events = [], foes = [], shots = [], bad = [], nades = [], booms = [], plats = [], crates = [], hostages = [], drops = [], freed = 0, msg = '', msgT = 0, t0 = 0, kills = 0;
+const me = { x: 40, y: GY, vx: 0, vy: 0, face: 1, ground: true, run: 0, crouch: false, up: false, dead: 0, inv: 0, gun: 'P', ammo: Infinity, bombs: 10, fireT: 0 };
+const say = (m, s = 2) => { msg = m; msgT = s; };
+const front = () => FRONTS[stage % 3];
+function buildStage() {
+  const rnd = A.seeded('blast-brigade:' + stage), r = (a, b) => a + rnd() * (b - a), lv = stage + round * 3;
+  events = []; foes = []; shots = []; bad = []; nades = []; booms = []; plats = []; crates = []; hostages = []; drops = [];
+  let x = 360; endX = 3300 + lv * 200;
+  while (x < endX - 300) {
+    const k = rnd();
+    if (k < 0.32) { const n = 1 + Math.floor(rnd() * (2 + Math.min(2, lv))); for (let i = 0; i < n; i++) events.push({ x, kind: 'grunt', dx: 40 + i * 26 }); }
+    else if (k < 0.48) { const w = 70 + rnd() * 50; plats.push({ x: x + 40, y: GY - 46, w }); events.push({ x, kind: 'grunt', dx: 60, onPlat: plats[plats.length - 1] }); }
+    else if (k < 0.6) { crates.push({ x: x + 60, y: GY - 22, hp: 3 }); if (rnd() < 0.5) crates.push({ x: x + 60, y: GY - 44, hp: 3 }); }
+    else if (k < 0.74) events.push({ x, kind: 'turret', dx: 120 });
+    else if (k < 0.86) hostages.push({ x: x + 70, freed: false, t: 0, gun: 'HSR'[Math.floor(rnd() * 3)] });
+    else if (lv >= 1 || k > 0.95) events.push({ x, kind: 'heli', dx: 0 });
+    x += r(170, 290) - Math.min(lv * 8, 60);
+  }
+  if (!hostages.length) hostages.push({ x: 900, freed: false, t: 0, gun: 'H' });
+  me.x = 40; me.y = GY; me.vx = me.vy = 0; cam = 0; bossLock = false;
+  say(`STAGE ${stage + 1 + round * 3} · ${front().name}`, 2.4);
+}
+function newGame() { stage = 0; round = 0; score = 0; freed = 0; kills = 0; lives = A.easy ? 5 : 3; A.setScore(0); me.gun = 'P'; me.ammo = Infinity; me.bombs = 10; me.dead = 0; me.inv = 1.5; buildStage(); state = 'play'; A.jingle([392, 523, 659, 784], 0.08); }
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+A.onPress(c => {
+  if (c === 'KeyP' || c === 'Escape') return pause();
+  if (state !== 'play' || me.dead) return;
+  if ((c === 'Space' || c === 'KeyZ' || c === 'KeyW') && me.ground) { me.vy = -330; me.ground = false; A.sfx('jump'); }
+  if ((c === 'KeyC' || c === 'KeyK') && me.bombs > 0) { me.bombs--; nades.push({ x: me.x + me.face * 6, y: me.y - 22, vx: me.face * 170 + me.vx * 0.5, vy: -230, mine: true, t: 0 }); A.tone(500, 0.08, 'triangle', 0.03); }
+});
+A.onHide(pause);
+const score_ = (n, x, y) => { score += n; A.setScore(score); if (x !== undefined) A.pop(x - cam, y, '+' + n, '#ffd23d'); };
+function spawn(ev) {
+  const lv = stage + round * 3;
+  if (ev.kind === 'grunt') foes.push({ kind: 'grunt', x: cam + W + ev.dx, y: ev.onPlat ? ev.onPlat.y : GY, plat: ev.onPlat, hp: 1, face: -1, run: 0, fireT: A.rand(0.8, 2), dead: 0, hit: 0, w: 12, h: 32, nade: lv >= 1 && Math.random() < 0.3 });
+  if (ev.kind === 'turret') foes.push({ kind: 'turret', x: cam + W + ev.dx, y: GY, hp: 8 + lv * 2, fireT: 1.5, burst: 0, hit: 0, w: 32, h: 28 });
+  if (ev.kind === 'heli') foes.push({ kind: 'heli', x: cam + W + 40, y: 60, hp: 14 + lv * 3, fireT: 2, hit: 0, w: 60, h: 24 });
+}
+function fire() {
+  const g = WEAPONS[me.gun], up = me.up && !me.crouch, ox = me.x + (up ? me.face * 2 : me.face * 14), oy = me.y - (up ? 40 : me.crouch ? 15 : 21);
+  const mk = (ang, dmg, kind) => shots.push({ x: ox, y: oy, vx: Math.cos(ang) * (kind === 'R' ? 300 : 480), vy: Math.sin(ang) * (kind === 'R' ? 300 : 480), dmg, kind, t: 0 });
+  const base = up ? -Math.PI / 2 : me.face > 0 ? 0 : Math.PI;
+  if (me.gun === 'S') [-0.22, -0.11, 0, 0.11, 0.22].forEach(d => mk(base + d, 1, 'S'));
+  else if (me.gun === 'H') mk(base + A.rand(-0.06, 0.06), 1, 'H');
+  else if (me.gun === 'R') mk(base, 6, 'R');
+  else mk(base, 1, 'P');
+  if (me.gun !== 'P') { me.ammo--; if (me.ammo <= 0) { me.gun = 'P'; me.ammo = Infinity; say('OUT OF AMMO'); } }
+  A.tone(me.gun === 'R' ? 160 : me.gun === 'H' ? 700 : 900, 0.05, 'square', 0.025, 0, 200);
+  A.burst(ox - cam, oy, { n: 2, color: g.col, speed: 60, life: 0.12, size: 2 });
+}
+function boom(x, y, r, mine) {
+  booms.push({ x, y, r, t: 0 }); A.shake(r > 30 ? 6 : 3, 0.25); A.sfx('boom');
+  A.burst(x - cam, y, { n: 14, colors: ['#ffd23d', '#ff8a3d', '#fff'], speed: 160, life: 0.5 }); A.burst(x - cam, y, { n: 6, kind: 'smoke', color: '#5a5048', speed: 50, life: 1, size: 8 });
+  if (mine) { for (const f of foes) if (!f.dead && Math.abs(f.x - x) < r + f.w / 2 && Math.abs(f.y - f.h / 2 - y) < r + f.h / 2) hurt(f, f.kind === 'tank' ? 8 : 6); crates.forEach(c => { if (Math.abs(c.x + 11 - x) < r + 11 && Math.abs(c.y + 11 - y) < r + 11) c.hp = 0; }); }
+  else if (!me.dead && me.inv <= 0 && Math.abs(me.x - x) < r && Math.abs(me.y - 15 - y) < r + 10) die();
+}
+function hurt(f, n) {
+  f.hp -= n; f.hit = 0.08;
+  if (f.hp > 0) return;
+  if (f.kind === 'grunt') { f.dead = 0.001; kills++; score_(100, f.x, f.y - 30); A.sfx('hurt'); }
+  else { f.dead = 0.001; boom(f.x, f.y - f.h / 2, f.kind === 'tank' ? 60 : 30, false); kills++;
+    if (f.kind === 'turret') score_(300, f.x, f.y - 30);
+    if (f.kind === 'heli') { score_(800, f.x, f.y); A.flash('#fff', 0.15); }
+    if (f.kind === 'tank') { const pts = 5000 + (stage + round * 3) * 1000; score_(pts, f.x, f.y - 60); A.badge('boss'); A.flash('#fff', 0.4); A.hitstop(0.15); A.shake(12, 0.8); for (let i = 0; i < 6; i++) setTimeout(() => boom(f.x + A.rand(-40, 40), f.y - A.rand(10, 50), 24, false), i * 140); bossLock = false; setTimeout(stageClear, 2200); }
+  }
+}
+function die() {
+  if (me.dead || me.inv > 0) return;
+  me.dead = 0.001; lives--; A.shake(6, 0.3); A.sfx('hurt'); A.flash('#ff4f6d', 0.2);
+}
+function stageClear() {
+  if (state !== 'play') return;
+  const bonus = 2000 + freed * 300; score_(bonus); say(`STAGE CLEAR! +${bonus}`, 2.4); A.jingle([523, 659, 784, 1047, 1319], 0.09, 'square');
+  if (stage === 2) A.badge('stage3');
+  setTimeout(() => { if (state !== 'play') return; stage++; if (stage >= 3) { stage = 0; round++; } buildStage(); }, 2400);
+}
+function gameOver() {
+  state = 'over'; const rec = A.submit(score);
+  A.overlay({ title: 'MISSION FAILED', big: `SCORE ${score.toLocaleString()} · STAGE ${stage + 1 + round * 3}`, sub: `${kills} DOWN · ${freed} HOSTAGES FREED${rec ? ' · New high score!' : ''}`, btn: 'Deploy again', onGo: newGame });
+}
+const onPlat = (x, y, vy) => { if (vy < 0) return null; for (const p of plats) if (x > p.x && x < p.x + p.w && y >= p.y && y - vy / 60 <= p.y + 4) return p; for (const c of crates) if (c.hp > 0 && x > c.x - 2 && x < c.x + 24 && y >= c.y && y - vy / 60 <= c.y + 4) return { y: c.y }; return null; };
+function update(dt) {
+  if (msgT > 0) msgT -= dt;
+  for (const b of booms) b.t += dt; booms = booms.filter(b => b.t < 0.4);
+  if (state !== 'play') return;
+  // you
+  if (me.dead) { me.dead += dt; if (me.dead > 1.4) { if (lives <= 0) return gameOver(); me.dead = 0; me.inv = 2; me.y = GY - 120; me.vy = 0; me.gun = 'P'; me.ammo = Infinity; me.bombs = Math.max(me.bombs, 5); } }
+  else {
+    const L = A.held('ArrowLeft', 'KeyA'), R = A.held('ArrowRight', 'KeyD');
+    me.up = A.held('ArrowUp'); me.crouch = A.held('ArrowDown', 'KeyS') && me.ground;
+    const dir = (R ? 1 : 0) - (L ? 1 : 0); if (dir) me.face = dir;
+    me.vx = me.crouch ? 0 : dir * 110; me.run += dir && me.ground ? dt * 14 : 0;
+    me.vy += 900 * dt; me.x += me.vx * dt; me.y += me.vy * dt;
+    me.x = Math.max(cam + 8, Math.min(bossLock ? cam + W - 8 : me.x, cam + W - 8));
+    me.ground = false;
+    if (me.y >= GY) { me.y = GY; me.vy = 0; me.ground = true; }
+    else { const p = onPlat(me.x, me.y, me.vy); if (p) { me.y = p.y; me.vy = 0; me.ground = true; } }
+    if (me.inv > 0) me.inv -= dt;
+    me.fireT -= dt; if ((A.held('KeyX', 'KeyJ')) && me.fireT <= 0) { me.fireT = WEAPONS[me.gun].rate; fire(); }
+  }
+  // the camera follows you right, never back; the boss locks it
+  if (!bossLock) cam = Math.max(cam, Math.min(me.x - W * 0.38, endX - W));
+  while (events.length && events[0].x < cam + W) spawn(events.shift());
+  if (!bossLock && cam >= endX - W - 1 && !foes.some(f => f.kind === 'tank')) { bossLock = true; const lv = stage + round * 3, hp = 60 + lv * 20; foes.push({ kind: 'tank', x: cam + W + 60, y: GY, hp, max: hp, vx: -40, fireT: 2, mgT: 3, hit: 0, w: 96, h: 60, gun: 0 }); say('HEAVY ARMOR!', 2); A.tone(70, 1, 'sawtooth', 0.06, 0, 40); }
+  // hostages: walk up to free them
+  for (const h of hostages) { if (!h.freed && Math.abs(h.x - me.x) < 14 && !me.dead) { h.freed = true; freed++; score_(500, h.x, GY - 50); A.jingle([659, 784, 988], 0.07); drops.push({ x: h.x + 16, y: GY - 20, vy: -120, g: h.gun }); if (freed >= 5) A.badge('pow5'); } if (h.freed) h.t += dt; }
+  // drops: weapon crates, bombs
+  for (const d of drops) { d.vy += 600 * dt; d.y = Math.min(GY - 10, d.y + d.vy * dt); if (!me.dead && Math.abs(d.x - me.x) < 14 && Math.abs(d.y - (me.y - 12)) < 22) { d.got = true; if (d.g === 'B') { me.bombs += 5; say('+5 GRENADES', 1.4); } else { me.gun = d.g; me.ammo = WEAPONS[d.g].ammo; say(WEAPONS[d.g].name + '!', 1.4); } A.sfx('powerup'); } }
+  drops = drops.filter(d => !d.got && d.x > cam - 40);
+  // your shots
+  for (const s of shots) {
+    s.x += s.vx * dt; s.y += s.vy * dt; s.t += dt;
+    for (const f of foes) if (!f.dead && Math.abs(s.x - f.x) < f.w / 2 + 3 && s.y > f.y - f.h && s.y < f.y + 2) { s.dead = true; if (s.kind === 'R') boom(s.x, s.y, 26, true); else hurt(f, s.dmg); A.burst(s.x - cam, s.y, { n: 3, color: '#fff6c2', speed: 80, life: 0.15 }); break; }
+    for (const c of crates) if (!s.dead && c.hp > 0 && s.x > c.x && s.x < c.x + 22 && s.y > c.y && s.y < c.y + 22) { s.dead = true; c.hp -= s.kind === 'R' ? 3 : 1; if (c.hp <= 0) { A.burst(c.x + 11 - cam, c.y + 11, { n: 10, kind: 'debris', colors: ['#c8904a', '#8a5a2a'], speed: 140, life: 0.6 }); if (Math.random() < 0.6) drops.push({ x: c.x + 11, y: c.y, vy: -100, g: Math.random() < 0.4 ? 'B' : 'HSR'[Math.floor(Math.random() * 3)] }); score_(50); } }
+    if (s.x < cam - 20 || s.x > cam + W + 20 || s.y < -20 || s.y > H) s.dead = true;
+  }
+  shots = shots.filter(s => !s.dead);
+  // grenades
+  for (const n of nades) { n.t += dt; n.vy += 600 * dt; n.x += n.vx * dt; n.y += n.vy * dt; if (n.y >= GY - 2 || (n.mine && foes.some(f => !f.dead && Math.abs(f.x - n.x) < f.w / 2 && n.y > f.y - f.h))) { n.dead = true; boom(n.x, Math.min(n.y, GY - 6), n.mine ? 34 : 26, n.mine); } }
+  nades = nades.filter(n => !n.dead);
+  // the enemy
+  const lv = stage + round * 3;
+  for (const f of foes) {
+    if (f.hit > 0) f.hit -= dt;
+    if (f.dead) { f.dead += dt; continue; }
+    if (f.kind === 'grunt') {
+      const dx = me.x - f.x; f.face = dx > 0 ? 1 : -1;
+      if (Math.abs(dx) > 140 && !f.plat) { f.x += f.face * 50 * dt; f.run += dt * 12; }
+      f.fireT -= dt;
+      if (f.fireT <= 0 && Math.abs(dx) < 260 && f.x < cam + W - 10) { f.fireT = A.rand(1.3, 2.2) - lv * 0.06; if (f.nade && Math.random() < 0.35) nades.push({ x: f.x, y: f.y - 30, vx: Math.sign(dx) * Math.min(220, Math.abs(dx) * 0.9), vy: -260, mine: false, t: 0 }); else bad.push({ x: f.x + f.face * 12, y: f.y - 21, vx: f.face * (150 + lv * 10), vy: 0 }); A.tone(400, 0.04, 'square', 0.02); }
+    } else if (f.kind === 'turret') {
+      f.aim = Math.atan2(me.y - 18 - (f.y - 22), me.x - f.x); f.fireT -= dt;
+      if (f.fireT <= 0 && f.x < cam + W - 10) { f.burst = 3; f.fireT = 2.4 - Math.min(1, lv * 0.1); }
+      if (f.burst > 0 && (f.bt = (f.bt || 0) - dt) <= 0) { f.bt = 0.14; f.burst--; bad.push({ x: f.x + Math.cos(f.aim) * 22, y: f.y - 22 + Math.sin(f.aim) * 22, vx: Math.cos(f.aim) * 170, vy: Math.sin(f.aim) * 170 }); A.tone(300, 0.04, 'square', 0.02); }
+    } else if (f.kind === 'heli') {
+      f.x += (me.x + 40 - f.x) * dt * 0.6; f.y = 60 + Math.sin(performance.now() / 600) * 10; f.fireT -= dt;
+      if (f.fireT <= 0) { f.fireT = 1.6 - Math.min(0.6, lv * 0.08); nades.push({ x: f.x, y: f.y + 10, vx: 0, vy: 40, mine: false, t: 0 }); }
+    } else if (f.kind === 'tank') {
+      const enter = f.x > cam + W - 70; f.x += (enter ? -60 : f.vx) * dt; if (!enter && (f.x < cam + W * 0.55 || f.x > cam + W - 60)) f.vx = -f.vx;
+      f.gun = Math.max(-0.6, Math.min(0.25, Math.atan2(me.y - 20 - (f.y - 44), (f.x - 26) - me.x) * -1 * 0.5));
+      f.fireT -= dt; if (f.fireT <= 0 && !enter) { f.fireT = f.hp < f.max / 2 ? 1.4 : 2.2; nades.push({ x: f.x - 70, y: f.y - 48, vx: -A.rand(140, 260), vy: -A.rand(160, 260), mine: false, t: 0 }); A.tone(90, 0.3, 'sawtooth', 0.06, 0, 50); A.shake(3, 0.2); }
+      f.mgT -= dt; if (f.mgT <= 0 && !enter) { f.mgT = 3; for (let i = 0; i < 5; i++) setTimeout(() => { if (!f.dead) bad.push({ x: f.x - 30, y: f.y - 26, vx: -200, vy: 0 }); }, i * 120); }
+      if (!me.dead && me.inv <= 0 && Math.abs(me.x - f.x) < 50 && me.y > f.y - 50) die();
+    }
+  }
+  foes = foes.filter(f => !(f.dead > 1) && f.x > cam - 80);
+  for (const b of bad) { b.x += b.vx * dt; b.y += b.vy * dt; if (!me.dead && me.inv <= 0 && Math.abs(b.x - me.x) < 7 && b.y > me.y - (me.crouch ? 16 : 32) && b.y < me.y) { b.dead = true; die(); } if (b.x < cam - 20 || b.x > cam + W + 20 || b.y > H || b.y < -20) b.dead = true; }
+  bad = bad.filter(b => !b.dead);
+  crates = crates.filter(c => c.hp > 0 && c.x > cam - 40); plats = plats.filter(p => p.x + p.w > cam - 40);
+}
+
+/* ---------- drawing ---------- */
+function render(t) {
+  const f = front();
+  ctx.drawImage(f.sky_, 0, 0);
+  const fo = (cam * 0.2) % W, no = (cam * 0.5) % W;
+  ctx.drawImage(f.farL, fo, 0, W, H, 0, 0, W, H); if (fo > W) ctx.drawImage(f.farL, 0, 0);
+  ctx.drawImage(f.nearL, no, 0, W, H, 0, 0, W, H);
+  const go = cam % 64; for (let x = -go; x < W; x += 64) ctx.drawImage(f.groundT, x, GY);
+  ctx.save(); ctx.translate(-Math.round(cam), 0);
+  for (const p of plats) { paint(ctx, [[p.x, p.y, p.w, 8, f.kind === 'city' ? '#8a8ea0' : '#c8b080']]); ctx.fillStyle = 'rgba(0,0,0,.25)'; for (let i = p.x + 4; i < p.x + p.w; i += 12) ctx.fillRect(i, p.y + 1, 1, 7); ctx.fillStyle = OUT; ctx.fillRect(p.x + 6, p.y + 8, 3, GY - p.y - 8); ctx.fillRect(p.x + p.w - 9, p.y + 8, 3, GY - p.y - 8); }
+  for (const c of crates) { paint(ctx, [[c.x, c.y, 22, 22, '#b8803a']]); ctx.strokeStyle = '#6a4a20'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(c.x + 2, c.y + 2); ctx.lineTo(c.x + 20, c.y + 20); ctx.moveTo(c.x + 20, c.y + 2); ctx.lineTo(c.x + 2, c.y + 20); ctx.stroke(); }
+  for (const h of hostages) if (!h.freed || h.t < 3) hostage(ctx, h.freed ? h.x + h.t * 60 : h.x, GY, h.freed, t);
+  for (const d of drops) { paint(ctx, [[d.x - 9, d.y - 9, 18, 18, d.g === 'B' ? '#5a6a3a' : '#c8203a']]); ctx.fillStyle = '#fff'; ctx.font = '10px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(d.g === 'B' ? '●' : d.g, d.x, d.y + 1); }
+  for (const e of foes) {
+    if (e.kind === 'grunt') soldier(ctx, e.x, e.y, { face: e.face, run: e.run, enemy: true, dead: e.dead, hit: e.hit });
+    else if (!e.dead) (e.kind === 'turret' ? drawTurret : e.kind === 'heli' ? drawHeli : drawTank)(ctx, e, t);
+  }
+  if (state !== 'title' && !(me.inv > 0 && !me.dead && Math.floor(t / 80) % 2)) soldier(ctx, me.x, me.y, { face: me.face, run: me.run, crouch: me.crouch, up: me.up && !me.crouch, dead: me.dead });
+  for (const s of shots) { if (s.kind === 'R') { paint(ctx, [[s.x - 5, s.y - 2, 10, 4, '#c0c6d0']]); ctx.fillStyle = '#ff8a3d'; ctx.fillRect(s.x - (s.vx > 0 ? 9 : -5), s.y - 1, 4, 2); } else { ctx.fillStyle = WEAPONS[s.kind].col; ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = 6; ctx.fillRect(s.x - 3, s.y - 1, Math.abs(s.vy) > Math.abs(s.vx) ? 2 : 7, Math.abs(s.vy) > Math.abs(s.vx) ? 7 : 2); ctx.shadowBlur = 0; } }
+  for (const b of bad) { ctx.fillStyle = '#ff4f6d'; ctx.beginPath(); ctx.arc(b.x, b.y, 2.5, 0, 6.29); ctx.fill(); ctx.fillStyle = '#fff'; ctx.fillRect(b.x - 1, b.y - 1, 1, 1); }
+  for (const n of nades) { ctx.fillStyle = OUT; ctx.beginPath(); ctx.arc(n.x, n.y, 4, 0, 6.29); ctx.fill(); ctx.fillStyle = n.mine ? '#5a6a3a' : '#3a3a48'; ctx.beginPath(); ctx.arc(n.x, n.y, 3, 0, 6.29); ctx.fill(); if (Math.floor(t / 80) % 2) { ctx.fillStyle = '#ff4f6d'; ctx.fillRect(n.x - 1, n.y - 5, 2, 2); } }
+  for (const b of booms) { const k = b.t / 0.4, r = b.r * (0.4 + k * 0.8); const g = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, r); g.addColorStop(0, `rgba(255,255,220,${1 - k})`); g.addColorStop(0.4, `rgba(255,210,61,${1 - k})`); g.addColorStop(1, 'rgba(255,90,40,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, 6.29); ctx.fill(); }
+  ctx.restore();
+  // HUD
+  if (state !== 'title') {
+    ctx.fillStyle = 'rgba(10,6,18,.6)'; ctx.fillRect(0, 0, W, 18);
+    ctx.font = '9px Silkscreen, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    for (let i = 0; i < lives; i++) { ctx.fillStyle = '#c8203a'; ctx.fillRect(8 + i * 10, 6, 7, 3); ctx.fillStyle = '#f0c090'; ctx.fillRect(8 + i * 10, 9, 7, 5); }
+    ctx.fillStyle = WEAPONS[me.gun].col; ctx.fillText(`${WEAPONS[me.gun].name}${me.gun !== 'P' ? ' ' + me.ammo : ''}`, 70, 9);
+    ctx.fillStyle = '#c8d0a0'; ctx.fillText(`● ${me.bombs}`, 190, 9); ctx.fillStyle = '#ffd23d'; ctx.fillText(`HOSTAGES ${freed}`, 240, 9);
+    ctx.textAlign = 'right'; ctx.fillStyle = '#fff'; ctx.fillText(`STAGE ${stage + 1 + round * 3}`, W - 8, 9);
+    const boss = foes.find(e => e.kind === 'tank' && !e.dead); if (boss) { ctx.fillStyle = OUT; ctx.fillRect(W / 2 - 81, 24, 162, 8); ctx.fillStyle = '#ff4f6d'; ctx.fillRect(W / 2 - 80, 25, 160 * boss.hp / boss.max, 6); }
+  }
+  if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '18px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = OUT; ctx.fillText(msg, W / 2 + 2, 72); ctx.fillStyle = '#ffd23d'; ctx.fillText(msg, W / 2, 70); ctx.globalAlpha = 1; }
+}
+A.loop(dt => { if (state === 'title') { cam += dt * 30; return; } update(dt); }, render);
+
+/* Attract demo: push right, fire, aim up at gunships, jump crates and bullets, lob a grenade at turrets. */
+let botJ = 0;
+A.attract({
+  start: newGame,
+  stop: () => { state = 'title'; foes = []; shots = []; bad = []; nades = []; drops = []; },
+  bot: dt => {
+    if (state !== 'play' || me.dead) return [];
+    const keys = ['KeyX'], heli = foes.some(f => f.kind === 'heli' && !f.dead && Math.abs(f.x - me.x) < 60), tank = foes.some(f => f.kind === 'tank' && !f.dead);
+    if (heli) keys.push('ArrowUp'); else if (!tank || me.x < cam + 120) keys.push('ArrowRight');
+    const danger = bad.some(b => Math.abs(b.x - me.x) < 70 && Math.sign(b.vx) === Math.sign(me.x - b.x)), wall = crates.some(c => c.x - me.x > 0 && c.x - me.x < 30);
+    if ((danger || wall) && me.ground && (botJ -= dt) <= 0) { botJ = 0.6; keys.push('!Space'); }
+    if (foes.some(f => (f.kind === 'turret' || f.kind === 'tank') && !f.dead && Math.abs(f.x - me.x) < 170) && Math.random() < dt * 0.8) keys.push('!KeyC');
+    return keys;
+  }
+});
+buildStage(); state = 'title';
+A.overlay({ title: 'BLAST BRIGADE', sub: 'Run and gun through three fronts. Free the tied-up hostages for new weapons: H heavy gun, S spread, R rockets. Lob grenades at turrets and the heavy tank at the end of each stage. One hit costs a life.', btn: 'Start', scores: true, onGo: newGame });
+})();
+</script>
+</body>
+</html>

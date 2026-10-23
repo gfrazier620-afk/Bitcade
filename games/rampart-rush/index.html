@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Rampart Rush</title>
+<link rel="manifest" href="../../manifest.json">
+<meta name="theme-color" content="#0f0c1f">
+<link rel="icon" type="image/png" href="../../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../../icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Rubik:wght@400;500;700&family=Silkscreen&display=swap">
+<link rel="stylesheet" href="../../shared/arcade.css">
+</head>
+<body data-game="rampart-rush" data-pad="0:Space 1:KeyX 2:KeyN 4:KeyQ 5:KeyE" style="--game:#b48cff">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>RAMPART RUSH</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <div class="pad">
+    <div class="dp"><button class="u" data-k="ArrowUp" aria-label="Up">▲</button><button class="l" data-k="ArrowLeft" aria-label="Left">◀</button><button class="r" data-k="ArrowRight" aria-label="Right">▶</button><button class="d" data-k="ArrowDown" aria-label="Down">▼</button></div>
+    <div class="ab"><button class="sm" data-k="KeyN">WAVE</button><button data-k="Space">BUILD</button></div>
+  </div>
+  <p class="help">Click or tap a spot, then a tower below to build it · tap a tower to upgrade or sell it · or <kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> move, <kbd>1</kbd>–<kbd>4</kbd> or <kbd>Q</kbd>/<kbd>E</kbd> pick a tower, <kbd>Space</kbd> build or upgrade, <kbd>X</kbd> sell, <kbd>N</kbd> next wave · <kbd>P</kbd> pause</p>
+</main>
+<script src="../../shared/chip.js"></script>
+<script src="../../shared/badges.js"></script>
+<script src="../../shared/arcade.js"></script>
+<script>
+(() => {
+/*
+ * Rampart Rush: goblins, wolves, ogres and bats march along the road to your castle. Build towers beside the road
+ * (Arrow, Cannon, Frost, Spark), upgrade them twice, and hold out as long as you can. Kills pay gold; calling the
+ * next wave early pays a bonus. Every tenth wave brings a troll king. Lose all your lives and the castle falls.
+ */
+const A = Arcade, cv = document.getElementById('cv');
+const T = 24, GC = 20, GR = 12, HUD = 44, W = GC * T, H = GR * T + HUD, ctx = A.canvas(cv, W, H), OUT = '#0a0612';
+function shade(hex, k) {
+  let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join('');
+  const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+function paint(x, list) {
+  x.fillStyle = OUT; for (const q of list) x.fillRect(q[0] - 1, q[1] - 1, q[2] + 2, q[3] + 2);
+  for (const [px, py, w, h, c] of list) { x.fillStyle = c; x.fillRect(px, py, w, h); if (w > 2 && h > 2) { x.fillStyle = shade(c, 0.3); x.fillRect(px, py, w, 1); x.fillStyle = shade(c, -0.3); x.fillRect(px, py + h - 1, w, 1); } }
+}
+const TOWERS = [
+  { id: 'arrow', name: 'ARROW', cost: 50, range: 74, rate: 0.55, dmg: 2.2, c: '#c8904a', key: '1' },
+  { id: 'cannon', name: 'CANNON', cost: 80, range: 66, rate: 1.3, dmg: 7, splash: 30, c: '#5a5e70', key: '2' },
+  { id: 'frost', name: 'FROST', cost: 70, range: 62, rate: 0.9, dmg: 1, slow: 0.5, c: '#5ee7ff', key: '3' },
+  { id: 'spark', name: 'SPARK', cost: 120, range: 80, rate: 1.1, dmg: 5, chain: 3, c: '#ffd23d', key: '4' }
+];
+const FOES = { goblin: { hp: 9, v: 38, gold: 6, c: '#5ac84a', r: 6 }, wolf: { hp: 7, v: 68, gold: 7, c: '#8a8ea0', r: 6 }, ogre: { hp: 46, v: 24, gold: 18, c: '#8a5ac8', r: 9, armor: 2 }, bat: { hp: 6, v: 56, gold: 6, c: '#5a3a7a', r: 5, fly: true }, king: { hp: 340, v: 20, gold: 120, c: '#3a8a5a', r: 13, armor: 3 } };
+// three roads: waypoints in tiles, from the cave on the left to the castle on the right
+const MAPS = [
+  [[-1, 2], [5, 2], [5, 8], [10, 8], [10, 3], [15, 3], [15, 9], [20, 9]],
+  [[-1, 9], [3, 9], [3, 2], [8, 2], [8, 9], [13, 9], [13, 4], [17, 4], [17, 6], [20, 6]],
+  [[-1, 5], [4, 5], [4, 1], [9, 1], [9, 10], [14, 10], [14, 2], [18, 2], [18, 7], [20, 7]]
+];
+
+/* ---------- the map ---------- */
+let mapI = 0, path = [], road = new Set(), deco = new Map(), grass = null;
+function buildMap() {
+  const wp = MAPS[mapI % MAPS.length].map(([x, y]) => [x * T + T / 2, y * T + T / 2]);
+  path = wp; road = new Set(); deco = new Map();
+  for (let i = 1; i < wp.length; i++) { const [ax, ay] = MAPS[mapI % MAPS.length][i - 1], [bx, by] = MAPS[mapI % MAPS.length][i]; for (let x = Math.min(ax, bx); x <= Math.max(ax, bx); x++) for (let y = Math.min(ay, by); y <= Math.max(ay, by); y++) road.add(x + ',' + y); }
+  const rnd = A.seeded('rampart-rush:' + mapI);
+  for (let i = 0; i < 22; i++) { const x = Math.floor(rnd() * GC), y = Math.floor(rnd() * GR); if (!road.has(x + ',' + y) && x < GC - 2) deco.set(x + ',' + y, rnd() < 0.6 ? 'tree' : 'rock'); }
+  grass = document.createElement('canvas'); grass.width = W; grass.height = GR * T; const x = grass.getContext('2d');
+  for (let ty = 0; ty < GR; ty++) for (let tx = 0; tx < GC; tx++) { const n = (tx * 7 + ty * 13) % 4; x.fillStyle = n === 0 ? '#4a8a3a' : n === 1 ? '#529a40' : '#4e9440'; x.fillRect(tx * T, ty * T, T, T); }
+  for (let i = 0; i < 300; i++) { x.fillStyle = rnd() < 0.5 ? '#6ab84a' : '#3a7a2a'; x.fillRect(rnd() * W, rnd() * GR * T, 2, 3); }
+  for (let i = 0; i < 26; i++) { x.fillStyle = ['#fff', '#ffd23d', '#ff7bf0'][i % 3]; x.fillRect(rnd() * W, rnd() * GR * T, 2, 2); }
+  // the road: packed dirt with stones and a worn edge
+  x.lineCap = 'round'; x.lineJoin = 'round';
+  for (const [c, w] of [['#3a2a1a', T + 4], ['#a8804a', T - 2], ['#c8a068', T - 10]]) { x.strokeStyle = c; x.lineWidth = w; x.beginPath(); wp.forEach(([px, py], i) => i ? x.lineTo(px, py) : x.moveTo(px, py)); x.stroke(); }
+  for (let i = 0; i < 120; i++) { const k = Math.floor(rnd() * (wp.length - 1)), u = rnd(), px = wp[k][0] + (wp[k + 1][0] - wp[k][0]) * u + (rnd() - 0.5) * 14, py = wp[k][1] + (wp[k + 1][1] - wp[k][1]) * u + (rnd() - 0.5) * 14; x.fillStyle = rnd() < 0.5 ? '#8a6a3a' : '#d8b880'; x.fillRect(px, py, 2, 2); }
+  // trees and rocks
+  for (const [k, kind] of deco) { const [tx, ty] = k.split(',').map(Number), cx = tx * T + T / 2, cy = ty * T + T / 2;
+    if (kind === 'tree') { x.fillStyle = 'rgba(0,0,0,.25)'; x.beginPath(); x.ellipse(cx + 3, cy + 7, 9, 4, 0, 0, 6.29); x.fill(); x.fillStyle = OUT; x.fillRect(cx - 2, cy, 4, 9); x.fillStyle = '#6a4a2a'; x.fillRect(cx - 1, cy, 2, 8); x.fillStyle = OUT; x.beginPath(); x.arc(cx, cy - 3, 10, 0, 6.29); x.fill(); const g = x.createRadialGradient(cx - 3, cy - 6, 1, cx, cy - 3, 9); g.addColorStop(0, '#6ad860'); g.addColorStop(1, '#2a6a2a'); x.fillStyle = g; x.beginPath(); x.arc(cx, cy - 3, 8.5, 0, 6.29); x.fill(); }
+    else { x.fillStyle = OUT; x.beginPath(); x.ellipse(cx, cy + 2, 9, 7, 0, 0, 6.29); x.fill(); const g = x.createLinearGradient(0, cy - 5, 0, cy + 8); g.addColorStop(0, '#b8b8c8'); g.addColorStop(1, '#5a5a6a'); x.fillStyle = g; x.beginPath(); x.ellipse(cx, cy + 2, 7.5, 5.5, 0, 0, 6.29); x.fill(); } }
+}
+const buildable = (tx, ty) => tx >= 0 && ty >= 0 && tx < GC - 1 && ty < GR && !road.has(tx + ',' + ty) && !deco.has(tx + ',' + ty) && !towers.some(t => t.tx === tx && t.ty === ty);
+
+/* ---------- state ---------- */
+let state = 'title', score = 0, gold = 150, lives = 20, wave = 0, towers = [], foes = [], shots = [], zaps = [], spawnQ = [], spawnT = 0, nextT = 6, cur = { x: 6, y: 5 }, pick = 0, sel = null, msg = '', msgT = 0, lostThisRun = false, waveLost = false;
+const say = (m, s = 2) => { msg = m; msgT = s; };
+function newGame() { mapI = Math.floor(Math.random() * MAPS.length); buildMap(); score = 0; gold = 150; lives = A.easy ? 30 : 20; wave = 0; towers = []; foes = []; shots = []; zaps = []; spawnQ = []; nextT = 8; lostThisRun = false; sel = null; A.setScore(0); state = 'play'; say('BUILD YOUR DEFENCES!', 2.4); }
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+function startWave() {
+  wave++; waveLost = false; nextT = 0; const n = 6 + wave * 2, mix = [];
+  for (let i = 0; i < n; i++) { const r = Math.random(); mix.push(wave >= 4 && r < 0.18 ? 'ogre' : wave >= 2 && r < 0.42 ? 'wolf' : wave >= 3 && r < 0.6 ? 'bat' : 'goblin'); }
+  if (wave % 10 === 0) mix.push('king');
+  spawnQ = mix; spawnT = 0.5; say(wave % 10 === 0 ? `WAVE ${wave} · THE TROLL KING!` : `WAVE ${wave}`, 1.6); A.tone(220, 0.3, 'sawtooth', 0.04, 0, 440);
+  if (wave >= 10) A.badge('wave10');
+}
+function callEarly() { if (state !== 'play' || spawnQ.length) return; const bonus = Math.max(0, Math.round(nextT * 4)); gold += bonus; if (bonus) A.pop(W - 60, GR * T - 10, `+${bonus} GOLD`, '#ffd23d'); startWave(); }
+const tierOf = t => TOWERS[t.k];
+function build(tx, ty, k) {
+  const d = TOWERS[k]; if (!buildable(tx, ty) || gold < d.cost) { A.tone(160, 0.1, 'square', 0.03); return; }
+  gold -= d.cost; towers.push({ tx, ty, k, lv: 1, cd: 0, aim: 0, spent: d.cost }); A.sfx('select'); A.burst(tx * T + T / 2, ty * T + T / 2, { n: 10, kind: 'smoke', color: '#c8b088', speed: 50, life: 0.5, size: 4 });
+}
+const upCost = t => Math.round(tierOf(t).cost * 0.9 * t.lv);
+function upgrade(t) { if (t.lv >= 3) return; const c = upCost(t); if (gold < c) { A.tone(160, 0.1, 'square', 0.03); return; } gold -= c; t.spent += c; t.lv++; A.jingle([659, 880], 0.06); A.ring(t.tx * T + T / 2, t.ty * T + T / 2, tierOf(t).c, 20); if (t.lv === 3) A.badge('max'); }
+function sell(t) { gold += Math.round(t.spent * 0.7); towers = towers.filter(o => o !== t); sel = null; A.tone(500, 0.08, 'triangle', 0.03); }
+const towerAt = (tx, ty) => towers.find(t => t.tx === tx && t.ty === ty);
+A.onPress(c => {
+  if (c === 'KeyP' || c === 'Escape') return pause();
+  if (state !== 'play') return;
+  const mv = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[c]; if (mv) { cur.x = A.clamp(cur.x + mv[0], 0, GC - 2); cur.y = A.clamp(cur.y + mv[1], 0, GR - 1); sel = towerAt(cur.x, cur.y) || null; }
+  if (c >= 'Digit1' && c <= 'Digit4') { pick = +c.slice(5) - 1; if (!sel) build(cur.x, cur.y, pick); }
+  if (c === 'KeyQ') pick = (pick + 3) % 4; if (c === 'KeyE') pick = (pick + 1) % 4;
+  if (c === 'Space' || c === 'Enter') { const t = towerAt(cur.x, cur.y); if (t) upgrade(t); else build(cur.x, cur.y, pick); sel = towerAt(cur.x, cur.y) || null; }
+  if (c === 'KeyX') { const t = towerAt(cur.x, cur.y); if (t) sell(t); }
+  if (c === 'KeyN') callEarly();
+});
+A.onHide(pause);
+// the panel along the bottom: four tower buttons, or upgrade and sell for a chosen tower, and the next-wave button
+function buttons() {
+  const y = GR * T + 6, b = [];
+  if (sel) { b.push({ x: 8, y, w: 150, h: 32, act: 'up' }, { x: 164, y, w: 100, h: 32, act: 'sell' }); }
+  else TOWERS.forEach((d, i) => b.push({ x: 8 + i * 84, y, w: 78, h: 32, act: 'b' + i }));
+  b.push({ x: W - 96, y, w: 88, h: 32, act: 'wave' }); return b;
+}
+cv.addEventListener('pointerdown', e => {
+  A.unlock(); if (state !== 'play') return; const p = A.pointer(cv, e);
+  if (p.y > GR * T) { const b = buttons().find(b => p.x > b.x && p.x < b.x + b.w && p.y > b.y && p.y < b.y + b.h); if (!b) return;
+    if (b.act === 'wave') return callEarly(); if (b.act === 'up' && sel) return upgrade(sel); if (b.act === 'sell' && sel) return sell(sel);
+    if (b.act[0] === 'b') { pick = +b.act[1]; build(cur.x, cur.y, pick); sel = towerAt(cur.x, cur.y) || null; } return; }
+  cur.x = Math.min(GC - 2, Math.floor(p.x / T)); cur.y = Math.floor(p.y / T); sel = towerAt(cur.x, cur.y) || null;
+});
+function spawn(kind) { const d = FOES[kind], hp = d.hp * Math.pow(1.13, wave - 1); foes.push({ kind, d, hp, max: hp, seg: 0, x: path[0][0], y: path[0][1], slow: 0, dist: 0, hit: 0, t: Math.random() * 9 }); }
+function damage(f, n) { if (f.dead) return; f.hp -= Math.max(0.5, n - (f.d.armor || 0) * 0.5); f.hit = 0.08; if (f.hp <= 0) { f.dead = true; gold += f.d.gold; score += f.d.gold * 10; A.setScore(score); A.burst(f.x, f.y, { n: f.kind === 'king' ? 30 : 8, colors: [f.d.c, '#fff'], speed: 110, life: 0.4 }); if (f.kind === 'king') { A.flash('#fff', 0.3); A.shake(8, 0.4); say('THE KING FALLS!', 2); } else A.tone(600 + Math.random() * 200, 0.04, 'square', 0.02); } }
+function update(dt) {
+  if (msgT > 0) msgT -= dt;
+  for (const z of zaps) z.t -= dt; zaps = zaps.filter(z => z.t > 0);
+  if (state !== 'play') return;
+  // spawning and the time to the next wave
+  if (spawnQ.length) { spawnT -= dt; if (spawnT <= 0) { spawn(spawnQ.shift()); spawnT = Math.max(0.35, 1 - wave * 0.03); } }
+  else if (!foes.length) {
+    if (nextT <= 0 && wave > 0) { nextT = 10; const bonus = 20 + wave * 5; gold += bonus; score += wave * 100; A.setScore(score); say(`WAVE ${wave} HELD! +${bonus} GOLD`, 1.6); A.jingle([523, 659, 784], 0.08); if (wave === 5 && !lostThisRun) A.badge('flawless'); }
+    nextT -= dt; if (nextT <= 0 || wave === 0 && nextT <= 0) startWave();
+  }
+  // marching
+  for (const f of foes) {
+    f.t += dt; if (f.hit > 0) f.hit -= dt; if (f.slow > 0) f.slow -= dt;
+    let v = f.d.v * (f.slow > 0 ? 0.5 : 1) * dt;
+    while (v > 0 && f.seg < path.length - 1) { const [bx, by] = path[f.seg + 1], dx = bx - f.x, dy = by - f.y, d = Math.hypot(dx, dy); if (d <= v) { f.x = bx; f.y = by; f.seg++; v -= d; } else { f.x += dx / d * v; f.y += dy / d * v; v = 0; } }
+    f.dist = f.seg * 1000 + 1000 - Math.hypot(path[Math.min(f.seg + 1, path.length - 1)][0] - f.x, path[Math.min(f.seg + 1, path.length - 1)][1] - f.y);
+    if (f.seg >= path.length - 1) { f.dead = true; f.through = true; const loss = f.kind === 'king' ? 5 : f.kind === 'ogre' ? 2 : 1; lives -= loss; lostThisRun = true; A.shake(5, 0.25); A.flash('#ff4f6d', 0.15); A.sfx('hurt'); if (lives <= 0) { lives = 0; state = 'over'; setTimeout(gameOver, 700); } }
+  }
+  // the towers fire at whoever is furthest along in range
+  for (const t of towers) {
+    const d = tierOf(t), cx = t.tx * T + T / 2, cy = t.ty * T + T / 2, range = d.range + (t.lv - 1) * 10, dmg = d.dmg * (1 + (t.lv - 1) * 0.7);
+    t.cd -= dt; const targets = foes.filter(f => !f.dead && Math.hypot(f.x - cx, f.y - cy) <= range).sort((a, b) => b.dist - a.dist);
+    if (targets.length) t.aim = Math.atan2(targets[0].y - cy, targets[0].x - cx);
+    if (t.cd > 0 || !targets.length) continue; t.cd = d.rate * (t.lv === 3 ? 0.8 : 1);
+    const f = targets[0];
+    if (d.id === 'arrow') { shots.push({ kind: 'arrow', x: cx, y: cy - 6, tgt: f, dmg, v: 340 }); A.tone(900, 0.03, 'triangle', 0.015); }
+    if (d.id === 'cannon') { shots.push({ kind: 'ball', x: cx, y: cy - 6, sx: cx, sy: cy - 6, tx: f.x, ty: f.y, t: 0, dmg, splash: d.splash + (t.lv - 1) * 6 }); A.tone(120, 0.12, 'sine', 0.05, 0, 60); }
+    if (d.id === 'frost') { shots.push({ kind: 'frost', x: cx, y: cy - 6, tgt: f, dmg, v: 260, slow: 1.4 + t.lv * 0.4 }); A.tone(1600, 0.05, 'sine', 0.02); }
+    if (d.id === 'spark') { let prev = [cx, cy - 10], hitSet = []; for (const g of targets.concat(foes.filter(o => !o.dead && !targets.includes(o)))) { if (hitSet.length >= d.chain + t.lv - 1) break; if (Math.hypot(g.x - prev[0], g.y - prev[1]) > (hitSet.length ? 60 : range)) continue; zaps.push({ a: prev, b: [g.x, g.y], t: 0.15 }); damage(g, dmg * (hitSet.length ? 0.7 : 1)); hitSet.push(g); prev = [g.x, g.y]; } A.noise(0.08, 0.03); }
+  }
+  for (const s of shots) {
+    if (s.kind === 'ball') { s.t += dt / 0.6; const k = Math.min(1, s.t); s.x = s.sx + (s.tx - s.sx) * k; s.y = s.sy + (s.ty - s.sy) * k - Math.sin(k * Math.PI) * 30; if (k >= 1) { s.dead = true; A.burst(s.tx, s.ty, { n: 10, colors: ['#ffd23d', '#ff8a3d', '#5a5048'], speed: 90, life: 0.4 }); A.ring(s.tx, s.ty, '#ff8a3d', s.splash); for (const f of foes) if (!f.dead && Math.hypot(f.x - s.tx, f.y - s.ty) < s.splash) damage(f, f.d.fly ? s.dmg * 0.5 : s.dmg); } continue; }
+    if (s.tgt.dead) { s.dead = true; continue; }
+    const dx = s.tgt.x - s.x, dy = s.tgt.y - s.y, d = Math.hypot(dx, dy), v = s.v * dt; s.ang = Math.atan2(dy, dx);
+    if (d <= v + 3) { s.dead = true; damage(s.tgt, s.dmg); if (s.slow) s.tgt.slow = s.slow; } else { s.x += dx / d * v; s.y += dy / d * v; }
+  }
+  shots = shots.filter(s => !s.dead); foes = foes.filter(f => !f.dead);
+}
+function gameOver() { const rec = A.submit(score); A.overlay({ title: 'THE CASTLE FELL', big: `SCORE ${score.toLocaleString()} · WAVE ${wave}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, btn: 'Defend again', onGo: newGame }); }
+
+/* ---------- drawing ---------- */
+function drawTower(t, tm) {
+  const d = tierOf(t), X = t.tx * T, Y = t.ty * T, cx = X + T / 2;
+  ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(cx + 2, Y + T - 3, 11, 4, 0, 0, 6.29); ctx.fill();
+  paint(ctx, [[X + 3, Y + 6, T - 6, T - 8, '#8a8098']]); ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.fillRect(X + 3, Y + 12, T - 6, 1); ctx.fillRect(X + 3, Y + 17, T - 6, 1);
+  if (d.id === 'arrow') { paint(ctx, [[X + 2, Y + 1, T - 4, 6, '#a87040']]); ctx.save(); ctx.translate(cx, Y + 4); ctx.rotate(t.aim); ctx.strokeStyle = '#6a4a2a'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, 7, -1, 1); ctx.stroke(); ctx.restore(); }
+  if (d.id === 'cannon') { ctx.save(); ctx.translate(cx, Y + 4); ctx.rotate(t.aim); paint(ctx, [[-2, -3, 14, 6, '#3a3e4c']]); ctx.restore(); ctx.fillStyle = OUT; ctx.beginPath(); ctx.arc(cx, Y + 5, 6, 0, 6.29); ctx.fill(); ctx.fillStyle = '#5a5e70'; ctx.beginPath(); ctx.arc(cx, Y + 5, 4.5, 0, 6.29); ctx.fill(); }
+  if (d.id === 'frost') { ctx.fillStyle = OUT; ctx.beginPath(); ctx.moveTo(cx, Y - 6); ctx.lineTo(cx + 7, Y + 6); ctx.lineTo(cx - 7, Y + 6); ctx.fill(); const g = ctx.createLinearGradient(0, Y - 4, 0, Y + 6); g.addColorStop(0, '#fff'); g.addColorStop(1, '#5ee7ff'); ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(cx, Y - 4); ctx.lineTo(cx + 5, Y + 5); ctx.lineTo(cx - 5, Y + 5); ctx.fill(); ctx.fillStyle = `rgba(160,230,255,${0.25 + Math.sin(tm / 300) * 0.1})`; ctx.beginPath(); ctx.arc(cx, Y + 1, 10, 0, 6.29); ctx.fill(); }
+  if (d.id === 'spark') { ctx.fillStyle = OUT; ctx.fillRect(cx - 2, Y - 6, 4, 12); ctx.fillStyle = '#c0c6d0'; ctx.fillRect(cx - 1, Y - 5, 2, 10); const on = Math.sin(tm / 120 + t.tx) > 0; ctx.fillStyle = on ? '#fff6a0' : '#ffd23d'; ctx.shadowColor = '#ffd23d'; ctx.shadowBlur = on ? 10 : 4; ctx.beginPath(); ctx.arc(cx, Y - 7, 4, 0, 6.29); ctx.fill(); ctx.shadowBlur = 0; }
+  for (let i = 0; i < t.lv; i++) { ctx.fillStyle = '#ffd23d'; ctx.fillRect(X + 5 + i * 5, Y + T - 6, 3, 3); }
+}
+function drawFoe(f, tm) {
+  const X = f.x, Y = f.y + (f.d.fly ? -8 + Math.sin(f.t * 6) * 2 : 0), r = f.d.r, hit = f.hit > 0, step = Math.sin(f.t * 12) * 1.5;
+  ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(f.x, f.y + r * 0.7, r, r * 0.35, 0, 0, 6.29); ctx.fill();
+  const c = hit ? '#ffffff' : f.slow > 0 ? '#a8e8ff' : f.d.c;
+  if (f.kind === 'bat') { const fl = Math.sin(f.t * 20) * 4; ctx.fillStyle = OUT; ctx.beginPath(); ctx.moveTo(X, Y); ctx.lineTo(X - 10, Y - 4 + fl); ctx.lineTo(X - 5, Y + 2); ctx.lineTo(X + 5, Y + 2); ctx.lineTo(X + 10, Y - 4 + fl); ctx.fill(); ctx.fillStyle = c; ctx.beginPath(); ctx.arc(X, Y, 3.5, 0, 6.29); ctx.fill(); ctx.fillStyle = '#ff4f6d'; ctx.fillRect(X - 2, Y - 1, 1, 1); ctx.fillRect(X + 1, Y - 1, 1, 1); }
+  else if (f.kind === 'wolf') { paint(ctx, [[X - 7, Y - 4, 12, 6, c], [X + 4, Y - 7, 5, 5, c], [X - 6 + step, Y + 1, 2, 4, shade(f.d.c, -0.3)], [X + 2 - step, Y + 1, 2, 4, shade(f.d.c, -0.3)]]); ctx.fillStyle = OUT; ctx.fillRect(X + 6, Y - 6, 1, 1); ctx.fillStyle = c; ctx.fillRect(X - 10, Y - 5, 3, 2); }
+  else {
+    const s = r / 6;
+    paint(ctx, [[X - 3 * s + step * s * 0.5, Y + 1 * s, 2.5 * s, 4 * s, shade(f.d.c, -0.3)], [X + 0.5 * s - step * s * 0.5, Y + 1 * s, 2.5 * s, 4 * s, shade(f.d.c, -0.3)], [X - 4 * s, Y - 5 * s, 8 * s, 7 * s, c], [X - 3.5 * s, Y - 10 * s, 7 * s, 6 * s, c]]);
+    ctx.fillStyle = OUT; ctx.fillRect(X - 2 * s, Y - 8 * s, 1.2 * s, 1.2 * s); ctx.fillRect(X + 1 * s, Y - 8 * s, 1.2 * s, 1.2 * s);
+    if (f.kind === 'goblin') { ctx.fillStyle = c; ctx.fillRect(X - 5 * s, Y - 9 * s, 2 * s, 2 * s); ctx.fillRect(X + 3.5 * s, Y - 9 * s, 2 * s, 2 * s); ctx.fillStyle = '#c0c6d0'; ctx.fillRect(X + 4 * s, Y - 9 * s, 1, 10 * s); }
+    if (f.kind === 'ogre') { ctx.fillStyle = '#6a4a2a'; ctx.fillRect(X + 4 * s, Y - 6 * s, 2 * s, 7 * s); ctx.fillStyle = '#fff'; ctx.fillRect(X - 1.5 * s, Y - 6 * s, 1, 1.5 * s); ctx.fillRect(X + 1.2 * s, Y - 6 * s, 1, 1.5 * s); }
+    if (f.kind === 'king') { ctx.fillStyle = '#ffd23d'; ctx.beginPath(); ctx.moveTo(X - 3.5 * s, Y - 10 * s); ctx.lineTo(X - 3 * s, Y - 13 * s); ctx.lineTo(X - 1 * s, Y - 11 * s); ctx.lineTo(X, Y - 14 * s); ctx.lineTo(X + 1 * s, Y - 11 * s); ctx.lineTo(X + 3 * s, Y - 13 * s); ctx.lineTo(X + 3.5 * s, Y - 10 * s); ctx.fill(); }
+  }
+  if (f.hp < f.max) { ctx.fillStyle = OUT; ctx.fillRect(f.x - 9, Y - r * 1.8 - 4, 18, 4); ctx.fillStyle = f.hp / f.max > 0.4 ? '#3dff8f' : '#ff4f6d'; ctx.fillRect(f.x - 8, Y - r * 1.8 - 3, 16 * f.hp / f.max, 2); }
+}
+function render(tm) {
+  if (!grass) buildMap();
+  ctx.drawImage(grass, 0, 0);
+  // the cave they come out of, the castle at the far end
+  const [sx, sy] = path[0], [ex, ey] = path[path.length - 1];
+  ctx.fillStyle = OUT; ctx.beginPath(); ctx.arc(Math.max(4, sx + 10), sy, 16, Math.PI / 2, Math.PI * 1.5, true); ctx.fill(); ctx.fillStyle = '#5a5a6a'; ctx.beginPath(); ctx.arc(Math.max(4, sx + 10), sy, 13, -Math.PI / 2, Math.PI / 2); ctx.fill(); ctx.fillStyle = '#1a0a14'; ctx.beginPath(); ctx.arc(Math.max(4, sx + 10), sy, 8, -Math.PI / 2, Math.PI / 2); ctx.fill();
+  const cx = W - 22, cy = ey; paint(ctx, [[cx - 14, cy - 22, 28, 30, '#a8a0b8'], [cx - 18, cy - 30, 9, 14, '#b8b0c8'], [cx + 9, cy - 30, 9, 14, '#b8b0c8']]);
+  ctx.fillStyle = '#3a2a1a'; ctx.beginPath(); ctx.arc(cx, cy + 2, 6, Math.PI, 0); ctx.fillRect(cx - 6, cy + 2, 12, 6); ctx.fill();
+  ctx.fillStyle = OUT; ctx.fillRect(cx - 1, cy - 44, 2, 16); ctx.fillStyle = '#b48cff'; ctx.beginPath(); ctx.moveTo(cx + 1, cy - 44); ctx.lineTo(cx + 13 + Math.sin(tm / 200) * 2, cy - 40); ctx.lineTo(cx + 1, cy - 36); ctx.fill();
+  // the cursor, and the range of whatever's chosen
+  if (state === 'play') {
+    const t = towerAt(cur.x, cur.y), d = t ? tierOf(t) : TOWERS[pick], range = d.range + (t ? (t.lv - 1) * 10 : 0), ok = t || buildable(cur.x, cur.y);
+    ctx.fillStyle = 'rgba(255,255,255,.08)'; ctx.beginPath(); ctx.arc(cur.x * T + T / 2, cur.y * T + T / 2, range, 0, 6.29); ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.setLineDash([4, 4]); ctx.stroke(); ctx.setLineDash([]);
+    ctx.strokeStyle = ok ? '#fff' : '#ff4f6d'; ctx.lineWidth = 2; ctx.strokeRect(cur.x * T + 1, cur.y * T + 1, T - 2, T - 2);
+  }
+  const list = [...towers.map(t => [t.ty * T + T, () => drawTower(t, tm)]), ...foes.map(f => [f.y, () => drawFoe(f, tm)])]; list.sort((a, b) => a[0] - b[0]).forEach(e => e[1]());
+  for (const s of shots) {
+    if (s.kind === 'arrow') { ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(s.ang || 0); ctx.fillStyle = '#6a4a2a'; ctx.fillRect(-6, -0.5, 10, 1.5); ctx.fillStyle = '#c0c6d0'; ctx.fillRect(3, -1, 3, 2.5); ctx.restore(); }
+    if (s.kind === 'ball') { ctx.fillStyle = OUT; ctx.beginPath(); ctx.arc(s.x, s.y, 3.5, 0, 6.29); ctx.fill(); ctx.fillStyle = '#5a5e70'; ctx.beginPath(); ctx.arc(s.x, s.y, 2.5, 0, 6.29); ctx.fill(); }
+    if (s.kind === 'frost') { ctx.fillStyle = '#bff4ff'; ctx.shadowColor = '#5ee7ff'; ctx.shadowBlur = 6; ctx.beginPath(); ctx.arc(s.x, s.y, 3, 0, 6.29); ctx.fill(); ctx.shadowBlur = 0; }
+  }
+  for (const z of zaps) { ctx.strokeStyle = '#fff6a0'; ctx.shadowColor = '#ffd23d'; ctx.shadowBlur = 8; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(z.a[0], z.a[1]); for (let i = 1; i < 5; i++) ctx.lineTo(z.a[0] + (z.b[0] - z.a[0]) * i / 5 + (Math.random() - 0.5) * 8, z.a[1] + (z.b[1] - z.a[1]) * i / 5 + (Math.random() - 0.5) * 8); ctx.lineTo(z.b[0], z.b[1]); ctx.stroke(); ctx.shadowBlur = 0; }
+  // the top strip: gold, lives, wave
+  ctx.fillStyle = 'rgba(10,6,18,.6)'; ctx.fillRect(0, 0, W, 16); ctx.font = '10px Silkscreen, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  ctx.fillStyle = '#ffd23d'; ctx.fillText(`● ${gold}`, 8, 8); ctx.fillStyle = '#ff4f6d'; ctx.fillText(`♥ ${lives}`, 80, 8); ctx.fillStyle = '#fff'; ctx.fillText(`WAVE ${wave}`, 140, 8);
+  if (!spawnQ.length && !foes.length && state === 'play' && wave >= 0) { ctx.fillStyle = '#b48cff'; ctx.fillText(`NEXT IN ${Math.max(0, Math.ceil(nextT))}`, 220, 8); }
+  // the panel
+  const py = GR * T; ctx.fillStyle = '#140c24'; ctx.fillRect(0, py, W, HUD); ctx.fillStyle = '#b48cff'; ctx.fillRect(0, py, W, 1);
+  for (const b of buttons()) {
+    let label = '', sub = '', on = true, col = '#2a2054';
+    if (b.act[0] === 'b') { const d = TOWERS[+b.act[1]]; label = d.name; sub = `${d.cost} ●`; on = gold >= d.cost; col = +b.act[1] === pick ? '#4a3a7a' : '#2a2054'; }
+    if (b.act === 'up') { label = sel.lv >= 3 ? 'MAX LEVEL' : 'UPGRADE'; sub = sel.lv >= 3 ? `${tierOf(sel).name} ★★★` : `${upCost(sel)} ● · LV ${sel.lv + 1}`; on = sel.lv < 3 && gold >= upCost(sel); }
+    if (b.act === 'sell') { label = 'SELL'; sub = `+${Math.round(sel.spent * 0.7)} ●`; }
+    if (b.act === 'wave') { label = spawnQ.length || foes.length ? 'FIGHTING' : 'NEXT WAVE'; sub = spawnQ.length || foes.length ? '' : `+${Math.max(0, Math.round(nextT * 4))} ●`; on = !spawnQ.length && !foes.length; }
+    ctx.fillStyle = OUT; ctx.fillRect(b.x - 1, b.y - 1, b.w + 2, b.h + 2); ctx.fillStyle = col; ctx.fillRect(b.x, b.y, b.w, b.h);
+    if (b.act[0] === 'b') { const d = TOWERS[+b.act[1]]; ctx.fillStyle = d.c; ctx.fillRect(b.x + 4, b.y + 8, 8, 16); }
+    ctx.font = '9px Silkscreen, monospace'; ctx.textAlign = 'left'; ctx.fillStyle = on ? '#fff' : 'rgba(255,255,255,.35)'; ctx.fillText(label, b.x + (b.act[0] === 'b' ? 16 : 8), b.y + 11); ctx.fillStyle = on ? '#ffd23d' : 'rgba(255,210,61,.35)'; ctx.fillText(sub, b.x + (b.act[0] === 'b' ? 16 : 8), b.y + 23);
+  }
+  if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '18px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = OUT; ctx.fillText(msg, W / 2 + 2, 62); ctx.fillStyle = '#fff6c2'; ctx.fillText(msg, W / 2, 60); ctx.globalAlpha = 1; }
+}
+A.loop(dt => { if (state === 'title') return; update(dt); }, render);
+
+/* Attract demo: build towers at the bends near the cave, upgrade when rich, call waves early. */
+/** Spots beside the road, nearest the cave first: walk the road and collect the free tiles next to it. */
+function spots() {
+  const out = [], seen = new Set(), wp = MAPS[mapI % MAPS.length];
+  for (let i = 1; i < wp.length; i++) { const [ax, ay] = wp[i - 1], [bx, by] = wp[i], n = Math.max(Math.abs(bx - ax), Math.abs(by - ay));
+    for (let k = 0; k <= n; k++) { const x = Math.round(ax + (bx - ax) * k / n), y = Math.round(ay + (by - ay) * k / n);
+      for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) { const tx = x + dx, ty = y + dy, key = tx + ',' + ty; if (!seen.has(key) && buildable(tx, ty)) { seen.add(key); out.push([tx, ty]); } } } }
+  return out.filter((_, i) => i % 3 === 1);
+}
+A.attract({
+  start: () => { newGame(); },
+  stop: () => { state = 'title'; foes = []; shots = []; spawnQ = []; },
+  bot: () => {
+    if (state !== 'play') return [];
+    const free = spots()[0], want = free && towers.length < 8 && gold >= 80 ? free : null;
+    if (want) { if (cur.x !== want[0] || cur.y !== want[1]) { cur.x = want[0]; cur.y = want[1]; return []; } return ['!Digit' + (1 + towers.length % 4)]; }
+    const t = towers.find(t => t.lv < 3 && gold >= upCost(t) + 40); if (t) { cur.x = t.tx; cur.y = t.ty; return ['!Space']; }
+    if (!spawnQ.length && !foes.length && towers.length >= 2) return ['!KeyN'];
+    return [];
+  }
+});
+A.overlay({ title: 'RAMPART RUSH', sub: 'Monsters march down the road to your castle. Build towers beside it: Arrow (fast), Cannon (splash), Frost (slows) and Spark (chains lightning). Upgrade them twice, call waves early for gold, and watch for the troll king every tenth wave.', btn: 'Start', scores: true, onGo: newGame });
+})();
+</script>
+</body>
+</html>

@@ -112,6 +112,22 @@ window.BADGES = {
     { id: 'fullcombo', name: 'Full Combo', desc: 'Finish a song without a single miss' },
     { id: 'grade_a', name: 'Star Dancer', desc: 'Get an A or an S grade' },
     { id: 'hard', name: 'Hyper Drive', desc: 'Clear the hard song' }],
+  'blast-brigade': [
+    { id: 'pow5', name: 'Liberator', desc: 'Free 5 hostages in one run' },
+    { id: 'boss', name: 'Tank Buster', desc: 'Destroy a heavy tank' },
+    { id: 'stage3', name: 'Front Line', desc: 'Clear the third stage' }],
+  'dungeon-delve': [
+    { id: 'boss', name: 'Slime Slayer', desc: 'Defeat a dungeon guardian' },
+    { id: 'floor3', name: 'Deep Delver', desc: 'Reach floor 3' },
+    { id: 'gems100', name: 'Treasure Hunter', desc: 'Collect 100 gems in one run' }],
+  'lucky-line': [
+    { id: 'catch10', name: 'Full Bucket', desc: 'Catch 10 fish in one session' },
+    { id: 'golden', name: 'Golden Koi', desc: 'Catch the golden koi' },
+    { id: 'log', name: 'Master Angler', desc: 'Catch every kind of fish' }],
+  'rampart-rush': [
+    { id: 'wave10', name: 'Holdout', desc: 'Reach wave 10' },
+    { id: 'flawless', name: 'None Shall Pass', desc: 'Hold five waves without losing a life' },
+    { id: 'max', name: 'Fortified', desc: 'Fully upgrade a tower' }],
   'blip-sports': [
     { id: 'fbwin', name: 'Gridiron Win', desc: 'Win a football game' },
     { id: 'bbwin', name: 'Ballpark Win', desc: 'Win a baseball game' },
@@ -130,7 +146,7 @@ window.WEEKLY = (() => {
   const ROTATION = ['rock-rift', 'light-trail', 'wallbuster', 'garden-gunner', 'crater-lander', 'circuit-chase',
     'scaffold-scramble', 'back-alley-brawl', 'swarm-strike', 'highrise-handyman', 'volley-duel', 'turbo-tour', 'raptor-ridge', 'marsh-marksman',
     'pixel-peaks', 'pop-lagoon', 'neon-steps', 'twin-blast', 'stackdown', 'hedge-hop', 'wing-duel', 'neon-noodle', 'sky-shield', 'mole-patrol',
-    'star-siege', 'nitro-lane', 'cube-hopper'];
+    'star-siege', 'nitro-lane', 'cube-hopper', 'blast-brigade', 'dungeon-delve', 'lucky-line', 'rampart-rush'];
   const DAY = 864e5, EPOCH = Date.UTC(2024, 0, 1), FIRST = 145; // EPOCH is a Monday; week 145 is the one starting 2026-10-12
   const index = (now = Date.now()) => Math.floor((now - EPOCH) / (7 * DAY));
   const start = (now = Date.now()) => EPOCH + index(now) * 7 * DAY;
@@ -203,7 +219,8 @@ window.MISSIONS = (() => {
     'circuit-chase': 1500, 'highrise-handyman': 8000, 'nitro-lane': 1500, 'volley-duel': 60, 'crater-lander': 800, 'sky-shield': 1000,
     'hedge-hop': 1500, 'scaffold-scramble': 500, 'swarm-strike': 4000, 'garden-gunner': 1500, 'cube-hopper': 1200, 'light-trail': 500,
     'wing-duel': 1500, 'twin-blast': 5000, 'mole-patrol': 1500, 'turbo-tour': 6000, 'raptor-ridge': 4000, 'marsh-marksman': 8000,
-    'pixel-peaks': 3000, 'pop-lagoon': 3000, 'neon-steps': 25000
+    'pixel-peaks': 3000, 'pop-lagoon': 3000, 'neon-steps': 25000,
+    'blast-brigade': 3000, 'dungeon-delve': 800, 'lucky-line': 300, 'rampart-rush': 2500
   };
   const AREAS = { RACEWAY: ['turbo-tour', 'nitro-lane', 'light-trail'], 'SHOOTING GALLERY': ['raptor-ridge', 'marsh-marksman'] };
   const DAILY = ['stackdown', 'wallbuster', 'twin-blast', 'mole-patrol', 'wing-duel'];

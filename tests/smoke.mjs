@@ -68,7 +68,7 @@ console.log('\nLobby');
   check(slugs.length === dirs.length, `lobby lists ${slugs.length} cabinets for ${dirs.length} game folders`);
   check(JSON.stringify([...slugs].sort()) === JSON.stringify(dirs), 'every cabinet links to a game folder and every folder has a cabinet');
   const tag = (await page.textContent('.tag')).trim();
-  const WORDS = ['ZERO', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE', 'TEN', 'ELEVEN', 'TWELVE', 'THIRTEEN', 'FOURTEEN', 'FIFTEEN', 'SIXTEEN', 'SEVENTEEN', 'EIGHTEEN', 'NINETEEN', 'TWENTY', 'TWENTY-ONE', 'TWENTY-TWO', 'TWENTY-THREE', 'TWENTY-FOUR', 'TWENTY-FIVE', 'TWENTY-SIX', 'TWENTY-SEVEN', 'TWENTY-EIGHT', 'TWENTY-NINE'];
+  const WORDS = ['ZERO', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE', 'TEN', 'ELEVEN', 'TWELVE', 'THIRTEEN', 'FOURTEEN', 'FIFTEEN', 'SIXTEEN', 'SEVENTEEN', 'EIGHTEEN', 'NINETEEN', 'TWENTY', 'TWENTY-ONE', 'TWENTY-TWO', 'TWENTY-THREE', 'TWENTY-FOUR', 'TWENTY-FIVE', 'TWENTY-SIX', 'TWENTY-SEVEN', 'TWENTY-EIGHT', 'TWENTY-NINE', 'THIRTY', 'THIRTY-ONE', 'THIRTY-TWO', 'THIRTY-THREE'];
   check(tag.startsWith(WORDS[slugs.length] + ' '), `lobby tagline says ${WORDS[slugs.length]} games ("${tag}")`);
   // the lobby header once picked up the game cabinet's .marquee styles (a short, clipped box) and cut the logo off
   const logo = await page.evaluate(() => { const L = document.querySelector('.logo'), H = document.querySelector('.lobby > header'), l = L.getBoundingClientRect(), h = H.getBoundingClientRect(); return { top: l.top, headerTall: h.height > l.height, clipped: getComputedStyle(H).overflow === 'hidden' }; });

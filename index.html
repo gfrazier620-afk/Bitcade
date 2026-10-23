@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#0f0c1f">
 <link rel="icon" type="image/png" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<meta name="description" content="Twenty-eight classic-style arcade games in your browser. Free, no installs, works on phone and keyboard.">
+<meta name="description" content="Thirty-two classic-style arcade games in your browser. Free, no installs, works on phone and keyboard.">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Bungee+Shade&family=Rubik:wght@400;500;700&family=Silkscreen&display=swap">
 <link rel="stylesheet" href="shared/arcade.css">
@@ -341,7 +341,7 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
 <div class="lobby">
   <header class="marquee">
     <h1 class="logo">BITCADE</h1>
-    <p class="tag">TWENTY-EIGHT CLASSIC-STYLE GAMES · NO QUARTERS REQUIRED</p>
+    <p class="tag">THIRTY-TWO CLASSIC-STYLE GAMES · NO QUARTERS REQUIRED</p>
     <div class="coin" aria-hidden="true">▶ PICK A CABINET ◀</div>
     <div class="stats" id="stats"></div>
   </header>
@@ -462,6 +462,18 @@ const GAMES = [
   { slug: 'neon-steps', name: 'Neon Steps', kind: 'Rhythm dance', c: '#ff4fd1', blurb: 'Hit the arrows on the beat. Three songs, from easy to hyper.',
     px: ['.X..C..L..Y.', 'XX.CCC.LL.YY', 'XXXCCC.LLLYY', 'XX..C..LL.YY', '.X..C..L..Y.', '............', '..X.....L...', '.XX....LLL..'],
     px2: ['.X..C..L..Y.', 'XX.CCC.LL.YY', 'XXXCCC.LLLYY', 'XX..C..LL.YY', '.X..C..L..Y.', '.....C......', '....CCC.Y...', '.....C..YY..'] },
+  { slug: 'blast-brigade', name: 'Blast Brigade', kind: 'Run and gun', c: '#ff8a3d', blurb: 'Run, gun and free the hostages. A heavy tank waits at every front.',
+    px: ['..RR........', '.SSS........', '.SSS........', '.BBBAAAA..Y.', '.BBB........', '.BBB........', '.T.T........', 'TT.TT.......'],
+    px2: ['..RR........', '.SSS........', '.SSS........', '.BBBAAAA...Y', '.BBB........', '.BBB........', '..TT........', '.TT.T.......'] },
+  { slug: 'dungeon-delve', name: 'Dungeon Delve', kind: 'Dungeon adventure', c: '#5ad870', blurb: 'Sword in hand, explore the dungeon, find the big key, beat the guardian.',
+    px: ['..R.........', '.AWA........', '.AWA......G.', '.AAA.....GGG', 'AAAAW...GWGW', '.A.A....GGGG', '.A.A........', 'KKKKKKKKKKKK'],
+    px2: ['..R.....W...', '.AWA....W...', '.AWA....W.G.', '.AAAAAAA.GGG', '.AAA....GWGW', '.A.A....GGGG', '.A.A........', 'KKKKKKKKKKKK'] },
+  { slug: 'lucky-line', name: 'Lucky Line', kind: 'Fishing', c: '#3dd6ff', blurb: 'Cast off the pier, hook a bite, reel it in without snapping the line.',
+    px: ['.........T..', '........T.A.', '.......T..A.', 'QQQQQQQQQQAQ', 'BBBBBBBBBBAB', 'BBBOOOBBBBRB', 'BBOOOOOBBBBB', 'BBBOOOBBBBBB'],
+    px2: ['.........T..', '........T.A.', '.......T..A.', 'QQQQQQQQQQAQ', 'BBBBBBBBBBAB', 'BBBBBOOOBBRB', 'BBBBOOOOOBBB', 'BBBBBOOOBBBB'] },
+  { slug: 'rampart-rush', name: 'Rampart Rush', kind: 'Tower defense', c: '#b48cff', blurb: 'Build and upgrade towers to stop the march on your castle.',
+    px: ['....V.......', '....VV......', '.A.AA.A.....', '.AAAAAA.....', '.AAKKAA..G..', '.AAKKAA.GGG.', 'DDDDDDDDDDDD', 'GGGGGGGGGGGG'],
+    px2: ['....VV......', '....V.......', '.A.AA.A.....', '.AAAAAA.....', '.AAKKAA.G...', '.AAKKAA.GGG.', 'DDDDDDDDDDDD', 'GGGGGGGGGGGG'] },
   { slug: 'blip-sports', name: 'Blip Sports', kind: 'LED football + baseball', c: '#ff3a22', blurb: 'The 1978 handheld feel. Pick your team, beat the CPU.', label: 'WINS',
     px: ['............', '.RR..RR..RR.', '............', '.RR..WW..RR.', '............', '.RR..RR..RR.', '............', '............'],
     px2: ['............', '.RR..RR..RR.', '............', '.RR..RWW.RR.', '............', '.RR..RR..RR.', '............', '............'] }

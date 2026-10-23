@@ -548,7 +548,8 @@
     'volley-duel': ['neon'], 'crater-lander': ['chrome'], 'sky-shield': ['retro'], 'hedge-hop': ['block'], 'scaffold-scramble': ['block'],
     'swarm-strike': ['pixel'], 'garden-gunner': ['block'], 'cube-hopper': ['retro'], 'light-trail': ['neon', -0.12], 'wing-duel': ['chrome'],
     'twin-blast': ['neon'], 'mole-patrol': ['block'], 'turbo-tour': ['chrome', -0.22], 'raptor-ridge': ['block', -0.08], 'marsh-marksman': ['retro'],
-    'pixel-peaks': ['block'], 'pop-lagoon': ['retro'], 'neon-steps': ['neon', -0.1]
+    'pixel-peaks': ['block'], 'pop-lagoon': ['retro'], 'neon-steps': ['neon', -0.1],
+    'blast-brigade': ['block', -0.14], 'dungeon-delve': ['pixel'], 'lucky-line': ['retro'], 'rampart-rush': ['chrome']
   };
   const tint = (hex, k) => {
     let h = hex.replace('#', ''); if (h.length === 3) h = [...h].map(c => c + c).join('');
