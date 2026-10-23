@@ -9,8 +9,8 @@
 <link rel="icon" type="image/png" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="description" content="Thirty-two classic-style arcade games in your browser. Free, no installs, works on phone and keyboard.">
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Bungee+Shade&family=Rubik:wght@400;500;700&family=Silkscreen&display=swap">
+<link rel="preload" href="shared/fonts/bungee-shade-400.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="shared/fonts/bungee-400.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="shared/fonts/silkscreen-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="shared/fonts.css">
 <link rel="stylesheet" href="shared/arcade.css">
 <style>
 /* Lobby: marquee header, then a floor of cabinets. Each cabinet carries its own game colour. */
@@ -425,6 +425,11 @@ footer p{margin:4px 0}
 .boot-hof p{margin:12px 0 0;font-size:10px;color:rgba(255,255,255,.6);letter-spacing:.1em}
 .music-btn{position:fixed;top:12px;right:12px;z-index:50;border:1px solid var(--line);background:rgba(15,12,31,.85);border-radius:8px;padding:6px 10px;font-family:var(--f-pixel);font-size:11px;color:var(--muted)}
 .music-btn[aria-pressed="true"]{color:#ffe36a;border-color:#ffe36a}
+.upd{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap:10px;max-width:calc(100% - 24px);padding:8px 8px 8px 14px;border-radius:12px;
+  background:#1f1940;border:1px solid #5ee7ff;box-shadow:0 8px 30px rgba(0,0,0,.6),0 0 18px rgba(94,231,255,.25);font-family:var(--f-pixel);font-size:11px;color:#5ee7ff;animation:upd-in .35s ease}
+.upd button{font-family:var(--f-pixel);font-size:11px;border:0;border-radius:8px;padding:7px 12px;cursor:pointer;color:#120a1c;background:#5ee7ff}
+.upd .upd-x{background:none;color:var(--muted);padding:6px}
+@keyframes upd-in{from{opacity:0;transform:translate(-50%,12px)}}
 .music-btn.set-lb{right:auto;left:12px;color:#5ee7ff;border-color:color-mix(in srgb,#5ee7ff 45%,var(--line));font-size:14px;padding:4px 10px;cursor:pointer}
 .boot-skip{position:absolute;left:0;right:0;bottom:max(14px,3vh);text-align:center;z-index:6;font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.12em}
 .boot.out{animation:boot-out .45s ease-in forwards}
@@ -503,8 +508,6 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
 <script src="shared/badges.js"></script>
 <script src="shared/boot.js"></script>
 <script src="shared/prizes.js"></script>
-<script src="shared/floor-play.js"></script>
-<script src="shared/floor.js"></script>
 <script src="shared/profile.js"></script>
 <script src="shared/shelves.js"></script>
 <script src="shared/pass.js"></script>
@@ -665,6 +668,7 @@ function coinSound() {
 }
 function enterGame(href) {
   try { sessionStorage.setItem('bitcade:enter', '1'); } catch (e) {}
+  prefetch(href); if (swReg && swReg.waiting) swReg.waiting.postMessage('skip'); // a new version takes over at this screen change
   coinSound();
   const L = crtLayer();
   if (calmCRT) { L.line.remove(); L.top.style.height = L.bot.style.height = '51%'; L.o.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 250, fill: 'forwards' }).onfinish = () => { location.href = href; }; return; }
@@ -746,9 +750,21 @@ document.getElementById('stats').innerHTML = `<span>CABINETS <b>${GAMES.length}<
 // Tickets and the prize counter (shared/prizes.js), and the walkable arcade floor (shared/floor.js).
 const tixShow = () => { const n = TICKETS.balance().toLocaleString(); document.getElementById('tixN').textContent = n; document.getElementById('tixStat').textContent = n; };
 tixShow(); Prizes.onChange(tixShow);
-document.getElementById('vPrize').addEventListener('click', () => Prizes.open());
+document.getElementById('vPrize').addEventListener('click', () => loadFloor().catch(() => {}).then(() => Prizes.open())); // the floor draws the outfit and carpet previews
+/*
+ * The walkable floor (shared/floor-play.js and shared/floor.js, about 200 KB) loads when it's first needed: walking
+ * the arcade, the prize counter or the pass, or quietly a moment after the lobby appears.
+ */
+let floorP = null;
+function loadFloor() {
+  if (floorP) return floorP;
+  const add = src => new Promise((ok, no) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = no; document.head.append(s); });
+  floorP = add('shared/floor-play.js').then(() => add('shared/floor.js')).then(initFloor).catch(e => { floorP = null; throw e; });
+  return floorP;
+}
+addEventListener('load', () => (window.requestIdleCallback || (f => setTimeout(f, 1500)))(() => loadFloor().catch(() => {}), { timeout: 4000 }));
 const floorView = document.getElementById('arcadeFloor'), vGrid = document.getElementById('vGrid'), vFloor = document.getElementById('vFloor');
-Floor.init({
+function initFloor() { Floor.init({
   canvas: document.getElementById('floorCv'), card: document.getElementById('floorCard'), games: GAMES, pal: PAL,
   featured: window.WEEKLY ? WEEKLY.game() : null,
   info: g => { const b = badges(g.slug); return { label: g.label || 'BEST', best: +get('arcade:best:' + g.slug) || 0, got: b.got, all: b.all }; },
@@ -759,7 +775,7 @@ Floor.init({
   onMissions: () => { renderMissions(); renderLevel(); },
   onLevel: () => { renderLevel(); tixShow(); },
   onJukebox: slug => { try { localStorage.setItem('bitcade:jukebox', slug); } catch (e) {} if (window.Chip) { Chip.enabled = true; Chip.play(slug ? Chip.theme(slug) : Chip.lobby); } document.getElementById('musicBtn').textContent = '♪ MUSIC ON'; }
-});
+}); }
 // The player profile and cloud save (shared/profile.js, shared/save.js).
 const profileView = document.getElementById('profileView'), vProfile = document.getElementById('vProfile');
 const prices = Object.fromEntries(Prizes.LIST.map(p => [p.id, p.price]));
@@ -782,7 +798,7 @@ function renderMissions() {
     b.querySelector('i').textContent = `+${MISSIONS.REWARD} TICKETS`;
     b.addEventListener('click', () => {
       const w = MISSIONS.where(m);
-      if (w === 'floor') { setView('floor'); Floor.goTo({ photo: 'booth' }[m.kind] || m.kind); document.getElementById('floorCv').focus({ preventScroll: true }); }
+      if (w === 'floor') { setView('floor'); loadFloor().then(() => { Floor.goTo({ photo: 'booth' }[m.kind] || m.kind); document.getElementById('floorCv').focus({ preventScroll: true }); }, () => {}); }
       else if (w) enterGame(w);
       else setView('grid');
     });
@@ -802,13 +818,13 @@ function renderLevel() {
 }
 renderLevel();
 const passEl = document.getElementById('passStrip');
-PassView.init(passEl, { onChange: () => { tixShow(); renderLevel(); } });
+PassView.init(passEl, { onChange: () => { tixShow(); renderLevel(); }, before: () => loadFloor() });
 function setView(v) {
   const walk = v === 'floor', prof = v === 'profile';
   floorView.hidden = !walk; document.getElementById('cabs').hidden = walk || prof; profileView.hidden = !prof; missionsEl.hidden = prof || !window.MISSIONS; lvlEl.hidden = prof || !window.XP; if (!prof) renderLevel(); passEl.hidden = prof || !(window.PASS && PASS.season()); if (!prof) PassView.render();
   if (feat) tourney.hidden = prof;
   vGrid.setAttribute('aria-pressed', String(!walk && !prof)); vFloor.setAttribute('aria-pressed', String(walk)); vProfile.setAttribute('aria-pressed', String(prof));
-  if (walk) Floor.start(); else Floor.stop();
+  if (walk) loadFloor().then(() => { if (!floorView.hidden) Floor.start(); }, () => {}); else if (window.Floor && floorP) floorP.then(() => { if (floorView.hidden) Floor.stop(); }, () => {});
   if (prof) Profile.render();
   try { if (!prof) localStorage.setItem('bitcade:view', v); } catch (e) {}
 }
@@ -820,7 +836,27 @@ vFloor.addEventListener('click', () => { setView('floor'); document.getElementBy
 setView(/[?&]view=profile\b/.test(location.search) ? 'profile' : get('bitcade:view') === 'floor' ? 'floor' : 'grid');
 /* Install: the service worker caches the lobby and every game. Browsers that support an install prompt get a button;
    iPhones and iPads install from the Share menu, so they get a hint instead. */
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+/*
+ * Updates: the service worker (sw.js) keeps a copy of the site and fetches a new one in the background after a deploy.
+ * When it's ready, a note offers to switch now; otherwise it switches at the next screen change (enterGame).
+ */
+let swReg = null, updating = false;
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').then(reg => {
+  swReg = reg;
+  const note = () => { if (!navigator.serviceWorker.controller || document.getElementById('updNote')) return;
+    const n = document.createElement('div'); n.id = 'updNote'; n.className = 'upd'; n.setAttribute('role', 'status');
+    n.innerHTML = '<span>✦ A NEW VERSION OF BITCADE IS READY</span><button type="button">UPDATE</button><button type="button" class="upd-x" aria-label="Later">✕</button>';
+    n.querySelector('button').addEventListener('click', () => { updating = true; if (reg.waiting) reg.waiting.postMessage('skip'); else location.reload(); });
+    n.querySelector('.upd-x').addEventListener('click', () => n.remove());
+    document.body.append(n); };
+  if (reg.waiting) note();
+  reg.addEventListener('updatefound', () => { const w = reg.installing; if (w) w.addEventListener('statechange', () => { if (w.state === 'installed') note(); }); });
+}).catch(() => {});
+if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('controllerchange', () => { if (updating) location.reload(); });
+// Pointing at a cabinet starts fetching its game (and the kit every game uses), so it's there by the time the screen comes back on.
+const fetched = new Set();
+const prefetch = href => { if (!href || fetched.has(href)) return; fetched.add(href); [href, 'shared/arcade.js', 'shared/arcade.css', 'shared/story.js'].forEach(u => { if (u !== href && fetched.has(u)) return; fetched.add(u); fetch(u).catch(() => {}); }); };
+['pointerover', 'focusin', 'touchstart'].forEach(ev => document.addEventListener(ev, e => { const a = e.target.closest && e.target.closest('a[href^="games/"]'); if (a) prefetch(a.getAttribute('href')); }, { passive: true }));
 const installBtn = document.getElementById('install'); let installEvt = null;
 addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; installBtn.hidden = false; });
 installBtn.addEventListener('click', () => { if (!installEvt) return; installEvt.prompt(); installEvt.userChoice.finally(() => { installEvt = null; installBtn.hidden = true; }); });

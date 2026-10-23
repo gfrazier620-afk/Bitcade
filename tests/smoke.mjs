@@ -381,6 +381,7 @@ console.log('\nArcade floor');
   check(await page.evaluate(() => document.querySelectorAll('#missions .ms').length) === 3, 'the lobby shows three daily missions');
   check(/LEVEL/.test(await page.textContent('#lvl')) && await page.evaluate(() => XP.info().level >= 1), 'the lobby shows your level and XP');
   await page.click('#vFloor');
+  await page.waitForFunction(() => window.Floor && Floor.state(), null, { timeout: 5000 }); // the floor loads when it's first needed
   check(await page.isVisible('#arcadeFloor') && !(await page.isVisible('#cabs')), 'WALK THE ARCADE shows the floor');
   const y0 = await page.evaluate(() => Floor.state().y);
   await page.keyboard.down('ArrowUp'); await wait(400); await page.keyboard.up('ArrowUp');
@@ -701,6 +702,35 @@ console.log('\nCabinets page');
   check(!(await ph.page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)), 'the cabinets page has no sideways scrolling on a phone');
   check(!ph.errors.length, `no errors${ph.errors.length ? ': ' + ph.errors.join(' | ') : ''}`);
   await ph.close();
+}
+
+/* ---------- loading ---------- */
+console.log('\nLoading');
+{
+  const pages = ['index.html', ...dirs.map(d => `games/${d}/index.html`)], google = [];
+  for (const p of pages) if (/fonts\.googleapis|fonts\.gstatic/.test(await readFile(join(ROOT, p), 'utf8'))) google.push(p);
+  check(!google.length, `every page uses the fonts served from shared/fonts${google.length ? ' (still on Google: ' + google.join(', ') + ')' : ''}`);
+  const fcss = await readFile(join(ROOT, 'shared/fonts.css'), 'utf8'), sw = await readFile(join(ROOT, 'sw.js'), 'utf8');
+  const files = [...new Set([...fcss.matchAll(/url\(fonts\/([^)]+)\.woff2\)/g)].map(m => m[1]))], swFonts = JSON.parse(sw.match(/const FONTS = (\[[^\]]*\]);/)[1].replace(/'/g, '"'));
+  const missing = []; for (const f of files) { try { await stat(join(ROOT, 'shared/fonts', f + '.woff2')); } catch { missing.push(f); } }
+  check(!missing.length && files.every(f => swFonts.includes(f)), `every font file exists and is kept offline${missing.length ? ' (missing: ' + missing.join(', ') + ')' : ''}`);
+  check(/addEventListener\('message'[^\n]*skip/.test(sw) && /GITHUB_SHA/.test(await readFile(join(ROOT, '.github/workflows/site.yml'), 'utf8')), 'each deploy stamps a new service worker version, which waits to be told to take over');
+  check(!/<script src="shared\/floor(-play)?\.js">/.test(await readFile(join(ROOT, 'index.html'), 'utf8')), 'the lobby doesn\'t load the arcade floor up front');
+  const { page, errors, close } = await open('/?feature=none');
+  await skipBoot(page);
+  const asked = []; page.on('request', r => asked.push(r.url()));
+  await page.hover('a.tile[href="games/stackdown/"]'); await wait(300);
+  check(asked.some(u => /games\/stackdown\/$/.test(u)), 'pointing at a cabinet starts fetching its game');
+  await page.click('#vPrize');
+  check(await page.waitForFunction(() => window.Floor && document.querySelector('.pc:not([hidden])'), null, { timeout: 5000 }).then(() => true, () => false), 'the prize counter brings the floor in for its outfit pictures');
+  check(!errors.length, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
+  await close();
+  const g = await open('/games/rock-rift/');
+  await g.page.addInitScript(() => { window.__warm = false; new MutationObserver(() => { if (document.querySelector('.screen .warm')) window.__warm = true; }).observe(document, { childList: true, subtree: true }); });
+  await g.page.reload();
+  check(await g.page.evaluate(() => window.__warm), 'a game\'s screen warms up as it loads');
+  check(await g.page.waitForFunction(() => !document.querySelector('.screen .warm'), null, { timeout: 3000 }).then(() => true, () => false), 'and the warm-up clears away by itself');
+  await g.close();
 }
 
 /* ---------- the Arcade Pass ---------- */

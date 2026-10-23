@@ -835,8 +835,25 @@
     L.glow.animate([{ opacity: 0 }, { opacity: 0.45 }, { opacity: 0 }], { duration: 380, delay: 170, fill: 'forwards' }).onfinish = () => L.o.remove();
   }
   /** Power the screen off, then go to href. */
+  let swReg = null;
+  /*
+   * The screen warms up like an old set: a moment of static with the game's name, fading into the picture once the
+   * fonts are in (at least 0.35 s, at most 2 s). Reduced motion skips it.
+   */
+  function warmUp() {
+    const scr = document.querySelector('.screen'); if (!scr || calmCRT) return;
+    const w = document.createElement('div'); w.className = 'warm'; w.setAttribute('aria-hidden', 'true');
+    const c = document.createElement('canvas'); c.width = 128; c.height = 80; const b = document.createElement('b'); b.textContent = (document.querySelector('.bar h1') || {}).textContent || '';
+    const sm = document.createElement('small'); sm.textContent = 'TUNING IN'; w.append(c, b, sm); scr.append(w);
+    const x = c.getContext('2d'), img = x.createImageData(c.width, c.height); let live = true;
+    (function frame() { if (!live) return; const d = img.data; for (let i = 0; i < d.length; i += 4) { const v = Math.random() * 200 | 0; d[i] = v * 0.8; d[i + 1] = v * 0.85; d[i + 2] = v; d[i + 3] = 255; } x.putImageData(img, 0, 0); requestAnimationFrame(frame); })();
+    const fonts = document.fonts && document.fonts.load ? Promise.all([document.fonts.load('20px Bungee'), document.fonts.load('12px Silkscreen')]).catch(() => {}) : null;
+    Promise.race([Promise.all([fonts, new Promise(r => setTimeout(r, 350))]), new Promise(r => setTimeout(r, 2000))])
+      .then(() => { w.classList.add('off'); setTimeout(() => { live = false; w.remove(); }, 500); });
+  }
   A.crtOff = href => {
     try { sessionStorage.setItem('bitcade:enter', '1'); } catch (e) {} // so the lobby powers on when it loads
+    if (swReg && swReg.waiting) swReg.waiting.postMessage('skip'); // a new version of the site takes over at this screen change
     A.tone(1200, 0.3, 'sine', 0.035, 0, 60);
     if (calmCRT) { const L = crtLayer(); L.line.remove(); L.top.style.height = L.bot.style.height = '51%'; L.o.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, fill: 'forwards' }).onfinish = () => { location.href = href; }; return; }
     const L = crtLayer();
@@ -866,7 +883,8 @@
     try { const eq = JSON.parse(store.get('arcade:equip')) || {}; ['tint', 'skin'].forEach(k => { if (/^[a-z]+$/.test(eq[k] || '')) document.body.classList.add(`${k}-${eq[k]}`); }); } catch (e) {}
     if (outbox().length) flush(); // scores saved while offline
     // Offline play: the service worker (sw.js, at the site root) caches the lobby and every game.
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register(new URL('../sw.js', KIT_URL).href).catch(() => {});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register(new URL('../sw.js', KIT_URL).href).then(r => { swReg = r; }).catch(() => {});
+    warmUp();
     // CRT has three settings: LITE (the default: faint scanlines and glow), FULL and OFF. Stored as 'lite' | '1' | '0'.
     const crtSet = () => { const v = store.get('arcade:crt'), mode = ['lite', '1', '0'].includes(v) ? v : 'lite'; document.body.classList.toggle('crt', mode === '1'); document.body.classList.toggle('crt-lite', mode === 'lite'); };
     crtSet();

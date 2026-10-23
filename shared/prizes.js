@@ -113,6 +113,7 @@ window.Prizes = (() => {
   function preview(p, c) {
     const x = c.getContext('2d'); x.imageSmoothingEnabled = false; x.clearRect(0, 0, c.width, c.height);
     if (window.Floor && Floor.preview(p, x, c.width, c.height)) return;
+    if (!p.sw) return; // outfits and carpets are drawn by the floor (shared/floor.js)
     const g = x.createLinearGradient(0, 0, c.width, c.height); g.addColorStop(0, p.sw[0]); g.addColorStop(1, p.sw[1]);
     if (p.id === 'holo' || p.id === 'prism' || p.id === 'diamond') { const hg = x.createLinearGradient(0, 0, c.width, c.height); ['#ff9ad8', '#9ad8ff', '#c8ffb0', '#ffe89a', '#ff9ad8'].forEach((cc, i) => hg.addColorStop(i / 4, cc)); x.fillStyle = hg; x.fillRect(c.width / 2 - 22, 4, 44, c.height - 8); x.fillStyle = '#05040c'; x.fillRect(c.width / 2 - 15, 14, 30, 22); return; }
     if (p.slot === 'tint') { // a little screen in that phosphor

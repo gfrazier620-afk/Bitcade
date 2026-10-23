@@ -41,6 +41,8 @@ jobs:
       - uses: actions/checkout@v4
       # publish only the site, not the test tooling
       - run: mkdir _site && cp -r index.html sw.js manifest.json icons shared games _site/
+      # every deploy is a new service worker version, so players get the new site (see sw.js)
+      - run: sed -i "s/const VERSION = '\([^']*\)'/const VERSION = '\1-${GITHUB_SHA::7}'/" _site/sw.js && grep -m1 "const VERSION" _site/sw.js
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site

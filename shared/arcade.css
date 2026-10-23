@@ -373,3 +373,11 @@ body.skin-diamond .card{background:rgba(10,6,18,.78);border-color:rgba(0,0,0,.4)
 .mute.set-btn{color:#5ee7ff;border-color:color-mix(in srgb,#5ee7ff 45%,var(--line));cursor:pointer}
 .mute.set-btn:hover{border-color:#5ee7ff;box-shadow:0 0 10px rgba(94,231,255,.3)}
 .easy-tag{align-self:center;font-family:var(--f-pixel);font-size:10px;letter-spacing:.08em;color:#120a1c;background:#ffd23d;border-radius:6px;padding:3px 6px}
+
+/* the screen warming up (warmUp in arcade.js): static and the game's name, fading into the picture */
+.screen .warm{position:absolute;inset:0;z-index:6;pointer-events:none;background:#05040c;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;transition:opacity .45s ease,filter .45s ease}
+.screen .warm canvas{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated;opacity:.45}
+.screen .warm b{position:relative;font-family:var(--f-marquee);font-weight:400;font-size:clamp(20px,5vw,34px);color:#fff;text-shadow:0 0 18px var(--game),0 2px 0 #0a0612;padding:4px 14px;background:rgba(6,4,16,.55);border-radius:8px}
+.screen .warm small{position:relative;font-family:var(--f-pixel);font-size:11px;letter-spacing:.24em;color:var(--game);background:rgba(6,4,16,.55);padding:2px 8px;border-radius:5px;animation:warm-blink .8s steps(2,start) infinite}
+@keyframes warm-blink{to{visibility:hidden}}
+.screen .warm.off{opacity:0;filter:brightness(2.4)}

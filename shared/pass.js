@@ -5,7 +5,7 @@
  */
 window.PassView = (() => {
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
-  let strip = null, box = null, lastFocus = null, onChange = () => {};
+  let strip = null, box = null, lastFocus = null, onChange = () => {}, opts = {};
   const days = ms => Math.max(0, Math.ceil(ms / 864e5));
   const prizeOf = r => r.t === 'prize' && window.Prizes ? Prizes.LIST.find(p => p.id === r.id) : null;
   const label = r => r.t === 'tix' ? `${r.n} TICKETS` : (prizeOf(r) || { name: r.id }).name;
@@ -25,6 +25,7 @@ window.PassView = (() => {
     }
     const p = prizeOf(r); if (!p) return;
     if (window.Floor && Floor.preview && Floor.preview(p, x, w, h)) return;
+    if (!p.sw) { x.fillStyle = '#2a2148'; x.fillRect(w / 2 - 14, 8, 28, h - 16); return; } // an outfit or carpet before the floor has loaded
     const g = x.createLinearGradient(0, 0, w, h); g.addColorStop(0, p.sw[0]); g.addColorStop(1, p.sw[1]);
     if (p.slot === 'tint') { x.fillStyle = '#05040c'; x.fillRect(4, 4, w - 8, h - 8); x.fillStyle = g; x.fillRect(9, 9, w - 18, h - 18); x.fillStyle = 'rgba(0,0,0,.3)'; for (let i = 9; i < h - 9; i += 3) x.fillRect(9, i, w - 18, 1); }
     else { x.fillStyle = g; x.fillRect(w / 2 - 20, 4, 40, h - 8); x.fillStyle = '#05040c'; x.fillRect(w / 2 - 13, 12, 26, 18); x.fillStyle = p.sw[0]; x.fillRect(w / 2 - 13, 34, 26, 3); }
@@ -86,12 +87,13 @@ window.PassView = (() => {
   function open() {
     if (!window.PASS) return; if (!box) build();
     lastFocus = document.activeElement; box.hidden = false; document.documentElement.classList.add('pc-open');
+    if (!window.Floor && opts.before) Promise.resolve(opts.before()).then(() => { if (box && !box.hidden) render(); }, () => {}); // outfit and carpet pictures come from the floor
     render(); const b = box.querySelector('.ps-all') || box.querySelector('.ps-x'); if (b) b.focus();
   }
   function close() { if (!box || box.hidden) return; box.hidden = true; document.documentElement.classList.remove('pc-open'); if (lastFocus && lastFocus.focus) lastFocus.focus(); }
   /** Hook up the lobby strip; opts.onChange runs after a claim (tickets and prizes changed). */
-  function init(stripEl, opts = {}) {
-    strip = stripEl; onChange = opts.onChange || onChange;
+  function init(stripEl, o = {}) {
+    strip = stripEl; opts = o; onChange = o.onChange || onChange;
     strip.addEventListener('click', open);
     strip.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
     if (window.PASS) PASS.onChange(renderStrip);
