@@ -311,7 +311,7 @@ console.log('\nWeekly tournament');
   await other.close();
   const lobby = await open('/?feature=twin-blast');
   check(await lobby.page.isVisible('#tourney') && (await lobby.page.textContent('#tourney h2')) === 'Twin Blast', 'the lobby shows this week\'s tournament banner');
-  check(await lobby.page.$eval('#tourney', a => a.getAttribute('href')) === 'games/twin-blast/' && await lobby.page.isVisible('.cab.feat[href="games/twin-blast/"]'), 'the banner links to the featured cabinet, which wears the THIS WEEK ribbon');
+  check(await lobby.page.$eval('#tourney', a => a.getAttribute('href')) === 'games/twin-blast/' && await lobby.page.isVisible('.tile.feat[href="games/twin-blast/"]'), 'the banner links to the featured cabinet, which wears the THIS WEEK ribbon');
   await lobby.page.waitForFunction(() => /Offline/.test(document.querySelector('#tourney .t-top').textContent));
   check(true, 'with the world board offline, the banner says so');
   check(!lobby.errors.length, `no errors${lobby.errors.length ? ': ' + lobby.errors.join(' | ') : ''}`);
@@ -363,11 +363,11 @@ console.log('\nArcade floor');
 {
   const { page, errors, close } = await open('/');
   await skipBoot(page);
-  check(await page.isVisible('#floor') && !(await page.isVisible('#arcadeFloor')), 'the lobby opens on the cabinets grid');
+  check(await page.isVisible('#shelves') && !(await page.isVisible('#arcadeFloor')), 'the lobby opens on the cabinet shelves');
   check(await page.evaluate(() => document.querySelectorAll('#missions .ms').length) === 3, 'the lobby shows three daily missions');
   check(/LEVEL/.test(await page.textContent('#lvl')) && await page.evaluate(() => XP.info().level >= 1), 'the lobby shows your level and XP');
   await page.click('#vFloor');
-  check(await page.isVisible('#arcadeFloor') && !(await page.isVisible('#floor')), 'WALK THE ARCADE shows the floor');
+  check(await page.isVisible('#arcadeFloor') && !(await page.isVisible('#cabs')), 'WALK THE ARCADE shows the floor');
   const y0 = await page.evaluate(() => Floor.state().y);
   await page.keyboard.down('ArrowUp'); await wait(400); await page.keyboard.up('ArrowUp');
   check(await page.evaluate(() => Floor.state().y) < y0 - 20, 'the arrow keys walk');
@@ -518,7 +518,7 @@ console.log('\nTransitions and gold cabinets');
 {
   const { page, errors, close } = await open('/');
   await skipBoot(page);
-  await Promise.all([page.waitForURL(/games\/wallbuster\//, { timeout: 5000 }), page.click('a.cab[href="games/wallbuster/"]')]);
+  await Promise.all([page.waitForURL(/games\/wallbuster\//, { timeout: 5000 }), page.locator('a.tile[href="games/wallbuster/"]').first().click()]);
   check(true, 'picking a cabinet powers the lobby off and opens the game');
   check(await page.evaluate(() => !!document.querySelector('.crt-fx')), 'the game powers on as it opens');
   await page.waitForFunction(() => !document.querySelector('.crt-fx'), null, { timeout: 3000 });
@@ -636,6 +636,51 @@ console.log('\nCabinet');
   check((await page.textContent('#ov .hs-table .r1 span')) === '1ST', 'score tables rank 1ST, 2ND, 3RD');
   check(!errors.length, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
   await close();
+}
+
+/* ---------- the cabinets page: shelves, search, chips, sorting, favorites, size ---------- */
+console.log('\nCabinets page');
+{
+  const src = await readFile(join(ROOT, 'index.html'), 'utf8');
+  const entries = src.match(/\{ slug: '[^']+'[^\n]*/g) || [], bad = entries.filter(l => !/genre: '[a-z0-9 ]+', added: '\d{4}-\d\d-\d\d'/.test(l));
+  check(entries.length === dirs.length && !bad.length, `every cabinet has a genre and the date it was added${bad.length ? ' (missing: ' + bad.map(l => l.slice(9, 40)).join(', ') + ')' : ''}`);
+  const { page, errors, close } = await open('/?feature=none');
+  await page.evaluate(() => { localStorage.setItem('arcade:plays:stackdown', '3'); localStorage.setItem('bitcade:recent', JSON.stringify(['stackdown'])); });
+  await page.reload(); await skipBoot(page);
+  const shelves = await page.$$eval('.shelf', ss => ss.map(s => s.dataset.shelf));
+  check(['recent', 'new', 'shooter', 'racing', 'puzzle'].every(id => shelves.includes(id)) && !shelves.includes('fav'), 'shelves: Continue playing, New arrivals and one per genre (no Favorites until something is pinned)');
+  check((await page.$$eval('.shelf[data-shelf="recent"] .tile', t => t.map(a => a.getAttribute('href'))))[0] === 'games/stackdown/', 'Continue playing starts with the last game played');
+  const visible = () => page.$$eval('#floor .cab', cs => cs.filter(c => !c.hidden).map(c => c.querySelector('h2').textContent));
+  await page.fill('#cabQ', 'lander');
+  check(JSON.stringify(await visible()) === '["Crater Lander"]' && await page.isHidden('#shelves'), 'searching shows just the matching cabinets');
+  await page.fill('#cabQ', '');
+  await page.click('.gchip[data-chip="shooter"]');
+  const shooters = await visible();
+  check(shooters.includes('Star Siege') && !shooters.includes('Stackdown') && /Shooters/.test(await page.textContent('#gridHead')), 'a genre chip shows that genre');
+  await page.selectOption('#cabSort', 'az');
+  const az = await visible();
+  check(az.length === shooters.length && az.join('|') === [...az].sort((a, b) => a.localeCompare(b)).join('|'), 'sorting A–Z puts them in order');
+  await page.click('#gridHead .see');
+  check(await page.isVisible('#shelves'), '‹ SHELVES goes back to the shelves');
+  await page.locator('.shelf[data-shelf="puzzle"] .see').click();
+  check((await visible()).includes('Stackdown') && await page.isHidden('#shelves'), 'SEE ALL opens the grid for that shelf');
+  await page.click('.gchip[data-chip="home"]');
+  const url = page.url();
+  await page.locator('.tile[href="games/rock-rift/"] .fav').first().click(); await wait(200);
+  check(page.url() === url && JSON.parse(await page.evaluate(() => localStorage.getItem('bitcade:favs'))).includes('rock-rift'), 'the ★ pins a cabinet without opening it');
+  check((await page.$$eval('.shelf[data-shelf="fav"] .tile', t => t.map(a => a.getAttribute('href')))).includes('games/rock-rift/') && await page.evaluate(() => document.querySelector('.cab[href="games/rock-rift/"] .fav').classList.contains('on')), 'it shows on the Favorites shelf, and its big cabinet is starred too');
+  await page.click('[data-size="small"]'); await page.reload(); await skipBoot(page);
+  check(await page.evaluate(() => document.getElementById('floor').classList.contains('small') && localStorage.getItem('bitcade:cabsize') === 'small'), 'the big/small toggle is remembered');
+  check(!errors.length, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
+  await close();
+  const ph = await open('/?feature=none', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  await skipBoot(ph.page);
+  await ph.page.click('.gchip[data-chip="all"]');
+  const cols = await ph.page.evaluate(() => getComputedStyle(document.getElementById('floor')).gridTemplateColumns.split(' ').length);
+  check(await ph.page.evaluate(() => document.getElementById('floor').classList.contains('small')) && cols >= 2 && cols <= 3, `phones get small cabinets, ${cols} across`);
+  check(!(await ph.page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)), 'the cabinets page has no sideways scrolling on a phone');
+  check(!ph.errors.length, `no errors${ph.errors.length ? ': ' + ph.errors.join(' | ') : ''}`);
+  await ph.close();
 }
 
 /* ---------- phones: pause button and touch pad ---------- */

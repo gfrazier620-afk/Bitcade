@@ -53,6 +53,74 @@ body{display:block;overflow-x:hidden;
 .cab-world b{color:var(--c);font-weight:400;font-size:13px}
 .cab-foot .bd{margin-left:auto;margin-right:10px;color:#ffd23d}
 .play{background:var(--c);color:#120a1c;border-radius:7px;padding:5px 10px;font-size:11px}
+/* the cabinets page (shared/shelves.js): search, sort, size, genre chips, shelves and favorites */
+.cabs{--hi:#5ee7ff}
+.finder{display:flex;gap:10px;align-items:center;max-width:900px;margin:0 auto 12px}
+.finder .q{flex:1;display:flex;align-items:center;gap:8px;background:var(--bg2);border:1px solid var(--line);border-radius:999px;padding:0 14px;min-width:0}
+.finder .q:focus-within{border-color:var(--hi);box-shadow:0 0 0 3px color-mix(in srgb,var(--hi) 22%,transparent)}
+.finder .q span{color:var(--muted);font-size:18px}
+.finder input{flex:1;min-width:0;background:none;border:0;outline:0;color:var(--ink);font-family:var(--f-pixel);font-size:13px;letter-spacing:.06em;padding:10px 0;user-select:text}
+.finder input::placeholder{color:var(--muted);opacity:.8}
+.finder select{font-family:var(--f-pixel);font-size:12px;letter-spacing:.04em;color:var(--ink);background:var(--bg2);border:1px solid var(--line);border-radius:999px;padding:9px 12px;cursor:pointer}
+.sizes{display:flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;flex:none}
+.sizes button{background:var(--bg2);color:var(--muted);border:0;font-size:17px;line-height:1;padding:8px 12px;cursor:pointer}
+.sizes button[aria-pressed="true"]{background:var(--hi);color:#120a1c}
+.gchips{display:flex;gap:8px;max-width:900px;margin:0 auto 22px;overflow-x:auto;scrollbar-width:none;padding:2px 2px 4px;-webkit-mask-image:linear-gradient(90deg,#000 92%,transparent);mask-image:linear-gradient(90deg,#000 92%,transparent)}
+.gchips::-webkit-scrollbar{display:none}
+.gchip{flex:none;display:flex;align-items:center;gap:6px;font-family:var(--f-pixel);font-size:11px;letter-spacing:.06em;color:var(--muted);background:var(--bg2);border:1px solid var(--line);border-radius:999px;padding:7px 12px;cursor:pointer;white-space:nowrap}
+.gchip small{font-size:10px;opacity:.7}
+.gchip:hover{border-color:var(--hi);color:var(--ink)}
+.gchip[aria-pressed="true"]{background:var(--hi);border-color:var(--hi);color:#120a1c}
+.shelf{margin-bottom:26px}
+.shelf header,.gridhead{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:0 2px 10px}
+.shelf h3,.gridhead h3{margin:0;display:flex;align-items:baseline;gap:10px;font-family:var(--f-marquee);font-weight:400;font-size:21px;letter-spacing:.03em;color:var(--ink)}
+.shelf h3 small,.gridhead h3 small{font-family:var(--f-pixel);font-size:11px;color:var(--muted);letter-spacing:.06em}
+.see{flex:none;font-family:var(--f-pixel);font-size:11px;letter-spacing:.08em;color:var(--hi);background:none;border:1px solid transparent;border-radius:999px;padding:5px 10px;cursor:pointer}
+.see:hover{border-color:var(--hi)}
+.gridhead{flex-wrap:wrap;margin-bottom:16px}
+.gridhead .empty{flex-basis:100%;margin:18px 0 0;text-align:center;color:var(--muted);font-family:var(--f-pixel);font-size:12px;line-height:1.6}
+.rowwrap{position:relative}
+.row{display:flex;gap:14px;overflow-x:auto;scroll-snap-type:x mandatory;scroll-padding:2px;padding:4px 2px 12px;scrollbar-width:thin;scrollbar-color:#3a2f5a transparent;overscroll-behavior-x:contain}
+.nudge{position:absolute;z-index:3;top:calc(50% - 32px);width:38px;height:52px;border-radius:12px;border:1px solid var(--line);background:rgba(16,11,32,.88);color:var(--ink);font-size:26px;line-height:1;cursor:pointer;display:none}
+.nudge.prev{left:-12px}.nudge.next{right:-12px}
+.nudge:hover{border-color:var(--hi);color:var(--hi)}
+@media (hover:hover) and (pointer:fine){.rowwrap:hover .nudge:not([hidden]){display:block}}
+.tile{--c:#fff;position:relative;flex:none;width:208px;scroll-snap-align:start;display:flex;flex-direction:column;gap:3px;text-decoration:none;color:var(--ink);padding:6px 6px 9px;border-radius:12px;background:var(--bg2);border:1px solid var(--line);transition:transform .15s,border-color .15s,box-shadow .15s}
+.tile:hover,.tile:focus-visible{transform:translateY(-3px);border-color:var(--c);box-shadow:0 8px 22px color-mix(in srgb,var(--c) 28%,transparent);outline:none}
+.tile.feat{border-color:#ffd23d;box-shadow:0 0 16px rgba(255,210,61,.22)}
+.tile.gold{border-color:#e0a820;background:linear-gradient(180deg,rgba(224,168,32,.18),var(--bg2) 60%)}
+.t-scr{position:relative;aspect-ratio:16/9;border-radius:8px;overflow:hidden;background:#05040c;display:flex;align-items:center;justify-content:center;border-bottom:2px solid var(--c);margin-bottom:5px}
+.t-scr canvas{width:42%;image-rendering:pixelated}
+.t-scr .shot{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 35%}
+.t-scr .shot.two{opacity:0;animation:tflip 3.4s var(--d,0s) infinite}
+@keyframes tflip{0%,42%{opacity:0}50%,92%{opacity:1}100%{opacity:0}}
+@media (prefers-reduced-motion:reduce){.t-scr .shot.two{animation:none}}
+.t-scr::after{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(255,255,255,.03) 0 1px,transparent 1px 3px),radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,.4))}
+.t-scr .new{position:absolute;z-index:2;left:6px;top:6px;font-family:var(--f-pixel);font-size:9px;letter-spacing:.1em;color:#120a1c;background:#3dff8f;border-radius:4px;padding:2px 5px;box-shadow:0 0 10px rgba(61,255,143,.5)}
+.t-name{font-family:var(--f-marquee);font-weight:400;font-size:15px;line-height:1.15;color:var(--c);padding:0 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile.gold .t-name{color:#ffd23d}
+.t-kind{font-family:var(--f-pixel);font-size:10px;color:var(--muted);padding:0 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fav{position:absolute;z-index:3;top:6px;right:6px;width:30px;height:30px;border-radius:50%;border:1px solid rgba(255,255,255,.18);background:rgba(8,5,18,.72);color:#d8d2ee;font-size:16px;line-height:1;cursor:pointer;display:grid;place-items:center;padding:0;opacity:.75;transition:opacity .15s,color .15s,border-color .15s}
+.fav:hover,.fav:focus-visible,.fav.on{opacity:1}
+.fav.on{color:#ffd23d;border-color:#ffd23d;text-shadow:0 0 8px rgba(255,210,61,.8)}
+.cab-screen .fav{top:8px;left:8px;right:auto}
+/* small cabinets: screen and name, two or three across on a phone */
+.floor.small{grid-template-columns:repeat(auto-fill,minmax(176px,1fr));gap:14px}
+.floor.small .cab-top{padding:8px 10px 7px}
+.floor.small .cab-top h2{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.floor.small .cab-top span,.floor.small .cab-top .chip,.floor.small .cab-body p,.floor.small .cab-world,.floor.small .bd,.floor.small .play{display:none}
+.floor.small .cab-body{padding:6px 10px 8px;gap:4px}
+.floor.small .cab-foot b{font-size:11px}
+.floor.small .cab-screen .mastered{font-size:8px;bottom:5px;padding:1px 5px}
+.floor.small .cab.feat::before{font-size:8px;top:8px;right:-36px;padding:2px 0}
+.floor.small .cab-screen .fav{width:26px;height:26px;font-size:14px;top:5px;left:5px}
+@media (max-width:640px){
+  .finder{flex-wrap:wrap}.finder .q{flex-basis:100%}.finder select{flex:1}
+  .tile{width:152px}.t-name{font-size:13.5px}
+  .shelf h3,.gridhead h3{font-size:16px;white-space:nowrap}
+  .floor.small{grid-template-columns:repeat(auto-fill,minmax(136px,1fr));gap:10px}
+  .floor.small .cab-top h2{font-size:13.5px}
+}
 .cab-top .chip{float:right;margin-top:2px;font-family:var(--f-pixel);font-size:10px;letter-spacing:.08em;color:var(--c);border:1px solid var(--c);border-radius:5px;padding:1px 5px}
 /* the weekly tournament: a banner above the floor, and a ribbon on the featured cabinet */
 /* mastered cabinets (every badge earned) go gold */
@@ -362,7 +430,17 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
     <p class="fl-help">←↑↓→ or WASD to walk · hold SHIFT to run · Enter to play or use · tap where to go, or the map · controllers work too (B runs)</p>
   </section>
   <section class="profile" id="profileView" hidden></section>
-  <main class="floor" id="floor"></main>
+  <section class="cabs" id="cabs" aria-label="Cabinets">
+    <div class="finder">
+      <label class="q"><span aria-hidden="true">⌕</span><input type="search" id="cabQ" placeholder="SEARCH CABINETS" aria-label="Search cabinets" autocomplete="off" spellcheck="false" enterkeyhint="search"></label>
+      <select id="cabSort" aria-label="Sort cabinets"></select>
+      <div class="sizes" role="group" aria-label="Cabinet size"><button type="button" data-size="big" aria-label="Big cabinets" title="Big cabinets">▣</button><button type="button" data-size="small" aria-label="Small cabinets" title="Small cabinets">▦</button></div>
+    </div>
+    <div class="gchips" id="cabChips" role="group" aria-label="Genres"></div>
+    <div class="shelves" id="shelves"></div>
+    <div class="gridhead" id="gridHead" hidden></div>
+    <main class="floor" id="floor"></main>
+  </section>
   <footer>
     <p>Works with a keyboard or touch, and most games with a game controller. High scores are saved in this browser.</p>
     <button class="install" id="install" hidden>Install Bitcade · plays offline</button>
@@ -378,103 +456,104 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
 <script src="shared/floor-play.js"></script>
 <script src="shared/floor.js"></script>
 <script src="shared/profile.js"></script>
+<script src="shared/shelves.js"></script>
 <script>
 (() => {
 const GAMES = [
-  { slug: 'neon-noodle', name: 'Neon Noodle', kind: 'Snake', c: '#3dff8f', blurb: 'Eat, grow, and keep your tail out of the way.',
+  { slug: 'neon-noodle', genre: 'action puzzle', added: '2026-10-11', name: 'Neon Noodle', kind: 'Snake', c: '#3dff8f', blurb: 'Eat, grow, and keep your tail out of the way.',
     px: ['............', '..GGGGGG....', '..G....G....', '..G....GGGG.', '..G.......G.', '..GGGGG..GW.', '......G.....', '....P.G.....'],
     px2: ['............', '..GGGGGG....', '..G....G....', '..G....GGGG.', '..G.......G.', '..GGGGG..GG.', '......G...W.', '....P.......'] },
-  { slug: 'wallbuster', daily: true, name: 'Wallbuster', kind: 'Brick breaker', c: '#ff8a3d', blurb: 'Smash the wall with a paddle, a ball, and power-ups.',
+  { slug: 'wallbuster', daily: true, genre: 'action puzzle', added: '2026-10-11', name: 'Wallbuster', kind: 'Brick breaker', c: '#ff8a3d', blurb: 'Smash the wall with a paddle, a ball, and power-ups.',
     px: ['RRRRRRRRRRRR', 'OOOOOOOOOOOO', 'YYYY.YYYYYYY', 'GGG...GG.GGG', '............', '......W.....', '............', '...OOOOOO...'],
     px2: ['RRRRRRRRRRRR', 'OOOOOOOOOOOO', 'YYYY.YYYYYYY', 'GGG...GG.GGG', '.....W......', '............', '............', '..OOOOOO....'] },
-  { slug: 'star-siege', name: 'Star Siege', kind: 'Alien shooter', c: '#5ee7ff', blurb: 'Hold the line against a marching alien fleet.',
+  { slug: 'star-siege', genre: 'shooter', added: '2026-10-11', name: 'Star Siege', kind: 'Alien shooter', c: '#5ee7ff', blurb: 'Hold the line against a marching alien fleet.',
     px: ['....CCCC....', '..CCCCCCCC..', '.CC.CCCC.CC.', '.CCCCCCCCCC.', '..C.C..C.C..', '.....W......', '.....C......', '...CCCCC....'],
     px2: ['....CCCC....', '..CCCCCCCC..', '.CC.CCCC.CC.', '.CCCCCCCCCC.', '.C..C..C..C.', '............', '.....C......', '...CCCCC....'] },
-  { slug: 'rock-rift', name: 'Rock Rift', kind: 'Asteroid blaster', c: '#c6ff3d', blurb: 'Spin, thrust, and blast drifting rocks to dust.',
+  { slug: 'rock-rift', genre: 'shooter', added: '2026-10-11', name: 'Rock Rift', kind: 'Asteroid blaster', c: '#c6ff3d', blurb: 'Spin, thrust, and blast drifting rocks to dust.',
     px: ['.......LLL..', '......L...L.', '......L...L.', '.......LLL..', '..W.........', '.LLL........', 'L.L.L.......', '.....W......'],
     px2: ['......LLL...', '.....L...L..', '.....L...L..', '..W...LLL...', '............', '.LLL........', 'L.L.L.......', '.....W......'] },
-  { slug: 'stackdown', daily: true, name: 'Stackdown', kind: 'Falling blocks', c: '#b48cff', blurb: 'Drop, spin and stack. Clear four rows at once.',
+  { slug: 'stackdown', daily: true, genre: 'puzzle', added: '2026-10-11', name: 'Stackdown', kind: 'Falling blocks', c: '#b48cff', blurb: 'Drop, spin and stack. Clear four rows at once.',
     px: ['....VV......', '....VV......', '............', 'C.......YY..', 'CRR.GGG.YYB.', 'CRRGGVVVOBB.', 'COOVVVVVOOB.', 'CVVVVRRVVOBB'],
     px2: ['............', '....VV......', '....VV......', 'C.......YY..', 'CRR.GGG.YYB.', 'CRRGGVVVOBB.', 'COOVVVVVOOB.', 'CVVVVRRVVOBB'] },
-  { slug: 'back-alley-brawl', name: 'Back Alley Brawl', kind: 'Street fighter', c: '#ff5a3d', blurb: 'Two fighters, four rivals, best of three rounds.',
+  { slug: 'back-alley-brawl', genre: 'fighting', added: '2026-10-11', name: 'Back Alley Brawl', kind: 'Street fighter', c: '#ff5a3d', blurb: 'Two fighters, four rivals, best of three rounds.',
     px: ['..SS....SS..', '..BB....OO..', '.BBBB..OOOO.', 'SBBBBSSOOOO.', '.BBBB..OOOO.', '.B..B..O..O.', '.B..B..O..O.', 'KK..KK.KK.KK'],
     px2: ['..SS....SS..', '..BB....OO..', '.BBBBS.OOOO.', 'SBBBB..OOOO.', '.BBBB..OOOO.', '.B..B..O..O.', '.B..B..O..O.', 'KK..KK.KK.KK'] },
-  { slug: 'circuit-chase', name: 'Circuit Chase', kind: 'Maze chase', c: '#4fd8ff', blurb: 'Grab every data bit while four viruses hunt you.',
+  { slug: 'circuit-chase', genre: 'action', added: '2026-10-11', name: 'Circuit Chase', kind: 'Maze chase', c: '#4fd8ff', blurb: 'Grab every data bit while four viruses hunt you.',
     px: ['NNNNNNNNNNNN', 'N....N.....N', 'N.NN.N.NNN.N', 'N..W...R.y.N', 'N.NN.N.NNN.N', 'N....N.....N', 'NNNNNNNNNNNN', '............'],
     px2: ['NNNNNNNNNNNN', 'N....N.....N', 'N.NN.N.NNN.N', 'N...W...Ry.N', 'N.NN.N.NNN.N', 'N....N.....N', 'NNNNNNNNNNNN', '............'] },
-  { slug: 'highrise-handyman', name: 'Highrise Handyman', kind: 'Fix-it climber', c: '#ffc23d', blurb: 'Hammer the windows back while a rock giant wrecks them.',
+  { slug: 'highrise-handyman', genre: 'platform action', added: '2026-10-11', name: 'Highrise Handyman', kind: 'Fix-it climber', c: '#ffc23d', blurb: 'Hammer the windows back while a rock giant wrecks them.',
     px: ['....AAAA....', '....AAAA....', 'BBBBBBBBBBBB', 'BCB.BCB.BKB.', 'BBBBBBBBBBBB', 'BKB.BCBYBCB.', 'BBBBBBBBBBBB', 'BCB.BKB.BCB.'],
     px2: ['...AAAAAA...', '....AAAA....', 'BBBBBBBBBBBB', 'BCB.BCB.BKB.', 'BBBBBBBBBBBB', 'BCB.BCBYBCB.', 'BBBBBBBBBBBB', 'BCB.BKB.BCB.'] },
-  { slug: 'nitro-lane', name: 'Nitro Lane', kind: 'Racing', c: '#ff3d7f', blurb: 'Weave through night traffic and keep the tank full.',
+  { slug: 'nitro-lane', genre: 'racing', added: '2026-10-11', name: 'Nitro Lane', kind: 'Racing', c: '#ff3d7f', blurb: 'Weave through night traffic and keep the tank full.',
     px: ['P.W....W..P.', 'P..YY.....P.', 'P..YY..W..P.', 'P.W.....CCP.', 'P.......CCP.', 'P..PP..W..P.', 'P..PP.....P.', 'P.W....W..P.'],
     px2: ['P.W....W..P.', 'P.W....W..P.', 'P..YY.....P.', 'P..YY..W..P.', 'P.W.....CCP.', 'P..PP...CCP.', 'P..PP..W..P.', 'P.........P.'] },
-  { slug: 'volley-duel', name: 'Volley Duel', kind: 'Paddle duel · 2P', c: '#ff7bf0', blurb: 'Bat the ball past a rival: a CPU ladder or a friend.',
+  { slug: 'volley-duel', genre: 'sports 2p', added: '2026-10-11', name: 'Volley Duel', kind: 'Paddle duel · 2P', c: '#ff7bf0', blurb: 'Bat the ball past a rival: a CPU ladder or a friend.',
     px: ['M.....A.....', 'M..........C', 'M.....A....C', '...W.......C', '......A.....', '............', '......A.....', '............'],
     px2: ['......A.....', '...........C', 'M.....A....C', 'M..........C', 'MW....A.....', '............', '......A.....', '............'] },
-  { slug: 'crater-lander', name: 'Crater Lander', kind: 'Lunar lander', c: '#9fb4ff', blurb: 'Feather the thrust and touch down on a narrow pad.',
+  { slug: 'crater-lander', genre: 'action', added: '2026-10-11', name: 'Crater Lander', kind: 'Lunar lander', c: '#9fb4ff', blurb: 'Feather the thrust and touch down on a narrow pad.',
     px: ['............', '.....EE.....', '....EEEE....', '....E..E....', '............', '............', 'AA...AA.YYYA', 'AAAAAAAAAAAA'],
     px2: ['............', '............', '......EE....', '.....EEEE...', '.....E..E...', '......OO....', 'AA...AA.YYYA', 'AAAAAAAAAAAA'] },
-  { slug: 'sky-shield', name: 'Sky Shield', kind: 'Missile defense', c: '#ffe14d', blurb: 'Burst the falling missiles before they reach your cities.',
+  { slug: 'sky-shield', genre: 'shooter strategy', added: '2026-10-11', name: 'Sky Shield', kind: 'Missile defense', c: '#ffe14d', blurb: 'Burst the falling missiles before they reach your cities.',
     px: ['R.........R.', '.R.......R..', '..R.....R...', '...R...R....', '............', '............', '.BB.BB.BB.B.', 'OOOOOOOOOOOO'],
     px2: ['R.........R.', '.R.......R..', '..R.....R...', '...R...YY...', '....R.YYYY..', '.......YY...', '.BB.BB.BB.B.', 'OOOOOOOOOOOO'] },
-  { slug: 'hedge-hop', name: 'Hedge Hop', kind: 'Road crossing', c: '#ffb27a', blurb: 'Hop a hedgehog over traffic and logs to its burrow.',
+  { slug: 'hedge-hop', genre: 'action', added: '2026-10-11', name: 'Hedge Hop', kind: 'Road crossing', c: '#ffb27a', blurb: 'Hop a hedgehog over traffic and logs to its burrow.',
     px: ['GGGGGGGGGGGG', 'BTTTBBBTTTBB', 'BBTTTBBBBTTT', 'GGGGGGGGGGGG', 'KKRKKKKKKCKK', 'KKKKKYYKKKKK', 'GGGGGHGGGGGG', 'GGGGGGGGGGGG'],
     px2: ['GGGGGGGGGGGG', 'TTTBBBTTTBBB', 'TBBTTTBBBBTT', 'GGGGGGGGGGGG', 'KRKKKKKKCKKK', 'KKKKKHYYKKKK', 'GGGGGGGGGGGG', 'GGGGGGGGGGGG'] },
-  { slug: 'scaffold-scramble', name: 'Scaffold Scramble', kind: 'Girder climber', c: '#ff6f61', blurb: 'Climb to the flag while a crane rolls paint cans at you.',
+  { slug: 'scaffold-scramble', genre: 'platform', added: '2026-10-12', name: 'Scaffold Scramble', kind: 'Girder climber', c: '#ff6f61', blurb: 'Climb to the flag while a crane rolls paint cans at you.',
     px: ['Y...........', 'YB..........', 'OOOOOOOOOC..', '.........C..', '...B.....C..', '..OOOOOOOOOO', '..C.....Y...', 'OOOOOOOOOOOO'],
     px2: ['Y...........', 'Y.B.........', 'OOOOOOOOOC..', '.........C..', '.....B...C..', '..OOOOOOOOOO', '..C......Y..', 'OOOOOOOOOOOO'] },
-  { slug: 'swarm-strike', name: 'Swarm Strike', kind: 'Dive-bomb shooter', c: '#d47dff', blurb: 'The swarm lines up, then dives. Win back a captured ship.',
+  { slug: 'swarm-strike', genre: 'shooter', added: '2026-10-12', name: 'Swarm Strike', kind: 'Dive-bomb shooter', c: '#d47dff', blurb: 'The swarm lines up, then dives. Win back a captured ship.',
     px: ['..G.....G...', '.GGG...GGG..', '............', '.R.R.R.R.R..', '............', '.....Y......', '............', '....WMW.....'],
     px2: ['..G.........', '.GGG...G....', '........G...', '.R.R.R.R.R..', '.........G..', '.....Y......', '............', '....WMW.....'] },
-  { slug: 'garden-gunner', name: 'Garden Gunner', kind: 'Caterpillar shooter', c: '#2ee6c5', blurb: 'Spray a caterpillar to bits before it reaches your patch.',
+  { slug: 'garden-gunner', genre: 'shooter', added: '2026-10-12', name: 'Garden Gunner', kind: 'Caterpillar shooter', c: '#2ee6c5', blurb: 'Spray a caterpillar to bits before it reaches your patch.',
     px: ['..P......Y..', 'GGGGGL......', '.........P..', '....Y.......', '..P.....P...', '............', '.....C......', '....CCC.....'],
     px2: ['..P......Y..', '.GGGGGL.....', '.........P..', '....Y.......', '..P..C..P...', '............', '.....C......', '....CCC.....'] },
-  { slug: 'cube-hopper', name: 'Cube Hopper', kind: 'Pyramid hopper', c: '#6fb7ff', blurb: 'Hop every cube to a new colour and dodge the spring.',
+  { slug: 'cube-hopper', genre: 'puzzle action', added: '2026-10-12', name: 'Cube Hopper', kind: 'Pyramid hopper', c: '#6fb7ff', blurb: 'Hop every cube to a new colour and dodge the spring.',
     px: ['.....Q......', '.....YY.....', '....NNNN....', '....MMYY....', '...NNNNNN...', '..YYMMYYMM..', '..NNNNNNNN..', '..R.........'],
     px2: ['............', '.....YY.....', '....NNNNQ...', '....MMYY....', '...NNNNNN...', '..YYMMYYMM..', '..NNNNNNNN..', '.R..........'] },
-  { slug: 'light-trail', name: 'Light Trail', kind: 'Light-cycle duel · 2P', c: '#22e0ff', blurb: 'Your bike leaves a wall. Make your rival hit one first.',
+  { slug: 'light-trail', genre: 'racing 2p', added: '2026-10-13', name: 'Light Trail', kind: 'Light-cycle duel · 2P', c: '#22e0ff', blurb: 'Your bike leaves a wall. Make your rival hit one first.',
     px: ['ZZZZZZZZZ...', '........Z...', '..OOOOW.Z...', '..O.....Z...', '..O.....ZZW.', '..O.........', 'OOO.........', '............'],
     px2: ['ZZZZZZZZZ...', '........Z...', '..OOOOOW....', '..O.....Z...', '..O.....ZZZW', '..O.........', 'OOO.........', '............'] },
-  { slug: 'wing-duel', daily: true, name: 'Wing Duel', kind: 'Flying joust · 2P', c: '#ffa630', blurb: 'Flap high and come down lance-first on rival riders.',
+  { slug: 'wing-duel', daily: true, genre: 'fighting action 2p', added: '2026-10-13', name: 'Wing Duel', kind: 'Flying joust · 2P', c: '#ffa630', blurb: 'Flap high and come down lance-first on rival riders.',
     px: ['............', '...Y........', '..YYY..R....', '...O..RRR...', '............', 'AAAA....AAAA', '............', 'OROROROROROR'],
     px2: ['...Y........', '..YYY.......', '...O...R....', '......RRR...', '............', 'AAAA....AAAA', '............', 'RORORORORORO'] },
-  { slug: 'twin-blast', daily: true, name: 'Twin Blast', kind: 'Twin-stick arena', c: '#ff4fd1', blurb: 'Move with one stick, shoot with the other. Save the crew.',
+  { slug: 'twin-blast', daily: true, genre: 'shooter', added: '2026-10-13', name: 'Twin Blast', kind: 'Twin-stick arena', c: '#ff4fd1', blurb: 'Move with one stick, shoot with the other. Save the crew.',
     px: ['R.........R.', '............', '....W.......', '....W.XX....', '......XX.WW.', '............', '.G.........R', '............'],
     px2: ['.R.......R..', '....W.......', '............', '......XX.WW.', '....W.XX....', '............', '..G.......R.', '............'] },
-  { slug: 'mole-patrol', daily: true, name: 'Mole Patrol', kind: 'Dig and trap', c: '#d9a066', blurb: 'Tunnel after garden pests and bubble them till they pop.',
+  { slug: 'mole-patrol', daily: true, genre: 'action adventure', added: '2026-10-13', name: 'Mole Patrol', kind: 'Dig and trap', c: '#d9a066', blurb: 'Tunnel after garden pests and bubble them till they pop.',
     px: ['CCCCCCCCCCCC', 'GGGGGGGGGGGG', 'DDDDDdDDDDDD', 'DDDDDdDDDDDD', 'DDDDDdddYDDD', 'DDDDDDDDDDDD', 'DdRdDDDDDDDD', 'DDDDDDDDDDDD'],
     px2: ['CCCCCCCCCCCC', 'GGGGGGGGGGGG', 'DDDDDdDDDDDD', 'DDDDDdDDDDDD', 'DDDDDddddYDD', 'DDDDDDDDDDDD', 'DRddDDDDDDDD', 'DDDDDDDDDDDD'] },
-  { slug: 'turbo-tour', name: 'Turbo Tour', kind: 'Cross-country racer', c: '#ff7a3d', blurb: 'Race the world tour against the clock. Nitro on the straights.',
+  { slug: 'turbo-tour', genre: 'racing', added: '2026-10-14', name: 'Turbo Tour', kind: 'Cross-country racer', c: '#ff7a3d', blurb: 'Race the world tour against the clock. Nitro on the straights.',
     px: ['......Y.....', '.....GKG....', '....GKWKG...', '...GKKWKKG..', '..GKKKKKKKG.', '.GKKKOOKKKKG', 'GKKKKOOKKKKG', 'GKKKKKWKKKKG'],
     px2: ['......Y.....', '.....GWG....', '....GKKKG...', '...GKKWKKG..', '..GKKKKKKKG.', '.GKKKOOKKKKG', 'GKKKKOOKKKKG', 'GKKKKKKKKKKG'] },
-  { slug: 'raptor-ridge', name: 'Raptor Ridge', kind: 'Dino ride shooter', c: '#7dd63d', blurb: 'Tranquilize charging dinosaurs from the jeep. Mind the big one.',
+  { slug: 'raptor-ridge', genre: 'shooter adventure', added: '2026-10-14', name: 'Raptor Ridge', kind: 'Dino ride shooter', c: '#7dd63d', blurb: 'Tranquilize charging dinosaurs from the jeep. Mind the big one.',
     px: ['............', '.LLL........', 'LLWLL.......', '..LLLLLLL...', '...LLLLLLLL.', '...L....L..L', '..LL...LL...', 'GGGGGGGGGGGG'],
     px2: ['............', '.LLL........', 'LLWLL.......', '..LLLLLLL...', '...LLLLLLLL.', '....L.L....L', '...LL.LL....', 'GGGGGGGGGGGG'] },
-  { slug: 'marsh-marksman', name: 'Marsh Marksman', kind: 'Bird hunt', c: '#ffb84d', blurb: 'Birds burst from the reeds. Three shots a pair, ten a round.',
+  { slug: 'marsh-marksman', genre: 'shooter sports', added: '2026-10-14', name: 'Marsh Marksman', kind: 'Bird hunt', c: '#ffb84d', blurb: 'Birds burst from the reeds. Three shots a pair, ten a round.',
     px: ['............', '..GG........', '.YGG.TT.....', '...WTTTTT...', '....TTTT....', '............', 'L..L..L..L..', 'GGGGGGGGGGGG'],
     px2: ['.....TT.....', '..GG..TT....', '.YGG.TTT....', '...WTTTTT...', '....TTTT....', '............', '.L..L..L..L.', 'GGGGGGGGGGGG'] },
-  { slug: 'pixel-peaks', name: 'Pixel Peaks', kind: 'Mountain platformer', c: '#3dd6ff', blurb: 'Run, jump and bop critters all the way up to the flag on every peak.',
+  { slug: 'pixel-peaks', genre: 'platform adventure', added: '2026-10-15', name: 'Pixel Peaks', kind: 'Mountain platformer', c: '#3dd6ff', blurb: 'Run, jump and bop critters all the way up to the flag on every peak.',
     px: ['.....RR.....', '.....W......', '....WWW.....', '...GWWWG....', '..GGGGGGG...', '.GGGGGGGGG.C', 'GGGGGGGGGGCC', 'TTTTTTTTTTTT'],
     px2: ['.....RRR....', '.....W......', '....WWW.....', '...GWWWG....', '..GGGGGGG.C.', '.GGGGGGGGGCC', 'GGGGGGGGGGGG', 'TTTTTTTTTTTT'] },
-  { slug: 'pop-lagoon', name: 'Pop Lagoon', kind: 'Bubble popper', c: '#ff7bf0', blurb: 'Fire bubbles, match three, and drop whole clusters for big points.',
+  { slug: 'pop-lagoon', genre: 'puzzle', added: '2026-10-15', name: 'Pop Lagoon', kind: 'Bubble popper', c: '#ff7bf0', blurb: 'Fire bubbles, match three, and drop whole clusters for big points.',
     px: ['.RR.CC.YY.GG', 'RRRRCCCCYYYG', '.RR.CC.YY.GG', '..CC.GG.RR..', '.CCCCGGGRRR.', '..CC.GG.RR..', '............', '.....MM.....'],
     px2: ['.RR.CC.YY.GG', 'RRRRCCCCYYYG', '.RR.CC.YY.GG', '..CC.GG.....', '.CCCCGGG....', '..CC.GG.....', '.....RR.....', '.....MM.....'] },
-  { slug: 'neon-steps', name: 'Neon Steps', kind: 'Rhythm dance', c: '#ff4fd1', blurb: 'Hit the arrows on the beat. Three songs, from easy to hyper.',
+  { slug: 'neon-steps', genre: 'rhythm', added: '2026-10-15', name: 'Neon Steps', kind: 'Rhythm dance', c: '#ff4fd1', blurb: 'Hit the arrows on the beat. Three songs, from easy to hyper.',
     px: ['.X..C..L..Y.', 'XX.CCC.LL.YY', 'XXXCCC.LLLYY', 'XX..C..LL.YY', '.X..C..L..Y.', '............', '..X.....L...', '.XX....LLL..'],
     px2: ['.X..C..L..Y.', 'XX.CCC.LL.YY', 'XXXCCC.LLLYY', 'XX..C..LL.YY', '.X..C..L..Y.', '.....C......', '....CCC.Y...', '.....C..YY..'] },
-  { slug: 'blast-brigade', name: 'Blast Brigade', kind: 'Run and gun', c: '#ff8a3d', blurb: 'Run, gun and free the hostages. A heavy tank waits at every front.',
+  { slug: 'blast-brigade', genre: 'shooter platform', added: '2026-10-22', name: 'Blast Brigade', kind: 'Run and gun', c: '#ff8a3d', blurb: 'Run, gun and free the hostages. A heavy tank waits at every front.',
     px: ['..RR........', '.SSS........', '.SSS........', '.BBBAAAA..Y.', '.BBB........', '.BBB........', '.T.T........', 'TT.TT.......'],
     px2: ['..RR........', '.SSS........', '.SSS........', '.BBBAAAA...Y', '.BBB........', '.BBB........', '..TT........', '.TT.T.......'] },
-  { slug: 'dungeon-delve', name: 'Dungeon Delve', kind: 'Dungeon adventure', c: '#5ad870', blurb: 'Sword in hand, explore the dungeon, find the big key, beat the guardian.',
+  { slug: 'dungeon-delve', genre: 'adventure', added: '2026-10-22', name: 'Dungeon Delve', kind: 'Dungeon adventure', c: '#5ad870', blurb: 'Sword in hand, explore the dungeon, find the big key, beat the guardian.',
     px: ['..R.........', '.AWA........', '.AWA......G.', '.AAA.....GGG', 'AAAAW...GWGW', '.A.A....GGGG', '.A.A........', 'KKKKKKKKKKKK'],
     px2: ['..R.....W...', '.AWA....W...', '.AWA....W.G.', '.AAAAAAA.GGG', '.AAA....GWGW', '.A.A....GGGG', '.A.A........', 'KKKKKKKKKKKK'] },
-  { slug: 'lucky-line', name: 'Lucky Line', kind: 'Fishing', c: '#3dd6ff', blurb: 'Cast off the pier, hook a bite, reel it in without snapping the line.',
+  { slug: 'lucky-line', genre: 'sports', added: '2026-10-22', name: 'Lucky Line', kind: 'Fishing', c: '#3dd6ff', blurb: 'Cast off the pier, hook a bite, reel it in without snapping the line.',
     px: ['.........T..', '........T.A.', '.......T..A.', 'QQQQQQQQQQAQ', 'BBBBBBBBBBAB', 'BBBOOOBBBBRB', 'BBOOOOOBBBBB', 'BBBOOOBBBBBB'],
     px2: ['.........T..', '........T.A.', '.......T..A.', 'QQQQQQQQQQAQ', 'BBBBBBBBBBAB', 'BBBBBOOOBBRB', 'BBBBOOOOOBBB', 'BBBBBOOOBBBB'] },
-  { slug: 'rampart-rush', name: 'Rampart Rush', kind: 'Tower defense', c: '#b48cff', blurb: 'Build and upgrade towers to stop the march on your castle.',
+  { slug: 'rampart-rush', genre: 'strategy', added: '2026-10-22', name: 'Rampart Rush', kind: 'Tower defense', c: '#b48cff', blurb: 'Build and upgrade towers to stop the march on your castle.',
     px: ['....V.......', '....VV......', '.A.AA.A.....', '.AAAAAA.....', '.AAKKAA..G..', '.AAKKAA.GGG.', 'DDDDDDDDDDDD', 'GGGGGGGGGGGG'],
     px2: ['....VV......', '....V.......', '.A.AA.A.....', '.AAAAAA.....', '.AAKKAA.G...', '.AAKKAA.GGG.', 'DDDDDDDDDDDD', 'GGGGGGGGGGGG'] },
-  { slug: 'blip-sports', name: 'Blip Sports', kind: 'LED football + baseball', c: '#ff3a22', blurb: 'The 1978 handheld feel. Pick your team, beat the CPU.', label: 'WINS',
+  { slug: 'blip-sports', genre: 'sports', added: '2026-10-11', name: 'Blip Sports', kind: 'LED football + baseball', c: '#ff3a22', blurb: 'The 1978 handheld feel. Pick your team, beat the CPU.', label: 'WINS',
     px: ['............', '.RR..RR..RR.', '............', '.RR..WW..RR.', '............', '.RR..RR..RR.', '............', '............'],
     px2: ['............', '.RR..RR..RR.', '............', '.RR..RWW.RR.', '............', '.RR..RR..RR.', '............', '............'] }
 ];
@@ -508,6 +587,7 @@ GAMES.forEach(g => {
   floor.appendChild(a);
   g.el = a;
 });
+Shelves.init({ games: GAMES, paint });
 /*
  * Screen transitions, like an old CRT (games do the same in shared/arcade.js). Picking a cabinet drops a coin and
  * powers the lobby off: the picture collapses to a line, then a dot. Coming back from a game, it powers on again.
@@ -671,7 +751,7 @@ function renderLevel() {
 renderLevel();
 function setView(v) {
   const walk = v === 'floor', prof = v === 'profile';
-  floorView.hidden = !walk; floor.hidden = walk || prof; profileView.hidden = !prof; missionsEl.hidden = prof || !window.MISSIONS; lvlEl.hidden = prof || !window.XP; if (!prof) renderLevel();
+  floorView.hidden = !walk; document.getElementById('cabs').hidden = walk || prof; profileView.hidden = !prof; missionsEl.hidden = prof || !window.MISSIONS; lvlEl.hidden = prof || !window.XP; if (!prof) renderLevel();
   if (feat) tourney.hidden = prof;
   vGrid.setAttribute('aria-pressed', String(!walk && !prof)); vFloor.setAttribute('aria-pressed', String(walk)); vProfile.setAttribute('aria-pressed', String(prof));
   if (walk) Floor.start(); else Floor.stop();

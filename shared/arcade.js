@@ -146,6 +146,7 @@
   A.submit = (s, daily) => {
     s = Math.floor(s);
     if (A.demo) return false;
+    try { const r = JSON.parse(store.get('bitcade:recent') || '[]').filter(x => x !== A.id); r.unshift(A.id); store.set('bitcade:recent', JSON.stringify(r.slice(0, 12))); } catch (e) {} // the lobby's Continue playing shelf
     if (runEasy) { lastResult = { s, rank: -1, top: A.top(), day: null, week: null, tix: 0, easy: true }; return false; }
     store.set('arcade:plays:' + A.id, (+store.get('arcade:plays:' + A.id) || 0) + 1);
     const top = A.top(); // read before updating the best, which A.top() falls back to when there's no table yet
