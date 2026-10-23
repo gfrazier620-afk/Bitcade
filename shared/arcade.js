@@ -107,6 +107,7 @@
     requestAnimationFrame(() => { t.style.opacity = '1'; t.style.transform = 'translate(-50%,0)'; });
     setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 2600);
   }
+  A.toast = toast;
 
   /** Share a score: the share sheet where there is one, otherwise copy to the clipboard. */
   async function shareScore(s, day, btn) {
@@ -192,6 +193,8 @@
     }, quiet ? 1400 : 1100);
     return r;
   };
+  // the same XP climbs the Arcade Pass (shared/badges.js): a toast for each new tier
+  if (window.PASS) PASS.onChange(r => { if (r.after > r.before) setTimeout(() => { toast(`✦ ARCADE PASS · TIER ${r.after}${PASS.ready().length ? ' · REWARD WAITING IN THE LOBBY' : ''}`); A.jingle([659, 988, 1319], 0.07, 'triangle'); }, 2000); });
   /** Report to the daily missions (shared/badges.js); a toast for each one finished. */
   A.mission = ev => {
     if (!window.MISSIONS || A.demo || runEasy) return;
@@ -284,6 +287,7 @@
   const kd = code => {
     if (A.down.has(code)) return;
     A.down.add(code);
+    if (A.keyHook && A.keyHook(code)) return; // a page's own screen (shared/story.js) takes the press
     if (entry) entryKey(code);
     else if (shown && overlayOpen() && (code === 'ArrowLeft' || code === 'ArrowRight')) {
       const t = tabs(), i = t.indexOf(hsTab); hsTab = t[(i + (code === 'ArrowRight' ? 1 : t.length - 1)) % t.length]; renderHS();
@@ -360,7 +364,8 @@
     buttons.forEach(i => {
       if (!gpButtons.has(i)) {
         A.unlock();
-        if (overlayOpen() && (i === 0 || i === 9)) { gpSwallow.add(i); overlayGo(); }
+        if (A.padHook && A.padHook(i)) gpSwallow.add(i);
+        else if (overlayOpen() && (i === 0 || i === 9)) { gpSwallow.add(i); overlayGo(); }
         else if (overlayOpen() && i === 3 && altFn && !entry) { gpSwallow.add(i); overlayAlt(); } // Y = second overlay button
         else if (overlayOpen() && i === 2 && alt2Fn && !entry) { gpSwallow.add(i); overlayAlt2(); } // X = third
       }
@@ -468,6 +473,9 @@
   const startsRun = () => !!shown; // title and game-over screens list scores; the pause screen doesn't
   const overlayGo = () => { if (entry) return saveEntry(); const f = goFn; if (!f) return; if (startsRun()) { runEasy = A.easy; A.coin(); } A.hideOverlay(); f(); };
   const music = () => window.Chip; // shared/chip.js, when the page loads it
+  /** Start a run from a page's own screen (shared/story.js) the way the overlay does: easy mode is noted, a coin drops. */
+  A.startRun = () => { runEasy = A.easy; A.coin(); };
+  A.runEasy = () => runEasy;
   const overlayAlt = () => { const f = altFn; if (!f) return; if (startsRun()) { runEasy = A.easy; A.coin(); } A.hideOverlay(); f(); };
   let alt2Fn = null;
   const overlayAlt2 = () => { const f = alt2Fn; if (!f) return; if (startsRun()) { runEasy = A.easy; A.coin(); } A.hideOverlay(); f(); };

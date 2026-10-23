@@ -27,12 +27,15 @@
 <script src="../../shared/chip.js"></script>
 <script src="../../shared/badges.js"></script>
 <script src="../../shared/arcade.js"></script>
+<script src="../../shared/story.js"></script>
 <script>
 (() => {
 const A = Arcade, cv = document.getElementById('cv');
 const W = 640, H = 400, ctx = A.canvas(cv, W, H);
 // Pseudo-3D road: the track is a list of segments, each with a curve and a height; it's projected from a camera
 // behind the car every frame, with roadside props and traffic drawn back to front.
+// Story mode (shared/story.js): The Grand Tour, six races against five rival racers (top three to go on, first in the
+// final against Vex Valentine), car upgrades bought with prize money, then HARD and a traffic-free Time Trial lap.
 const SEG = 200, RUMBLE = 3, ROAD = 2000, LANES = 3, CAM_H = 1000, DRAW = 200, FOV = 100;
 const CAM_D = 1 / Math.tan(FOV / 2 * Math.PI / 180), PZ = CAM_H * CAM_D;
 const MAX = SEG * 60, ACCEL = MAX / 4.5, BRAKE = -MAX, DECEL = -MAX / 5, OFF_DECEL = -MAX / 2, OFF_LIMIT = MAX / 4, CENTRIFUGAL = 0.3;
@@ -95,6 +98,13 @@ const PROPS = {
     x.fillStyle = '#fff6c2'; x.fillRect(54, 24, 18, 6);
   }) },
   billboard: { ww: 2400, img: makeBillboard() },
+  blossom: { ww: 1400, img: sprite(220, 300, (x) => {
+    x.fillStyle = OUT; x.fillRect(96, 150, 28, 150); x.fillStyle = '#6a3a2a'; x.fillRect(100, 150, 20, 148); x.fillStyle = '#8a5a3a'; x.fillRect(102, 150, 6, 148);
+    const blobs = [[110, 80, 70], [60, 120, 48], [160, 118, 50], [80, 60, 44], [146, 62, 44], [110, 130, 50]];
+    x.fillStyle = OUT; for (const [bx, by, r] of blobs) { x.beginPath(); x.arc(bx, by, r + 4, 0, 6.29); x.fill(); }
+    for (const [bx, by, r] of blobs) { const g = x.createRadialGradient(bx - r * 0.3, by - r * 0.4, 2, bx, by, r); g.addColorStop(0, '#ffe0f0'); g.addColorStop(0.6, '#ff9ad0'); g.addColorStop(1, '#e070a8'); x.fillStyle = g; x.beginPath(); x.arc(bx, by, r, 0, 6.29); x.fill(); }
+    let s2 = 9; const r2 = () => (s2 = (s2 * 16807) % 2147483647) / 2147483647; x.fillStyle = '#fff6fa'; for (let i = 0; i < 40; i++) x.fillRect(30 + r2() * 160, 20 + r2() * 150, 3, 3);
+  }) },
   sign: null, gate: null
 };
 function makeBillboard() { return sprite(320, 240, (x) => {
@@ -159,13 +169,18 @@ const STAGES = [
   { name: 'COAST', sky: ['#3a6ad8', '#ffb27a'], grass: ['#2e9a48', '#2a8a40'], rumble: ['#ff4f6d', '#f4f0e8'], road: ['#5a5a6a', '#55556a'], lane: '#f4f0e8', fog: '#ffb27a', props: ['palm', 'palm', 'palm', 'billboard', 'rock'], far: 'sea' },
   { name: 'DESERT', sky: ['#2a7acc', '#ffe0a0'], grass: ['#d8a85a', '#c89848'], rumble: ['#c8302a', '#f4f0e8'], road: ['#6a5e58', '#645852'], lane: '#ffe98a', fog: '#ffe0a0', props: ['cactus', 'cactus', 'rock', 'rock', 'billboard'], far: 'mesa' },
   { name: 'NEON CITY', sky: ['#05031a', '#3a1858'], grass: ['#1a1a2a', '#16162a'], rumble: ['#ff4fd1', '#22e0ff'], road: ['#2a2a38', '#262634'], lane: '#ffd23d', fog: '#3a1858', props: ['building', 'building', 'lamp', 'lamp', 'billboard'], far: 'city' },
-  { name: 'ALPS', sky: ['#6ab8ff', '#e8f4ff'], grass: ['#f0f4ff', '#dde6f5'], rumble: ['#3d7bff', '#f4f0e8'], road: ['#6a6e7a', '#646874'], lane: '#f4f0e8', fog: '#e8f4ff', props: ['pine', 'pine', 'pine', 'rock', 'billboard'], far: 'peaks' }
+  { name: 'ALPS', sky: ['#6ab8ff', '#e8f4ff'], grass: ['#f0f4ff', '#dde6f5'], rumble: ['#3d7bff', '#f4f0e8'], road: ['#6a6e7a', '#646874'], lane: '#f4f0e8', fog: '#e8f4ff', props: ['pine', 'pine', 'pine', 'rock', 'billboard'], far: 'peaks' },
+  { name: 'BLOSSOM VALLEY', sky: ['#6aa8f0', '#ffe0ec'], grass: ['#5ab85a', '#52aa52'], rumble: ['#ff7ab8', '#f4f0e8'], road: ['#5e5a68', '#59556a'], lane: '#f4f0e8', fog: '#ffe0ec', props: ['blossom', 'blossom', 'blossom', 'lamp', 'billboard'], far: 'hills' },
+  { name: 'AURORA PASS', sky: ['#040818', '#14305a'], grass: ['#dfe8f5', '#d2dcee'], rumble: ['#3dff8f', '#5ee7ff'], road: ['#3a3e4a', '#363a46'], lane: '#a8f0ff', fog: '#14305a', props: ['pine', 'pine', 'lamp', 'rock', 'billboard'], far: 'aurora' }
 ];
 // sky gradients and two parallax layers per stage, drawn once and tiled sideways
 STAGES.forEach(st => {
   st.skyImg = sprite(W, H, (x) => { const g = x.createLinearGradient(0, 0, 0, H * 0.6); g.addColorStop(0, st.sky[0]); g.addColorStop(1, st.sky[1]); x.fillStyle = g; x.fillRect(0, 0, W, H);
     if (st.far === 'sea' || st.far === 'mesa') { x.fillStyle = 'rgba(255,240,200,.9)'; x.beginPath(); x.arc(W * 0.7, H * 0.36, 34, 0, 6.29); x.fill(); }
     if (st.far === 'city') { let s = 3; const r = () => (s = (s * 16807) % 2147483647) / 2147483647; for (let i = 0; i < 90; i++) { x.fillStyle = `rgba(255,255,255,${r() * 0.7})`; x.fillRect(r() * W, r() * H * 0.5, 1, 1); } x.fillStyle = '#f0e6d0'; x.beginPath(); x.arc(W * 0.2, H * 0.18, 18, 0, 6.29); x.fill(); }
+    if (st.far === 'aurora') { let s = 11; const r = () => (s = (s * 16807) % 2147483647) / 2147483647; for (let i = 0; i < 120; i++) { x.fillStyle = `rgba(255,255,255,${r() * 0.8})`; x.fillRect(r() * W, r() * H * 0.5, 1, 1); }
+      [['#3dff8f', 0], ['#5ee7ff', 18], ['#b86bff', 34]].forEach(([c, o]) => { x.strokeStyle = c; x.globalAlpha = 0.35; x.lineWidth = 16; x.beginPath(); for (let i = 0; i <= W; i += 16) { const yy = 70 + o + Math.sin(i / 70) * 22 + Math.sin(i / 23) * 5; i ? x.lineTo(i, yy) : x.moveTo(i, yy); } x.stroke(); }); x.globalAlpha = 1; }
+    if (st.far === 'hills') { x.fillStyle = 'rgba(255,255,255,.8)'; [[120, 70, 50], [420, 50, 60]].forEach(([cx, cy, w]) => { x.beginPath(); x.ellipse(cx, cy, w, 12, 0, 0, 6.29); x.ellipse(cx + w * 0.4, cy - 8, w * 0.5, 12, 0, 0, 6.29); x.fill(); }); }
     if (st.far === 'peaks' || st.far === 'sea') { x.fillStyle = 'rgba(255,255,255,.75)'; [[80, 60, 50], [300, 40, 70], [520, 80, 44]].forEach(([cx, cy, w]) => { x.beginPath(); x.ellipse(cx, cy, w, 12, 0, 0, 6.29); x.ellipse(cx + w * 0.4, cy - 8, w * 0.5, 12, 0, 0, 6.29); x.fill(); }); }
   });
   st.farImg = sprite(W * 2, H, (x) => {
@@ -174,6 +189,8 @@ STAGES.forEach(st => {
       x.fillStyle = '#3a7a5a'; for (const [cx, w] of [[200, 120], [760, 80], [1100, 140]]) { x.beginPath(); x.ellipse(cx, base - 26, w, 18, 0, Math.PI, 0); x.fill(); } }
     if (st.far === 'mesa') { x.fillStyle = '#b85a3a'; for (let i = 0; i < 6; i++) { const cx = i * 230 + 40, w = 120 + r() * 80, hh = 40 + r() * 50; x.fillRect(cx, base - hh, w, hh + 10); x.fillStyle = '#d8784a'; x.fillRect(cx, base - hh, w, 6); x.fillStyle = '#b85a3a'; } }
     if (st.far === 'city') { for (let i = 0; i < 60; i++) { const bx = i * 22, bh = 30 + r() * 90; x.fillStyle = '#1a1036'; x.fillRect(bx, base - bh, 20, bh + 10); for (let wy = base - bh + 6; wy < base; wy += 8) if (r() < 0.4) { x.fillStyle = r() < 0.5 ? '#ffe98a' : '#ff4fd1'; x.fillRect(bx + 4 + Math.floor(r() * 3) * 5, wy, 3, 3); } } }
+    if (st.far === 'hills') { for (let i = 0; i < 12; i++) { const cx = i * 110, w = 90 + r() * 60, hh = 30 + r() * 40; x.fillStyle = i % 2 ? '#4a9a5a' : '#5aaa62'; x.beginPath(); x.ellipse(cx, base, w, hh, 0, Math.PI, 0); x.fill(); x.fillStyle = '#ffb0d8'; for (let k = 0; k < 6; k++) x.fillRect(cx - w * 0.6 + r() * w * 1.2, base - hh * 0.6 + r() * hh * 0.5, 3, 3); } }
+    if (st.far === 'aurora') { for (let i = 0; i < 9; i++) { const cx = i * 150, hh = 60 + r() * 80; x.fillStyle = '#1a2440'; x.beginPath(); x.moveTo(cx - 100, base); x.lineTo(cx, base - hh); x.lineTo(cx + 100, base); x.fill(); x.fillStyle = '#c8d8f0'; x.beginPath(); x.moveTo(cx - 28, base - hh * 0.7); x.lineTo(cx, base - hh); x.lineTo(cx + 28, base - hh * 0.7); x.fill(); } }
     if (st.far === 'peaks') { for (let i = 0; i < 9; i++) { const cx = i * 150, hh = 70 + r() * 70; x.fillStyle = '#7a8aaa'; x.beginPath(); x.moveTo(cx - 90, base); x.lineTo(cx, base - hh); x.lineTo(cx + 90, base); x.fill(); x.fillStyle = '#f4f8ff'; x.beginPath(); x.moveTo(cx - 30, base - hh * 0.66); x.lineTo(cx, base - hh); x.lineTo(cx + 30, base - hh * 0.66); x.fill(); } }
   });
   st.nearImg = sprite(W * 2, H, (x) => {
@@ -184,6 +201,12 @@ STAGES.forEach(st => {
 
 let state = 'title', segments = [], cars = [], stage = 0, position = 0, speed = 0, playerX = 0, timeLeft = 60, score = 0, nitro = 3, boostT = 0, crashT = 0, stageCrashes = 0, bounceTo = null;
 let skyX = 0, nearX = 0, msg = '', msgT = 0, finishIdx = 0, finishZ = 0, engT = 0, countT = 0, steer = 0;
+// story runs: rivals on the grid, a race result, the time trial
+let S = null, hard = false, trial = false, trialT = 0, rivals = [], resultT = 0, place = 0, finished = 0;
+const up = id => S ? S.lv(id) : 0;
+const RIVALS = [['ZIGGY ZOOM', '#ffd23d', 0.86], ['MAMBA MORENO', '#3dff8f', 0.88], ['DUKE DUPONT', '#3d7bff', 0.9], ['BARON VON BOOST', '#b86bff', 0.92], ['VEX VALENTINE', '#ff2a6a', 0.95]];
+const ORD = n => n + (n === 1 ? 'ST' : n === 2 ? 'ND' : n === 3 ? 'RD' : 'TH');
+const need = () => stage === 5 ? 1 : 3; // the final has to be won
 
 /* ---------- building a stage ---------- */
 const lastY = () => segments.length ? segments[segments.length - 1].p2.world.y : 0;
@@ -198,8 +221,8 @@ function addRoad(enter, hold, leave, curve, y) {
   for (let n = 0; n < hold; n++) addSegment(curve, easeInOut(y0, y1, (enter + n) / total));
   for (let n = 0; n < leave; n++) addSegment(easeInOut(curve, 0, n / leave), easeInOut(y0, y1, (enter + hold + n) / total));
 }
-function buildStage(i) {
-  const st = STAGES[i % STAGES.length], rnd = A.seeded('turbo-tour:' + i), R = (a, b) => a + rnd() * (b - a);
+function buildStage(i, seed) {
+  const st = STAGES[i % STAGES.length], rnd = A.seeded('turbo-tour:' + (seed || i)), R = (a, b) => a + rnd() * (b - a);
   segments = [];
   addRoad(0, 40, 0, 0, 0);
   while (segments.length < 2500 + Math.min(i, 6) * 120) {
@@ -216,7 +239,7 @@ function buildStage(i) {
   segments[finishIdx].sprites.push({ t: 'gate', offset: 0 });
   cars = []; for (let k = 0; k < carCount(); k++) spawnCar(true);
 }
-const carCount = () => 14 + Math.min(stage * 3, 18);
+const carCount = () => trial ? 0 : S && S.run ? 9 + stage * 2 : 14 + Math.min(stage * 3, 18);
 function spawnCar(initial) {
   const z = position + PZ + (initial ? A.rand(1500, 34000) : A.rand(30000, 40000));
   if (z > finishZ - 600) return false;
@@ -228,14 +251,23 @@ const findSeg = z => segments[Math.min(segments.length - 1, Math.max(0, Math.flo
 
 /* ---------- game flow ---------- */
 function newGame() {
+  S.run = null; hard = false; trial = false; rivals = [];
   stage = 0; score = 0; A.setScore(0); position = 0; speed = 0; playerX = 0; nitro = 3; boostT = 0; crashT = 0; stageCrashes = 0; bounceTo = null;
   timeLeft = A.easy ? 80 : 60; buildStage(0); state = 'play'; countT = 3; say('COAST');
 }
+/** A story run: a race of The Grand Tour, or the Time Trial lap. */
+function storyGame(run) { hard = run.hard; trial = run.mode === 'trial'; trialT = 0; score = 0; A.setScore(0); stage = trial ? 2 : run.stage; startRace(); }
+function startRace() {
+  position = 0; speed = 0; playerX = 0; nitro = 3 + up('nitro'); boostT = 0; crashT = 0; stageCrashes = 0; bounceTo = null; finished = 0; place = 0;
+  buildStage(stage, trial ? 'trial' : 'race:' + stage); state = 'play'; countT = 3;
+  rivals = trial ? [] : RIVALS.map(([name, col, skill], i) => ({ name, col, skill: skill - 0.07 + stage * 0.016 + (hard ? 0.04 : 0), z: PZ + 500 + (4 - i) * 420, offset: [-0.66, 0.66, 0, -0.66, 0.66][i], lane: [-0.66, 0.66, 0, -0.66, 0.66][i], speed: 0, laneT: 2 + i, done: 0, w: CAR_W, kind: 'car' }));
+  if (trial) say('TIME TRIAL'); else { S.reach(stage); say(`RACE ${stage + 1} · ${STAGES[stage].name} GP`); }
+}
 function say(t) { msg = t; msgT = 2; }
-function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play', alt: S.quit() }); }
 A.onPress(c => {
   if (c === 'KeyP' || c === 'Escape') return pause();
-  if (state === 'play' && countT <= 0 && (c === 'Space' || c === 'KeyN') && nitro > 0 && boostT <= 0) { nitro--; boostT = 2.2; A.tone(120, 0.9, 'sawtooth', 0.05, 0, 900); A.flash('#ffb03d', 0.12); A.shake(3, 0.3); say('NITRO!'); }
+  if (state === 'play' && countT <= 0 && (c === 'Space' || c === 'KeyN') && nitro > 0 && boostT <= 0) { nitro--; boostT = 2.2 + up('turbo') * 0.5; A.tone(120, 0.9, 'sawtooth', 0.05, 0, 900); A.flash('#ffb03d', 0.12); A.shake(3, 0.3); say('NITRO!'); }
 });
 A.onHide(pause);
 function crash() {
@@ -250,6 +282,19 @@ function checkpoint() {
   const st = STAGES[stage % STAGES.length]; say(`CHECKPOINT +${bonus} · ${st.name}${stage >= STAGES.length ? ' · LAP ' + (Math.floor(stage / STAGES.length) + 1) : ''}`);
   position = 0; stageCrashes = 0; buildStage(stage);
 }
+/** Over the line in a story race: where you came, the prize money, and on to the next race (or not). */
+function raceEnd() {
+  if (trial) { state = 'over'; A.jingle([523, 659, 784, 1047, 1319], 0.08); return S.modeEnd(trialT * 1000, { title: 'LAP COMPLETE!', big: `${trialT.toFixed(2)} SECONDS` }); }
+  place = 1 + rivals.filter(r => r.done).length; const pay = [60, 40, 25][place - 1] || 10; S.bank(pay);
+  state = 'result'; resultT = 3.2;
+  if (place <= need()) { A.jingle([523, 659, 784, 1047, 1319, 1568], 0.09, 'square'); A.flash('#fff', 0.3); say(`${ORD(place)} PLACE! +$${pay}`); }
+  else { A.jingle([392, 330, 262], 0.16, 'triangle'); say(`${ORD(place)} PLACE`); }
+}
+function afterResult() {
+  if (place > need()) { state = 'over'; S.run.stage = stage; return S.fail({ title: `${ORD(place)} PLACE`, big: `${STAGES[stage].name} GP`, sub: need() === 1 ? 'Only a win takes the Grand Tour' : 'Finish in the top three to go on' }); }
+  if (S.clear(stage)) { state = 'over'; return S.win(); }
+  stage++; startRace();
+}
 function finish() {
   state = 'over'; A.setScore(Math.floor(score)); const rec = A.submit(Math.floor(score));
   A.overlay({ title: 'TIME UP', big: `SCORE ${Math.floor(score)} · STAGE ${stage + 1}`, sub: rec ? 'New high score!' : `Best: ${A.best()}`, btn: 'Race again', onGo: newGame });
@@ -260,6 +305,7 @@ A.loop(dt => {
   if (state === 'title') { // attract: cruise down the coast road
     position += 6500 * dt; if (position + PZ > finishZ - 2000) { position = 0; } const s = findSeg(position + PZ); skyX -= s.curve * dt * 6; nearX -= s.curve * dt * 12; return;
   }
+  if (state === 'result') { resultT -= dt; position += speed * dt; speed *= 1 - dt * 0.6; for (const r of rivals) r.z += r.speed * dt; if (resultT <= 0) afterResult(); return; }
   if (state !== 'play') return;
   if (countT > 0) { const b = Math.ceil(countT); countT -= dt; if (Math.ceil(countT) !== b) A.tone(countT > 0 ? 440 : 880, 0.15, 'square', 0.04); return; }
   const seg = findSeg(position + PZ), sp = speed / MAX, dx = dt * 2 * sp;
@@ -268,16 +314,16 @@ A.loop(dt => {
   steer = (right ? 1 : 0) - (left ? 1 : 0);
   if (crashT > 0) { crashT -= dt; if (bounceTo !== null) { playerX += (bounceTo - playerX) * Math.min(1, dt * 9); if (crashT <= 0) bounceTo = null; } }
   else playerX += steer * dx;
-  playerX -= dx * sp * seg.curve * CENTRIFUGAL;
-  const top = boostT > 0 ? MAX * 1.35 : MAX;
+  playerX -= dx * sp * seg.curve * CENTRIFUGAL * (1 - up('tires') * 0.15);
+  const top = (boostT > 0 ? MAX * 1.35 : MAX) * (1 + up('engine') * 0.04);
   if (boostT > 0) { boostT -= dt; speed += ACCEL * 1.8 * dt; }
   else if (gas) speed += ACCEL * dt; else if (brake) speed += BRAKE * dt; else speed += DECEL * dt;
   if (Math.abs(playerX) > 1 && crashT <= 0) {
-    if (speed > OFF_LIMIT) speed += OFF_DECEL * dt;
-    if (speed > 1000 && Math.random() < 0.5) A.burst(W / 2 + (Math.random() - 0.5) * 120, H - 20, { n: 1, kind: 'smoke', color: STAGES[stage % 4].grass[0], speed: 60, angle: -Math.PI / 2, spread: 1.6, life: 0.5, size: 8 });
+    if (speed > OFF_LIMIT) speed += OFF_DECEL * (1 - up('tires') * 0.25) * dt;
+    if (speed > 1000 && Math.random() < 0.5) A.burst(W / 2 + (Math.random() - 0.5) * 120, H - 20, { n: 1, kind: 'smoke', color: STAGES[stage % STAGES.length].grass[0], speed: 60, angle: -Math.PI / 2, spread: 1.6, life: 0.5, size: 8 });
     for (const s of seg.sprites) {
       if (s.t === 'gate') continue; const ww = PROPS[s.t].ww / ROAD, cx = s.offset + (s.offset < 0 ? -ww / 2 : ww / 2);
-      if (Math.abs(playerX - cx) < (CAR_W + ww) / 2 * 0.8) { speed = MAX / 6; bounceTo = Math.sign(playerX) * 0.7; crash(); break; }
+      if (Math.abs(playerX - cx) < (CAR_W + ww) / 2 * 0.8) { speed = MAX / 6 * (1 + up('bumper') * 0.6); bounceTo = Math.sign(playerX) * 0.7; crash(); if (trial) trialT += 1; break; }
     }
   }
   for (const c of cars) {
@@ -285,16 +331,28 @@ A.loop(dt => {
     const rel = c.z - (position + PZ);
     if (!c.passed && rel < 0) { c.passed = true; score += 100; A.pop(W / 2, H - 120, '+100', '#ffd23d'); A.tone(880, 0.05, 'square', 0.025); }
     else if (c.passed && rel > 0) c.passed = false;
-    if (crashT <= 0 && speed > c.speed && rel > -SEG * 0.4 && rel < SEG * 0.8 && Math.abs(playerX - c.offset) < (CAR_W + c.w) / 2 * 0.85) { speed = c.speed * (c.speed / speed); position = c.z - PZ - SEG; crash(); }
+    if (crashT <= 0 && speed > c.speed && rel > -SEG * 0.4 && rel < SEG * 0.8 && Math.abs(playerX - c.offset) < (CAR_W + c.w) / 2 * 0.85) { speed = Math.min(c.speed * (c.speed / speed) * (1 + up('bumper') * 0.2), c.speed); position = c.z - PZ - SEG; crash(); }
+  }
+  // rivals: race lines through the traffic, a little rubber band so the pack stays close, and you can bump them
+  for (const r of rivals) {
+    const rel = r.z - (position + PZ), band = rel > 4000 ? 0.96 : rel < -4000 ? (hard ? 1.06 : 1.04) : 1;
+    const want = MAX * r.skill * band; r.speed = r.speed < want ? Math.min(want, r.speed + ACCEL * 0.85 * dt) : r.speed + (want - r.speed) * Math.min(1, dt); r.z += r.speed * dt; // off the line like you, then cruising
+    if ((r.laneT -= dt) <= 0 || cars.some(c => c.z > r.z && c.z - r.z < 1600 && Math.abs(c.offset - r.lane) < 0.4)) { r.laneT = A.rand(2, 4); const opts = [-0.66, 0, 0.66].filter(l => l !== r.lane && !cars.some(c => c.z > r.z && c.z - r.z < 1600 && Math.abs(c.offset - l) < 0.4)); if (opts.length) r.lane = A.pick(opts); }
+    r.offset += (r.lane - r.offset) * Math.min(1, dt * 2);
+    if (!r.done && r.z >= finishZ) r.done = ++finished;
+    if (crashT <= 0 && speed > r.speed && rel > -SEG * 0.4 && rel < SEG * 0.8 && Math.abs(playerX - r.offset) < CAR_W * 0.85) { speed = r.speed * 0.8; position = r.z - PZ - SEG; crash(); r.speed *= 1.05; }
   }
   cars = cars.filter(c => c.z > position - 2000 && c.z < finishZ);
   for (let k = 0; cars.length < carCount() && k < 4; k++) spawnCar(false);
   playerX = A.clamp(playerX, -3, 3); speed = A.clamp(speed, 0, top);
   skyX -= seg.curve * sp * dt * 14; nearX -= seg.curve * sp * dt * 28;
   score += speed * dt / 100; A.setScore(Math.floor(score));
-  timeLeft -= dt; if (timeLeft <= 0) { timeLeft = 0; A.jingle([392, 330, 262, 196], 0.14, 'triangle'); return finish(); }
-  if (timeLeft < 10 && Math.ceil(timeLeft) !== Math.ceil(timeLeft + dt)) A.tone(1200, 0.06, 'square', 0.03);
-  if (position + PZ >= finishZ) checkpoint();
+  if (S.run) { if (trial) trialT += dt; if (position + PZ >= finishZ) raceEnd(); }
+  else {
+    timeLeft -= dt; if (timeLeft <= 0) { timeLeft = 0; A.jingle([392, 330, 262, 196], 0.14, 'triangle'); return finish(); }
+    if (timeLeft < 10 && Math.ceil(timeLeft) !== Math.ceil(timeLeft + dt)) A.tone(1200, 0.06, 'square', 0.03);
+    if (position + PZ >= finishZ) checkpoint();
+  }
   engT -= dt; if (engT <= 0) { engT = 0.07; A.tone(55 + sp * 150 + (boostT > 0 ? 40 : 0), 0.08, 'sawtooth', 0.012); }
 }, render);
 
@@ -343,14 +401,15 @@ function render(t) {
     if (seg.p1.camera.z <= CAM_D || seg.p2.screen.y >= seg.p1.screen.y || seg.p2.screen.y >= maxy) continue;
     drawSegment(seg, n, st); maxy = seg.p1.screen.y;
   }
-  const bySeg = new Map(); for (const c of cars) { const i = Math.floor(c.z / SEG); if (!bySeg.has(i)) bySeg.set(i, []); bySeg.get(i).push(c); }
+  const bySeg = new Map(); for (const c of [...cars, ...rivals]) { const i = Math.floor(c.z / SEG); if (!bySeg.has(i)) bySeg.set(i, []); bySeg.get(i).push(c); }
   for (let n = DRAW - 1; n > 0; n--) {
     const seg = segments[base.index + n]; if (!seg || seg.p1.camera.z <= CAM_D) continue;
     for (const s of seg.sprites) { const P = PROPS[s.t], sc = seg.p1.screen.scale, sx = seg.p1.screen.x + sc * s.offset * ROAD * W / 2;
       if (s.flip) { ctx.save(); ctx.translate(sx, 0); ctx.scale(-1, 1); drawSprite(P.img, sc, 0, seg.p1.screen.y, s.offset < 0 ? 0 : -1, P.ww, seg.clip); ctx.restore(); } // mirrored: the chevrons point the other way
       else drawSprite(P.img, sc, sx, seg.p1.screen.y, s.t === 'gate' ? -0.5 : s.offset < 0 ? -1 : 0, P.ww, seg.clip); }
     for (const c of bySeg.get(seg.index) || []) { const k = (c.z % SEG) / SEG, sc = lerp(seg.p1.screen.scale, seg.p2.screen.scale, k), sx = lerp(seg.p1.screen.x, seg.p2.screen.x, k) + sc * c.offset * ROAD * W / 2, sy = lerp(seg.p1.screen.y, seg.p2.screen.y, k);
-      drawSprite(carSprite(c.col, c.kind), sc, sx, sy, -0.5, c.kind === 'truck' ? 900 : 760, seg.clip); }
+      drawSprite(carSprite(c.col, c.kind, !!c.name), sc, sx, sy, -0.5, c.kind === 'truck' ? 900 : 760, seg.clip);
+      if (c.name && c.z - position < SEG * 25 && sy < (seg.clip || H)) { const dw = 760 * sc * W / 2; ctx.font = '10px Silkscreen, monospace'; ctx.textAlign = 'center'; ctx.fillStyle = OUT; ctx.fillText(c.name, sx + 1, sy - dw * 0.62 + 1); ctx.fillStyle = c.col; ctx.fillText(c.name, sx, sy - dw * 0.62); } }
   }
   // the player's car, bouncing a little off the road and leaning into turns
   {
@@ -366,11 +425,13 @@ function render(t) {
 }
 function drawHUD(t, st) {
   const text = (s, x, y, size, col, align = 'left', font = 'Silkscreen, monospace') => { ctx.font = `${size}px ${font}`; ctx.textAlign = align; ctx.fillStyle = OUT; ctx.fillText(s, x + 2, y + 2); ctx.fillStyle = col; ctx.fillText(s, x, y); };
-  // time, big and centred
+  // time (or your place in a story race), big and centred
   const low = timeLeft < 10;
-  text('TIME', W / 2, 20, 11, '#a39bc4', 'center'); text(Math.ceil(timeLeft), W / 2, 52, 32, low && Math.floor(t / 250) % 2 ? '#ff4f6d' : '#ffd23d', 'center', 'Bungee, sans-serif');
+  if (trial) { text('TIME', W / 2, 20, 11, '#a39bc4', 'center'); text(trialT.toFixed(2), W / 2, 52, 30, '#5ee7ff', 'center', 'Bungee, sans-serif'); }
+  else if (S && S.run) { const pos = place || 1 + rivals.filter(r => r.done || r.z > position + PZ).length; text('POSITION', W / 2, 20, 11, '#a39bc4', 'center'); text(`${ORD(pos)} / ${rivals.length + 1}`, W / 2, 52, 30, pos <= need() ? '#3dff8f' : '#ffd23d', 'center', 'Bungee, sans-serif'); }
+  else { text('TIME', W / 2, 20, 11, '#a39bc4', 'center'); text(Math.ceil(timeLeft), W / 2, 52, 32, low && Math.floor(t / 250) % 2 ? '#ff4f6d' : '#ffd23d', 'center', 'Bungee, sans-serif'); }
   // stage and progress
-  text(`${st.name}${stage >= STAGES.length ? ' · LAP ' + (Math.floor(stage / STAGES.length) + 1) : ''}`, 12, 22, 12, '#fff6c2');
+  text(trial ? 'TIME TRIAL' : S && S.run ? `RACE ${stage + 1}/6 · ${st.name}${hard ? ' · HARD' : ''}` : `${st.name}${stage >= STAGES.length ? ' · LAP ' + (Math.floor(stage / STAGES.length) + 1) : ''}`, 12, 22, 12, '#fff6c2');
   const prog = Math.min(1, (position + PZ) / finishZ); ctx.fillStyle = OUT; ctx.fillRect(12, 28, 124, 8); ctx.fillStyle = '#2a2148'; ctx.fillRect(13, 29, 122, 6); ctx.fillStyle = '#ff7a3d'; ctx.fillRect(13, 29, 122 * prog, 6); ctx.fillStyle = '#fff'; ctx.fillRect(13 + 122 * prog - 1, 27, 3, 10);
   // speedometer
   const kmh = Math.round(speed / MAX * 300), cx = W - 60, cy = 52;
@@ -386,7 +447,7 @@ function drawHUD(t, st) {
 /* Attract demo: hold the gas, pick the lane with the most room, lean against the curves, nitro on the straights. */
 A.attract({
   start: newGame,
-  stop: () => { state = 'title'; position = 0; speed = 0; playerX = 0; stage = 0; buildStage(0); msgT = 0; },
+  stop: () => { state = 'title'; position = 0; speed = 0; playerX = 0; stage = 0; rivals = []; buildStage(0); msgT = 0; },
   bot: () => {
     if (state !== 'play' || countT > 0) return ['ArrowUp'];
     const room = lane => { let d = 1e9; for (const c of cars) { const rel = c.z - (position + PZ); if (rel > -SEG && rel < SEG * 30 && Math.abs(c.offset - lane) < 0.45) d = Math.min(d, rel); } return d; };
@@ -397,8 +458,38 @@ A.attract({
     return keys;
   }
 });
+S = Story({
+  title: 'THE GRAND TOUR', coin: 'PRIZE $', coinColor: '#3dff8f',
+  stages: [
+    { name: 'Coast GP', sub: 'The season opener along the sea road. Finish in the top three.' },
+    { name: 'Desert GP', sub: 'Long straights and mesas. Save your nitro for the open road.' },
+    { name: 'Neon City GP', sub: 'A night race through the city. The Baron likes it here.' },
+    { name: 'Alps GP', sub: 'Snowy hairpins and steep hills. Mind your grip.' },
+    { name: 'Blossom Valley GP', sub: 'Pink trees, soft hills, hard racing. Only the top three go to the final.' },
+    { name: 'Aurora Pass Final', sub: 'One race under the northern lights. Beat Vex Valentine to take the Grand Tour.' }],
+  upgrades: [
+    { id: 'engine', name: 'Engine', desc: 'A higher top speed.', cost: [60, 140, 260] },
+    { id: 'tires', name: 'Grip Tires', desc: 'Less slide in the bends, less drag on the grass.', cost: [50, 120] },
+    { id: 'nitro', name: 'Nitro Tank', desc: 'One more nitro bottle every race.', cost: [40, 90] },
+    { id: 'turbo', name: 'Turbo Boost', desc: 'Nitro burns half a second longer.', cost: [50, 110] },
+    { id: 'bumper', name: 'Crash Bars', desc: 'Bumps cost you less speed.', cost: [45, 100] }],
+  mode: { id: 'trial', name: 'TIME TRIAL', desc: 'One flying lap of the neon circuit with no traffic. Crashes cost time.', lower: true },
+  intro: [
+    'Six races. Six countries. One trophy.',
+    'Every year the Grand Tour draws the fastest drivers in the world, and every year Vex Valentine wins it.',
+    'This year there is a new name on the grid, and an orange car with TURBO on the plate.',
+    'Finish in the top three to go on. In the final, only first place will do.'],
+  ending: [
+    'Under the northern lights, the orange car crosses the line first.',
+    'Vex Valentine climbs out, pulls off her gloves and, for the first time anyone can remember, applauds.',
+    'The trophy is taller than you expected, and much heavier.',
+    'Next season, everyone will be chasing you.'],
+  cast: [['THE DRIVER', 'YOU, IN THE ORANGE TURBO'], ['THE CHAMPION', 'VEX VALENTINE'], ['THE GRID', 'DUKE, MAMBA, ZIGGY AND THE BARON']],
+  play: storyGame,
+  stop: () => { state = 'title'; S.run = null; trial = false; rivals = []; position = 0; speed = 0; playerX = 0; stage = 0; buildStage(0); msgT = 0; }
+});
 buildStage(0);
-A.overlay({ title: 'TURBO TOUR', sub: 'Race the world tour against the clock: coast, desert, neon city and the Alps. Weave through traffic for points, reach each checkpoint for more time, and save your <b>nitro</b> for the straights.', btn: 'Start', scores: true, onGo: newGame });
+S.title({ title: 'TURBO TOUR', sub: 'Race the world tour against the clock: coast, desert, neon city, the Alps, Blossom Valley and Aurora Pass. Weave through traffic for points, reach each checkpoint for more time, and save your <b>nitro</b> for the straights.', btn: 'Start', scores: true, onGo: newGame });
 })();
 </script>
 </body>

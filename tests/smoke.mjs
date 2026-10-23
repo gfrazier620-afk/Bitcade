@@ -470,6 +470,10 @@ console.log('\nProfile and cloud save');
   check(JSON.parse(m['arcade:daily:x']).d === '2026-10-13' && m['arcade:initials'] === 'AAA', 'the newer daily best wins, and this device keeps its initials');
   check(m['arcade:tickets:spent'] === '150' && m['arcade:tickets'] === '0' && m['arcade:plays:x'] === '6', 'tickets spent come from the combined prizes; counters take the higher value');
   check(j['arcade:tickets:earned'] === '220' && j['arcade:tickets'] === '70' && j['arcade:plays:x'] === '10', 'when a device first joins, play counts and tickets earned add up');
+  const st = S.merge({ 'arcade:story:g': JSON.stringify({ at: 3, done: 0, up: { a: 2 }, earned: 50 }), 'arcade:pass:got:s1': '["f2"]', 'arcade:pass:xp:s1': '300' }, { 'arcade:story:g': JSON.stringify({ at: 1, done: 1, up: { a: 1, b: 1 }, earned: 80 }), 'arcade:pass:got:s1': '["p1"]', 'arcade:pass:xp:s1': '500' });
+  const sm = JSON.parse(st['arcade:story:g']);
+  check(sm.at === 3 && sm.done === 1 && sm.up.a === 2 && sm.up.b === 1 && sm.earned === 80, 'story saves merge field by field, keeping the furthest progress and every upgrade');
+  check(JSON.parse(st['arcade:pass:got:s1']).sort().join() === 'f2,p1' && st['arcade:pass:xp:s1'] === '500', 'pass rewards claimed on either device stay claimed, and season XP keeps the higher');
 
   const { page, errors, close } = await open('/');
   await skipBoot(page);
@@ -681,6 +685,58 @@ console.log('\nCabinets page');
   check(!(await ph.page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)), 'the cabinets page has no sideways scrolling on a phone');
   check(!ph.errors.length, `no errors${ph.errors.length ? ': ' + ph.errors.join(' | ') : ''}`);
   await ph.close();
+}
+
+/* ---------- the Arcade Pass ---------- */
+console.log('\nArcade Pass');
+{
+  const { page, errors, close } = await open('/?feature=none');
+  await skipBoot(page);
+  const on = await page.evaluate(() => !!PASS.season());
+  check(await page.evaluate(() => PASS.SEASONS.every(se => [...Object.values(se.free), ...Object.values(se.pass)].every(r => r.t === 'tix' || Prizes.LIST.some(p => p.id === r.id && p.pass === se.id))) && Object.keys(PASS.SEASONS[0].pass).length === PASS.TIERS), 'every pass reward is a real prize marked for its season, and the pass track has all 50 tiers');
+  if (on) {
+    await page.evaluate(() => XP.add(260));
+    check(await page.evaluate(() => PASS.tier() === 2) && /TIER\s*2/.test(await page.textContent('#passStrip')), 'XP climbs the pass, and the lobby strip shows the tier');
+    await page.click('#passStrip');
+    check(await page.isVisible('.ps-panel') && (await page.$$('.ps-col')).length === 50 && await page.isVisible('.ps-cell.pass.locked'), 'the pass screen shows 50 tiers, with the pass track locked without the pass');
+    const t0 = await page.evaluate(() => TICKETS.balance());
+    await page.click('.ps-all');
+    check(await page.evaluate(t0 => TICKETS.balance() === t0 + 10 && PASS.ready().length === 0, t0), 'CLAIM ALL pays the free rewards reached');
+    check(!(await page.evaluate(() => Prizes.buy('synth'))), 'pass prizes can\'t be bought with tickets');
+    await page.keyboard.press('Escape');
+    check(await page.isHidden('.ps'), 'Escape closes the pass screen');
+    await page.goto(BASE + '/?feature=none&pass=1'); await skipBoot(page);
+    await page.evaluate(() => PASS.claimAll());
+    check(await page.evaluate(() => Prizes.has('synth') && PASS.owned()), 'with the pass, its prizes come with the tiers');
+  } else check(true, 'no Arcade Pass season is running today: add the next one to PASS.SEASONS in shared/badges.js');
+  check(!errors.length, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
+  await close();
+}
+
+/* ---------- story mode in the flagship games ---------- */
+console.log('\nStory mode');
+for (const [slug, chapters, coin] of [['dungeon-delve', 5, 'GEMS'], ['blast-brigade', 5, 'MEDALS'], ['pixel-peaks', 8, 'GEMS'], ['turbo-tour', 6, 'PRIZE $']]) {
+  const { page, errors, close } = await open(`/games/${slug}/?feature=none`);
+  check(/STORY/.test(await page.textContent('#ov .go2')), `${slug}: the title screen has a ★ STORY button`);
+  await page.evaluate(([slug, coin]) => localStorage.setItem('arcade:story:' + slug, JSON.stringify({ earned: 500 })), [slug, coin]);
+  await page.click('#ov .go2'); await wait(200);
+  check(await page.isVisible('.story') && (await page.$$('.st-node')).length === chapters && (await page.$$('.st-node:disabled')).length === chapters - 1, `${slug}: the map shows ${chapters} chapters, all but the first locked`);
+  await page.keyboard.press('Tab');
+  const ups = await page.$$('.st-up');
+  await ups[0].click();
+  check(await page.evaluate(slug => JSON.parse(localStorage.getItem('arcade:story:' + slug)).spent > 0, slug) && (await page.textContent('.st-bank')).includes(coin), `${slug}: upgrades are bought with ${coin.toLowerCase()}`);
+  await page.keyboard.press('Tab'); await page.keyboard.press('Enter'); await wait(200);
+  check(await page.isVisible('.st-scene'), `${slug}: the first chapter opens with the prologue`);
+  await page.keyboard.press('Enter'); await page.keyboard.press('Enter'); await wait(1200);
+  check(await page.isHidden('.story') && await page.isHidden('#ov'), `${slug}: then the run starts`);
+  await page.keyboard.press('KeyP'); await wait(150);
+  check(/Quit to map/.test(await page.textContent('#ov')), `${slug}: pausing a story run offers Quit to map`);
+  await page.click('#ov .go2'); await wait(200);
+  check(await page.isVisible('.story'), `${slug}: which goes back to the map`);
+  await page.keyboard.press('Escape'); await wait(200);
+  check(await page.isHidden('.story') && /STORY/.test(await page.textContent('#ov .go2')), `${slug}: Escape leaves the map for the title screen`);
+  check(!errors.length, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
+  await close();
 }
 
 /* ---------- phones: pause button and touch pad ---------- */

@@ -27,12 +27,15 @@
 <script src="../../shared/chip.js"></script>
 <script src="../../shared/badges.js"></script>
 <script src="../../shared/arcade.js"></script>
+<script src="../../shared/story.js"></script>
 <script>
 (() => {
 /*
  * Dungeon Delve: Pip-Pip the young knight goes down through dungeon floors. Each floor is a 4×4 maze of rooms;
  * walking into a room full of monsters seals its doors until they're beaten. Find the chest with the big key, open
- * the skull door and beat the guardian to reach the stairs down. Hearts, gems, slimes, bats and skeletons.
+ * the skull door and beat the guardian to reach the stairs down. Hearts, gems, slimes, bats, skeletons and fire imps;
+ * every fifth floor the guardian is Morrowgast the lich. Story mode (shared/story.js): The Five Depths, five fixed
+ * floors with upgrades bought with gems, then HARD and a five-guardian Boss Rush.
  */
 const A = Arcade, cv = document.getElementById('cv');
 const T = 32, RC = 15, RR = 11, HUD = 34, W = RC * T, H = RR * T + HUD, ctx = A.canvas(cv, W, H), OUT = '#0a0612', G = 4;
@@ -45,12 +48,14 @@ function paint(x, list) {
   x.fillStyle = OUT; for (const q of list) x.fillRect(q[0] - 1.5, q[1] - 1.5, q[2] + 3, q[3] + 3);
   for (const [px, py, w, h, c] of list) { x.fillStyle = c; x.fillRect(px, py, w, h); if (w > 3 && h > 3) { x.fillStyle = shade(c, 0.3); x.fillRect(px, py, w, 1.5); x.fillStyle = shade(c, -0.3); x.fillRect(px, py + h - 1.5, w, 1.5); } }
 }
-const THEMES = [{ floor: '#4a4058', wall: '#2a2238', moss: '#3a6a3a' }, { floor: '#4a3a30', wall: '#2a1e18', moss: '#7a5a2a' }, { floor: '#30404a', wall: '#182630', moss: '#3a7a8a' }];
+const THEMES = [{ floor: '#4a4058', wall: '#2a2238', moss: '#3a6a3a' }, { floor: '#4a3a30', wall: '#2a1e18', moss: '#7a5a2a' }, { floor: '#30404a', wall: '#182630', moss: '#3a7a8a' },
+  { floor: '#4a2c26', wall: '#2a1410', moss: '#a8481a' }, { floor: '#2c2644', wall: '#150f26', moss: '#7a3ac8' }];
+const theme = () => THEMES[(floorN - 1) % THEMES.length];
 
 /* ---------- a floor: a maze of 4×4 rooms (a spanning tree plus a couple of loops), the boss far from the start ---------- */
 let floorN = 1, rooms = [], cur = null, rnd = Math.random;
 function makeFloor() {
-  rnd = A.seeded('dungeon-delve:' + floorN);
+  rnd = A.seeded('dungeon-delve:' + (S && S.run ? 'story:' : '') + floorN);
   rooms = []; for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) rooms.push({ i, j, doors: { n: 0, s: 0, e: 0, w: 0 }, seen: false, clear: false, foes: [], items: [], tiles: null, kind: 'room' });
   const at = (i, j) => rooms[j * G + i], start = at(Math.floor(rnd() * G), G - 1), stack = [start], seen = new Set([start]);
   const D = { n: [0, -1, 's'], s: [0, 1, 'n'], e: [1, 0, 'w'], w: [-1, 0, 'e'] };
@@ -94,23 +99,27 @@ function populate(r) {
   if (r.populated) return; r.populated = true;
   const lv = floorN - 1;
   if (r.kind === 'start') return;
-  if (r.kind === 'boss') { r.foes.push(foe('king', 7.5 * T, 4 * T)); return; }
+  if (r.kind === 'boss') { r.foes.push(foe(rush ? RUSH[rushI][0] : floorN % 5 === 0 ? 'lich' : 'king', 7.5 * T, 4 * T)); return; }
   const n = 2 + Math.floor(rnd() * 3) + Math.min(3, lv);
   for (let i = 0; i < n; i++) {
     let x, y, k = 0; do { x = (2 + rnd() * (RC - 4)) * T; y = (2 + rnd() * (RR - 4)) * T; } while ((solid(r, x, y) || Math.hypot(x - me.x, y - me.y) < 120) && k++ < 30);
-    const roll = rnd(), kind = lv >= 1 && roll < 0.3 ? 'skel' : roll < 0.6 ? 'slime' : 'bat';
+    const roll = rnd(), kind = lv >= 3 && roll < 0.18 ? 'imp' : lv >= 1 && roll < 0.38 ? 'skel' : roll < 0.66 ? 'slime' : 'bat';
     r.foes.push(foe(kind, x, y));
   }
   if (r.kind === 'key') r.items.push({ kind: 'chest', x: 7.5 * T, y: 5.5 * T, open: false });
 }
 function foe(kind, x, y) {
-  const lv = floorN - 1, hp = { slime: 2, bat: 1, skel: 4, king: 18 + lv * 6 }[kind];
-  return { kind, x, y, hp, max: hp, vx: 0, vy: 0, t: rnd() * 3, hit: 0, kb: 0, dead: 0, r: kind === 'king' ? 28 : 11, jump: 0 };
+  const lv = floorN - 1, hp = Math.round({ slime: 2, bat: 1, skel: 4, imp: 2, king: 18 + lv * 6, lich: 30 + lv * 4 }[kind] * (hardK > 1 ? 1.5 : 1));
+  return { kind, x, y, hp, max: hp, vx: 0, vy: 0, t: rnd() * 3, hit: 0, kb: 0, dead: 0, r: kind === 'king' ? 28 : kind === 'lich' ? 16 : 11, jump: 0, fire: 1 + rnd() * 2, tp: 2.5, vis: 1 };
 }
 
 /* ---------- the hero ---------- */
 const me = { x: 0, y: 0, face: 'up', walk: 0, hp: 6, max: 6, swing: 0, inv: 0, kbx: 0, kby: 0 };
-let state = 'title', score = 0, gems = 0, bigKey = false, trans = null, pops = [], stairs = null, msg = '', msgT = 0, demoT = 0;
+let state = 'title', score = 0, gems = 0, bigKey = false, trans = null, pops = [], stairs = null, msg = '', msgT = 0, demoT = 0, shots = [];
+// story runs: hardK speeds monsters up (and gives them more health); rush is the Boss Rush, five guardians in a row
+let S = null, hardK = 1, rush = false, rushI = 0, rushT = 0, rushNext = 0;
+const RUSH = [['king', 1], ['king', 3], ['lich', 3], ['king', 5], ['lich', 6]];
+const up = id => S ? S.lv(id) : 0;
 const say = (t, s = 2) => { msg = t; msgT = s; };
 function enter(r, fromSide) {
   cur = r; r.seen = true; populate(r);
@@ -119,23 +128,39 @@ function enter(r, fromSide) {
   if (r.sealed) { A.tone(160, 0.25, 'square', 0.04, 0, 90); say(r.kind === 'boss' ? 'THE GUARDIAN!' : 'THE DOORS SLAM SHUT!', 1.4); }
 }
 function newFloor() {
-  const start = makeFloor(); bigKey = false; stairs = null;
-  me.x = 7.5 * T; me.y = 8 * T; me.face = 'up'; enter(start); say(`FLOOR ${floorN}`, 2); A.jingle([392, 494, 587, 784], 0.1);
+  const start = makeFloor(); bigKey = false; stairs = null; shots = [];
+  me.x = 7.5 * T; me.y = 8 * T; me.face = 'up'; enter(start); A.jingle([392, 494, 587, 784], 0.1);
+  if (S.run && S.run.mode === 'story') { S.reach(floorN - 1); say(`DEPTH ${floorN} · ${S.stageName(floorN - 1).toUpperCase()}`, 2.6); } else say(`FLOOR ${floorN}`, 2);
   if (floorN >= 3) A.badge('floor3');
 }
-function newGame() { floorN = 1; score = 0; gems = 0; me.max = me.hp = A.easy ? 10 : 6; A.setScore(0); state = 'play'; newFloor(); }
-function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+function reset() { score = 0; gems = 0; me.max = me.hp = (A.easy ? 10 : 6) + up('heart') * 2; me.inv = 0; me.kbx = me.kby = 0; A.setScore(0); state = 'play'; }
+function newGame() { S.run = null; hardK = 1; rush = false; floorN = 1; reset(); newFloor(); }
+/** A story run (from shared/story.js): a depth of The Five Depths, or the Boss Rush. */
+function storyGame(run) {
+  hardK = run.hard ? 1.25 : 1; rush = run.mode === 'rush'; reset();
+  if (rush) { rushI = 0; rushT = 0; rushRoom(); return; }
+  floorN = run.stage + 1; newFloor();
+}
+function rushRoom() {
+  floorN = RUSH[rushI][1]; bigKey = false; stairs = null; shots = [];
+  const r = { i: 1, j: 1, doors: { n: 0, s: 0, e: 0, w: 0 }, seen: true, clear: false, foes: [], items: [], kind: 'boss' }; r.tiles = layout(r); rooms = [r];
+  me.x = 7.5 * T; me.y = 8.5 * T; me.face = 'up'; enter(r); say(`GUARDIAN ${rushI + 1} OF ${RUSH.length}`, 2);
+}
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play', alt: S.quit() }); }
 A.onPress(c => { if (c === 'KeyP' || c === 'Escape') return pause(); if ((c === 'Space' || c === 'KeyJ' || c === 'KeyZ') && state === 'play' && me.swing <= 0 && !trans) { me.swing = 0.22; A.tone(700, 0.06, 'triangle', 0.03, 0, 300); } });
 A.onHide(pause);
 const add = (n, x, y, c = '#ffd23d') => { score += n; A.setScore(score); if (x !== undefined) A.pop(x, y, '+' + n, c); };
 const FACE = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
-function swordBox() { const [dx, dy] = FACE[me.face]; return { x: me.x + dx * 22, y: me.y + dy * 22, r: 20 }; }
+function swordBox() { const [dx, dy] = FACE[me.face], l = up('reach'); return { x: me.x + dx * (22 + l * 4), y: me.y + dy * (22 + l * 4), r: 20 + l * 6 }; }
 function hurtMe(n, fx, fy) {
   if (me.inv > 0) return; me.hp -= n; me.inv = 1; const d = Math.hypot(me.x - fx, me.y - fy) || 1; me.kbx = (me.x - fx) / d * 260; me.kby = (me.y - fy) / d * 260;
   A.shake(5, 0.2); A.sfx('hurt'); A.flash('#ff4f6d', 0.15);
   if (me.hp <= 0) { me.hp = 0; state = 'over'; setTimeout(gameOver, 900); }
 }
-function gameOver() { const rec = A.submit(score); A.overlay({ title: 'FALLEN', big: `SCORE ${score.toLocaleString()} · FLOOR ${floorN}`, sub: `${gems} GEMS${rec ? ' · New high score!' : ''}`, btn: 'Delve again', onGo: newGame }); }
+function gameOver() {
+  if (S.run && rush) return S.modeEnd(0, { title: 'FALLEN', big: `GUARDIAN ${rushI + 1} OF ${RUSH.length}` });
+  if (S.run) return S.fail({ title: 'FALLEN', big: `DEPTH ${floorN} · ${S.stageName(floorN - 1).toUpperCase()}`, sub: `${gems} GEMS FOUND THIS RUN` });
+  const rec = A.submit(score); A.overlay({ title: 'FALLEN', big: `SCORE ${score.toLocaleString()} · FLOOR ${floorN}`, sub: `${gems} GEMS${rec ? ' · New high score!' : ''}`, btn: 'Delve again', onGo: newGame }); }
 function move(o, dx, dy, rad) {
   const inDoor = (x, y) => [[-rad, -rad], [rad, -rad], [-rad, rad], [rad, rad]].some(([ox, oy]) => doorShut(cur, x + ox, y + oy));
   const stuck = o === me && inDoor(o.x, o.y);
@@ -146,11 +171,12 @@ function update(dt) {
   if (msgT > 0) msgT -= dt;
   for (const p of pops) p.t -= dt; pops = pops.filter(p => p.t > 0);
   if (state !== 'play') return;
+  if (rush) { rushT += dt; if (rushNext > 0 && (rushNext -= dt) <= 0) { rushI++; if (rushI >= RUSH.length) { state = 'over'; A.jingle([523, 659, 784, 1047, 1319, 1568], 0.1, 'square'); return S.modeEnd(rushT * 1000, { title: 'BOSS RUSH CLEAR!', big: `${(rushT).toFixed(2)} SECONDS` }); } me.hp = Math.min(me.max, me.hp + 2); rushRoom(); } }
   if (trans) { trans.t += dt * 2.6; if (trans.t >= 1) { const [di, dj] = trans.d; me.x = trans.nx; me.y = trans.ny; enter(rooms[(cur.j + dj) * G + cur.i + di]); trans = null; } return; }
   // walking
   let dx = (A.held('ArrowRight', 'KeyD') ? 1 : 0) - (A.held('ArrowLeft', 'KeyA') ? 1 : 0), dy = (A.held('ArrowDown', 'KeyS') ? 1 : 0) - (A.held('ArrowUp', 'KeyW') ? 1 : 0);
   if (dx || dy) { if (me.swing <= 0) me.face = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up'); const l = Math.hypot(dx, dy); dx /= l; dy /= l; me.walk += dt * 10; }
-  const sp = me.swing > 0 ? 60 : 120;
+  const sp = (me.swing > 0 ? 60 : 120) * (1 + up('boots') * 0.12);
   move(me, dx * sp * dt + me.kbx * dt, dy * sp * dt + me.kby * dt, 10);
   me.kbx *= Math.max(0, 1 - dt * 8); me.kby *= Math.max(0, 1 - dt * 8);
   if (me.inv > 0) me.inv -= dt;
@@ -160,29 +186,53 @@ function update(dt) {
   // the sword
   if (me.swing > 0) {
     me.swing -= dt; const sb = swordBox();
-    for (const f of cur.foes) if (!f.dead && f.hit <= 0 && Math.hypot(f.x - sb.x, f.y - sb.y) < sb.r + f.r) {
-      f.hp--; f.hit = 0.25; const d = Math.hypot(f.x - me.x, f.y - me.y) || 1; if (f.kind !== 'king') { f.vx = (f.x - me.x) / d * 240; f.vy = (f.y - me.y) / d * 240; f.kb = 0.15; }
+    for (const f of cur.foes) if (!f.dead && f.hit <= 0 && !(f.kind === 'lich' && f.vis < 0.6) && Math.hypot(f.x - sb.x, f.y - sb.y) < sb.r + f.r) {
+      f.hp -= 1 + up('blade'); f.hit = 0.25; const d = Math.hypot(f.x - me.x, f.y - me.y) || 1; if (f.kind !== 'king' && f.kind !== 'lich') { f.vx = (f.x - me.x) / d * 240; f.vy = (f.y - me.y) / d * 240; f.kb = 0.15; }
       A.tone(300, 0.06, 'square', 0.04); A.burst(f.x, f.y, { n: 6, color: '#fff', speed: 120, life: 0.25 }); A.hitstop(0.04);
       if (f.hp <= 0) kill(f);
     }
   }
   // monsters
-  const lv = floorN - 1;
+  const lv = floorN - 1, fdt = dt * hardK;
   for (const f of cur.foes) {
-    if (f.dead) continue; f.t += dt; if (f.hit > 0) f.hit -= dt;
+    if (f.dead) continue; const dt = fdt; f.t += dt; if (f.hit > 0) f.hit -= dt;
     if (f.kb > 0) { f.kb -= dt; move(f, f.vx * dt, f.vy * dt, f.r * 0.8); continue; }
     const tx = me.x - f.x, ty = me.y - f.y, d = Math.hypot(tx, ty) || 1;
     if (f.kind === 'slime') { const hop = (f.t % 1.2) < 0.5; if (hop) move(f, tx / d * (55 + lv * 8) * dt, ty / d * (55 + lv * 8) * dt, 9); }
     if (f.kind === 'bat') { f.vx += (Math.cos(f.t * 2.3) * 120 + tx / d * 40) * dt; f.vy += (Math.sin(f.t * 1.9) * 120 + ty / d * 40) * dt; f.vx *= 0.98; f.vy *= 0.98; f.x = Math.max(T * 1.2, Math.min(W - T * 1.2, f.x + f.vx * dt)); f.y = Math.max(T * 1.2, Math.min(RR * T - T * 1.2, f.y + f.vy * dt)); }
     if (f.kind === 'skel') move(f, tx / d * (60 + lv * 6) * dt, ty / d * (60 + lv * 6) * dt, 10);
+    if (f.kind === 'imp') { // keeps its distance and spits fire
+      const want = d > 150 ? 1 : d < 100 ? -1 : 0; f.vx += (tx / d * want * 140 + Math.cos(f.t * 2.6) * 90) * dt; f.vy += (ty / d * want * 140 + Math.sin(f.t * 2.1) * 90) * dt; f.vx *= 0.94; f.vy *= 0.94;
+      move(f, f.vx * dt, f.vy * dt, 9);
+      if ((f.fire -= dt) <= 0) { f.fire = 2.2 - lv * 0.08; shoot(f.x, f.y, Math.atan2(ty, tx), 150, 'fire'); A.tone(260, 0.1, 'sawtooth', 0.025, 0, 120); }
+    }
+    if (f.kind === 'lich') { // Morrowgast: fades out, reappears somewhere else, throws rings of bolts and raises skeletons
+      f.tp -= dt;
+      if (f.tp <= 0 && f.vis > 0) f.vis = Math.max(0, f.vis - dt * 3);
+      if (f.vis === 0) {
+        let x, y, k = 0; do { x = (2.5 + Math.random() * (RC - 5)) * T; y = (2.5 + Math.random() * (RR - 5)) * T; } while ((solid(cur, x, y) || Math.hypot(x - me.x, y - me.y) < 150) && k++ < 40);
+        f.x = x; f.y = y; f.vis = 0.01; f.tp = Math.max(2, 3.4 - lv * 0.12); A.tone(900, 0.2, 'sine', 0.03, 0, 200);
+        if (f.hp < f.max * 0.5 && cur.foes.filter(o => !o.dead).length < 5) { cur.foes.push(foe('skel', f.x - 40, f.y + 20)); A.burst(f.x - 40, f.y + 20, { n: 14, color: '#b86bff', speed: 90, life: 0.5, kind: 'smoke' }); }
+      }
+      if (f.vis > 0 && f.vis < 1) f.vis = Math.min(1, f.vis + dt * 2.5);
+      if (f.vis >= 1 && (f.fire -= dt) <= 0) {
+        f.fire = 1.5; const n = f.hp < f.max * 0.5 ? 12 : 8, a0 = f.t;
+        if (Math.floor(f.t) % 2) for (let i = 0; i < n; i++) shoot(f.x, f.y - 10, a0 + i / n * 6.283, 105, 'bolt');
+        else for (const o of [-0.25, 0, 0.25]) shoot(f.x, f.y - 10, Math.atan2(ty, tx) + o, 165, 'bolt');
+        A.tone(520, 0.14, 'square', 0.03, 0, 260); A.ring(f.x, f.y - 10, '#b86bff', 30);
+      }
+    }
     if (f.kind === 'king') {
       f.jumpT = (f.jumpT || 2) - dt;
       if (!f.jump && f.jumpT <= 0) { f.jump = 0.001; f.from = [f.x, f.y]; f.to = [me.x, me.y]; }
       if (f.jump) { f.jump += dt / 0.9; const k = Math.min(1, f.jump); f.x = f.from[0] + (f.to[0] - f.from[0]) * k; f.y = f.from[1] + (f.to[1] - f.from[1]) * k; f.z = Math.sin(k * Math.PI) * 70;
         if (k >= 1) { f.jump = 0; f.z = 0; f.jumpT = Math.max(1.1, 2.4 - lv * 0.2); A.shake(8, 0.3); A.tone(70, 0.3, 'sine', 0.08, 0, 30); A.ring(f.x, f.y, '#b8ffb0', 70); if (Math.hypot(me.x - f.x, me.y - f.y) < 70) hurtMe(2, f.x, f.y); if (f.hp < f.max * 0.6 && cur.foes.filter(o => !o.dead).length < 5) { cur.foes.push(foe('slime', f.x - 30, f.y)); cur.foes.push(foe('slime', f.x + 30, f.y)); } } }
     }
-    if (!(f.kind === 'king' && f.z > 20) && Math.hypot(me.x - f.x, me.y - f.y) < f.r + 9) hurtMe(f.kind === 'king' || f.kind === 'skel' ? 2 : 1, f.x, f.y);
+    if (!(f.kind === 'king' && f.z > 20) && !(f.kind === 'lich' && f.vis < 1) && Math.hypot(me.x - f.x, me.y - f.y) < f.r + 9) hurtMe(f.kind === 'king' || f.kind === 'skel' || f.kind === 'lich' ? 2 : 1, f.x, f.y);
   }
+  // bolts and fireballs
+  for (const b of shots) { b.x += b.vx * fdt; b.y += b.vy * fdt; b.t += dt; if (solid(cur, b.x, b.y) || b.t > 6) b.dead = 1; else if (Math.hypot(b.x - me.x, b.y - me.y) < 12) { b.dead = 1; hurtMe(1, b.x, b.y); } }
+  shots = shots.filter(b => !b.dead);
   if (cur.sealed && !cur.foes.some(f => !f.dead)) { cur.sealed = false; cur.clear = true; A.jingle([523, 659, 784], 0.08); if (cur.kind !== 'boss') say('ROOM CLEAR', 1); }
   // items
   for (const it of cur.items) {
@@ -190,23 +240,30 @@ function update(dt) {
     if (it.kind === 'chest') { if (!it.open && !cur.sealed && d < 26) { it.open = true; bigKey = true; say('THE BIG KEY!', 2); A.jingle([523, 659, 784, 1047, 1319], 0.09, 'square'); A.burst(it.x, it.y - 10, { n: 16, colors: ['#ffd23d', '#fff'], speed: 120, life: 0.6 }); } continue; }
     if (d < 18) { it.got = true;
       if (it.kind === 'heart') { me.hp = Math.min(me.max, me.hp + 2); A.sfx('pickup'); }
-      if (it.kind === 'gem' || it.kind === 'bigem') { const v = it.kind === 'bigem' ? 5 : 1; gems += v; add(v * 10, it.x, it.y - 10, it.kind === 'bigem' ? '#5ee7ff' : '#3dff8f'); A.tone(1200 + v * 100, 0.06, 'triangle', 0.03); if (gems >= 100) A.badge('gems100'); }
+      if (it.kind === 'gem' || it.kind === 'bigem') { const v = it.kind === 'bigem' ? 5 : 1; gems += v; S.bank(v); add(v * 10, it.x, it.y - 10, it.kind === 'bigem' ? '#5ee7ff' : '#3dff8f'); A.tone(1200 + v * 100, 0.06, 'triangle', 0.03); if (gems >= 100) A.badge('gems100'); }
       if (it.kind === 'container') { me.max += 2; me.hp = me.max; say('+1 HEART CONTAINER', 1.8); A.sfx('powerup'); }
     }
   }
-  if (stairs && Math.hypot(me.x - stairs.x, me.y - stairs.y) < 18) { floorN++; add(1000); newFloor(); }
+  if (stairs && Math.hypot(me.x - stairs.x, me.y - stairs.y) < 18) {
+    add(1000);
+    if (S.run && S.clear(floorN - 1)) { state = 'over'; stairs = null; return S.win(); }
+    floorN++; newFloor();
+  }
 }
+function shoot(x, y, a, v, kind) { shots.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, t: 0, kind }); }
 function kill(f) {
-  f.dead = 1; const pts = { slime: 50, bat: 60, skel: 120, king: 2000 * floorN }[f.kind]; add(pts, f.x, f.y - 16);
-  A.burst(f.x, f.y, { n: f.kind === 'king' ? 40 : 12, colors: f.kind === 'skel' ? ['#e8e4d0', '#8a8ea0'] : f.kind === 'bat' ? ['#8a5ac8', '#3a2a5a'] : ['#7aff6a', '#2a8a3a'], speed: 160, life: 0.6 });
-  if (f.kind === 'king') { A.badge('boss'); A.flash('#fff', 0.35); A.shake(10, 0.5); say('GUARDIAN DEFEATED!', 2.4); A.jingle([523, 659, 784, 1047, 784, 1047, 1319, 1568], 0.09, 'square'); cur.foes.forEach(o => { if (!o.dead) o.dead = 1; }); stairs = { x: 7.5 * T, y: 5.5 * T }; cur.items.push({ kind: 'container', x: 7.5 * T, y: 7.5 * T }); return; }
-  const r = Math.random(); if (r < 0.15) cur.items.push({ kind: 'heart', x: f.x, y: f.y }); else if (r < 0.65) cur.items.push({ kind: r < 0.22 ? 'bigem' : 'gem', x: f.x, y: f.y });
+  f.dead = 1; const pts = { slime: 50, bat: 60, skel: 120, imp: 90, king: 2000 * floorN, lich: 3000 * floorN }[f.kind]; add(pts, f.x, f.y - 16);
+  const boss = f.kind === 'king' || f.kind === 'lich';
+  A.burst(f.x, f.y, { n: boss ? 40 : 12, colors: f.kind === 'skel' ? ['#e8e4d0', '#8a8ea0'] : f.kind === 'bat' ? ['#8a5ac8', '#3a2a5a'] : f.kind === 'imp' ? ['#ff6a3d', '#ffd23d'] : f.kind === 'lich' ? ['#b86bff', '#e8e4d0', '#5ee7ff'] : ['#7aff6a', '#2a8a3a'], speed: 160, life: 0.6 });
+  if (boss && rush) { A.badge('boss'); A.flash('#fff', 0.35); A.shake(10, 0.5); say('GUARDIAN DOWN!', 1.6); A.jingle([523, 659, 784, 1047], 0.08, 'square'); cur.foes.forEach(o => { if (!o.dead) o.dead = 1; }); shots = []; rushNext = 1.6; return; }
+  if (boss) { shots = []; A.badge('boss'); A.flash('#fff', 0.35); A.shake(10, 0.5); say('GUARDIAN DEFEATED!', 2.4); A.jingle([523, 659, 784, 1047, 784, 1047, 1319, 1568], 0.09, 'square'); cur.foes.forEach(o => { if (!o.dead) o.dead = 1; }); stairs = { x: 7.5 * T, y: 5.5 * T }; cur.items.push({ kind: 'container', x: 7.5 * T, y: 7.5 * T }); return; }
+  const r = Math.random(), luck = up('luck'); if (r < 0.15 + luck * 0.04) cur.items.push({ kind: 'heart', x: f.x, y: f.y }); else if (r < 0.65 + luck * 0.08) cur.items.push({ kind: r < 0.22 + luck * 0.06 ? 'bigem' : 'gem', x: f.x, y: f.y });
   A.sfx('hurt');
 }
 
 /* ---------- drawing ---------- */
 function drawRoom(r, ox, oy, t) {
-  const th = THEMES[(floorN - 1) % 3];
+  const th = theme();
   ctx.save(); ctx.translate(ox, oy);
   for (let y = 0; y < RR; y++) for (let x = 0; x < RC; x++) {
     const v = r.tiles[y][x], X = x * T, Y = y * T, n = (x * 7 + y * 13 + r.i * 3) % 5;
@@ -258,6 +315,27 @@ function drawFoe(f, t) {
     if (big) { ctx.fillStyle = '#ffd23d'; ctx.beginPath(); ctx.moveTo(-14, -r * 0.7); ctx.lineTo(-10, -r * 0.7 - 14); ctx.lineTo(-4, -r * 0.7 - 6); ctx.lineTo(0, -r * 0.7 - 16); ctx.lineTo(4, -r * 0.7 - 6); ctx.lineTo(10, -r * 0.7 - 14); ctx.lineTo(14, -r * 0.7); ctx.fill(); ctx.strokeStyle = OUT; ctx.lineWidth = 1.5; ctx.stroke(); }
     ctx.restore();
     if (big) { ctx.fillStyle = OUT; ctx.fillRect(W / 2 - 101, RR * T - 22, 202, 10); ctx.fillStyle = '#3aa83a'; ctx.fillRect(W / 2 - 100, RR * T - 21, 200 * f.hp / f.max, 8); }
+  } else if (f.kind === 'lich') {
+    if (f.vis <= 0) return;
+    ctx.save(); ctx.globalAlpha = f.vis; const bob = Math.sin(f.t * 3) * 3, Y2 = Y - 6 + bob, robe = hit ? '#fff' : '#4a2a8a';
+    const g = ctx.createRadialGradient(X, Y2 - 6, 4, X, Y2 - 6, 46); g.addColorStop(0, 'rgba(184,107,255,.35)'); g.addColorStop(1, 'rgba(184,107,255,0)'); ctx.fillStyle = g; ctx.fillRect(X - 46, Y2 - 52, 92, 92);
+    ctx.fillStyle = OUT; ctx.beginPath(); ctx.moveTo(X - 11, Y2 - 14); ctx.lineTo(X + 11, Y2 - 14); ctx.lineTo(X + 19, Y2 + 18); ctx.lineTo(X - 19, Y2 + 18); ctx.fill();
+    const rg = ctx.createLinearGradient(0, Y2 - 14, 0, Y2 + 16); rg.addColorStop(0, shade(robe, 0.25)); rg.addColorStop(1, shade(robe, -0.35)); ctx.fillStyle = rg;
+    ctx.beginPath(); ctx.moveTo(X - 9, Y2 - 12); ctx.lineTo(X + 9, Y2 - 12); ctx.lineTo(X + 17, Y2 + 16); ctx.lineTo(X - 17, Y2 + 16); ctx.fill();
+    ctx.fillStyle = '#ffd23d'; ctx.fillRect(X - 1, Y2 - 10, 2, 24); // gold trim
+    paint(ctx, [[X - 7, Y2 - 27, 14, 13, hit ? '#fff' : '#e8e4d0']]); ctx.fillStyle = '#2a1a40'; ctx.beginPath(); ctx.moveTo(X - 10, Y2 - 22); ctx.lineTo(X, Y2 - 36); ctx.lineTo(X + 10, Y2 - 22); ctx.fill(); // hood
+    ctx.fillStyle = '#5ee7ff'; ctx.fillRect(X - 5, Y2 - 22, 3, 3); ctx.fillRect(X + 2, Y2 - 22, 3, 3); ctx.fillStyle = OUT; ctx.fillRect(X - 3, Y2 - 17, 6, 1);
+    paint(ctx, [[X + 17, Y2 - 30, 3, 44, '#6a4a2a']]); ctx.fillStyle = '#b86bff'; ctx.beginPath(); ctx.arc(X + 18.5, Y2 - 33, 5 + Math.sin(f.t * 6), 0, 6.29); ctx.fill(); ctx.fillStyle = '#fff'; ctx.fillRect(X + 17, Y2 - 35, 2, 2);
+    ctx.restore();
+    ctx.fillStyle = OUT; ctx.fillRect(W / 2 - 101, RR * T - 22, 202, 10); ctx.fillStyle = '#b86bff'; ctx.fillRect(W / 2 - 100, RR * T - 21, 200 * Math.max(0, f.hp) / f.max, 8);
+  } else if (f.kind === 'imp') {
+    const fl = Math.sin(f.t * 16) * 4, Yb = Y - 8 + Math.sin(f.t * 4) * 2, body = hit ? '#fff' : '#e8402a';
+    ctx.fillStyle = OUT; ctx.beginPath(); ctx.moveTo(X - 4, Yb); ctx.lineTo(X - 15, Yb - 8 + fl); ctx.lineTo(X - 9, Yb + 4); ctx.moveTo(X + 4, Yb); ctx.lineTo(X + 15, Yb - 8 + fl); ctx.lineTo(X + 9, Yb + 4); ctx.fill();
+    ctx.fillStyle = '#8a1a2a'; ctx.beginPath(); ctx.moveTo(X - 4, Yb); ctx.lineTo(X - 13, Yb - 7 + fl); ctx.lineTo(X - 8, Yb + 3); ctx.moveTo(X + 4, Yb); ctx.lineTo(X + 13, Yb - 7 + fl); ctx.lineTo(X + 8, Yb + 3); ctx.fill();
+    ctx.fillStyle = OUT; ctx.beginPath(); ctx.arc(X, Yb, 9, 0, 6.29); ctx.fill();
+    const g = ctx.createRadialGradient(X - 3, Yb - 4, 1, X, Yb, 8); g.addColorStop(0, shade(body, 0.4)); g.addColorStop(1, shade(body, -0.25)); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(X, Yb, 7.5, 0, 6.29); ctx.fill();
+    ctx.fillStyle = '#ffd23d'; ctx.beginPath(); ctx.moveTo(X - 6, Yb - 5); ctx.lineTo(X - 8, Yb - 12); ctx.lineTo(X - 3, Yb - 7); ctx.moveTo(X + 6, Yb - 5); ctx.lineTo(X + 8, Yb - 12); ctx.lineTo(X + 3, Yb - 7); ctx.fill();
+    ctx.fillStyle = '#ffe14d'; ctx.fillRect(X - 4, Yb - 2, 2, 2); ctx.fillRect(X + 2, Yb - 2, 2, 2);
   } else if (f.kind === 'bat') {
     const fl = Math.sin(f.t * 18) * 6;
     ctx.fillStyle = OUT; ctx.beginPath(); ctx.moveTo(X, Y); ctx.lineTo(X - 14, Y - 6 + fl); ctx.lineTo(X - 8, Y + 2); ctx.lineTo(X + 8, Y + 2); ctx.lineTo(X + 14, Y - 6 + fl); ctx.fill();
@@ -289,6 +367,7 @@ function render(t) {
     drawRoom(cur, 0, 0, t);
     if (stairs && cur.kind === 'boss') { paint(ctx, [[stairs.x - 16, stairs.y - 16, 32, 32, '#2a2230']]); for (let i = 0; i < 4; i++) { ctx.fillStyle = shade('#8a8098', -i * 0.18); ctx.fillRect(stairs.x - 14 + i * 3, stairs.y - 14 + i * 7, 28 - i * 6, 6); } }
     drawItems(cur, t);
+    for (const b of shots) { const c = b.kind === 'fire' ? ['#ff6a3d', '#ffd23d'] : ['#b86bff', '#f0e0ff'], g = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, 12); g.addColorStop(0, c[0] + 'aa'); g.addColorStop(1, c[0] + '00'); ctx.fillStyle = g; ctx.fillRect(b.x - 12, b.y - 12, 24, 24); ctx.fillStyle = OUT; ctx.beginPath(); ctx.arc(b.x, b.y, 5.5, 0, 6.29); ctx.fill(); ctx.fillStyle = c[0]; ctx.beginPath(); ctx.arc(b.x, b.y, 4, 0, 6.29); ctx.fill(); ctx.fillStyle = c[1]; ctx.fillRect(b.x - 2, b.y - 2, 2, 2); }
     const list = [...cur.foes.filter(f => !f.dead).map(f => [f.y, () => drawFoe(f, t)]), [me.y, () => state !== 'title' && drawMe(t)]];
     list.sort((a, b) => a[0] - b[0]).forEach(e => e[1]());
     // a vignette of torchlight
@@ -299,8 +378,8 @@ function render(t) {
   for (let i = 0; i < me.max / 2; i++) { const hp = me.hp - i * 2; ctx.fillStyle = OUT; heart(10 + i * 20, hy + 8, 8); ctx.fill(); ctx.fillStyle = '#3a2440'; heart(11.5 + i * 20, hy + 9.5, 6.5); ctx.fill(); if (hp > 0) { ctx.save(); if (hp === 1) { ctx.beginPath(); ctx.rect(10 + i * 20, hy, 8, 30); ctx.clip(); } ctx.fillStyle = '#ff4f6d'; heart(11.5 + i * 20, hy + 9.5, 6.5); ctx.fill(); ctx.restore(); } }
   ctx.font = '11px Silkscreen, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.fillStyle = '#3dff8f'; ctx.fillText(`◆ ${gems}`, 210, hy + 17);
   if (bigKey) { ctx.fillStyle = '#ffd23d'; ctx.fillText('⚷ KEY', 268, hy + 17); }
-  ctx.fillStyle = '#fff'; ctx.fillText(`FLOOR ${floorN}`, 330, hy + 17);
-  for (const r of rooms) { const mx = W - 60 + r.i * 12, my = hy + 4 + r.j * 7; ctx.fillStyle = r === cur ? '#5ad870' : r.seen ? '#5a5070' : '#1a1428'; ctx.fillRect(mx, my, 10, 5); if (r.seen && r.kind === 'boss') { ctx.fillStyle = '#ff4f6d'; ctx.fillRect(mx + 3, my + 1, 4, 3); } if (r.seen && r.kind === 'key' && !bigKey) { ctx.fillStyle = '#ffd23d'; ctx.fillRect(mx + 3, my + 1, 4, 3); } }
+  ctx.fillStyle = '#fff'; ctx.fillText(rush ? `GUARDIAN ${rushI + 1}/${RUSH.length} · ${rushT.toFixed(1)}s` : S && S.run ? `DEPTH ${floorN}/5${hardK > 1 ? ' HARD' : ''}` : `FLOOR ${floorN}`, 330, hy + 17);
+  if (!rush) for (const r of rooms) { const mx = W - 60 + r.i * 12, my = hy + 4 + r.j * 7; ctx.fillStyle = r === cur ? '#5ad870' : r.seen ? '#5a5070' : '#1a1428'; ctx.fillRect(mx, my, 10, 5); if (r.seen && r.kind === 'boss') { ctx.fillStyle = '#ff4f6d'; ctx.fillRect(mx + 3, my + 1, 4, 3); } if (r.seen && r.kind === 'key' && !bigKey) { ctx.fillStyle = '#ffd23d'; ctx.fillRect(mx + 3, my + 1, 4, 3); } }
   if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '20px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = OUT; ctx.fillText(msg, W / 2 + 2, 82); ctx.fillStyle = '#fff6c2'; ctx.fillText(msg, W / 2, 80); ctx.globalAlpha = 1; }
 }
 A.loop(update, render);
@@ -338,8 +417,38 @@ A.attract({
     return keys;
   }
 });
+S = Story({
+  title: 'THE FIVE DEPTHS', coin: 'GEMS', coinColor: '#3dff8f',
+  stages: [
+    { name: 'Mossy Cellar', sub: 'Slimes and bats in the old cellars under Thistlewick. A slime king guards the stairs.' },
+    { name: 'Bone Halls', sub: 'Skeletons walk the halls of the old crypt. Keep your shield up.' },
+    { name: 'Sunken Vault', sub: 'The flooded vault, where the slime king grew fat on stolen treasure.' },
+    { name: 'Ember Forge', sub: 'Fire imps keep the forge burning and spit sparks at anyone who comes close.' },
+    { name: 'The Throne Below', sub: 'Morrowgast the lich waits on his throne, holding the stolen light.' }],
+  upgrades: [
+    { id: 'heart', name: 'Heart Container', desc: 'Start with one more heart.', cost: [30, 70, 140] },
+    { id: 'blade', name: 'Sharper Blade', desc: 'Every swing hits one harder.', cost: [60, 160] },
+    { id: 'reach', name: 'Longsword', desc: 'A longer, wider swing.', cost: [40, 100] },
+    { id: 'boots', name: 'Swift Boots', desc: 'Walk 12% faster.', cost: [40, 90] },
+    { id: 'luck', name: 'Lucky Charm', desc: 'More hearts and gems drop.', cost: [35, 80, 160] }],
+  mode: { id: 'rush', name: 'BOSS RUSH', desc: 'Five guardians back to back, against the clock.', lower: true },
+  intro: [
+    'Under the village of Thistlewick, something stirs.',
+    'Every night the lanterns burn lower, and the wells run cold.',
+    'Pip-Pip, youngest knight of the Green Sash, picks up a sword and a little round shield.',
+    'Five depths lie below. At the bottom waits Morrowgast, the lich who stole the light.',
+    'Bring it back, Pip.'],
+  ending: [
+    'The last bolt fizzles out. Morrowgast\'s lantern cracks, and the stolen light pours up through five depths.',
+    'In Thistlewick the wells warm again. Every lantern blazes at once.',
+    'Pip-Pip climbs out into the morning: sash torn, shield dented, grinning.',
+    'The village has a new hero. The dungeon, for now, sleeps.'],
+  cast: [['THE KNIGHT', 'PIP-PIP'], ['THE GUARDIANS', 'THE SLIME KINGS'], ['THE LICH', 'MORROWGAST']],
+  play: storyGame,
+  stop: () => { state = 'title'; S.run = null; shots = []; }
+});
 cur = makeFloor(); cur.seen = true;
-A.overlay({ title: 'DUNGEON DELVE', sub: 'Take young Pip down through the dungeon. Rooms full of monsters lock their doors until you win. Find the chest with the big key, open the skull door and beat the guardian to reach the stairs.', btn: 'Start', scores: true, onGo: newGame });
+S.title({ title: 'DUNGEON DELVE', sub: 'Take young Pip down through the dungeon. Rooms full of monsters lock their doors until you win. Find the chest with the big key, open the skull door and beat the guardian to reach the stairs.', btn: 'Start', scores: true, onGo: newGame });
 })();
 </script>
 </body>

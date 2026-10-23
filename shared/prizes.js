@@ -7,6 +7,7 @@
  * - decor: things for the arcade floor; everything bought is on show
  *
  * arcade:prizes holds the ids bought, arcade:equip the one worn per slot: { tint, skin, outfit, carpet }.
+ * Prizes with pass: '<season>' come only from the Arcade Pass (window.PASS in shared/badges.js), free: true on its free track.
  */
 window.Prizes = (() => {
   const LIST = [
@@ -37,6 +38,21 @@ window.Prizes = (() => {
     { id: 'synthwave', slot: 'carpet', level: 32, name: 'Synthwave Sunset', price: 0, desc: 'A neon sun setting over a pink grid. Reach level 32.' },
     { id: 'aurora', slot: 'carpet', level: 40, name: 'Aurora', price: 0, desc: 'Northern lights rippling across the floor. Reach level 40.' },
     { id: 'legend', slot: 'outfit', level: 50, name: 'Bitcade Legend', price: 0, desc: 'A glowing gold suit and a crown of light. Reach level 50.' },
+    { id: 'synth', slot: 'skin', pass: 's1', name: 'Synthwave Cabinet', price: 0, desc: 'Purple to sunset orange, with a chrome trim.', sw: ['#ff7a3d', '#6a2ab8'] },
+    { id: 'neonrider', slot: 'outfit', pass: 's1', name: 'Neon Rider', price: 0, desc: 'A pink race suit and a mirrored helmet.' },
+    { id: 'cyber', slot: 'tint', pass: 's1', free: true, name: 'Cyber Teal', price: 0, desc: 'Every screen in teal and hot pink.', sw: ['#3ae0d0', '#ff4fa3'] },
+    { id: 'infrared', slot: 'tint', pass: 's1', name: 'Infrared', price: 0, desc: 'A heat camera: hot reds and yellows.', sw: ['#ffd23d', '#c8203a'] },
+    { id: 'dancefloor', slot: 'carpet', pass: 's1', name: 'Dance Floor', price: 0, desc: 'Lit squares in every colour.' },
+    { id: 'tracksuit', slot: 'outfit', pass: 's1', free: true, name: 'Retro Tracksuit', price: 0, desc: 'Blue with white stripes, very 1986.' },
+    { id: 'midnight', slot: 'skin', pass: 's1', name: 'Midnight Chrome', price: 0, desc: 'Deep blue chrome with stars in the paint.', sw: ['#3a5ab8', '#0a1030'] },
+    { id: 'dj', slot: 'outfit', pass: 's1', name: 'Night DJ', price: 0, desc: 'Shades, a glowing jacket and a cap on backwards.' },
+    { id: 'prism', slot: 'tint', pass: 's1', name: 'Prism', price: 0, desc: 'Colours that slowly turn round the rainbow.', sw: ['#ff4fd1', '#3dff8f'] },
+    { id: 'phantom', slot: 'outfit', pass: 's1', name: 'Phantom', price: 0, desc: 'A violet cape, a mask and a ghostly glow.' },
+    { id: 'arcadered', slot: 'skin', pass: 's1', free: true, name: 'Classic Red', price: 0, desc: 'Glossy red sides, like the cabinets of old.', sw: ['#ff4f4f', '#7a1018'] },
+    { id: 'magma', slot: 'skin', pass: 's1', name: 'Magma Cabinet', price: 0, desc: 'Molten rock that glows and flows.', sw: ['#ffb03d', '#8a1a08'] },
+    { id: 'starlight', slot: 'outfit', pass: 's1', name: 'Starlight', price: 0, desc: 'A silver suit, a starry cape and a halo.' },
+    { id: 'circuit', slot: 'carpet', pass: 's1', free: true, name: 'Circuit Board', price: 0, desc: 'Green board and gold traces that glow.' },
+    { id: 'diamond', slot: 'skin', pass: 's1', name: 'Diamond Cabinet', price: 0, desc: 'Ice-white facets that catch the light. The top of Season 1.', sw: ['#ffffff', '#7ad8ff'] },
     { id: 'cap', slot: 'outfit', name: 'Cap and Hoodie', price: 30, desc: 'Your arcade-goer, ready for a long session.' },
     { id: 'shades', slot: 'outfit', name: 'Cool Shades', price: 50, desc: 'Leather jacket, dark glasses, no fear.' },
     { id: 'astro', slot: 'outfit', name: 'Astronaut Suit', price: 120, desc: 'Fresh back from a lunar landing.' },
@@ -71,7 +87,7 @@ window.Prizes = (() => {
   const changed = () => fns.forEach(f => f());
   function buy(id) {
     const p = LIST.find(x => x.id === id);
-    if (!p || has(id) || p.level || (p.vip && !(window.VIP && VIP.unlocked())) || !TICKETS.spend(p.price)) return false;
+    if (!p || has(id) || p.level || p.pass || (p.vip && !(window.VIP && VIP.unlocked())) || !TICKETS.spend(p.price)) return false;
     set('arcade:prizes', JSON.stringify([...owned(), id]));
     if (p.slot !== 'decor') wear(id);
     changed(); return true;
@@ -82,6 +98,9 @@ window.Prizes = (() => {
     const eq = equipped(); eq[p.slot] = eq[p.slot] === id ? null : id;
     set('arcade:equip', JSON.stringify(eq)); changed();
   }
+
+  /** The pass tier a prize comes at. */
+  const passTier = p => { const se = window.PASS && PASS.SEASONS.find(s => s.id === p.pass); if (!se) return '?'; const tr = p.free ? se.free : se.pass; return Object.keys(tr).find(k => tr[k].t === 'prize' && tr[k].id === p.id) || '?'; };
 
   /* ---------- the counter screen ---------- */
   let box = null, lastFocus = null;
@@ -95,7 +114,7 @@ window.Prizes = (() => {
     const x = c.getContext('2d'); x.imageSmoothingEnabled = false; x.clearRect(0, 0, c.width, c.height);
     if (window.Floor && Floor.preview(p, x, c.width, c.height)) return;
     const g = x.createLinearGradient(0, 0, c.width, c.height); g.addColorStop(0, p.sw[0]); g.addColorStop(1, p.sw[1]);
-    if (p.id === 'holo') { const hg = x.createLinearGradient(0, 0, c.width, c.height); ['#ff9ad8', '#9ad8ff', '#c8ffb0', '#ffe89a', '#ff9ad8'].forEach((cc, i) => hg.addColorStop(i / 4, cc)); x.fillStyle = hg; x.fillRect(c.width / 2 - 22, 4, 44, c.height - 8); x.fillStyle = '#05040c'; x.fillRect(c.width / 2 - 15, 14, 30, 22); return; }
+    if (p.id === 'holo' || p.id === 'prism' || p.id === 'diamond') { const hg = x.createLinearGradient(0, 0, c.width, c.height); ['#ff9ad8', '#9ad8ff', '#c8ffb0', '#ffe89a', '#ff9ad8'].forEach((cc, i) => hg.addColorStop(i / 4, cc)); x.fillStyle = hg; x.fillRect(c.width / 2 - 22, 4, 44, c.height - 8); x.fillStyle = '#05040c'; x.fillRect(c.width / 2 - 15, 14, 30, 22); return; }
     if (p.slot === 'tint') { // a little screen in that phosphor
       x.fillStyle = '#05040c'; x.fillRect(0, 0, c.width, c.height); x.fillStyle = g; x.fillRect(8, 8, c.width - 16, c.height - 16);
       x.fillStyle = 'rgba(0,0,0,.35)'; for (let i = 8; i < c.height - 8; i += 3) x.fillRect(8, i, c.width - 16, 1);
@@ -114,6 +133,7 @@ window.Prizes = (() => {
       el.classList.toggle('own', own); el.classList.toggle('on', on);
       const locked = p.vip && !(window.VIP && VIP.unlocked());
       if (!own && p.level) { btn.textContent = `LEVEL ${p.level}`; btn.disabled = true; }
+      else if (!own && p.pass) { const t = passTier(p); btn.textContent = `${p.free ? 'FREE' : 'PASS'} · TIER ${t}`; btn.disabled = true; }
       else if (!own && locked) { btn.textContent = 'VIP ONLY'; btn.disabled = true; }
       else if (!own) { btn.textContent = bal >= p.price ? `BUY · ${p.price}` : `NEED ${p.price}`; btn.disabled = bal < p.price; }
       else if (p.slot === 'decor') { btn.textContent = 'ON THE FLOOR'; btn.disabled = true; }
@@ -127,10 +147,10 @@ window.Prizes = (() => {
       <div class="pc-how">Win tickets in every game: a few per game, more for a top-10 score or a new record, 10 per badge, and double on the weekly tournament game.</div></div>
       <div class="pc-bal">TICKETS <b>0</b></div><button class="pc-x" aria-label="Close">✕</button></div><div class="pc-body"></div></div>`;
     const body = box.querySelector('.pc-body');
-    [...SLOTS, ['vip', '★ VIP EXCLUSIVES · unlock the VIP room on the arcade floor'], ['level', '▲ LEVEL REWARDS · free when you reach the level']].forEach(([slot, label]) => {
+    [...SLOTS, ['vip', '★ VIP EXCLUSIVES · unlock the VIP room on the arcade floor'], ['level', '▲ LEVEL REWARDS · free when you reach the level'], ['pass', '✦ ARCADE PASS · Season 1 rewards']].forEach(([slot, label]) => {
       const h = document.createElement('h3'); h.textContent = label; body.append(h);
       const row = document.createElement('div'); row.className = 'pc-row'; body.append(row);
-      LIST.filter(p => slot === 'vip' ? p.vip : slot === 'level' ? p.level : p.slot === slot && !p.vip && !p.level).forEach(p => {
+      LIST.filter(p => slot === 'vip' ? p.vip : slot === 'level' ? p.level : slot === 'pass' ? p.pass : p.slot === slot && !p.vip && !p.level && !p.pass).forEach(p => {
         const el = document.createElement('div'); el.className = 'pc-item'; el.dataset.id = p.id;
         el.innerHTML = '<canvas width="96" height="64"></canvas><b></b><small></small><button></button>';
         el.querySelector('b').textContent = p.name; el.querySelector('small').textContent = p.desc;

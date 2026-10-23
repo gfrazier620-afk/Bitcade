@@ -359,6 +359,7 @@ window.XP = (() => {
   function add(n, why) {
     n = Math.max(0, Math.round(n)); const before = info();
     set('arcade:xp', before.xp + n);
+    if (window.PASS) PASS.gain(n); // the same XP climbs the Arcade Pass
     const after = info(), up = after.level - before.level, unlocked = up ? grant(after.level) : [];
     const r = { gained: n, why, before, after, up, unlocked, newTitle: after.title !== before.title ? after.title : null };
     fns.forEach(f => { try { f(r); } catch (e) {} });
@@ -366,4 +367,63 @@ window.XP = (() => {
   }
   grant(info().level);
   return { total, info, add, need, MAX, TITLES, REWARDS, onChange: fn => fns.push(fn), titleAt: l => TITLES.filter(t => t[0] <= l).pop()[1] };
+})();
+
+/*
+ * The Arcade Pass: seasons of 50 tiers, climbed with the same XP as player levels (XP.add feeds PASS.gain while a
+ * season is on). Every tier has a reward on the pass track, and some have one on the free track too: tickets, or
+ * prizes from shared/prizes.js marked pass: '<season>' (a pass-only tint, cabinet finish, outfit or carpet). Rewards
+ * are claimed by hand in the lobby (shared/pass.js) and stay claimable until the season ends.
+ * Kept per season: arcade:pass:xp:<id> (season XP), arcade:pass:got:<id> (claimed rewards, 'f12' / 'p12') and
+ * arcade:pass:own:<id> ('1' with the pass). There is no shop for it yet: ?pass=1 turns it on for testing.
+ */
+window.PASS = (() => {
+  const get = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  const set = (k, v) => { try { localStorage.setItem(k, String(v)); } catch (e) {} };
+  const TIERS = 50, STEP = 100; // XP per tier
+  const tix = n => ({ t: 'tix', n }), prize = id => ({ t: 'prize', id });
+  const SEASONS = [{
+    id: 's1', name: 'NEON NIGHTS', start: '2026-10-19', end: '2027-01-11', // Mondays, UTC; twelve weeks
+    free: { 2: tix(10), 4: tix(10), 6: tix(15), 8: prize('cyber'), 11: tix(15), 14: tix(20), 17: tix(20), 20: prize('tracksuit'), 23: tix(20), 26: tix(25), 29: tix(25), 32: tix(25), 35: prize('arcadered'), 38: tix(30), 41: tix(30), 44: tix(30), 47: tix(40), 50: prize('circuit') },
+    pass: { 1: prize('synth'), 5: prize('neonrider'), 10: prize('infrared'), 15: prize('dancefloor'), 20: prize('midnight'), 25: prize('dj'), 30: prize('prism'), 35: prize('phantom'), 40: prize('magma'), 45: prize('starlight'), 50: prize('diamond') }
+  }];
+  // every other tier on the pass track pays tickets
+  SEASONS.forEach(se => { for (let i = 1; i <= TIERS; i++) if (!se.pass[i]) se.pass[i] = tix(i % 5 === 0 ? 50 : 20 + Math.floor(i / 10) * 5); });
+  const day = d => Date.parse(d + 'T00:00:00Z');
+  const season = (now = Date.now()) => SEASONS.find(se => now >= day(se.start) && now < day(se.end)) || null;
+  const next = (now = Date.now()) => SEASONS.find(se => now < day(se.start)) || null;
+  try { if (/[?&]pass=1\b/.test(location.search)) SEASONS.forEach(se => set('arcade:pass:own:' + se.id, 1)); } catch (e) {}
+  const xp = (se = season()) => se ? +get('arcade:pass:xp:' + se.id) || 0 : 0;
+  const tier = (se = season()) => Math.min(TIERS, Math.floor(xp(se) / STEP));
+  const owned = (se = season()) => !!se && get('arcade:pass:own:' + se.id) === '1';
+  const got = (se = season()) => { try { const g = JSON.parse(get('arcade:pass:got:' + (se && se.id))); return Array.isArray(g) ? g : []; } catch (e) { return []; } };
+  const fns = [];
+  /** Season XP from XP.add; returns { before, after } tiers when a season is on. */
+  function gain(n) {
+    const se = season(); if (!se || !n) return null;
+    const before = tier(se); set('arcade:pass:xp:' + se.id, xp(se) + n);
+    const r = { before, after: tier(se) }; fns.forEach(f => { try { f(r); } catch (e) {} }); return r;
+  }
+  /** What's waiting to be claimed: [{ key, track, tier, reward }]. Pass rewards only count with the pass. */
+  function ready(se = season()) {
+    if (!se) return [];
+    const t = tier(se), g = got(se), out = [];
+    for (let i = 1; i <= t; i++) {
+      if (se.free[i] && !g.includes('f' + i)) out.push({ key: 'f' + i, track: 'free', tier: i, reward: se.free[i] });
+      if (owned(se) && !g.includes('p' + i)) out.push({ key: 'p' + i, track: 'pass', tier: i, reward: se.pass[i] });
+    }
+    return out;
+  }
+  /** Claim one reward by key ('f8', 'p12'); true when it was given. */
+  function claim(key) {
+    const se = season(); if (!se) return false;
+    const r = ready(se).find(x => x.key === key); if (!r) return false;
+    if (r.reward.t === 'tix' && window.TICKETS) TICKETS.add(r.reward.n);
+    if (r.reward.t === 'prize') { let o = []; try { o = JSON.parse(get('arcade:prizes')) || []; } catch (e) {} if (!o.includes(r.reward.id)) set('arcade:prizes', JSON.stringify([...o, r.reward.id])); }
+    set('arcade:pass:got:' + se.id, JSON.stringify([...got(se), key]));
+    return true;
+  }
+  const claimAll = () => ready().map(r => claim(r.key) && r).filter(Boolean);
+  const left = (se = season()) => se ? Math.max(0, day(se.end) - Date.now()) : 0;
+  return { TIERS, STEP, SEASONS, season, next, xp, tier, owned, got, gain, ready, claim, claimAll, left, onChange: fn => fns.push(fn) };
 })();

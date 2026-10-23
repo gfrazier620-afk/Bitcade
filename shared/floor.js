@@ -241,6 +241,22 @@ window.Floor = (() => {
       for (let j = 0; j < h; j += 36) for (let i = 0; i < w; i += 36) { x.beginPath(); x.moveTo(i + 18, y0 + j + 4); x.lineTo(i + 32, y0 + j + 18); x.lineTo(i + 18, y0 + j + 32); x.lineTo(i + 4, y0 + j + 18); x.closePath(); x.stroke(); }
       return;
     }
+    if (kind === 'circuit') { // Arcade Pass: a green board with gold traces
+      if (!glow) { x.fillStyle = '#062a18'; x.fillRect(0, y0, w, h); }
+      x.strokeStyle = glow ? 'rgba(255,220,90,.75)' : '#c8a040'; x.lineWidth = 2;
+      for (let i = 0; i < w * h / 7000; i++) {
+        let px = Math.round(r() * w / 16) * 16, py = y0 + Math.round(r() * h / 16) * 16; x.beginPath(); x.moveTo(px, py);
+        for (let k = 0; k < 4; k++) { const d = r() < 0.5, l = (2 + Math.floor(r() * 5)) * 16; if (d) px += r() < 0.5 ? l : -l; else py += r() < 0.5 ? l : -l; x.lineTo(px, py); }
+        x.stroke(); x.fillStyle = glow ? 'rgba(255,240,160,.9)' : '#e8c860'; x.fillRect(px - 3, py - 3, 6, 6);
+      }
+      if (!glow) for (let i = 0; i < w * h / 40000; i++) { const px = r() * w, py = y0 + r() * h; x.fillStyle = '#16161e'; x.fillRect(px, py, 28, 18); x.fillStyle = '#8a8ea0'; for (let k = 0; k < 4; k++) { x.fillRect(px + 3 + k * 7, py - 3, 2, 3); x.fillRect(px + 3 + k * 7, py + 18, 2, 3); } }
+      return;
+    }
+    if (kind === 'dancefloor') { // Arcade Pass: lit squares
+      const C = ['#ff4fd1', '#22e0ff', '#ffd23d', '#3dff8f', '#8a3dff'];
+      for (let j = 0; j < h; j += 40) for (let i = 0; i < w; i += 40) { const c = C[(i / 40 * 3 + j / 40 * 7) % 5]; if (glow) { if ((i / 40 + j / 40) % 3) continue; x.fillStyle = c; x.globalAlpha = 0.55; x.fillRect(i + 4, y0 + j + 4, 32, 32); x.globalAlpha = 1; } else { x.fillStyle = '#100a1c'; x.fillRect(i, y0 + j, 40, 40); x.fillStyle = c; x.globalAlpha = 0.45; x.fillRect(i + 3, y0 + j + 3, 34, 34); x.globalAlpha = 1; } }
+      return;
+    }
     if (kind === 'checker') {
       if (glow) return;
       for (let j = 0; j < h; j += 24) for (let i = 0; i < w; i += 24) { x.fillStyle = ((i + j) / 24) % 2 ? '#e8e4f0' : '#141020'; x.fillRect(i, y0 + j, 24, 24); }
@@ -410,7 +426,13 @@ window.Floor = (() => {
     varsity: { top: '#c8203a', legs: '#2a2a4a', hair: '#3a2414', sleeves: '#f4effd', letter: 'B' },
     skater: { top: '#5a7aaa', legs: '#3a3a4a', hair: '#c88a3a', hat: 'beanie', capC: '#ff9a3d', flannel: '#c8203a', board: true },
     captain: { top: '#2a3a8a', legs: '#16161e', hair: '#3a2414', cape: '#c8203a', badge: '#ffd23d', sleeves: '#ffd23d' },
-    legend: { top: '#ffd23d', legs: '#c89a2a', hair: '#fff6c2', hat: 'halo', cape: '#ff4fd1', glow: true }
+    legend: { top: '#ffd23d', legs: '#c89a2a', hair: '#fff6c2', hat: 'halo', cape: '#ff4fd1', glow: true },
+    // Arcade Pass, Season 1
+    neonrider: { top: '#ff4fd1', legs: '#16161e', hair: '#16161e', hat: 'helmet', visor: true, sleeves: '#22e0ff' },
+    tracksuit: { top: '#3d6aff', legs: '#3d6aff', hair: '#3a2414', sleeves: '#f4effd', flannel: '#f4effd' },
+    dj: { top: '#16161e', legs: '#2a2a4a', hair: '#3a2414', hat: 'phones', capC: '#3dff8f', glasses: true, sleeves: '#3dff8f', badge: '#ff4fd1' },
+    phantom: { top: '#2a1a40', legs: '#16101e', hair: '#16101e', mask: true, cape: '#8a3dff', glow: true },
+    starlight: { top: '#d8e0f0', legs: '#a8b0c8', hair: '#fff6c2', hat: 'halo', cape: '#3a5ab8', badge: '#ffd23d', glow: true }
   };
   const SKINS = ['#f0c090', '#e0a878', '#c08050', '#8a5634', '#ffd8b4', '#6a3e22'];
   /**

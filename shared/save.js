@@ -50,22 +50,30 @@ const json = (v, d) => { try { const x = JSON.parse(v); return x == null ? d : x
  * two histories are separate, so play counts, play time and tickets earned add up. prices (prize id → tickets), when
  * given, sets tickets spent exactly from the combined prize list (tickets are only ever spent on prizes).
  */
+/** Two story saves (shared/story.js) combined: numbers take the higher, lists join, objects merge field by field. */
+function deepMax(p, q) {
+  if (Array.isArray(p) || Array.isArray(q)) return [...new Set([...(Array.isArray(p) ? p : []), ...(Array.isArray(q) ? q : [])])];
+  if (typeof p === 'number' || typeof q === 'number') return Math.max(+p || 0, +q || 0);
+  if (!p || typeof p !== 'object') return q; if (!q || typeof q !== 'object') return p;
+  const o = { ...q, ...p }; for (const k of Object.keys(o)) if (k in p && k in q) o[k] = deepMax(p[k], q[k]); return o;
+}
 export function merge(a, b, prices, joining) {
   const out = { ...b, ...a };
   for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) {
     const x = a[k], y = b[k];
     if (x == null || y == null) continue;
-    if (joining && (/^arcade:(plays|time):/.test(k) || k === 'arcade:tickets:earned' || k === 'arcade:tickets:spent' || k === 'arcade:xp')) out[k] = String((+x || 0) + (+y || 0));
-    else if (/^arcade:(best|plays|time):/.test(k) || k === 'arcade:tickets:earned' || k === 'arcade:tickets:spent' || k === 'arcade:xp') out[k] = String(Math.max(+x || 0, +y || 0));
+    if (joining && (/^arcade:(plays|time|pass:xp):/.test(k) || k === 'arcade:tickets:earned' || k === 'arcade:tickets:spent' || k === 'arcade:xp')) out[k] = String((+x || 0) + (+y || 0));
+    else if (/^arcade:(best|plays|time|pass:xp|pass:own):/.test(k) || k === 'arcade:tickets:earned' || k === 'arcade:tickets:spent' || k === 'arcade:xp') out[k] = String(Math.max(+x || 0, +y || 0));
     else if (/^arcade:top:/.test(k)) {
       const seen = new Set(), all = [...json(x, []), ...json(y, [])].filter(e => e && typeof e.s === 'number').sort((p, q) => q.s - p.s)
         .filter(e => { const id = e.n + ':' + e.s; if (seen.has(id)) return false; seen.add(id); return true; });
       out[k] = JSON.stringify(all.slice(0, 10));
-    } else if (/^arcade:badges:/.test(k) || k === 'arcade:prizes') out[k] = JSON.stringify([...new Set([...json(x, []), ...json(y, [])])]);
+    } else if (/^arcade:(badges|pass:got):/.test(k) || k === 'arcade:prizes') out[k] = JSON.stringify([...new Set([...json(x, []), ...json(y, [])])]);
     else if (/^arcade:(daily|week):/.test(k)) {
       const p = json(x, {}), q = json(y, {}), f = k.includes(':daily:') ? 'd' : 'w';
       out[k] = JSON.stringify(p[f] === q[f] ? (p.s >= q.s ? p : q) : (String(p[f]) > String(q[f]) ? p : q));
     }
+    else if (/^arcade:story:/.test(k)) out[k] = JSON.stringify(deepMax(json(x, {}), json(y, {}))); // story progress: the furthest of each
     // anything else (initials, the cached ticket balance): this device's value
   }
   if (prices) out['arcade:tickets:spent'] = String(json(out['arcade:prizes'], []).reduce((t, id) => t + (prices[id] || 0), 0));
