@@ -145,7 +145,7 @@ window.Story = cfg => {
     if (best.dataset.stage) { sel = +best.dataset.stage; render(); focus(`[data-stage="${sel}"]`); } else best.focus();
   }
   addEventListener('keydown', e => {
-    if (!isOpen()) return;
+    if (!isOpen() || document.documentElement.classList.contains('set-open')) return; // the settings panel is on top
     e.preventDefault(); e.stopImmediatePropagation(); if (e.repeat && !/^Arrow/.test(e.code)) return;
     A.unlock(); nav(e.code);
   }, true);

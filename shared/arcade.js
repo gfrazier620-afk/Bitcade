@@ -213,10 +213,11 @@
    * with a bass thump, short ones crisp hits.
    */
   let bus = null, echo = null, noiseBuf = null;
+  const sfxVol = () => store.get('arcade:vol:sfx') == null ? 1 : Math.max(0, Math.min(1, +store.get('arcade:vol:sfx') / 100)); // shared/settings.js
   function buildBus() {
     const comp = ac.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 4; comp.attack.value = 0.003; comp.release.value = 0.15;
     comp.connect(ac.destination);
-    bus = ac.createGain(); bus.gain.value = 1; bus.connect(comp);
+    bus = ac.createGain(); bus.gain.value = sfxVol(); bus.connect(comp);
     const dl = ac.createDelay(0.3), fb = ac.createGain(), wet = ac.createGain(), lp = ac.createBiquadFilter();
     dl.delayTime.value = 0.085; fb.gain.value = 0.22; wet.gain.value = 0.16; lp.type = 'lowpass'; lp.frequency.value = 2400;
     echo = ac.createGain(); echo.connect(dl); dl.connect(lp).connect(fb).connect(dl); lp.connect(wet).connect(comp);
@@ -287,6 +288,7 @@
   const kd = code => {
     if (A.down.has(code)) return;
     A.down.add(code);
+    if (settingsOpen()) { window.Settings.pad(code); return; } // a controller working the settings panel
     if (A.keyHook && A.keyHook(code)) return; // a page's own screen (shared/story.js) takes the press
     if (entry) entryKey(code);
     else if (shown && overlayOpen() && (code === 'ArrowLeft' || code === 'ArrowRight')) {
@@ -296,23 +298,29 @@
   };
   const ku = code => A.down.delete(code);
   A.press = kd; A.release = ku;
+  // keys of the player's own (shared/settings.js): your key → the game's key; the usual keys keep working
+  let keymap = {};
+  const loadKeys = () => { try { const m = JSON.parse(store.get('arcade:keys:' + A.id)); keymap = m && typeof m === 'object' ? m : {}; } catch (e) { keymap = {}; } };
+  loadKeys();
+  const settingsOpen = () => !!(window.Settings && Settings.isOpen());
   const GAME_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space']);
   addEventListener('keydown', e => {
     if (e.target.closest && e.target.closest('[data-keys-native]')) return; // forms and pickers that need their own keys
     A.unlock();
+    const code = keymap[e.code] || e.code;
     if (entry && overlayOpen() && !e.repeat) {
       if (/^Key[A-Z]$/.test(e.code)) { e.preventDefault(); entry.letters[entry.pos] = e.code[3]; entry.pos = Math.min(2, entry.pos + 1); A.tone(660, 0.03); renderHS(); return; }
       if (e.code === 'Backspace') { e.preventDefault(); entry.pos = Math.max(0, entry.pos - 1); renderHS(); return; }
     }
-    if (overlayOpen() && (e.code === 'Enter' || e.code === 'Space')) {
+    if (overlayOpen() && (code === 'Enter' || code === 'Space')) {
       if (e.target.closest && e.target.closest('a,button:not(.go)')) return;
       e.preventDefault(); if (!e.repeat) overlayGo(); return;
     }
-    if (GAME_KEYS.has(e.code)) e.preventDefault();
+    if (GAME_KEYS.has(code) || code !== e.code) e.preventDefault();
     if (e.repeat) return;
-    kd(e.code);
+    kd(code);
   });
-  addEventListener('keyup', e => ku(e.code));
+  addEventListener('keyup', e => ku(keymap[e.code] || e.code));
   addEventListener('blur', () => { A.down.clear(); gpHeld.clear(); });
   function bindPads() {
     document.querySelectorAll('[data-k]').forEach(b => {
@@ -364,7 +372,8 @@
     buttons.forEach(i => {
       if (!gpButtons.has(i)) {
         A.unlock();
-        if (A.padHook && A.padHook(i)) gpSwallow.add(i);
+        if (settingsOpen()) { gpSwallow.add(i); if (i === 0) Settings.pad('Space'); else if (i === 1 || i === 9) Settings.pad('Back'); }
+        else if (A.padHook && A.padHook(i)) gpSwallow.add(i);
         else if (overlayOpen() && (i === 0 || i === 9)) { gpSwallow.add(i); overlayGo(); }
         else if (overlayOpen() && i === 3 && altFn && !entry) { gpSwallow.add(i); overlayAlt(); } // Y = second overlay button
         else if (overlayOpen() && i === 2 && alt2Fn && !entry) { gpSwallow.add(i); overlayAlt2(); } // X = third
@@ -418,9 +427,13 @@
    */
   let fxCtx = null, stopT = 0, shakeA = 0, shakeT = 0, shakeD = 1, flashC = null, flashT = 0, flashD = 1, fx = [];
   const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // the player's settings (shared/settings.js): how much screens shake and flash, and a buzz on phones for big hits
+  const shakeK = () => { const v = store.get('arcade:shake'); return v == null ? 1 : +v; }, flashK = () => { const v = store.get('arcade:flash'); return v == null ? 1 : +v; };
+  const coarse = matchMedia('(pointer: coarse)').matches;
   A.shake = (px = 6, s = 0.3) => {
     if (px >= 5 && ac && performance.now() - thumpAt > 120) { thumpAt = performance.now(); thump(Math.min(0.14, px / 80)); } // big shakes get bass, even with motion reduced
-    if (calm) return; if (px >= (shakeT > 0 ? shakeA * shakeT / shakeD : 0)) { shakeA = px; shakeT = shakeD = s; }
+    if (px >= 5 && coarse && !A.demo && store.get('arcade:buzz') !== '0' && navigator.vibrate) try { navigator.vibrate(Math.min(70, px * 5)); } catch (e) {}
+    px *= shakeK(); if (calm || !px) return; if (px >= (shakeT > 0 ? shakeA * shakeT / shakeD : 0)) { shakeA = px; shakeT = shakeD = s; }
   };
   A.hitstop = (s = 0.05) => { stopT = Math.max(stopT, s); };
   A.flash = (c = '#fff', s = 0.15) => { flashC = c; flashT = flashD = s; };
@@ -457,7 +470,7 @@
     }
     c.globalAlpha = 1;
     c.restore();
-    if (flashT > 0) { c.globalAlpha = Math.max(0, flashT / flashD) * (calm ? 0.2 : 0.55); c.fillStyle = flashC; c.fillRect(0, 0, A.W, A.H); c.globalAlpha = 1; }
+    if (flashT > 0) { c.globalAlpha = Math.max(0, flashT / flashD) * (calm ? 0.2 : 0.55) * flashK(); c.fillStyle = flashC; c.fillRect(0, 0, A.W, A.H); c.globalAlpha = 1; }
   }
   // Play time per game (arcade:time:<slug>, seconds) for the lobby's profile page: game time with no screen up.
   let playT = 0;
@@ -854,33 +867,38 @@
     if (outbox().length) flush(); // scores saved while offline
     // Offline play: the service worker (sw.js, at the site root) caches the lobby and every game.
     if ('serviceWorker' in navigator) navigator.serviceWorker.register(new URL('../sw.js', KIT_URL).href).catch(() => {});
+    // CRT has three settings: LITE (the default: faint scanlines and glow), FULL and OFF. Stored as 'lite' | '1' | '0'.
+    const crtSet = () => { const v = store.get('arcade:crt'), mode = ['lite', '1', '0'].includes(v) ? v : 'lite'; document.body.classList.toggle('crt', mode === '1'); document.body.classList.toggle('crt-lite', mode === 'lite'); };
+    crtSet();
     if (m) {
-      const label = () => { m.textContent = A.muted ? 'SOUND OFF' : 'SOUND ON'; m.setAttribute('aria-pressed', String(!A.muted)); };
-      label(); m.addEventListener('click', () => { A.muted = !A.muted; store.set('arcade:muted', A.muted ? '1' : '0'); A.unlock(); label(); if (music()) music().refresh(); });
-      // MUSIC and CRT (scanline look) buttons, both remembered
-      const toggle = (id, text, isOn, flip) => {
-        const b = document.createElement('button'); b.className = 'mute'; b.id = id;
-        const set = () => { b.textContent = `${text} ${isOn() ? 'ON' : 'OFF'}`; b.setAttribute('aria-pressed', String(isOn())); };
-        b.addEventListener('click', () => { flip(); set(); }); set(); return b;
-      };
-      // CRT has three settings: LITE (the default: faint scanlines and glow), FULL and OFF. Stored as 'lite' | '1' | '0'.
-      const CRT = ['lite', '1', '0'], CRT_LABEL = { lite: 'CRT LITE', 1: 'CRT FULL', 0: 'CRT OFF' };
-      const crtMode = () => CRT.includes(store.get('arcade:crt')) ? store.get('arcade:crt') : 'lite';
-      const crt = document.createElement('button'); crt.className = 'mute'; crt.id = 'crt';
-      const crtSet = () => { const mode = crtMode(); document.body.classList.toggle('crt', mode === '1'); document.body.classList.toggle('crt-lite', mode === 'lite'); crt.textContent = CRT_LABEL[mode]; crt.setAttribute('aria-pressed', String(mode !== '0')); };
-      crt.addEventListener('click', () => { store.set('arcade:crt', CRT[(CRT.indexOf(crtMode()) + 1) % CRT.length]); crtSet(); });
-      crtSet(); m.after(crt);
-      // EASY: slower games and extra lives; scores don't count (see runEasy). Turning it on mid-run taints the run.
-      const easy = document.createElement('button'); easy.className = 'mute easy'; easy.id = 'easy';
-      const easySet = () => { easy.textContent = A.easy ? 'EASY ON' : 'EASY OFF'; easy.setAttribute('aria-pressed', String(A.easy)); document.body.classList.toggle('easy-on', A.easy); };
-      easy.title = 'Easy mode: slower, with extra lives. Scores, challenges and badges don\u2019t count.';
-      easy.addEventListener('click', () => { A.easy = !A.easy; store.set('arcade:easy', A.easy ? '1' : '0'); if (A.easy && !overlayOpen()) runEasy = true; easySet();
-        if (titleArgs && overlayOpen() && titleShown()) A.overlay(titleArgs); }); // redraw the title's EASY MODE note
-      easySet(); crt.after(easy);
-      if (music()) m.after(toggle('music', 'MUSIC', () => music().enabled, () => { music().enabled = !music().enabled; }));
-      // keep the header buttons together, so they wrap as one row on narrow screens
+      // the header keeps PAUSE (touch) and one SETTINGS button (shared/settings.js, loaded here); an EASY tag shows while easy mode is on
+      m.id = 'settings'; m.className = 'mute set-btn'; m.textContent = '⚙ SETTINGS'; m.setAttribute('aria-haspopup', 'dialog');
+      const tag = document.createElement('span'); tag.className = 'easy-tag'; tag.textContent = 'EASY'; tag.title = 'Easy mode is on: scores, badges and tickets don\u2019t count';
+      const easySet = () => { tag.hidden = !A.easy; document.body.classList.toggle('easy-on', A.easy); };
+      easySet();
       const group = document.createElement('div'); group.className = 'toggles'; m.before(group);
-      [document.querySelector('.bar .pause'), m, $('music'), crt, easy].filter(Boolean).forEach(b => group.append(b));
+      [document.querySelector('.bar .pause'), tag, m].filter(Boolean).forEach(b => group.append(b));
+      const controls = () => { const seen = new Set(), out = []; document.querySelectorAll('.pad [data-k], .bar .pause').forEach(b => { const c = b.dataset.k; if (seen.has(c)) return; seen.add(c); out.push({ code: c, label: c === 'KeyP' ? 'Pause' : (t => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase())((b.getAttribute('aria-label') || b.textContent || c).trim()) }); }); if (!seen.has('KeyP')) out.push({ code: 'KeyP', label: 'Pause' }); return out; };
+      const openSettings = () => {
+        A.unlock();
+        if (!overlayOpen() && !document.querySelector('.story:not([hidden])') && !A.demo) { kd('KeyP'); ku('KeyP'); } // pause a run first
+        const go = () => Settings.open({ slug: A.id, controls: controls() });
+        if (window.Settings) return go();
+        const s = document.createElement('script'); s.src = new URL('settings.js', KIT_URL).href; s.onload = () => { hookSettings(); go(); }; document.head.append(s);
+      };
+      m.addEventListener('click', openSettings);
+      let hooked = false;
+      const hookSettings = () => { if (hooked || !window.Settings) return; hooked = true; Settings.onChange(k => {
+        if (k === 'arcade:muted') { A.muted = store.get('arcade:muted') === '1'; if (music()) music().refresh(); }
+        if (k === 'arcade:music' && music()) music().refresh();
+        if (k === 'arcade:vol:sfx' && bus) bus.gain.value = sfxVol();
+        if (k === 'arcade:vol:music' && music()) music().volume(music().level);
+        if (k === 'arcade:crt') crtSet();
+        if (k === 'arcade:easy') { A.easy = store.get('arcade:easy') === '1'; if (A.easy && !overlayOpen()) runEasy = true; easySet(); if (titleArgs && overlayOpen() && titleShown()) A.overlay(titleArgs); } // redraw the title's EASY MODE note
+        if (k && k.startsWith('arcade:keys:')) loadKeys();
+        if (k !== 'close') A.tone(880, 0.03, 'square', 0.025);
+      }); };
+      if (window.Settings) hookSettings();
     }
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();

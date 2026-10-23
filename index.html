@@ -425,6 +425,7 @@ footer p{margin:4px 0}
 .boot-hof p{margin:12px 0 0;font-size:10px;color:rgba(255,255,255,.6);letter-spacing:.1em}
 .music-btn{position:fixed;top:12px;right:12px;z-index:50;border:1px solid var(--line);background:rgba(15,12,31,.85);border-radius:8px;padding:6px 10px;font-family:var(--f-pixel);font-size:11px;color:var(--muted)}
 .music-btn[aria-pressed="true"]{color:#ffe36a;border-color:#ffe36a}
+.music-btn.set-lb{right:auto;left:12px;color:#5ee7ff;border-color:color-mix(in srgb,#5ee7ff 45%,var(--line));font-size:14px;padding:4px 10px;cursor:pointer}
 .boot-skip{position:absolute;left:0;right:0;bottom:max(14px,3vh);text-align:center;z-index:6;font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.12em}
 .boot.out{animation:boot-out .45s ease-in forwards}
 .boot.out.fast{animation-duration:.25s}
@@ -453,6 +454,7 @@ footer p{margin:4px 0}
 try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(location.search)) document.getElementById('boot').hidden = true; else document.documentElement.classList.add('booting'); } catch (e) { document.getElementById('boot').hidden = true; }
 </script>
 <button class="music-btn" id="musicBtn">♪ MUSIC ON</button>
+<button class="music-btn set-lb" id="setBtn" aria-haspopup="dialog" aria-label="Settings">⚙</button>
 <div class="lobby">
   <header class="marquee">
     <h1 class="logo">BITCADE</h1>
@@ -506,6 +508,7 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
 <script src="shared/profile.js"></script>
 <script src="shared/shelves.js"></script>
 <script src="shared/pass.js"></script>
+<script src="shared/settings.js"></script>
 <script>
 (() => {
 const GAMES = [
@@ -859,6 +862,12 @@ reset.addEventListener('click', () => {
   const music = () => { if (!chip) return; const j = get('bitcade:jukebox'); chip.play(j && document.querySelector(`.cab[href="games/${j}/"]`) ? chip.theme(j) : chip.lobby); }; // the floor's jukebox picks the tune
   if (chip) { if (mode === 'lobby') music(); musicLabel(); musicBtn.addEventListener('click', () => { chip.enabled = !chip.enabled; if (chip.enabled) music(); musicLabel(); }); }
   else musicBtn.hidden = true;
+  // settings (shared/settings.js): the same panel as in the games, without the controls
+  document.getElementById('setBtn').addEventListener('click', () => Settings.open());
+  Settings.onChange(k => {
+    if (chip && (k === 'arcade:music' || k === 'arcade:muted')) { chip.refresh(); if (chip.enabled) music(); musicLabel(); }
+    if (chip && k === 'arcade:vol:music') chip.volume(chip.level);
+  });
 
   /* ---------- the sign on the doors: BITCADE, split down the middle ---------- */
   document.querySelectorAll('.ds-word').forEach(w => { w.innerHTML = [...'BITCADE'].map(ch => `<span>${ch}</span>`).join(''); });

@@ -156,21 +156,35 @@ console.log('\nMusic and CRT');
     const s = Chip.theme('swarm-strike'); return { same: a === b, differ: a !== c, notes: s.lead.filter(Boolean).length, bpm: s.bpm };
   });
   check(themes.same && themes.differ && themes.notes > 20, `each game has its own theme, the same every time (${themes.notes} melody notes at ${themes.bpm} bpm)`);
-  check(await page.isVisible('#music') && await page.isVisible('#crt'), 'MUSIC and CRT buttons sit next to SOUND');
-  check(await page.evaluate(() => document.body.classList.contains('crt-lite')) && (await page.textContent('#crt')) === 'CRT LITE', 'the light CRT look is on by default');
+  check(await page.isVisible('#settings') && /SETTINGS/.test(await page.textContent('#settings')), 'the header has a SETTINGS button');
+  check(await page.evaluate(() => document.body.classList.contains('crt-lite')), 'the light CRT look is on by default');
   await page.keyboard.press('KeyM'); // a key press lets the browser start sound
   check(await page.waitForFunction(() => Chip.playing, null, { timeout: 3000 }).then(() => true, () => false), 'the title screen plays its theme');
   await page.click('#ov .go');
   await wait(800);
   check(await page.evaluate(() => Chip.playing && Chip.level < 0.5), 'the music keeps playing through the game, a little quieter');
-  await page.keyboard.press('KeyP'); await page.click('#music');
-  check((await page.textContent('#music')) === 'MUSIC OFF' && (await page.evaluate(() => localStorage.getItem('arcade:music'))) === '0', 'MUSIC OFF is remembered');
-  await page.click('#crt');
-  check(await page.evaluate(() => document.body.classList.contains('crt')) && (await page.textContent('#crt')) === 'CRT FULL', 'CRT goes from LITE to FULL');
+  await page.click('#settings'); await page.waitForSelector('.set-panel');
+  check(/PAUSED/.test(await page.textContent('#ov')), 'opening settings mid-game pauses it');
+  check(await page.isVisible('[data-key="arcade:crt"] [data-v="lite"][aria-checked="true"]'), 'the settings panel shows the CRT look on LITE');
+  await page.click('#setMusic');
+  check((await page.getAttribute('#setMusic', 'aria-checked')) === 'false' && (await page.evaluate(() => localStorage.getItem('arcade:music'))) === '0' && await page.waitForFunction(() => !Chip.playing, null, { timeout: 2000 }).then(() => true, () => false), 'turning music off stops it, and is remembered');
+  await page.click('[data-key="arcade:crt"] [data-v="1"]');
+  check(await page.evaluate(() => document.body.classList.contains('crt')), 'CRT goes FULL');
+  await page.locator('[data-vol="arcade:vol:sfx"]').fill('40'); await page.click('[data-key="arcade:shake"] [data-v="0"]');
+  check(await page.evaluate(() => localStorage.getItem('arcade:vol:sfx') === '40' && localStorage.getItem('arcade:shake') === '0'), 'effects volume and screen shake are saved');
+  await page.keyboard.press('Escape');
+  check(await page.isHidden('.set') && /PAUSED/.test(await page.textContent('#ov')), 'Escape closes settings and leaves the game paused');
   await page.reload();
-  check(await page.evaluate(() => document.body.classList.contains('crt')) && (await page.textContent('#crt')) === 'CRT FULL', 'CRT is remembered');
-  await page.click('#crt');
-  check(await page.evaluate(() => !document.body.classList.contains('crt') && !document.body.classList.contains('crt-lite')) && (await page.textContent('#crt')) === 'CRT OFF', 'and then OFF');
+  check(await page.evaluate(() => document.body.classList.contains('crt')), 'CRT is remembered');
+  await page.click('#settings'); await page.click('[data-key="arcade:crt"] [data-v="0"]');
+  check(await page.evaluate(() => !document.body.classList.contains('crt') && !document.body.classList.contains('crt-lite')), 'and can be turned OFF');
+  check((await page.$$('.set-key')).length >= 3, 'games list their controls to remap');
+  await page.click('[data-bind="Space"]'); await page.keyboard.press('KeyK');
+  check(await page.evaluate(() => JSON.parse(localStorage.getItem('arcade:keys:swarm-strike')).KeyK === 'Space'), 'pressing a key gives that control a key of your own');
+  await page.keyboard.press('Escape'); await page.click('#ov .go'); await wait(200);
+  await page.keyboard.down('KeyK');
+  check(await page.evaluate(() => Arcade.held('Space')), 'and that key then works in the game');
+  await page.keyboard.up('KeyK');
   check(!errors.length, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
   await close();
 }
@@ -412,8 +426,10 @@ console.log('\nArcade floor');
 console.log('\nEasy mode');
 {
   const { page, errors, close } = await open('/games/star-siege/');
-  check((await page.textContent('#easy')) === 'EASY OFF', 'the header has an EASY button, off by default');
-  await page.click('#easy');
+  const easy = async () => { await page.click('#settings'); await page.click('#setEasy'); await page.keyboard.press('Escape'); };
+  check(await page.isHidden('.easy-tag') && await page.evaluate(() => !Arcade.easy), 'easy mode is off by default');
+  await easy();
+  check(await page.isVisible('.easy-tag'), 'turning it on in settings puts an EASY tag in the header');
   check(/EASY MODE ON/.test(await page.textContent('#ov')), 'the title screen says scores won\'t count');
   await page.click('#ov .go');
   check(await page.evaluate(() => Arcade.easy) && /lives = A\.easy \? 5 : 3/.test(await readFile(join(ROOT, 'games/star-siege/index.html'), 'utf8')), 'easy mode is on, and games with lives start with 5');
@@ -422,10 +438,10 @@ console.log('\nEasy mode');
   check(/SCORE NOT RECORDED/.test(await page.textContent('#ov')) && !(await page.isVisible('#ov .ini')), 'an easy run asks for no initials and says it isn\'t recorded');
   check(await page.evaluate(() => !localStorage.getItem('arcade:top:star-siege') && !localStorage.getItem('arcade:outbox') && !localStorage.getItem('arcade:badges:star-siege') && TICKETS.balance() === 20 && Arcade.best() === 0),
     'easy runs save no score, post nothing, and earn no badges or tickets');
-  await page.click('#easy'); // off again
+  await easy(); // off again
   await page.click('#ov .go'); await wait(300);
-  await page.keyboard.press('KeyP'); await page.click('#easy'); await page.click('#ov .go'); await wait(300); // a moment played in easy mode
-  await page.keyboard.press('KeyP'); await page.click('#easy'); await page.click('#ov .go'); await wait(200);
+  await page.keyboard.press('KeyP'); await easy(); await page.click('#ov .go'); await wait(300); // a moment played in easy mode
+  await page.keyboard.press('KeyP'); await easy(); await page.click('#ov .go'); await wait(200);
   await page.evaluate(() => { Arcade.submit(700); Arcade.overlay({ title: 'GAME OVER', btn: 'Again', onGo: () => {} }); });
   check(/SCORE NOT RECORDED/.test(await page.textContent('#ov')), 'switching easy mode on mid-run (even briefly) means that run doesn\'t count');
   await page.click('#ov .go'); await wait(300);
