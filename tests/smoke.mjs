@@ -704,6 +704,66 @@ console.log('\nCabinets page');
   await ph.close();
 }
 
+/* ---------- the lobby: welcome back, the featured banner, couch mode ---------- */
+console.log('\nLobby extras');
+{
+  const { page, errors, close } = await open('/?feature=twin-blast');
+  await page.evaluate(() => { localStorage.setItem('arcade:initials', 'QZX'); localStorage.setItem('arcade:plays:stackdown', '2'); });
+  await page.goto(BASE + '/?boot&feature=twin-blast'); await page.keyboard.press('Space');
+  check(await page.waitForFunction(() => /PLAYER \.+ QZX DETECTED/.test(document.getElementById('bootPost').textContent) && /WELCOME BACK, QZX/.test(document.getElementById('bootPost').textContent), null, { timeout: 6000 }).then(() => true, () => false), 'a returning player gets a personal BIOS: their initials, then WELCOME BACK');
+  check(/WELCOME BACK, QZX · LEVEL/.test(await page.textContent('#bootSub')), 'and the title says welcome back with their level');
+  await skipBoot(page);
+  const slides = await page.$$eval('#heroTrack > *:not([hidden])', s => s.length);
+  check(slides >= 3 && await page.isVisible('#hero') && (await page.$$('.hero-dots button')).length === slides, `the featured banner has ${slides} slides with a dot each`);
+  check(await page.evaluate(() => document.getElementById('heroTrack').firstElementChild.id === 'tourney'), 'the weekly tournament is its first slide');
+  await page.click('.hero-dots button:nth-child(2)'); await wait(700);
+  check((await page.getAttribute('.hero-dots button:nth-child(2)', 'aria-selected')) === 'true', 'a dot turns to its slide');
+  await page.evaluate(() => { document.activeElement.blur(); scrollTo(0, 0); });
+  await page.keyboard.press('ArrowDown');
+  check(await page.evaluate(() => document.documentElement.classList.contains('couch') && document.activeElement !== document.body && !document.activeElement.closest('.music-btn')), 'the arrow keys pick something on the page (couch mode)');
+  for (let i = 0; i < 9; i++) await page.keyboard.press('ArrowDown');
+  const on = await page.evaluate(() => document.activeElement.className);
+  check(/tile|gchip|cab|see/.test(on), `and keep going down through the page (now on ${on.split(' ')[0]})`);
+  await page.evaluate(() => document.querySelector('a.tile').focus());
+  await page.keyboard.press('f');
+  check(JSON.parse(await page.evaluate(() => localStorage.getItem('bitcade:favs') || '[]')).length === 1, 'F pins the highlighted cabinet');
+  check(!errors.length, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
+  await close();
+}
+
+/* ---------- the floor: new machines, pets, trails and emotes ---------- */
+console.log('\nFloor extras');
+{
+  const { page, errors, close } = await open('/');
+  await skipBoot(page);
+  await page.click('#vFloor'); await page.waitForFunction(() => window.Floor && Floor.state(), null, { timeout: 5000 });
+  await page.evaluate(() => Floor.goTo('wheel')); await wait(150); await page.keyboard.press('Enter'); await wait(150);
+  check((await page.evaluate(() => Floor.state().mode)) === 'wheel', 'the ticket wheel opens');
+  const t0 = await page.evaluate(() => TICKETS.balance());
+  await page.keyboard.press('Enter');
+  check(await page.waitForFunction(t0 => TICKETS.balance() > t0, t0, { timeout: 15000 }).then(() => true, () => false), 'a spin pays tickets');
+  await page.keyboard.press('Enter'); await wait(150);
+  await page.evaluate(() => Floor.goTo('wheel')); await wait(150); await page.keyboard.press('Enter'); await wait(150); const t1 = await page.evaluate(() => TICKETS.balance()); await page.keyboard.press('Enter'); await wait(800);
+  check(await page.evaluate(t1 => TICKETS.balance() === t1, t1), 'and only once a day');
+  await page.keyboard.press('Escape'); await wait(150);
+  for (const m of ['hoops', 'bop']) {
+    await page.evaluate(m => Floor.goTo(m), m); await wait(150); await page.keyboard.press('Enter'); await wait(150);
+    check((await page.evaluate(() => Floor.state().mode)) === m, `the ${m === 'hoops' ? 'hoop shooter' : 'Bop-a-Bot machine'} opens`);
+    await page.keyboard.press('Enter'); await wait(100); await page.keyboard.press(m === 'hoops' ? 'Space' : 'KeyS'); await wait(200);
+    await page.keyboard.press('Escape'); await wait(150);
+  }
+  check(await page.evaluate(() => ['robodog', 'pixelcat', 'slime', 'ufo', 'sparkle', 'neonprint', 'dance', 'robot'].every(id => Prizes.LIST.some(p => p.id === id))), 'the prize counter has pets, footstep trails and emotes');
+  await page.evaluate(() => { TICKETS.add(500); Prizes.buy('pixelcat'); Prizes.buy('rainbow'); Prizes.buy('dance'); });
+  check(await page.evaluate(() => Prizes.equipped().pet === 'pixelcat' && Prizes.equipped().trail === 'rainbow'), 'buying a pet or a trail wears it');
+  await page.keyboard.press('KeyE'); await wait(150);
+  check((await page.evaluate(() => Floor.state().mode)) === 'emotes', 'E opens the emote picker');
+  await page.keyboard.press('Digit3'); await wait(200);
+  check((await page.evaluate(() => Floor.state().mode)) === null, 'a number picks an emote (wave and cheer are free, dance came from the counter)');
+  await page.keyboard.down('ArrowRight'); await wait(500); await page.keyboard.up('ArrowRight');
+  check(!errors.length, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
+  await close();
+}
+
 /* ---------- loading ---------- */
 console.log('\nLoading');
 {

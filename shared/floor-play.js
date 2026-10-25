@@ -6,6 +6,7 @@
  * - The photo booth takes four shots of your arcade-goer in their outfit, as a strip you can save.
  * - The Mega Claw: three free goes a day (four with the prize counter's Claw Machine), for tickets.
  * - The snack bar hands you a soda.
+ * - The hoop shooter, the ticket wheel (one free spin a day, bitcade:wheel) and Bop-a-Bot, by the prize corner and the entrance.
  * - Sound: a crowd murmur, cabinets bleeping as you pass (louder when near, panned left or right), footsteps,
  *   a jingle when a cabinet notices you, cheers. Silent when SOUND is off (arcade:muted).
  */
@@ -885,6 +886,222 @@ window.FloorPlay = kit => {
     };
   }
 
+  /* ---------- hoop shooter: 40 seconds; shoot as the marker sweeps past the hoop; the hoop moves for the last 20 ---------- */
+  function hoops() {
+    const LEN = 40, BX = VW / 2, RIM = 196, BAR = 360, BY = 528;
+    let st, t, score, made, streak, balls, best, res, shotT, pops, msgs;
+    const reset = () => { st = 'ready'; t = 0; score = 0; made = 0; streak = 0; balls = []; best = bestOf('bitcade:hoops:best'); res = null; shotT = 0; pops = []; msgs = []; };
+    reset();
+    const hoopX = () => t > LEN - 20 ? BX + Math.sin((t - (LEN - 20)) * 1.6) * 130 : BX;
+    const aim = () => Math.sin(t * (2.3 + Math.min(1.4, t / 30))); // -1 … 1 along the bar
+    function shoot() {
+      if (st === 'over') return reset();
+      if (st === 'ready') st = 'play';
+      if (shotT > 0) return; shotT = 0.32;
+      const tx = BX + aim() * 180; balls.push({ x0: BX + aim() * 40, tx, k: 0, done: false }); sound.thud();
+    }
+    function land(b) {
+      const off = Math.abs(b.tx - hoopX());
+      if (off < 30) {
+        streak++; const pts = (off < 12 ? 3 : 2) * (streak >= 5 ? 2 : 1); score += pts; made++;
+        b.in = true; pops.push({ x: hoopX(), y: RIM - 30, text: `${off < 12 ? 'SWISH! ' : ''}+${pts}`, t: 1 }); sound.fanfare();
+        if (streak === 5) msgs.push({ text: 'ON FIRE! DOUBLE POINTS', t: 1.6 });
+      } else { streak = 0; b.miss = b.tx < hoopX() ? -1 : 1; sound.clank(); }
+    }
+    function finish() {
+      st = 'over'; res = award(Math.floor(score / 10)); mission({ type: 'hoops', score });
+      if (score > best) { set('bitcade:hoops:best', score); best = score; if (score) kit.say(`NEW HOOP SHOOTER BEST: ${score}!`, 2.6, true); }
+    }
+    return {
+      name: 'hoops',
+      draw(x, now, dt) {
+        dt = Math.min(0.033, dt || 0.016);
+        if (st === 'play') { t += dt; if (t >= LEN) finish(); }
+        else if (st === 'ready') t = (t + dt) % 6;
+        if (shotT > 0) shotT -= dt;
+        // the court: a dark arena, a backboard with a lit square, the rim and net
+        const g = x.createLinearGradient(0, 0, 0, VH); g.addColorStop(0, '#0c0a24'); g.addColorStop(1, '#1e0e2e'); x.fillStyle = g; x.fillRect(0, 0, VW, VH);
+        x.strokeStyle = 'rgba(255,138,61,.25)'; x.lineWidth = 2; for (let i = 0; i < 9; i++) { x.beginPath(); x.moveTo(VW / 2 + (i - 4) * 90, VH); x.lineTo(VW / 2 + (i - 4) * 30, 360); x.stroke(); }
+        const hx = hoopX();
+        x.fillStyle = OUT; x.fillRect(hx - 92, 70, 184, 122); x.fillStyle = '#e8f4ff'; x.fillRect(hx - 88, 74, 176, 114);
+        x.strokeStyle = '#ff4f6d'; x.lineWidth = 4; x.strokeRect(hx - 30, 120, 60, 46);
+        x.fillStyle = OUT; x.fillRect(hx - 6, 192, 12, 12);
+        // the net, behind the ball, then the rim in front
+        x.strokeStyle = 'rgba(255,255,255,.8)'; x.lineWidth = 1.5; for (let i = 0; i <= 6; i++) { x.beginPath(); x.moveTo(hx - 30 + i * 10, RIM); x.lineTo(hx - 18 + i * 6, RIM + 44); x.stroke(); }
+        x.beginPath(); x.moveTo(hx - 24, RIM + 16); x.lineTo(hx + 24, RIM + 16); x.moveTo(hx - 20, RIM + 32); x.lineTo(hx + 20, RIM + 32); x.stroke();
+        // balls on their arcs: up from the bottom, down through (or off) the rim
+        for (const b of balls) {
+          b.k += dt / 0.72; if (b.k >= 0.86 && !b.done) { b.done = true; land(b); }
+          const k = Math.min(b.k, 1.6), u = Math.min(1, k / 0.86), fall = Math.max(0, k - 0.86);
+          const px = b.x0 + (b.tx - b.x0) * u + (b.miss ? b.miss * fall * 220 : 0);
+          const py = (BY - 30) + (RIM - 8 - (BY - 30)) * u - Math.sin(u * Math.PI) * 190 + fall * (b.in ? 300 : 120) + (b.miss ? -Math.sin(Math.min(1, fall * 4) * Math.PI) * 40 : 0);
+          const r = 18 - Math.min(1, k / 0.86) * 6;
+          x.fillStyle = OUT; x.beginPath(); x.arc(px, py, r + 2, 0, 6.29); x.fill();
+          const bg = x.createRadialGradient(px - r * 0.3, py - r * 0.4, 1, px, py, r); bg.addColorStop(0, '#ffb070'); bg.addColorStop(1, '#d8601a'); x.fillStyle = bg; x.beginPath(); x.arc(px, py, r, 0, 6.29); x.fill();
+          x.strokeStyle = 'rgba(40,10,0,.6)'; x.lineWidth = 1.2; x.beginPath(); x.moveTo(px - r, py); x.lineTo(px + r, py); x.moveTo(px, py - r); x.lineTo(px, py + r); x.stroke();
+        }
+        balls = balls.filter(b => b.k < 1.6);
+        x.fillStyle = OUT; x.fillRect(hx - 34, RIM - 3, 68, 7); x.fillStyle = '#ff7a3d'; x.fillRect(hx - 32, RIM - 2, 64, 5);
+        for (const p of pops) { p.t -= dt; x.globalAlpha = Math.max(0, Math.min(1, p.t * 2)); kit.neon(x, p.text, p.x, p.y - (1 - p.t) * 40, 22, '#3dff8f'); x.globalAlpha = 1; } pops = pops.filter(p => p.t > 0);
+        for (const m of msgs) { m.t -= dt; x.globalAlpha = Math.max(0, Math.min(1, m.t * 2)); kit.neon(x, m.text, VW / 2, 300, 24, '#ff7a3d'); x.globalAlpha = 1; } msgs = msgs.filter(m => m.t > 0);
+        // the aim bar: the marker sweeps; the hoop's spot is marked on it
+        x.fillStyle = OUT; x.fillRect(VW / 2 - BAR / 2 - 3, BY - 3, BAR + 6, 22); x.fillStyle = '#2a2054'; x.fillRect(VW / 2 - BAR / 2, BY, BAR, 16);
+        const zx = VW / 2 + (hx - BX) / 180 * BAR / 2; x.fillStyle = 'rgba(61,255,143,.5)'; x.fillRect(zx - 30 / 180 * BAR / 2, BY, 60 / 180 * BAR / 2, 16); x.fillStyle = '#3dff8f'; x.fillRect(zx - 12 / 180 * BAR / 2, BY, 24 / 180 * BAR / 2, 16);
+        const mx = VW / 2 + aim() * BAR / 2; x.fillStyle = '#fff'; x.fillRect(mx - 2, BY - 6, 4, 28);
+        // the scoreboard
+        x.font = '12px Silkscreen, monospace'; x.textAlign = 'left'; x.textBaseline = 'middle'; x.fillStyle = 'rgba(255,255,255,.6)'; x.fillText('SCORE', 40, 60); x.fillText('TIME', VW - 140, 60);
+        kit.neon(x, String(score), 80, 100, 34, '#ff7a3d'); kit.neon(x, String(Math.max(0, Math.ceil(LEN - (st === 'play' || st === 'over' ? t : 0)))), VW - 100, 100, 34, t > LEN - 10 && st === 'play' ? '#ff4f6d' : '#5ee7ff');
+        x.font = '10px Silkscreen, monospace'; x.textAlign = 'left'; x.fillStyle = '#ffd23d'; x.fillText(`BEST ${best}${streak >= 5 ? ' · ON FIRE ×2' : streak > 1 ? ' · STREAK ' + streak : ''}`, 40, 140);
+        if (st === 'ready') { kit.neon(x, 'HOOP SHOOTER', VW / 2, 300, 34, '#ff7a3d'); hint(x, 'SHOOT WHEN THE MARKER IS IN THE GREEN · ENTER, SPACE OR TAP', 350); }
+        if (t > LEN - 20 && t < LEN - 19 && st === 'play') kit.neon(x, 'THE HOOP IS MOVING!', VW / 2, 300, 24, '#ffd23d');
+        hint(x, 'SHOOT: ENTER, SPACE, TAP OR A · ESC LEAVE', VH - 12);
+        if (st === 'over') gameOver(x, score, best, res, '#ff7a3d');
+      },
+      key(c) { if (isClose(c)) { sound.back(); return kit.close(); } if (c === 'Enter' || c === 'Space' || isUp(c)) shoot(); },
+      tap() { shoot(); }
+    };
+  }
+
+  /* ---------- the ticket wheel: one free spin a day, 5 to 100 tickets ---------- */
+  const WHEEL = [5, 10, 5, 20, 5, 10, 15, 5, 50, 10, 5, 25, 10, 5, 15, 100];
+  const spunToday = () => get('bitcade:wheel') === today();
+  function wheel() {
+    const CX = VW / 2, CY = 300, R = 200, N = WHEEL.length, cols = ['#ff4f6d', '#5ee7ff', '#ffd23d', '#b86bff', '#3dff8f', '#ff7a3d', '#ff4fd1', '#3d7bff'];
+    let ang = Math.random() * 6.28, vel = 0, st = spunToday() ? 'done' : 'ready', won = 0, wonT = 0, lastSeg = -1;
+    const segAt = a => { const k = ((-Math.PI / 2 - a) % 6.2832 + 6.2832) % 6.2832; return Math.floor(k / (6.2832 / N)) % N; }; // the segment under the pointer at the top
+    function spin() {
+      if (st === 'done' || st === 'won') return kit.close();
+      if (st !== 'ready') return;
+      st = 'spin'; vel = 13 + Math.random() * 7; set('bitcade:wheel', today()); sound.enter('#ffd23d');
+    }
+    return {
+      name: 'wheel',
+      draw(x, now, dt) {
+        dt = Math.min(0.033, dt || 0.016);
+        if (st === 'spin') {
+          ang += vel * dt; vel *= Math.pow(0.48, dt); vel -= dt * 0.35;
+          const s = segAt(ang); if (s !== lastSeg) { lastSeg = s; sound.beep(false); }
+          if (vel <= 0.05) { vel = 0; st = 'won'; won = WHEEL[segAt(ang)]; wonT = 0; TICKETS.add(won); xp(8); kit.opt.onTickets && kit.opt.onTickets(); sound.fanfare(); kit.say(won >= 50 ? `JACKPOT! ${won} TICKETS!` : `+${won} TICKETS FROM THE WHEEL!`, 3, true); }
+        } else if (st === 'ready' || st === 'done') ang += dt * 0.25;
+        wonT += dt;
+        x.fillStyle = 'rgba(5,2,12,.92)'; x.fillRect(0, 0, VW, VH);
+        // lights round the rim
+        for (let i = 0; i < 32; i++) { const a = i / 32 * 6.283, on = Math.floor(now / 140 + i) % 2; x.fillStyle = on ? '#fff6c2' : '#7a5a2a'; x.beginPath(); x.arc(CX + Math.cos(a) * (R + 26), CY + Math.sin(a) * (R + 26), 5, 0, 6.29); x.fill(); }
+        x.fillStyle = OUT; x.beginPath(); x.arc(CX, CY, R + 14, 0, 6.29); x.fill(); x.fillStyle = '#c89a2a'; x.beginPath(); x.arc(CX, CY, R + 10, 0, 6.29); x.fill();
+        for (let i = 0; i < N; i++) {
+          const a0 = ang + i / N * 6.2832, a1 = a0 + 6.2832 / N, c = WHEEL[i] === 100 ? '#ffd23d' : cols[i % cols.length];
+          x.fillStyle = c; x.beginPath(); x.moveTo(CX, CY); x.arc(CX, CY, R, a0, a1); x.closePath(); x.fill();
+          x.strokeStyle = OUT; x.lineWidth = 2; x.stroke();
+          x.save(); x.translate(CX, CY); x.rotate((a0 + a1) / 2); x.font = `${WHEEL[i] >= 50 ? 22 : 18}px Bungee, sans-serif`; x.textAlign = 'right'; x.textBaseline = 'middle';
+          x.fillStyle = OUT; x.fillText(String(WHEEL[i]), R - 14 + 1, 2); x.fillStyle = WHEEL[i] === 100 ? '#c8203a' : '#fff'; x.fillText(String(WHEEL[i]), R - 14, 0); x.restore();
+        }
+        x.fillStyle = OUT; x.beginPath(); x.arc(CX, CY, 34, 0, 6.29); x.fill(); x.fillStyle = '#ffd23d'; x.beginPath(); x.arc(CX, CY, 30, 0, 6.29); x.fill();
+        x.font = '10px Silkscreen, monospace'; x.textAlign = 'center'; x.fillStyle = OUT; x.fillText('SPIN', CX, CY);
+        // the pointer
+        x.fillStyle = OUT; x.beginPath(); x.moveTo(CX - 18, CY - R - 34); x.lineTo(CX + 18, CY - R - 34); x.lineTo(CX, CY - R + 8); x.fill(); x.fillStyle = '#ff4f6d'; x.beginPath(); x.moveTo(CX - 13, CY - R - 31); x.lineTo(CX + 13, CY - R - 31); x.lineTo(CX, CY - R + 2); x.fill();
+        kit.neon(x, 'TICKET WHEEL', CX, 34, 26, '#ffd23d');
+        if (st === 'ready') hint(x, 'ONE FREE SPIN A DAY · ENTER, SPACE OR TAP TO SPIN · ESC LEAVE', VH - 14);
+        if (st === 'spin') hint(x, 'ROUND AND ROUND IT GOES…', VH - 14);
+        if (st === 'won') { x.globalAlpha = Math.min(1, wonT * 3); kit.neon(x, `+${won} TICKETS!`, CX, CY + R + 46, 30, won >= 50 ? '#ffd23d' : '#3dff8f'); x.globalAlpha = 1; hint(x, 'COME BACK TOMORROW FOR ANOTHER SPIN · ENTER TO CLOSE', VH - 14); }
+        if (st === 'done') { kit.neon(x, 'SPUN TODAY', CX, CY + R + 46, 24, '#a39bc4'); hint(x, 'ONE FREE SPIN A DAY · COME BACK TOMORROW · ESC LEAVE', VH - 14); }
+      },
+      key(c) { if (isClose(c)) { if (st === 'spin') return; sound.back(); return kit.close(); } if (c === 'Enter' || c === 'Space') spin(); },
+      tap() { spin(); }
+    };
+  }
+
+  /* ---------- bop-a-bot: robots pop out of nine holes; bop them (gold ones are worth 3), leave the bombs alone ---------- */
+  function bop() {
+    const LEN = 30, GX = VW / 2 - 160, GY = 190, DX = 160, DY = 120, KEYS = [['KeyQ', 'Numpad7', 'Digit7'], ['KeyW', 'Numpad8', 'Digit8'], ['KeyE', 'Numpad9', 'Digit9'], ['KeyA', 'Numpad4', 'Digit4'], ['KeyS', 'Numpad5', 'Digit5'], ['KeyD', 'Numpad6', 'Digit6'], ['KeyZ', 'Numpad1', 'Digit1'], ['KeyX', 'Numpad2', 'Digit2'], ['KeyC', 'Numpad3', 'Digit3']];
+    let st, t, score, holes, spawnT, cur, best, res, pops, hit;
+    const reset = () => { st = 'ready'; t = 0; score = 0; holes = Array.from({ length: 9 }, () => null); spawnT = 0.5; cur = 4; best = bestOf('bitcade:bop:best'); res = null; pops = []; hit = null; };
+    reset();
+    const pos = i => [GX + (i % 3) * DX, GY + Math.floor(i / 3) * DY];
+    function whack(i) {
+      if (st === 'over') return reset();
+      if (st === 'ready') { st = 'play'; return; }
+      cur = i; hit = { i, t: 0.16 };
+      const h = holes[i];
+      if (h && h.up > 0.15 && !h.hit) {
+        h.hit = true; h.life = Math.min(h.life, 0.25);
+        const pts = h.kind === 'bomb' ? -3 : h.kind === 'gold' ? 3 : 1; score = Math.max(0, score + pts);
+        const [px, py] = pos(i); pops.push({ x: px, y: py - 50, text: pts > 0 ? '+' + pts : String(pts), c: pts > 0 ? (h.kind === 'gold' ? '#ffd23d' : '#3dff8f') : '#ff4f6d', t: 1 });
+        if (h.kind === 'bomb') { sound.thud(); sound.back(); } else { sound.clank(); if (h.kind === 'gold') sound.fanfare(); }
+      } else sound.thud();
+    }
+    function finish() {
+      st = 'over'; res = award(Math.floor(score / 5)); mission({ type: 'bop', score });
+      if (score > best) { set('bitcade:bop:best', score); best = score; if (score) kit.say(`NEW BOP-A-BOT BEST: ${score}!`, 2.6, true); }
+    }
+    return {
+      name: 'bop', allKeys: true,
+      draw(x, now, dt) {
+        dt = Math.min(0.033, dt || 0.016);
+        if (st === 'play') {
+          t += dt; if (t >= LEN) finish();
+          spawnT -= dt;
+          if (spawnT <= 0 && st === 'play') {
+            spawnT = Math.max(0.32, 0.7 - t * 0.012); const free = holes.map((h, i) => h ? -1 : i).filter(i => i >= 0);
+            if (free.length) { const r = Math.random(), kind = t > 6 && r < 0.14 ? 'bomb' : r > 0.9 ? 'gold' : 'bot'; holes[pick(free)] = { kind, up: 0, life: Math.max(0.55, 1.05 - t * 0.016), hit: false }; }
+          }
+          holes.forEach((h, i) => { if (!h) return; h.life -= dt; h.up = h.life > 0 ? Math.min(1, h.up + dt * 7) : h.up - dt * 7; if (h.up <= 0 && h.life <= 0) holes[i] = null; });
+        }
+        if (hit) { hit.t -= dt; if (hit.t <= 0) hit = null; }
+        x.fillStyle = 'rgba(5,2,12,.94)'; x.fillRect(0, 0, VW, VH);
+        // the cabinet top: a purple deck with nine holes
+        x.fillStyle = OUT; x.fillRect(GX - 104, GY - 96, DX * 2 + 208, DY * 2 + 172); x.fillStyle = '#3a2468'; x.fillRect(GX - 100, GY - 92, DX * 2 + 200, DY * 2 + 164);
+        x.fillStyle = 'rgba(255,255,255,.06)'; for (let i = 0; i < 10; i++) x.fillRect(GX - 100, GY - 92 + i * 41, DX * 2 + 200, 2);
+        holes.forEach((h, i) => {
+          const [px, py] = pos(i);
+          x.fillStyle = OUT; x.beginPath(); x.ellipse(px, py + 10, 52, 20, 0, 0, 6.29); x.fill(); x.fillStyle = '#0a0418'; x.beginPath(); x.ellipse(px, py + 10, 48, 17, 0, 0, 6.29); x.fill();
+          if (h) {
+            const k = Math.max(0, Math.min(1, h.up)), by = py + 10 - k * 52;
+            x.save(); x.beginPath(); x.rect(px - 60, py - 80, 120, 90); x.ellipse(px, py + 10, 48, 17, 0, 0, Math.PI); x.clip();
+            if (h.kind === 'bomb') {
+              x.fillStyle = OUT; x.beginPath(); x.arc(px, by + 14, 26, 0, 6.29); x.fill(); x.fillStyle = '#2a2a34'; x.beginPath(); x.arc(px, by + 14, 23, 0, 6.29); x.fill();
+              x.fillStyle = 'rgba(255,255,255,.3)'; x.beginPath(); x.arc(px - 8, by + 6, 6, 0, 6.29); x.fill();
+              x.strokeStyle = '#c8a040'; x.lineWidth = 3; x.beginPath(); x.moveTo(px + 10, by - 6); x.quadraticCurveTo(px + 20, by - 18, px + 14, by - 26); x.stroke();
+              x.fillStyle = Math.floor(now / 80) % 2 ? '#ffd23d' : '#ff4f6d'; x.beginPath(); x.arc(px + 14, by - 28, 5, 0, 6.29); x.fill();
+            } else {
+              const body = h.hit ? '#ffffff' : h.kind === 'gold' ? '#ffd23d' : '#5ee7ff';
+              x.fillStyle = OUT; x.fillRect(px - 30, by - 8, 60, 52); x.fillRect(px - 3, by - 24, 6, 18);
+              const bg = x.createLinearGradient(0, by - 6, 0, by + 42); bg.addColorStop(0, kit.shade(body, 0.3)); bg.addColorStop(1, kit.shade(body, -0.35)); x.fillStyle = bg; x.fillRect(px - 27, by - 5, 54, 46);
+              x.fillStyle = '#ff4f6d'; x.beginPath(); x.arc(px, by - 26, 5, 0, 6.29); x.fill();
+              x.fillStyle = OUT; x.fillRect(px - 20, by + 6, 40, 16); x.fillStyle = h.hit ? '#ff4f6d' : '#3dff8f';
+              if (h.hit) { x.font = '12px Silkscreen, monospace'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('x  x', px, by + 14); } else { x.fillRect(px - 15, by + 10, 9, 8); x.fillRect(px + 6, by + 10, 9, 8); }
+              x.fillStyle = kit.shade(body, -0.4); x.fillRect(px - 12, by + 28, 24, 4);
+            }
+            x.restore();
+          }
+          x.fillStyle = OUT; x.beginPath(); x.ellipse(px, py + 10, 52, 20, 0, 0, Math.PI); x.lineTo(px - 52, py + 22); x.ellipse(px, py + 22, 52, 14, 0, Math.PI, 0, true); x.fill(); // the hole's front lip
+          if (i === cur && st !== 'over') { x.strokeStyle = '#ffd23d'; x.lineWidth = 3; x.setLineDash([6, 4]); x.beginPath(); x.ellipse(px, py + 10, 60, 26, 0, 0, 6.29); x.stroke(); x.setLineDash([]); }
+          x.font = '9px Silkscreen, monospace'; x.textAlign = 'center'; x.fillStyle = 'rgba(255,255,255,.35)'; x.fillText('QWEASDZXC'[i], px + 44, py + 34);
+        });
+        // the mallet coming down
+        if (hit) { const [px, py] = pos(hit.i), k = hit.t / 0.16; x.save(); x.translate(px + 40, py - 40 - k * 30); x.rotate(-0.6 - k * 0.6); kit.paint(x, [[-4, -6, 8, 70, '#a8703a'], [-26, -30, 52, 30, '#ff4f6d']]); x.restore(); }
+        for (const p of pops) { p.t -= dt; x.globalAlpha = Math.max(0, Math.min(1, p.t * 2)); kit.neon(x, p.text, p.x, p.y - (1 - p.t) * 40, 22, p.c); x.globalAlpha = 1; } pops = pops.filter(p => p.t > 0);
+        x.font = '12px Silkscreen, monospace'; x.textAlign = 'left'; x.textBaseline = 'middle'; x.fillStyle = 'rgba(255,255,255,.6)'; x.fillText('SCORE', 40, 60); x.fillText('TIME', VW - 140, 60);
+        kit.neon(x, String(score), 80, 100, 34, '#5ee7ff'); kit.neon(x, String(Math.max(0, Math.ceil(LEN - (st === 'ready' ? 0 : t)))), VW - 100, 100, 34, t > LEN - 5 && st === 'play' ? '#ff4f6d' : '#ffd23d');
+        x.font = '10px Silkscreen, monospace'; x.textAlign = 'left'; x.fillStyle = '#ffd23d'; x.fillText(`BEST ${best}`, 40, 140);
+        kit.neon(x, 'BOP-A-BOT', VW / 2, 40, 26, '#5ee7ff');
+        if (st === 'ready') { x.fillStyle = 'rgba(5,2,12,.7)'; x.fillRect(VW / 2 - 230, 250, 460, 110); kit.neon(x, 'BOP THE BOTS!', VW / 2, 284, 28, '#5ee7ff'); hint(x, 'GOLD ONES ARE WORTH 3 · LEAVE THE BOMBS ALONE · ENTER OR TAP TO START', 330); }
+        hint(x, 'TAP A HOLE · QWE ASD ZXC OR 1-9 · ARROWS AND ENTER · ESC LEAVE', VH - 12);
+        if (st === 'over') gameOver(x, score, best, res, '#5ee7ff');
+      },
+      key(c) {
+        if (isClose(c)) { sound.back(); return kit.close(); }
+        const h = KEYS.findIndex(ks => ks.includes(c)); if (h >= 0) return st === 'play' ? whack(h) : whack(cur); // QWE / ASD / ZXC and the number keys bop that hole
+        if (/^Arrow/.test(c)) { if (st === 'ready') return; const r = Math.floor(cur / 3), q = cur % 3; cur = (c === 'ArrowUp' ? Math.max(0, r - 1) : c === 'ArrowDown' ? Math.min(2, r + 1) : r) * 3 + (c === 'ArrowLeft' ? Math.max(0, q - 1) : c === 'ArrowRight' ? Math.min(2, q + 1) : q); sound.select(); return; }
+        if (c === 'Enter' || c === 'Space') whack(cur);
+      },
+      tap(px, py) {
+        if (st !== 'play') return whack(cur);
+        let bi = -1, bd = 1e9; for (let i = 0; i < 9; i++) { const [hx, hy] = pos(i), d = Math.hypot(px - hx, (py - hy + 10) * 1.3); if (d < bd) { bd = d; bi = i; } }
+        if (bd < 90) whack(bi);
+      }
+    };
+  }
+
   /* ---------- using things ---------- */
   function use(o) {
     if (o.kind === 'jukebox') return kit.open(jukebox());
@@ -894,6 +1111,9 @@ window.FloorPlay = kit => {
     if (o.kind === 'records') return kit.open(records());
     if (o.kind === 'hockey') return kit.open(hockey());
     if (o.kind === 'golf') return kit.open(golf());
+    if (o.kind === 'hoops') return kit.open(hoops());
+    if (o.kind === 'wheel') return kit.open(wheel());
+    if (o.kind === 'bop') return kit.open(bop());
     if (o.kind === 'vipbar') { kit.staffSay('bartender', pick(['ONE GOLDEN SODA, SIR OR MADAM.', 'ON THE HOUSE, VIP.', 'SPARKLING GOLD. ENJOY.'])); kit.me.prop = 'gold'; kit.me.propT = 90; sound.fizz(); return; }
     if (o.kind === 'skee') { o.user = kit.me; return kit.open(skee(o)); }
     if (o.kind === 'pinball') { o.user = kit.me; return kit.open(pinball(o)); }
@@ -910,6 +1130,9 @@ window.FloorPlay = kit => {
     if (o.kind === 'pinball') return { title: `${o.name} PINBALL`, sub: `THREE BALLS · BEST ${bestOf('bitcade:pinball:best').toLocaleString()} · a ticket per 4,000 (${left()} more today)`, btn: 'PLAY ▶', c: o.c };
     if (o.kind === 'hockey') return { title: 'AIR HOCKEY', sub: `YOU AGAINST THE HOUSE · FIRST TO 7 · WINS ${+get('bitcade:hockey:wins') || 0} · 3 tickets a win (${left()} more today)`, btn: 'PLAY ▶', c: '#5ee7ff' };
     if (o.kind === 'golf') return { title: 'MINI GOLF', sub: `SIX HOLES, PAR ${HOLES.reduce((a, b) => a + b.par, 0)} · BEST ${+get('bitcade:golf:best') || '—'} · tickets for going under par (${left()} more today)`, btn: 'PLAY ▶', c: '#3dff8f' };
+    if (o.kind === 'hoops') return { title: 'HOOP SHOOTER', sub: `40 SECONDS · BEST ${bestOf('bitcade:hoops:best')} · a ticket per 10 points (${left()} more today)`, btn: 'PLAY ▶', c: '#ff7a3d' };
+    if (o.kind === 'wheel') return spunToday() ? { title: 'TICKET WHEEL', sub: 'SPUN TODAY · one free spin a day, come back tomorrow', btn: 'LOOK ▶', c: '#ffd23d' } : { title: 'TICKET WHEEL', sub: 'ONE FREE SPIN A DAY · 5 to 100 tickets', btn: 'SPIN ▶', c: '#ffd23d' };
+    if (o.kind === 'bop') return { title: 'BOP-A-BOT', sub: `30 SECONDS · BEST ${bestOf('bitcade:bop:best')} · a ticket per 5 points (${left()} more today)`, btn: 'PLAY ▶', c: '#5ee7ff' };
     if (o.kind === 'records') return { title: 'YOUR RECORDS', sub: 'Every best score you hold, your badges and your totals', btn: 'LOOK ▶', c: '#ffd23d' };
     if (o.kind === 'vipbar') return { title: 'GOLDEN SODA BAR', sub: 'VIPs drink gold. It tastes like winning.', btn: 'ORDER ▶', c: '#ffd23d' };
     if (o.kind === 'snack') return { title: 'SNACK BAR', sub: 'Free sodas. It’s that kind of arcade.', btn: 'GRAB ONE ▶', c: '#ffb03d' };

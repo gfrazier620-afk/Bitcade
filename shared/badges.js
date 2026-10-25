@@ -237,7 +237,7 @@ window.MISSIONS = (() => {
       { kind: 'daily', game: pick(DAILY), n: 1 }
     ];
     if (feat && TARGETS[feat]) plays.push({ kind: 'tour', game: feat, n: 1 }, { kind: 'tour', game: feat, n: 1 });
-    const floor = [{ kind: 'skee', n: 250 }, { kind: 'skee', n: 300 }, { kind: 'pinball', n: 8000 }, { kind: 'pinball', n: 12000 }, { kind: 'claw', n: 1 }, { kind: 'photo', n: 1 }, { kind: 'blip', n: 1 }];
+    const floor = [{ kind: 'skee', n: 250 }, { kind: 'skee', n: 300 }, { kind: 'pinball', n: 8000 }, { kind: 'pinball', n: 12000 }, { kind: 'claw', n: 1 }, { kind: 'photo', n: 1 }, { kind: 'blip', n: 1 }, { kind: 'hoops', n: 20 }, { kind: 'bop', n: 20 }];
     const t = TARGETS[g] * (r() < 0.3 ? 2 : 1);
     return { d, list: [{ kind: 'score', game: g, n: t }, pick(plays), pick(floor)].map((m, i) => ({ id: i, prog: 0, done: false, seen: [], ...m })), bonus: false };
   }
@@ -257,10 +257,12 @@ window.MISSIONS = (() => {
     pinball: () => `Score ${m.n.toLocaleString()} in pinball`,
     claw: () => 'Win tickets at the Mega Claw',
     photo: () => 'Take a photo booth strip',
-    blip: () => 'Win a game of Blip Sports'
+    blip: () => 'Win a game of Blip Sports',
+    hoops: () => `Score ${m.n} at the hoop shooter`,
+    bop: () => `Bop ${m.n} points at Bop-a-Bot`
   }[m.kind] || (() => 'Mission'))();
   /** Where you go to do it: a game page, or the arcade floor. */
-  const where = m => m.game ? `games/${m.game}/` : ['skee', 'pinball', 'claw', 'photo'].includes(m.kind) ? 'floor' : m.kind === 'blip' ? 'games/blip-sports/' : null;
+  const where = m => m.game ? `games/${m.game}/` : ['skee', 'pinball', 'claw', 'photo', 'hoops', 'bop'].includes(m.kind) ? 'floor' : m.kind === 'blip' ? 'games/blip-sports/' : null;
   /** Count an event; returns { done: [missions just finished], tickets, all }. */
   function record(ev) {
     const m = load(), done = [];
@@ -277,6 +279,7 @@ window.MISSIONS = (() => {
       }
       if (ev.type === 'skee' && x.kind === 'skee') p = Math.max(p, ev.score);
       if (ev.type === 'pinball' && x.kind === 'pinball') p = Math.max(p, ev.score);
+      if ((ev.type === 'hoops' || ev.type === 'bop') && x.kind === ev.type) p = Math.max(p, ev.score);
       if (ev.type === 'claw' && x.kind === 'claw' && ev.won) p = 1;
       if (ev.type === 'photo' && x.kind === 'photo') p = 1;
       if (ev.type === 'blip-win' && x.kind === 'blip') p = 1;

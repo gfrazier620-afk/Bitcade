@@ -141,6 +141,9 @@
   function flight(cv) {
     const c = cv.getContext('2d'), sunCv = document.createElement('canvas'), sc = sunCv.getContext('2d');
     const games = (window.Boot.games && window.Boot.games.list) || [], pal = (window.Boot.games && window.Boot.games.pal) || {};
+    // each cabinet's real footage (icons/screens, the same two frames as the lobby), with the pixel icon until it loads
+    const shots = new Map(games.map(g => [g.slug, [1, 2].map(n => { const im = new Image(); im.decoding = 'async'; im.src = `icons/screens/${g.slug}-${n}.webp`; return im; })]));
+    const ready = im => im && im.complete && im.naturalWidth > 0;
     let W = 0, H = 0, dpr = 1, raf = 0, last = 0, t = 0, camZ = 0, camX = 0, speed = 0, phase = 'idle';
     let rise = 0, flash = 0, shake = 0, bolts = [], boltT = 0, passed = 0, fog = 0;
     const rnd = (a, b) => a + Math.random() * (b - a);
@@ -243,8 +246,18 @@
         const s0 = Math.max(zn, zc + 9), s1 = zf - 9, y0 = 64, y1 = 118;
         if (s1 > s0) {
           face(y0, y1, s0, s1); c.fillStyle = '#05020c'; c.fill();
-          const px = (Math.floor(t * 2) % 2 && g.px2) || g.px;
-          if (px && dz < 2600 && zc + 9 > camZ + 30) {
+          const px = (Math.floor(t * 2) % 2 && g.px2) || g.px, im = (shots.get(g.slug) || [])[Math.floor(t / 1.6 + (zc / SPACE) * 0.5) % 2];
+          if (ready(im) && dz < 3200 && zc + 9 > camZ + 30) {
+            // the footage in thin upright strips along the screen face, so it keeps its perspective
+            const N = dz < 900 ? 18 : 10, sw = im.naturalWidth, sh = im.naturalHeight;
+            for (let k = 0; k < N; k++) {
+              const za = zc + 9 + (CW - 18) * k / N, zb = za + (CW - 18) / N, u = side > 0 ? 1 - (k + 1) / N : k / N;
+              const a = P(x, y1 - 3, za), b = P(x, y0 + 3, zb), x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]);
+              const top = Math.min(P(x, y1 - 3, za)[1], P(x, y1 - 3, zb)[1]), bot = Math.max(P(x, y0 + 3, za)[1], P(x, y0 + 3, zb)[1]);
+              if (x1 - x0 < 0.2) continue;
+              c.drawImage(im, u * sw, sh * 0.06, sw / N, sh * 0.88, x0, top, x1 - x0 + 0.6, bot - top);
+            }
+          } else if (px && dz < 2600 && zc + 9 > camZ + 30) {
             for (let j = 0; j < 8; j++) for (let i = 0; i < 12; i++) {
               const ch = px[j][i], pcol = pal[ch]; if (!pcol) continue;
               // read left to right as seen from the road
@@ -305,6 +318,7 @@
       const dt = Math.min(0.05, last ? (now - last) / 1000 : 0.016); last = now; t += dt;
       if (phase === 'fly') { const k = Math.min(1, t / 3); speed = 900 + 2600 * Math.pow(1 - k, 1.6); rise = Math.min(1, t / 2.8); }
       else if (phase === 'cruise') { speed += (240 - speed) * Math.min(1, dt * 1.2); rise = Math.min(1, rise + dt); }
+      else if (phase === 'dive') { speed += (7000 - speed) * Math.min(1, dt * 2.5); flash = Math.max(flash, Math.min(0.5, (speed - 3000) / 8000)); }
       camZ += speed * dt; camX = Math.sin(t * 0.45) * 36;
       flash = Math.max(0, flash - dt * 2.2); shake = Math.max(0, shake - dt * 40); boltT -= dt;
       draw();
@@ -327,6 +341,8 @@
       slam() { phase = 'cruise'; flash = 1.1; shake = 22; boltT = 0.45; bolts = [makeBolt(W * rnd(0.18, 0.36)), makeBolt(W * rnd(0.64, 0.82))]; rise = Math.max(rise, 0.9); },
       /** Just cruise (attract mode), sun up. */
       cruise() { resize(); phase = 'cruise'; speed = 240; rise = 1; last = 0; cancelAnimationFrame(raf); raf = requestAnimationFrame(frame); },
+      /** The coin's in: the camera dives on down the road toward the doors. */
+      dive() { if (phase === 'idle' || phase === 'still') return; phase = 'dive'; },
       /** One still frame (reduced motion). */
       still() { resize(); phase = 'still'; rise = 1; speed = 0; t = 1; draw(); },
       stop() { cancelAnimationFrame(raf); raf = 0; phase = 'idle'; }

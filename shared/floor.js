@@ -24,7 +24,7 @@ window.Floor = (() => {
   let mastered = new Set(), near = null, shownNear, route = [], arriveAct = null, idlePing = 0, padWas = [], mode = null;
   let zoom = 1.6, baseZoom = 1.6, zoneName = '', zoneT = 0, chatT = 4, lastStep = 0;
   const cam = { x: 0, y: 0 };
-  const me = { x: WW / 2, y: 930, vx: 0, vy: 0, dir: 'up', walk: 0, moving: false, run: false, pose: '', prop: null, propT: 0, entering: null, bubble: null };
+  const me = { x: WW / 2, y: 930, vx: 0, vy: 0, dir: 'up', walk: 0, moving: false, run: false, pose: '', prop: null, propT: 0, entering: null, bubble: null, emote: null };
   const keys = new Set(), npcs = [], shots = {};
   const rnd = (a, b) => a + Math.random() * (b - a), pick = a => a[Math.random() * a.length | 0];
 
@@ -98,6 +98,9 @@ window.Floor = (() => {
     ...[0, 1, 2].map(i => ({ kind: 'skee', i, x: 1870 + i * 80, y: 880, w: 64, h: 200, npcSpot: [1902 + i * 80, 1100], spot: [1902 + i * 80, 1100], solid: [[1870 + i * 80, 920, 64, 160]] })),
     { kind: 'hockey', x: 1700, y: 1150, w: 74, h: 112, spot: [1737, 1278], solid: [[1700, 1166, 74, 96]] },
     { kind: 'golf', x: 1296, y: 1100, w: 270, h: 150, spot: [1431, 1276], solid: [[1296, 1110, 270, 140]] },
+    { kind: 'wheel', x: 1060, y: 868, w: 130, h: 150, spot: [1125, 1044], solid: [[1080, 990, 90, 28]] },
+    { kind: 'hoops', x: 1836, y: 1128, w: 74, h: 124, spot: [1873, 1274], solid: [[1836, 1206, 74, 46]] },
+    { kind: 'bop', x: 1954, y: 1150, w: 80, h: 100, spot: [1994, 1274], solid: [[1954, 1204, 80, 46]] },
     { kind: 'rail', x: 580, y: 196, w: 12, h: 230, solid: [[580, 196, 12, 230]] },
     { kind: 'rail', x: 1648, y: 196, w: 12, h: 230, solid: [[1648, 196, 12, 230]] }
   ];
@@ -599,6 +602,141 @@ window.Floor = (() => {
   }
   const initials = () => { try { const v = localStorage.getItem('arcade:initials'); return /^[A-Z]{3}$/.test(v || '') ? v : ''; } catch (e) { return ''; } };
 
+
+  /* ---------- pets, footstep trails and emotes (prizes from the counter: slots pet, trail and emote) ---------- */
+  const pet = { x: WW / 2 + 20, y: 950, dir: 'right', t: 0, hop: 0, moving: false };
+  const FLYERS = ['ufo', 'phoenix'];
+  function stepPet(dt) {
+    const id = equip().pet; if (!id) return;
+    const v = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[me.dir] || [0, 1];
+    const tx = me.x - v[0] * 28 + (v[1] ? 18 : 0), ty = me.y - v[1] * 24 + (v[0] ? 8 : 4), dx = tx - pet.x, dy = ty - pet.y, d = Math.hypot(dx, dy);
+    if (d > 420) { pet.x = tx; pet.y = ty; } // left behind: catch up
+    else if (d > 3) { const sp = Math.min(d * 4.5, me.run ? 330 : 230) * dt; pet.x += dx / d * sp; pet.y += dy / d * sp; if (Math.abs(dx) > 2) pet.dir = dx > 0 ? 'right' : 'left'; }
+    pet.moving = d > 8; pet.t += dt; if (pet.hop > 0) pet.hop = Math.max(0, pet.hop - dt * 1.6);
+  }
+  /** A pet at its feet (px, py), facing right unless dir is 'left'. */
+  function drawPet(x, id, px, py, dir, t, moving, hop) {
+    const fly = FLYERS.includes(id), bob = fly ? Math.sin(t * 3) * 3 - 22 : moving ? -Math.abs(Math.sin(t * 12)) * 2 : 0, jump = Math.sin(hop * Math.PI) * 14;
+    x.fillStyle = 'rgba(0,0,0,.4)'; x.beginPath(); x.ellipse(px, py, fly ? 7 : 9, 3, 0, 0, 6.29); x.fill();
+    x.save(); x.translate(Math.round(px), Math.round(py + bob - jump)); if (dir === 'left') x.scale(-1, 1);
+    const leg = moving ? Math.sin(t * 14) * 2 : 0;
+    if (id === 'robodog') {
+      paint(x, [[-9 + leg, -5, 3, 5, '#6a7088'], [5 - leg, -5, 3, 5, '#6a7088'], [-9, -13, 18, 9, '#a8b0c8'], [5, -19, 10, 9, '#c0c6d8'], [6, -23, 3, 5, '#8a90a8']]);
+      x.fillStyle = '#5ee7ff'; x.fillRect(11, -17, 3, 2); x.fillStyle = Math.floor(t * 2) % 2 ? '#ff4f6d' : '#5a1a24'; x.fillRect(6, -26, 2, 3);
+      x.strokeStyle = '#8a90a8'; x.lineWidth = 2; x.beginPath(); x.moveTo(-9, -11); x.lineTo(-14, -15 + Math.sin(t * 16) * 3); x.stroke(); // the wagging tail
+    } else if (id === 'pixelcat') {
+      paint(x, [[-8 + leg, -5, 3, 5, '#d8701a'], [4 - leg, -5, 3, 5, '#d8701a'], [-8, -12, 15, 8, '#ff9a3d'], [4, -19, 9, 8, '#ffae5a']]);
+      x.fillStyle = '#ff9a3d'; x.beginPath(); x.moveTo(4, -19); x.lineTo(6, -24); x.lineTo(8, -19); x.moveTo(9, -19); x.lineTo(11, -24); x.lineTo(13, -19); x.fill();
+      x.fillStyle = '#3dff8f'; x.fillRect(9, -16, 2, 2); x.fillStyle = '#ffe0c0'; x.fillRect(-6, -8, 10, 2);
+      x.strokeStyle = '#ff9a3d'; x.lineWidth = 2.5; x.beginPath(); x.moveTo(-8, -10); x.quadraticCurveTo(-14, -12, -12, -20 + Math.sin(t * 3) * 2); x.stroke();
+    } else if (id === 'slime') {
+      const sq = 1 + Math.sin(t * (moving ? 12 : 4)) * 0.12; x.scale(1 / sq, sq);
+      x.fillStyle = OUT; x.beginPath(); x.ellipse(0, -7, 11, 9, 0, Math.PI, 0); x.lineTo(11, 0); x.lineTo(-11, 0); x.fill();
+      const g = x.createRadialGradient(-3, -11, 1, 0, -6, 11); g.addColorStop(0, '#c8ffb0'); g.addColorStop(1, '#3aa83a'); x.fillStyle = g; x.beginPath(); x.ellipse(0, -7, 9.5, 7.5, 0, Math.PI, 0); x.lineTo(9.5, -1); x.lineTo(-9.5, -1); x.fill();
+      x.fillStyle = OUT; x.fillRect(-4, -9, 2, 3); x.fillRect(3, -9, 2, 3); x.fillStyle = 'rgba(255,255,255,.7)'; x.fillRect(-6, -12, 3, 2);
+    } else if (id === 'ufo') {
+      x.globalCompositeOperation = 'lighter'; const bm = x.createLinearGradient(0, 0, 0, 24); bm.addColorStop(0, 'rgba(94,231,255,.45)'); bm.addColorStop(1, 'rgba(94,231,255,0)'); x.fillStyle = bm; x.beginPath(); x.moveTo(-5, 0); x.lineTo(5, 0); x.lineTo(11, 24); x.lineTo(-11, 24); x.fill(); x.globalCompositeOperation = 'source-over'; // the beam
+      x.fillStyle = OUT; x.beginPath(); x.ellipse(0, -2, 14, 5, 0, 0, 6.29); x.fill(); x.fillStyle = '#c0c6d8'; x.beginPath(); x.ellipse(0, -2, 12.5, 4, 0, 0, 6.29); x.fill();
+      x.fillStyle = '#5ee7ff'; x.beginPath(); x.ellipse(0, -5, 6, 5, 0, Math.PI, 0); x.fill(); x.fillStyle = 'rgba(255,255,255,.6)'; x.fillRect(-3, -8, 2, 2);
+      for (let i = 0; i < 4; i++) { x.fillStyle = Math.floor(t * 6 + i) % 4 === 0 ? '#ffd23d' : '#ff4fd1'; x.fillRect(-10 + i * 6, -2, 2, 2); }
+    } else if (id === 'phoenix') {
+      const flap = Math.sin(t * 10) * 6, g = x.createRadialGradient(0, -6, 1, 0, -6, 22); g.addColorStop(0, 'rgba(255,170,60,.45)'); g.addColorStop(1, 'rgba(255,120,40,0)'); x.fillStyle = g; x.fillRect(-22, -28, 44, 44);
+      x.fillStyle = '#ff5a1a'; x.beginPath(); x.moveTo(-6, -4); x.lineTo(-16, 2 + Math.sin(t * 8) * 2); x.lineTo(-12, -6); x.lineTo(-18, -8 + Math.sin(t * 7) * 2); x.lineTo(-6, -8); x.fill(); // tail flames
+      x.fillStyle = '#ffd23d'; x.beginPath(); x.moveTo(-2, -8); x.lineTo(-10, -16 - flap); x.lineTo(4, -10); x.fill();
+      paint(x, [[-6, -10, 12, 7, '#ffb03d'], [4, -14, 6, 6, '#ffd23d']]); x.fillStyle = OUT; x.fillRect(8, -12, 1.5, 1.5); x.fillStyle = '#ff7a3d'; x.fillRect(10, -11, 3, 2);
+    }
+    x.restore();
+  }
+  // footstep trails
+  const trail = [];
+  let trailT = 0, stepSide = 1;
+  function stepTrail(dt, stepped) {
+    for (const p of trail) { p.t -= dt; p.y += (p.vy || 0) * dt; p.x += (p.vx || 0) * dt; }
+    for (let i = trail.length - 1; i >= 0; i--) if (trail[i].t <= 0) trail.splice(i, 1);
+    const id = equip().trail; if (!id || !me.moving || me.entering) return;
+    trailT -= dt;
+    if (id === 'neonprint') { if (stepped) { stepSide = -stepSide; const side = me.dir === 'left' || me.dir === 'right' ? [0, stepSide * 3] : [stepSide * 4, 0]; trail.push({ k: id, x: me.x + side[0], y: me.y + side[1], t: 1.8, life: 1.8, c: stepSide > 0 ? '#5ee7ff' : '#ff4fd1', dir: me.dir }); } return; }
+    if (trailT > 0) return;
+    trailT = { sparkle: 0.05, bubbles: 0.09, rainbow: 0.025, flame: 0.03 }[id] || 0.05;
+    const jx = rnd(-6, 6), jy = rnd(-3, 3);
+    if (id === 'sparkle') trail.push({ k: id, x: me.x + jx, y: me.y + jy, t: 0.8, life: 0.8, c: pick(['#fff6c2', '#ffd23d', '#ffffff', '#5ee7ff']) });
+    if (id === 'bubbles') trail.push({ k: id, x: me.x + jx, y: me.y - 4, vy: -24, vx: rnd(-6, 6), t: 1.3, life: 1.3, r: rnd(2, 4.5) });
+    if (id === 'rainbow') trail.push({ k: id, x: me.x + jx * 0.4, y: me.y + jy * 0.4, t: 0.9, life: 0.9, c: `hsl(${(performance.now() / 4) % 360},95%,60%)` });
+    if (id === 'flame') trail.push({ k: id, x: me.x + jx, y: me.y, vy: -36, t: 0.55, life: 0.55 });
+  }
+  function drawTrail(x) {
+    for (const p of trail) {
+      const a = Math.max(0, p.t / p.life);
+      if (p.k === 'sparkle') { const r = 3 * a + 1; x.fillStyle = p.c; x.globalAlpha = a; x.beginPath(); x.moveTo(p.x, p.y - r * 2); x.lineTo(p.x + r * 0.5, p.y - r * 0.5); x.lineTo(p.x + r * 2, p.y); x.lineTo(p.x + r * 0.5, p.y + r * 0.5); x.lineTo(p.x, p.y + r * 2); x.lineTo(p.x - r * 0.5, p.y + r * 0.5); x.lineTo(p.x - r * 2, p.y); x.lineTo(p.x - r * 0.5, p.y - r * 0.5); x.fill(); }
+      if (p.k === 'neonprint') { x.globalAlpha = a * 0.85; x.fillStyle = p.c; x.shadowColor = p.c; x.shadowBlur = 8; const side = p.dir === 'left' || p.dir === 'right'; x.beginPath(); x.ellipse(p.x, p.y, side ? 5 : 3, side ? 2.5 : 4.5, 0, 0, 6.29); x.fill(); x.shadowBlur = 0; }
+      if (p.k === 'bubbles') { x.globalAlpha = a; x.strokeStyle = '#9ae8ff'; x.lineWidth = 1.2; x.beginPath(); x.arc(p.x, p.y, p.r, 0, 6.29); x.stroke(); x.fillStyle = 'rgba(255,255,255,.7)'; x.fillRect(p.x - p.r * 0.4, p.y - p.r * 0.5, 1.5, 1.5); }
+      if (p.k === 'rainbow') { x.globalAlpha = a * 0.9; x.fillStyle = p.c; x.beginPath(); x.arc(p.x, p.y, 3.5 * a + 1, 0, 6.29); x.fill(); }
+      if (p.k === 'flame') { x.globalAlpha = a; const g = x.createRadialGradient(p.x, p.y, 0, p.x, p.y, 7); g.addColorStop(0, '#fff6c2'); g.addColorStop(0.4, '#ffb03d'); g.addColorStop(1, 'rgba(255,74,26,0)'); x.fillStyle = g; x.beginPath(); x.arc(p.x, p.y, 7 * a + 2, 0, 6.29); x.fill(); }
+    }
+    x.globalAlpha = 1;
+  }
+  // emotes: wave and cheer for everyone; dance, spin, flex, robot and disco from the prize counter
+  const EMOTES = { wave: ['WAVE', 2], cheer: ['CHEER', 2], dance: ['DANCE', 3.2], spin: ['SPIN', 1.6], flex: ['FLEX', 2.2], robot: ['ROBOT', 3], disco: ['DISCO', 3] };
+  const myEmotes = () => ['wave', 'cheer', ...Object.keys(EMOTES).filter(id => id !== 'wave' && id !== 'cheer' && owns(id))];
+  function startEmote(id) {
+    if (!EMOTES[id] || me.entering) return;
+    me.emote = { id, t: 0, dur: EMOTES[id][1] }; me.vx = me.vy = 0; route = []; pet.hop = 1;
+    if (play) play.sound.fanfare && id !== 'wave' ? play.sound.fanfare() : play && play.sound.select();
+    // the crowd likes it
+    for (const n of npcs) if (Math.hypot(n.x - me.x, n.y - me.y) < 190 && Math.random() < 0.8) {
+      n.dir = n.x < me.x ? 'right' : 'left'; n.pose = 'cheer'; setTimeout(() => { if (n.pose === 'cheer') n.pose = ''; }, 1400);
+      if (Math.random() < 0.6) say(n, pick(id === 'wave' ? ['HEY!', 'HI THERE!', 'YO!'] : ['NICE MOVES!', 'WOOO!', 'GO GO GO!', 'HAHA, YES!', 'SHOW-OFF!', 'TEACH ME THAT!']), 2);
+    }
+  }
+  /** How you look mid-emote: pose, facing, a hop and a size pulse. */
+  function emoteLook(e) {
+    const k = e.t;
+    switch (e.id) {
+      case 'wave': return { pose: Math.floor(k * 5) % 2 ? 'wave' : '', dir: 'down' };
+      case 'cheer': return { pose: 'cheer', dir: 'down', lift: Math.abs(Math.sin(k * 7)) * 8 };
+      case 'dance': { const f = Math.floor(k / 0.25) % 4; return { pose: ['cheer', '', 'wave', ''][f], dir: ['left', 'down', 'right', 'down'][f], lift: Math.abs(Math.sin(k * 12.6)) * 3 }; }
+      case 'spin': return { pose: k > e.dur - 0.4 ? 'cheer' : '', dir: ['down', 'right', 'up', 'left'][Math.floor(k / 0.09) % 4], lift: Math.sin(k / e.dur * Math.PI) * 12 };
+      case 'flex': return { pose: 'cheer', dir: 'down', scale: 1 + Math.abs(Math.sin(k * 6)) * 0.12 };
+      case 'robot': { const f = Math.floor(k / 0.35) % 4; return { pose: f % 2 ? 'wave' : '', dir: ['left', 'down', 'right', 'down'][f] }; }
+      case 'disco': return { pose: 'wave', dir: Math.floor(k / 0.5) % 2 ? 'left' : 'right', lift: Math.abs(Math.sin(k * 6.3)) * 2 };
+    }
+    return { pose: '' };
+  }
+  /** The emote picker: your emotes in a row; numbers, arrows and Enter, or a tap. */
+  function emoteMenu() {
+    const list = myEmotes(); let at = 0;
+    const W2 = Math.min(VW - 40, list.length * 96 + 20), X0 = (VW - W2) / 2, Y0 = VH - 168;
+    const slot = i => [X0 + 14 + i * 96, Y0 + 30, 86, 112];
+    const pickIt = i => { if (!list[i]) return; mode = null; keys.clear(); startEmote(list[i]); showCard(); };
+    return {
+      name: 'emotes', allKeys: true,
+      draw(x, t) {
+        x.fillStyle = 'rgba(5,2,12,.82)'; x.fillRect(X0, Y0, W2, 158); x.strokeStyle = '#ff4fd1'; x.lineWidth = 2; x.strokeRect(X0 + 3, Y0 + 3, W2 - 6, 152);
+        x.font = '11px Silkscreen, monospace'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = '#ff4fd1'; x.fillText('EMOTES · PICK ONE (MORE AT THE PRIZE COUNTER)', VW / 2, Y0 + 16);
+        list.forEach((id, i) => {
+          const [sx, sy, sw, sh] = slot(i), on = i === at; x.fillStyle = on ? '#2a1a4a' : '#140c24'; x.fillRect(sx, sy, sw, sh); x.strokeStyle = on ? '#ffd23d' : '#3a3060'; x.lineWidth = on ? 2 : 1; x.strokeRect(sx + 0.5, sy + 0.5, sw - 1, sh - 1);
+          const look = emoteLook({ id, t: (t / 1000) % EMOTES[id][1], dur: EMOTES[id][1] });
+          x.save(); x.translate(sx + sw / 2, sy + 78 - (look.lift || 0)); x.scale(1.3 * (look.scale || 1), 1.3 * (look.scale || 1)); drawWalker(x, 0, 0, look.dir || 'down', 0, false, equip().outfit || '', look.pose); x.restore();
+          x.fillStyle = on ? '#ffd23d' : '#f4effd'; x.fillText(EMOTES[id][0], sx + sw / 2, sy + 94); x.fillStyle = 'rgba(255,255,255,.4)'; x.fillText(String(i + 1), sx + 10, sy + 10);
+        });
+      },
+      key(c) {
+        if (c === 'Escape' || c === 'KeyE') { mode = null; keys.clear(); showCard(); return; }
+        if (c === 'ArrowLeft' || c === 'KeyA') at = (at + list.length - 1) % list.length;
+        if (c === 'ArrowRight' || c === 'KeyD') at = (at + 1) % list.length;
+        if (c === 'Enter') pickIt(at);
+        const n = /^(Digit|Numpad)([1-9])$/.exec(c); if (n) pickIt(+n[2] - 1);
+      },
+      tap(px, py) { const i = list.findIndex((_, i) => { const [sx, sy, sw, sh] = slot(i); return px > sx && px < sx + sw && py > sy && py < sy + sh; }); if (i >= 0) pickIt(i); else { mode = null; showCard(); } }
+    };
+  }
+  function openEmotes() { if (mode || me.entering) return; mode = emoteMenu(); keys.clear(); route = []; me.vx = me.vy = 0; }
+  const EMOTE_BTN = { x: 12, y: VH - 46, w: 96, h: 32 };
+  function drawEmoteButton(x) {
+    x.fillStyle = 'rgba(10,6,18,.75)'; x.fillRect(EMOTE_BTN.x, EMOTE_BTN.y, EMOTE_BTN.w, EMOTE_BTN.h); x.strokeStyle = '#ff4fd1'; x.lineWidth = 1.5; x.strokeRect(EMOTE_BTN.x + 0.5, EMOTE_BTN.y + 0.5, EMOTE_BTN.w - 1, EMOTE_BTN.h - 1);
+    x.font = '11px Silkscreen, monospace'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = '#ff4fd1'; x.fillText('☺ EMOTE · E', EMOTE_BTN.x + EMOTE_BTN.w / 2, EMOTE_BTN.y + EMOTE_BTN.h / 2 + 1);
+  }
+
   /* ---------- walking ---------- */
   function step(dt, t) {
     if (me.entering) { me.entering.t += dt; return; }
@@ -609,7 +747,8 @@ window.Floor = (() => {
     }
     const pad = padInput(); if (!mode) { dx += pad.x; dy += pad.y; }
     let running = keys.has('ShiftLeft') || keys.has('ShiftRight') || pad.run;
-    if (dx || dy) { route = []; arriveAct = null; }
+    if (dx || dy) { route = []; arriveAct = null; me.emote = null; } // walking off ends an emote
+    if (me.emote && (me.emote.t += dt) >= me.emote.dur) me.emote = null;
     else if (route.length) { // walking to a tapped spot
       const [tx, ty] = route[0], ex = tx - me.x, ey = ty - me.y, d = Math.hypot(ex, ey);
       if (d < 5) { route.shift(); if (!route.length) { me.vx = me.vy = 0; if (arriveAct) { const f = arriveAct; arriveAct = null; f(); } } }
@@ -618,7 +757,7 @@ window.Floor = (() => {
     const l = Math.hypot(dx, dy); if (l > 1) { dx /= l; dy /= l; }
     const top = running ? RUN : WALK, k = Math.min(1, dt * (l ? 12 : 16));
     me.vx += (dx * top - me.vx) * k; me.vy += (dy * top - me.vy) * k;
-    const sp = Math.hypot(me.vx, me.vy); me.moving = sp > 12; me.run = running && sp > WALK + 20;
+    const sp = Math.hypot(me.vx, me.vy); me.moving = sp > 12; me.run = running && sp > WALK + 20; let stepped = false;
     if (sp > 1) {
       const nx = me.x + me.vx * dt, ny = me.y + me.vy * dt; let moved = false;
       if (!hit(nx, me.y)) { me.x = nx; moved = true; } else me.vx = 0;
@@ -626,12 +765,14 @@ window.Floor = (() => {
       if (!moved && route.length) route.shift();
       if (me.moving) {
         const before = Math.sin(me.walk); me.walk += dt * sp / 13; const after = Math.sin(me.walk);
-        if (Math.sign(before) !== Math.sign(after) && play) play.sound.step(me.run);
+        if (Math.sign(before) !== Math.sign(after)) { stepped = true; if (play) play.sound.step(me.run); }
         if (me.run && Math.random() < dt * 14) puffs.push({ x: me.x - me.vx * 0.04 + rnd(-4, 4), y: me.y, t: 0.5 });
         if (l) me.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
         else if (route.length) me.dir = Math.abs(me.vx) > Math.abs(me.vy) ? (me.vx > 0 ? 'right' : 'left') : (me.vy > 0 ? 'down' : 'up');
       }
     }
+    stepPet(dt); stepTrail(dt, stepped);
+    if (me.emote && me.emote.id === 'disco' && Math.random() < dt * 20) trail.push({ k: 'sparkle', x: me.x + rnd(-16, 16), y: me.y - rnd(10, 46), t: 0.6, life: 0.6, c: pick(['#ff4fd1', '#5ee7ff', '#ffd23d', '#3dff8f']) });
     if (me.propT > 0 && (me.propT -= dt) <= 0) me.prop = null;
     if (me.bubble && (me.bubble.t -= dt) <= 0) me.bubble = null;
     // what's here?
@@ -707,7 +848,7 @@ window.Floor = (() => {
         const ax = gp.axes[0] || 0, ay = gp.axes[1] || 0, b = i => gp.buttons[i] && gp.buttons[i].pressed;
         p.x += (Math.abs(ax) > 0.4 ? ax : 0) + (b(15) ? 1 : 0) - (b(14) ? 1 : 0); p.y += (Math.abs(ay) > 0.4 ? ay : 0) + (b(13) ? 1 : 0) - (b(12) ? 1 : 0);
         if (b(1) || b(2)) p.run = true;
-        [0, 9, 1, 12, 13, 14, 15].forEach(i => { if (b(i)) now[i] = true; });
+        [0, 9, 1, 3, 12, 13, 14, 15].forEach(i => { if (b(i)) now[i] = true; });
       }
     } catch (e) {}
     const tapd = i => now[i] && !padWas[i];
@@ -716,6 +857,7 @@ window.Floor = (() => {
       if (tapd(12)) mode.key('ArrowUp'); if (tapd(13)) mode.key('ArrowDown'); if (tapd(14)) mode.key('ArrowLeft'); if (tapd(15)) mode.key('ArrowRight');
       if (mode && mode.held) mode.held(p.x, p.y);
     } else if (tapd(0) || tapd(9)) interact();
+    else if (tapd(3)) openEmotes(); // Y: emotes
     padWas = now;
     if ((p.x || p.y || now.length) && performance.now() - idlePing > 1000) { idlePing = performance.now(); dispatchEvent(new Event('pointermove')); } // keeps attract mode away
     return p;
@@ -726,10 +868,12 @@ window.Floor = (() => {
     if (off() || (e.target.closest && e.target.closest('input,textarea,select'))) return;
     if (mode) {
       if ([...MOVE_KEYS, 'Enter', 'Space', 'Escape'].includes(e.code)) { e.preventDefault(); if (!e.repeat || e.code.startsWith('Arrow')) mode.key(e.code === 'Space' ? 'Enter' : e.code); }
+      else if (mode.allKeys && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); mode.key(e.code); } // games that use letter and number keys
       keys.add(e.code); return;
     }
     if (MOVE_KEYS.includes(e.code)) { e.preventDefault(); keys.add(e.code); }
     else if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys.add(e.code);
+    else if (e.code === 'KeyE' && !e.repeat) { e.preventDefault(); openEmotes(); }
     else if ((e.code === 'Enter' || e.code === 'Space') && !(e.target.closest && e.target.closest('button,a'))) { e.preventDefault(); if (!e.repeat) interact(); }
   });
   addEventListener('keyup', e => keys.delete(e.code));
@@ -739,6 +883,7 @@ window.Floor = (() => {
     if (off() || me.entering) return;
     const r = cv.getBoundingClientRect(), vx = (e.clientX - r.left) / r.width * VW, vy = (e.clientY - r.top) / r.height * VH;
     if (mode) return mode.tap(vx, vy, e.pointerId);
+    if (vx > EMOTE_BTN.x && vx < EMOTE_BTN.x + EMOTE_BTN.w && vy > EMOTE_BTN.y && vy < EMOTE_BTN.y + EMOTE_BTN.h) return openEmotes();
     if (vx > MAP.x && vx < MAP.x + MAP.w && vy > MAP.y && vy < MAP.y + MAP.h) { const wx = (vx - MAP.x) / MAP.w * WW, wy = (vy - MAP.y) / MAP.h * WH; return walkTo(wx, Math.max(WALL + 24, wy)); }
     const x = cam.x + vx / zoom, y = cam.y + vy / zoom;
     const o = usable().find(o => x > o.x && x < o.x + o.w && y > o.y - (o.kind === 'counter' ? 110 : 0) && y < o.y + o.h);
@@ -1055,7 +1200,7 @@ window.Floor = (() => {
   /** The dance machine's pad: four arrow panels that light up as someone dances on it. */
   function drawDancePad(x, t, o) {
     paint(x, [[o.x, o.y, o.w, o.h, '#2a2054']]);
-    const busy = o.cab.user || (me.entering && me.entering.c === o.cab), cols = ['#ff4fd1', '#5ee7ff', '#3dff8f', '#ffd23d'], cw = (o.w - 12) / 3, ch = (o.h - 8) / 3;
+    const busy = o.cab.user || (me.entering && me.entering.c === o.cab) || (me.emote && me.x > o.x && me.x < o.x + o.w && me.y > o.y - 10 && me.y < o.y + o.h + 10), cols = ['#ff4fd1', '#5ee7ff', '#3dff8f', '#ffd23d'], cw = (o.w - 12) / 3, ch = (o.h - 8) / 3;
     [[0, 1, 0], [1, 2, 1], [1, 0, 2], [2, 1, 3]].forEach(([cx, cy, k]) => { const on = busy && Math.floor(t / 230 + k * 1.7) % 4 === 0; x.fillStyle = on ? cols[k] : shade(cols[k], -0.6); x.fillRect(o.x + 4 + cx * (cw + 2), o.y + 3 + cy * (ch + 1), cw, ch); });
     x.fillStyle = '#16122e'; x.fillRect(o.x + 4 + cw + 2, o.y + 3 + ch + 1, cw, ch);
   }
@@ -1069,6 +1214,46 @@ window.Floor = (() => {
     const px = o.x + o.w / 2 + Math.sin(t / 300) * 18, py = o.y + o.h / 2 + Math.cos(t / 410) * 30;
     x.fillStyle = '#1a1a24'; x.beginPath(); x.arc(px, py, 4, 0, 6.29); x.fill();
     [[o.y + 18, '#ff4f6d'], [o.y + o.h - 18, '#3dd6ff']].forEach(([my, c]) => { x.fillStyle = OUT; x.beginPath(); x.arc(o.x + o.w / 2, my, 7, 0, 6.29); x.fill(); x.fillStyle = c; x.beginPath(); x.arc(o.x + o.w / 2, my, 5.5, 0, 6.29); x.fill(); });
+  }
+  /** The hoop shooter: a cabinet with a ramp, a net cage and a backboard; a ball arcs in now and then. */
+  function drawHoops(x, t, o) {
+    const X = o.x, Y = o.y, isNear = near === o; shadow(x, X + o.w / 2, Y + o.h, o.w * 0.6);
+    if (isNear) { x.shadowColor = '#ff7a3d'; x.shadowBlur = 20; }
+    paint(x, [[X, Y + 56, o.w, o.h - 56, '#2a2054'], [X - 2, Y, o.w + 4, 14, '#ff7a3d'], [X + 6, Y + 14, o.w - 12, 44, '#e8f4ff']]); x.shadowBlur = 0;
+    x.strokeStyle = '#ff4f6d'; x.lineWidth = 2; x.strokeRect(X + o.w / 2 - 10, Y + 26, 20, 16);
+    x.fillStyle = OUT; x.fillRect(X + o.w / 2 - 14, Y + 44, 28, 4); x.fillStyle = '#ff7a3d'; x.fillRect(X + o.w / 2 - 13, Y + 45, 26, 2);
+    x.strokeStyle = 'rgba(255,255,255,.6)'; x.lineWidth = 1; for (let i = 0; i < 5; i++) { x.beginPath(); x.moveTo(X + o.w / 2 - 12 + i * 6, Y + 48); x.lineTo(X + o.w / 2 - 8 + i * 4, Y + 58); x.stroke(); }
+    x.fillStyle = 'rgba(255,255,255,.08)'; for (let i = 0; i < 6; i++) x.fillRect(X + 4 + i * 12, Y + 60, 2, 40); // the cage
+    x.fillStyle = '#1a1438'; x.fillRect(X + 8, Y + 100, o.w - 16, 16); for (let i = 0; i < 4; i++) { x.fillStyle = OUT; x.beginPath(); x.arc(X + 16 + i * 14, Y + 108, 5.5, 0, 6.29); x.fill(); x.fillStyle = '#d8601a'; x.beginPath(); x.arc(X + 16 + i * 14, Y + 108, 4.2, 0, 6.29); x.fill(); }
+    const k = (t % 2200) / 2200; if (k < 0.5) { const u = k / 0.5, bx = X + o.w / 2 + (1 - u) * 14, by = Y + 100 - u * 54 - Math.sin(u * Math.PI) * 16; x.fillStyle = OUT; x.beginPath(); x.arc(bx, by, 5, 0, 6.29); x.fill(); x.fillStyle = '#ff9a3d'; x.beginPath(); x.arc(bx, by, 3.8, 0, 6.29); x.fill(); }
+    x.font = '8px Silkscreen, monospace'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = OUT; x.fillText('HOOPS', X + o.w / 2, Y + 7);
+  }
+  /** The ticket wheel: a big lit wheel on a stand, turning slowly. */
+  function drawWheel(x, t, o) {
+    const cx = o.x + o.w / 2, cy = o.y + 58, r = 54, isNear = near === o; shadow(x, cx, o.y + o.h, o.w * 0.5);
+    paint(x, [[cx - 8, cy + 30, 16, o.h - 88, '#8a8ea0'], [cx - 40, o.y + o.h - 30, 80, 14, '#3a3072']]);
+    if (isNear) { x.shadowColor = '#ffd23d'; x.shadowBlur = 24; }
+    x.fillStyle = OUT; x.beginPath(); x.arc(cx, cy, r + 6, 0, 6.29); x.fill(); x.shadowBlur = 0; x.fillStyle = '#c89a2a'; x.beginPath(); x.arc(cx, cy, r + 3, 0, 6.29); x.fill();
+    const a0 = t / 2600, cols = ['#ff4f6d', '#5ee7ff', '#ffd23d', '#b86bff', '#3dff8f', '#ff7a3d', '#ff4fd1', '#3d7bff'];
+    for (let i = 0; i < 16; i++) { x.fillStyle = i === 15 ? '#ffd23d' : cols[i % 8]; x.beginPath(); x.moveTo(cx, cy); x.arc(cx, cy, r, a0 + i / 16 * 6.283, a0 + (i + 1) / 16 * 6.283); x.closePath(); x.fill(); }
+    for (let i = 0; i < 16; i++) { const a = i / 16 * 6.283; x.fillStyle = Math.floor(t / 160 + i) % 2 ? '#fff6c2' : '#7a5a2a'; x.beginPath(); x.arc(cx + Math.cos(a) * (r + 10), cy + Math.sin(a) * (r + 10), 2.5, 0, 6.29); x.fill(); }
+    x.fillStyle = OUT; x.beginPath(); x.arc(cx, cy, 9, 0, 6.29); x.fill(); x.fillStyle = '#ffd23d'; x.beginPath(); x.arc(cx, cy, 7, 0, 6.29); x.fill();
+    x.fillStyle = OUT; x.beginPath(); x.moveTo(cx - 7, cy - r - 12); x.lineTo(cx + 7, cy - r - 12); x.lineTo(cx, cy - r + 4); x.fill(); x.fillStyle = '#ff4f6d'; x.beginPath(); x.moveTo(cx - 5, cy - r - 10); x.lineTo(cx + 5, cy - r - 10); x.lineTo(cx, cy - r + 1); x.fill();
+    x.font = '8px Silkscreen, monospace'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = '#ffd23d'; let spun = false; try { const d = new Date(); spun = localStorage.getItem('bitcade:wheel') === `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; } catch (e) {}
+    x.fillText(spun ? 'SPUN TODAY' : 'FREE SPIN!', cx, o.y + o.h - 23);
+  }
+  /** Bop-a-Bot: a squat cabinet with nine holes and a robot or two poking out. */
+  function drawBop(x, t, o) {
+    const X = o.x, Y = o.y, isNear = near === o; shadow(x, X + o.w / 2, Y + o.h, o.w * 0.6);
+    if (isNear) { x.shadowColor = '#5ee7ff'; x.shadowBlur = 20; }
+    paint(x, [[X, Y + 30, o.w, o.h - 30, '#3a2468'], [X - 2, Y, o.w + 4, 30, '#2a2054']]); x.shadowBlur = 0;
+    x.font = '8px Silkscreen, monospace'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = '#5ee7ff'; x.fillText('BOP-A-BOT', X + o.w / 2, Y + 10);
+    for (let i = 0; i < 9; i++) {
+      const hx = X + 16 + (i % 3) * 24, hy = Y + 40 + Math.floor(i / 3) * 18, up = Math.sin(t / 300 + i * 2.1) > 0.75;
+      x.fillStyle = '#0a0418'; x.beginPath(); x.ellipse(hx, hy + 4, 8, 3.5, 0, 0, 6.29); x.fill();
+      if (up) { paint(x, [[hx - 5, hy - 6, 10, 9, i === 4 ? '#ffd23d' : '#5ee7ff']]); x.fillStyle = '#3dff8f'; x.fillRect(hx - 3, hy - 3, 2, 2); x.fillRect(hx + 1, hy - 3, 2, 2); }
+    }
+    paint(x, [[X + o.w - 14, Y + 20, 6, 28, '#a8703a'], [X + o.w - 22, Y + 14, 22, 10, '#ff4f6d']]); // the mallet on its hook
   }
   /** The putting green: a little course with a flag, a windmill bar and a bunker. */
   function drawGolf(x, t, o) {
@@ -1151,6 +1336,9 @@ window.Floor = (() => {
       case 'dancepad': return drawDancePad(x, t, o);
       case 'hockey': return drawHockey(x, t, o);
       case 'golf': return drawGolf(x, t, o);
+      case 'hoops': return drawHoops(x, t, o);
+      case 'wheel': return drawWheel(x, t, o);
+      case 'bop': return drawBop(x, t, o);
       case 'plinth': return drawPlinth(x, t, o);
       case 'vipcounter': return drawVipCounter(x, t, o);
       case 'records': return drawRecords(x, t, o);
@@ -1219,11 +1407,18 @@ window.Floor = (() => {
     if (owns('strips')) drawStrips(x, t);
     drawTargets(x, t);
     for (const p of puffs) { x.fillStyle = `rgba(200,190,230,${p.t})`; x.beginPath(); x.arc(p.x, p.y - (0.5 - p.t) * 10, 3 + (0.5 - p.t) * 8, 0, 6.29); x.fill(); }
+    drawTrail(x);
     // everything standing, back to front
     const list = objs.filter(o => visible(o.x, o.y, 120)).map(o => [o.base, () => drawObj(x, o, t)]);
     for (const s of STAFF) if (visible(s.x, s.y)) list.push([s.y, () => drawWalker(x, s.x, s.y, s.dir || 'down', 0, false, s.look, s.bubble && s.bubble.t > 2 ? 'wave' : '')]);
     for (const n of npcs) if (visible(n.x, n.y)) list.push([n.y, () => drawWalker(x, n.x, n.y, n.dir, n.walk, n.moving, n.look, n.pose, n.prop)]);
-    list.push([me.y, () => drawWalker(x, me.x, me.y, me.dir, me.walk, me.moving, equip().outfit || '', me.pose || (me.bubble && me.bubble.cheer ? 'cheer' : ''), me.prop)]);
+    const em = me.emote ? emoteLook(me.emote) : null;
+    list.push([me.y, () => {
+      if (!em) return drawWalker(x, me.x, me.y, me.dir, me.walk, me.moving, equip().outfit || '', me.pose || (me.bubble && me.bubble.cheer ? 'cheer' : ''), me.prop);
+      const sc = em.scale || 1; x.save(); x.translate(me.x, me.y - (em.lift || 0)); x.scale(sc, sc); x.translate(-me.x, -me.y);
+      drawWalker(x, me.x, me.y, em.dir || me.dir, 0, false, equip().outfit || '', em.pose, me.prop); x.restore();
+    }]);
+    if (equip().pet && !me.entering) list.push([pet.y + (FLYERS.includes(equip().pet) ? 30 : 0), () => drawPet(x, equip().pet, pet.x, pet.y, pet.dir, pet.t, pet.moving, pet.hop)]);
     list.sort((a, b) => a[0] - b[0]).forEach(d => d[1]());
     // a lighter dark over everything, then the glows
     x.setTransform(dpr, 0, 0, dpr, 0, 0); x.globalAlpha = 0.34; x.imageSmoothingEnabled = true; x.drawImage(lightCv, 0, 0, VW, VH); x.globalAlpha = 1;
@@ -1247,6 +1442,7 @@ window.Floor = (() => {
       x.fillStyle = OUT; x.fillText(zoneName, VW / 2 + 3, VH - 37); x.shadowColor = z.c; x.shadowBlur = 16; x.fillStyle = z.c; x.fillText(zoneName, VW / 2, VH - 40); x.shadowBlur = 0; x.globalAlpha = 1;
     }
     minimap(x, t);
+    if (!mode) drawEmoteButton(x);
     if (mode) mode.draw(x, t, dt);
   }
   function bubble(x, bx, by, text, mine) {
@@ -1321,6 +1517,14 @@ window.Floor = (() => {
       const t = performance.now();
       if (p.slot === 'outfit') { x.fillStyle = '#140c24'; x.fillRect(0, 0, w, h); x.save(); x.scale(1.3, 1.3); drawWalker(x, w / 2 / 1.3, (h - 6) / 1.3, 'down', 0, false, p.id); x.restore(); return true; }
       if (p.slot === 'carpet') { carpet(x, p.id, w, h); return true; }
+      if (p.slot === 'pet') { x.fillStyle = '#140c24'; x.fillRect(0, 0, w, h); x.save(); x.scale(2, 2); drawPet(x, p.id, w / 4, h / 2 - 6 + (FLYERS.includes(p.id) ? 10 : 0), 'right', t / 1000, false, 0); x.restore(); return true; }
+      if (p.slot === 'emote') { x.fillStyle = '#140c24'; x.fillRect(0, 0, w, h); const em = emoteLook({ id: p.id, t: (t / 1000) % EMOTES[p.id][1], dur: EMOTES[p.id][1] }); x.save(); x.translate(w / 2, h - 5 - (em.lift || 0) * 0.5); x.scale(0.95 * (em.scale || 1), 0.95 * (em.scale || 1)); drawWalker(x, 0, 0, em.dir || 'down', 0, false, equip().outfit || '', em.pose); x.restore(); return true; }
+      if (p.slot === 'trail') {
+        x.fillStyle = '#140c24'; x.fillRect(0, 0, w, h); const c = { sparkle: '#ffd23d', neonprint: '#5ee7ff', bubbles: '#9ae8ff', rainbow: '#ff4fd1', flame: '#ff8a3d' }[p.id] || '#fff';
+        for (let i = 0; i < 9; i++) { const px = 10 + i * (w - 20) / 8, py = h - 14 - Math.sin(i * 0.7) * 10, a = (i + 1) / 9; x.globalAlpha = a; x.fillStyle = p.id === 'rainbow' ? `hsl(${i * 40},95%,60%)` : i % 2 && p.id === 'neonprint' ? '#ff4fd1' : c;
+          if (p.id === 'bubbles') { x.strokeStyle = c; x.beginPath(); x.arc(px, py - i * 2, 3, 0, 6.29); x.stroke(); } else { x.beginPath(); x.arc(px, py, p.id === 'neonprint' ? 3 : 2 + a * 2, 0, 6.29); x.fill(); } }
+        x.globalAlpha = 1; drawWalker(x, w - 14, h - 8, 'right', t / 120, true, equip().outfit || ''); return true;
+      }
       if (p.slot !== 'decor') return false;
       x.fillStyle = '#140c24'; x.fillRect(0, 0, w, h); x.save();
       if (p.id === 'plants') { x.translate(w / 2 - 13, 10); drawPlant(x, 0, 0); }

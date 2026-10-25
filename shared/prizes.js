@@ -4,6 +4,8 @@
  * - tint: a one-colour phosphor look for every game screen (body.tint-<id>, applied by shared/arcade.js)
  * - skin: a cabinet finish for every game page (body.skin-<id>)
  * - outfit and carpet: your arcade-goer and the carpet on the arcade floor (shared/floor.js)
+ * - pet and trail: a pet that follows you on the floor, and a trail behind your feet (one of each worn)
+ * - emote: moves for the floor's emote picker (E); owning one is enough
  * - decor: things for the arcade floor; everything bought is on show
  *
  * arcade:prizes holds the ids bought, arcade:equip the one worn per slot: { tint, skin, outfit, carpet }.
@@ -53,6 +55,21 @@ window.Prizes = (() => {
     { id: 'starlight', slot: 'outfit', pass: 's1', name: 'Starlight', price: 0, desc: 'A silver suit, a starry cape and a halo.' },
     { id: 'circuit', slot: 'carpet', pass: 's1', free: true, name: 'Circuit Board', price: 0, desc: 'Green board and gold traces that glow.' },
     { id: 'diamond', slot: 'skin', pass: 's1', name: 'Diamond Cabinet', price: 0, desc: 'Ice-white facets that catch the light. The top of Season 1.', sw: ['#ffffff', '#7ad8ff'] },
+    { id: 'robodog', slot: 'pet', name: 'Robo-Dog', price: 150, desc: 'A loyal little robot that wags and follows you everywhere.' },
+    { id: 'pixelcat', slot: 'pet', name: 'Pixel Cat', price: 150, desc: 'An orange cat who decided you\'re alright.' },
+    { id: 'slime', slot: 'pet', name: 'Pet Slime', price: 100, desc: 'A friendly slime that boings along behind you.' },
+    { id: 'ufo', slot: 'pet', name: 'Mini UFO', price: 220, desc: 'A tiny saucer hovering at your shoulder, beam on.' },
+    { id: 'phoenix', slot: 'pet', vip: true, name: 'Golden Phoenix', price: 450, desc: 'A blazing gold bird. VIP only.' },
+    { id: 'sparkle', slot: 'trail', name: 'Sparkle Steps', price: 60, desc: 'Little stars wherever you walk.' },
+    { id: 'neonprint', slot: 'trail', name: 'Neon Footprints', price: 80, desc: 'Glowing pink and blue prints that fade behind you.' },
+    { id: 'bubbles', slot: 'trail', name: 'Bubble Trail', price: 70, desc: 'Bubbles float up as you go.' },
+    { id: 'rainbow', slot: 'trail', name: 'Rainbow Dash', price: 120, desc: 'A streak of every colour.' },
+    { id: 'flame', slot: 'trail', name: 'Hot Steps', price: 160, desc: 'You\'re on fire. Literally, at the feet.' },
+    { id: 'dance', slot: 'emote', name: 'Dance', price: 40, desc: 'A move for the dance floor (or the Neon Steps pad).' },
+    { id: 'spin', slot: 'emote', name: 'Spin', price: 50, desc: 'A leaping spin with a finish.' },
+    { id: 'flex', slot: 'emote', name: 'Flex', price: 60, desc: 'Show the arcade those high-score muscles.' },
+    { id: 'robot', slot: 'emote', name: 'The Robot', price: 80, desc: 'Stiff, precise, very cool.' },
+    { id: 'disco', slot: 'emote', name: 'Disco', price: 100, desc: 'Point to the sky, with sparkles.' },
     { id: 'cap', slot: 'outfit', name: 'Cap and Hoodie', price: 30, desc: 'Your arcade-goer, ready for a long session.' },
     { id: 'shades', slot: 'outfit', name: 'Cool Shades', price: 50, desc: 'Leather jacket, dark glasses, no fear.' },
     { id: 'astro', slot: 'outfit', name: 'Astronaut Suit', price: 120, desc: 'Fresh back from a lunar landing.' },
@@ -76,7 +93,7 @@ window.Prizes = (() => {
     { id: 'redeem', slot: 'decor', name: 'Ticket Machine', price: 130, desc: 'A redemption machine that eats tickets.' },
     { id: 'trophies', slot: 'decor', name: 'Trophy Case', price: 220, desc: 'Gold cups for every cabinet you master.' }
   ];
-  const SLOTS = [['tint', 'SCREEN TINTS · every game'], ['skin', 'CABINET FINISHES · every game'], ['outfit', 'OUTFITS · arcade floor'], ['carpet', 'CARPETS · arcade floor'], ['decor', 'DECORATIONS · arcade floor']];
+  const SLOTS = [['tint', 'SCREEN TINTS · every game'], ['skin', 'CABINET FINISHES · every game'], ['outfit', 'OUTFITS · arcade floor'], ['pet', 'PETS · they follow you round the arcade floor'], ['trail', 'FOOTSTEP TRAILS · arcade floor'], ['emote', 'EMOTES · press E on the arcade floor (wave and cheer are free)'], ['carpet', 'CARPETS · arcade floor'], ['decor', 'DECORATIONS · arcade floor']];
   const get = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
   const set = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
   const json = (k, d) => { try { const v = JSON.parse(get(k)); return v && typeof v === 'object' ? v : d; } catch (e) { return d; } };
@@ -89,12 +106,12 @@ window.Prizes = (() => {
     const p = LIST.find(x => x.id === id);
     if (!p || has(id) || p.level || p.pass || (p.vip && !(window.VIP && VIP.unlocked())) || !TICKETS.spend(p.price)) return false;
     set('arcade:prizes', JSON.stringify([...owned(), id]));
-    if (p.slot !== 'decor') wear(id);
+    if (p.slot !== 'decor' && p.slot !== 'emote') wear(id);
     changed(); return true;
   }
   /** Wear a prize in its slot, or take it off if it's already worn. */
   function wear(id) {
-    const p = LIST.find(x => x.id === id); if (!p || p.slot === 'decor' || !has(id)) return;
+    const p = LIST.find(x => x.id === id); if (!p || p.slot === 'decor' || p.slot === 'emote' || !has(id)) return;
     const eq = equipped(); eq[p.slot] = eq[p.slot] === id ? null : id;
     set('arcade:equip', JSON.stringify(eq)); changed();
   }
@@ -138,6 +155,7 @@ window.Prizes = (() => {
       else if (!own && locked) { btn.textContent = 'VIP ONLY'; btn.disabled = true; }
       else if (!own) { btn.textContent = bal >= p.price ? `BUY · ${p.price}` : `NEED ${p.price}`; btn.disabled = bal < p.price; }
       else if (p.slot === 'decor') { btn.textContent = 'ON THE FLOOR'; btn.disabled = true; }
+      else if (p.slot === 'emote') { btn.textContent = 'YOURS · PRESS E'; btn.disabled = true; }
       else { btn.textContent = on ? 'WEARING ✓' : 'WEAR'; btn.disabled = false; }
     });
   }

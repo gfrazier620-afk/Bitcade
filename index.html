@@ -133,6 +133,42 @@ body{display:block;overflow-x:hidden;
 .cab.feat{border-color:#ffd23d;box-shadow:0 0 0 1px #ffd23d,0 0 26px rgba(255,210,61,.28)}
 .cab.feat::before{content:"★ THIS WEEK";position:absolute;z-index:2;top:12px;right:-30px;transform:rotate(35deg);width:130px;text-align:center;padding:3px 0;
   font-family:var(--f-pixel);font-size:10px;letter-spacing:.08em;color:#1a0f00;background:linear-gradient(90deg,#ffd23d,#ff9a3d)}
+/* the featured banner: slides you swipe (scroll snap), with footage on the right fading into the words */
+.hero{position:relative;max-width:1000px;margin:0 auto 18px}
+.hero-track{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;border-radius:18px;border:1px solid var(--line);background:var(--bg2);box-shadow:0 12px 40px rgba(0,0,0,.45)}
+.hero-track::-webkit-scrollbar{display:none}
+.hero-slide{--c:#5ee7ff;position:relative;flex:0 0 100%;scroll-snap-align:start;min-height:230px;display:flex;align-items:center;overflow:hidden;text-decoration:none;color:var(--ink);border:0;padding:0;font:inherit;text-align:left;cursor:pointer;
+  background:radial-gradient(ellipse at 15% 50%,color-mix(in srgb,var(--c) 22%,transparent),transparent 60%),#0d0a1d}
+.hero-slide .hs-shot{position:absolute;right:0;top:0;width:66%;height:100%;object-fit:cover;object-position:50% 35%;-webkit-mask-image:linear-gradient(90deg,transparent,#000 38%);mask-image:linear-gradient(90deg,transparent,#000 38%);opacity:.9}
+.hero-slide .hs-shot.two{animation:hs-flip 4s steps(1) infinite}
+@keyframes hs-flip{50%{opacity:0}}
+@media (prefers-reduced-motion:reduce){.hero-slide .hs-shot.two{animation:none;opacity:0}}
+.hero-slide::after{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(255,255,255,.025) 0 1px,transparent 1px 3px),linear-gradient(90deg,rgba(13,10,29,.55),transparent 55%)}
+.hs-art{position:absolute;inset:0;background:radial-gradient(circle at 78% 50%,rgba(255,79,209,.4),transparent 40%),radial-gradient(circle at 92% 20%,rgba(94,231,255,.35),transparent 35%),repeating-linear-gradient(115deg,rgba(255,79,209,.08) 0 2px,transparent 2px 22px),linear-gradient(120deg,#170a2e,#0a1830)}
+.hero-slide.pass{--c:#ff4fd1}
+.hero-slide.pass .hs-art::after{content:"✦";position:absolute;right:12%;top:50%;transform:translateY(-50%);font-size:150px;line-height:1;color:transparent;background:linear-gradient(135deg,#ff4fd1,#5ee7ff);-webkit-background-clip:text;background-clip:text;filter:drop-shadow(0 0 30px rgba(255,79,209,.6))}
+.hs-text{position:relative;z-index:1;display:flex;flex-direction:column;gap:6px;max-width:52%;padding:26px 30px}
+.hs-text small{font-family:var(--f-pixel);font-size:11px;letter-spacing:.14em;color:var(--c)}
+.hs-text b{font-family:var(--f-marquee);font-weight:400;font-size:clamp(26px,4.2vw,40px);line-height:1;color:#fff;text-shadow:0 0 20px color-mix(in srgb,var(--c) 60%,transparent),0 3px 0 #0a0612}
+.hs-text p{margin:0;font-size:14px;color:#d8d2ee;line-height:1.4}
+.hs-cta{align-self:flex-start;margin-top:6px;font-family:var(--f-pixel);font-size:12px;color:#120a1c;background:var(--c);border-radius:8px;padding:8px 14px;box-shadow:0 3px 0 color-mix(in srgb,var(--c) 45%,#000)}
+.hero-nav{position:absolute;top:50%;transform:translateY(-50%);z-index:2;width:36px;height:52px;border-radius:12px;border:1px solid var(--line);background:rgba(16,11,32,.8);color:var(--ink);font-size:26px;cursor:pointer;opacity:0;transition:opacity .2s}
+.hero:hover .hero-nav,.hero-nav:focus-visible{opacity:1}.hero-nav.prev{left:10px}.hero-nav.next{right:10px}
+.hero-dots{position:absolute;left:30px;bottom:12px;z-index:2;display:flex;gap:7px}
+.hero-dots button{width:22px;height:5px;border-radius:3px;border:0;padding:0;background:rgba(255,255,255,.25);cursor:pointer}
+.hero-dots button[aria-selected="true"]{background:#fff;box-shadow:0 0 8px rgba(255,255,255,.6)}
+/* the tournament, as a slide */
+.hero .tourney{border:0;border-radius:0;margin:0;max-width:none;box-shadow:none;padding:24px 30px 34px;background:radial-gradient(ellipse at 15% 50%,rgba(255,210,61,.18),transparent 60%),#0d0a1d}
+.hero .tourney>*:not(.hs-shot){position:relative;z-index:1}
+.hero .tourney h2{font-size:clamp(26px,4vw,38px)}
+.hero .tourney ol{background:rgba(10,6,18,.72);border-radius:10px;padding:8px 12px}
+/* couch mode: a bright highlight on whatever the arrows or controller are on */
+.couch :focus{outline:3px solid #ffe36a!important;outline-offset:3px;box-shadow:0 0 0 6px rgba(255,227,106,.18),0 0 26px rgba(255,227,106,.35)!important}
+.couch a.cab:focus{transform:translateY(-4px) scale(1.02)}
+.couch .row{padding:10px 8px 12px}
+.today{max-width:900px;margin:0 auto 12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr));gap:10px}
+.today>.lvl,.today>.pstrip{margin:0;max-width:none}
+@media (max-width:640px){.hero-slide{min-height:300px;align-items:flex-end}.hero-slide .hs-shot{width:100%;height:62%;-webkit-mask-image:linear-gradient(180deg,#000 55%,transparent);mask-image:linear-gradient(180deg,#000 55%,transparent)}.hs-text{max-width:none;padding:18px 18px 30px}.hs-text p{font-size:13px}.hero-dots{left:18px}.hero .tourney{align-content:end;padding-top:150px}}
 .tourney{--c:#ffd23d;display:grid;grid-template-columns:auto 1fr auto;gap:14px 20px;align-items:center;margin:0 auto 26px;max-width:900px;padding:16px 20px;
   border:2px solid #ffd23d;border-radius:16px;background:linear-gradient(135deg,rgba(255,210,61,.14),rgba(255,154,61,.05) 60%,transparent),var(--bg2);
   box-shadow:0 0 30px rgba(255,210,61,.18);text-decoration:none;color:var(--ink)}
@@ -329,6 +365,7 @@ footer p{margin:4px 0}
 .boot-post{position:absolute;inset:0;padding:max(28px,7vh) max(18px,7vw);font-size:clamp(11px,2.5vw,16px);line-height:1.75;white-space:pre-wrap;text-shadow:0 0 6px rgba(61,255,143,.75);transition:opacity .35s}
 .boot-post .dim{color:#1f9a55}
 .boot-post .ok{color:#ffe36a;text-shadow:0 0 6px rgba(255,227,106,.7)}
+.boot-post .warn{color:#ff7bf0;text-shadow:0 0 6px rgba(255,123,240,.6)}
 .boot-post .cur::after{content:"█";animation:boot-blink .6s steps(2,start) infinite}
 @keyframes boot-blink{to{visibility:hidden}}
 .boot-bar{display:inline-block;width:min(240px,34vw);height:.75em;border:1px solid #3dff8f;vertical-align:-.05em;margin:0 8px;padding:1px}
@@ -467,13 +504,20 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
     <div class="coin" aria-hidden="true">▶ PICK A CABINET ◀</div>
     <div class="stats" id="stats"></div>
   </header>
+  <section class="hero" id="hero" aria-roledescription="carousel" aria-label="Featured">
+    <div class="hero-track" id="heroTrack"></div>
+    <button type="button" class="hero-nav prev" aria-label="Previous">‹</button><button type="button" class="hero-nav next" aria-label="Next">›</button>
+    <div class="hero-dots" role="tablist" aria-label="Featured slides"></div>
+  </section>
+  <div class="today">
   <section class="lvl" id="lvl" aria-label="Your level"></section>
   <section class="pstrip" id="passStrip" role="button" tabindex="0" aria-label="Arcade Pass" hidden></section>
+  </div>
   <section class="missions" id="missions" aria-label="Daily missions"></section>
   <div class="viewbar" role="group" aria-label="View">
     <button id="vGrid" aria-pressed="true">▦ CABINETS</button><button id="vFloor" aria-pressed="false">⌂ WALK THE ARCADE</button><button id="vProfile" aria-pressed="false">★ PROFILE</button><button class="prize" id="vPrize">PRIZE COUNTER · <b id="tixN">0</b> TICKETS</button>
   </div>
-  <a class="tourney" id="tourney" hidden>
+  <a class="tourney hero-slide" id="tourney" hidden>
     <canvas width="12" height="8"></canvas>
     <div><div class="t-head">★ WEEKLY TOURNAMENT</div><h2></h2><div class="t-meta"><span>ENDS IN <b class="t-left"></b></span><span>YOUR BEST <b class="t-mine">—</b></span></div></div>
     <ol class="t-top"><li><span>WORLD TOP 3</span><span>…</span></li></ol>
@@ -482,7 +526,7 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
   <section class="arcadefloor" id="arcadeFloor" hidden>
     <canvas id="floorCv" tabindex="0" aria-label="The arcade floor: walk to a cabinet to play it"></canvas>
     <div class="fl-card" id="floorCard"></div>
-    <p class="fl-help">←↑↓→ or WASD to walk · hold SHIFT to run · Enter to play or use · tap where to go, or the map · controllers work too (B runs)</p>
+    <p class="fl-help">←↑↓→ or WASD to walk · hold SHIFT to run · Enter to play or use · E to emote · tap where to go, or the map · controllers work too (B runs, Y emotes)</p>
   </section>
   <section class="profile" id="profileView" hidden></section>
   <section class="cabs" id="cabs" aria-label="Cabinets">
@@ -512,6 +556,7 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
 <script src="shared/shelves.js"></script>
 <script src="shared/pass.js"></script>
 <script src="shared/settings.js"></script>
+<script src="shared/couch.js"></script>
 <script>
 (() => {
 const GAMES = [
@@ -706,6 +751,51 @@ if (feat) {
   tick(); setInterval(tick, 30000);
   try { const mine = JSON.parse(get('arcade:week:' + feat.slug)); if (mine && mine.w === WEEKLY.key()) tourney.querySelector('.t-mine').textContent = mine.s.toLocaleString(); } catch (e) {}
 }
+/*
+ * The featured banner up top: a strip of slides you can swipe, with dots and arrows, turning every 7 s (not with
+ * reduced motion, nor while you're pointing at it): this week's tournament, the newest cabinet, a story mode (one a
+ * day) and the Arcade Pass. Each shows that game's footage.
+ */
+const heroTrack = document.getElementById('heroTrack');
+const STORIES = { 'dungeon-delve': ['THE FIVE DEPTHS', 'Five floors down to Morrowgast the lich. Buy upgrades with the gems you find, then try Boss Rush.'], 'blast-brigade': ['OPERATION IRON DAWN', 'Five fronts, from the desert to the Iron Fortress and its walking Colossus. Then hold out in Survival.'], 'pixel-peaks': ['THE EIGHT PEAKS', 'Climb all eight to the summit, where Grumble the storm cloud waits. Then race the Time Trial.'], 'turbo-tour': ['THE GRAND TOUR', 'Six races against five rivals. Finish in the top three to go on, and beat Vex Valentine in the final.'] };
+function heroSlide({ g, kick, title, text, cta, href, onGo, cls }) {
+  const a = document.createElement(href ? 'a' : 'button'); a.className = 'hero-slide' + (cls ? ' ' + cls : ''); if (href) a.href = href; else a.type = 'button';
+  if (g) a.style.setProperty('--c', g.c);
+  a.innerHTML = `${g ? `<img class="hs-shot" alt="" loading="lazy" src="icons/screens/${g.slug}-1.webp"><img class="hs-shot two" alt="" loading="lazy" src="icons/screens/${g.slug}-2.webp">` : '<i class="hs-art"></i>'}<div class="hs-text"><small></small><b></b><p></p><span class="hs-cta"></span></div>`;
+  a.querySelector('small').textContent = kick; a.querySelector('b').textContent = title; a.querySelector('p').textContent = text; a.querySelector('.hs-cta').textContent = cta;
+  a.querySelectorAll('img').forEach(im => im.addEventListener('error', () => im.remove()));
+  if (onGo) a.addEventListener('click', onGo);
+  heroTrack.append(a); return a;
+}
+if (feat) { heroTrack.append(tourney); tourney.insertAdjacentHTML('afterbegin', `<img class="hs-shot" alt="" src="icons/screens/${feat.slug}-1.webp"><img class="hs-shot two" alt="" src="icons/screens/${feat.slug}-2.webp">`); }
+{
+  const nw = GAMES.slice().sort((a, b) => (b.added || '').localeCompare(a.added || '') || GAMES.indexOf(b) - GAMES.indexOf(a))[0];
+  if (nw) heroSlide({ g: nw, kick: '✦ NEW ARRIVAL', title: nw.name, text: nw.blurb, cta: 'PLAY NOW ▶', href: `games/${nw.slug}/` });
+  const ids = Object.keys(STORIES), sg = GAMES.find(g => g.slug === ids[Math.floor(Date.now() / 864e5) % ids.length]);
+  if (sg) heroSlide({ g: sg, kick: `★ STORY MODE · ${sg.name.toUpperCase()}`, title: STORIES[sg.slug][0], text: STORIES[sg.slug][1] + ' Four cabinets have a story now.', cta: 'PLAY THE STORY ▶', href: `games/${sg.slug}/` });
+  if (window.PASS && PASS.season()) {
+    const se = PASS.season(), ready = PASS.ready().length;
+    heroSlide({ kick: '✦ ARCADE PASS · SEASON 1', title: se.name, text: `Tier ${PASS.tier()} of ${PASS.TIERS}. Every bit of XP climbs it: tickets, prizes, and pass-only finishes like the Diamond Cabinet. ${ready ? ready + ' reward' + (ready === 1 ? '' : 's') + ' waiting.' : ''}`, cta: ready ? `CLAIM ${ready} ▶` : 'OPEN THE PASS ▶', onGo: () => PassView.open(), cls: 'pass' });
+  }
+}
+const heroCount = heroTrack.children.length, heroEl = document.getElementById('hero'), heroDots = heroEl.querySelector('.hero-dots');
+heroEl.hidden = !heroCount;
+const heroSlides = () => [...heroTrack.children].filter(s => !s.hidden);
+let heroAt = 0, heroHold = false;
+heroSlides().forEach((s, i) => { const d = document.createElement('button'); d.type = 'button'; d.setAttribute('role', 'tab'); d.setAttribute('aria-label', `Slide ${i + 1}`); d.addEventListener('click', () => heroGo(i)); heroDots.append(d); });
+function heroGo(i, smooth = true) {
+  const list = heroSlides(); if (!list.length) return; heroAt = (i + list.length) % list.length;
+  heroTrack.scrollTo({ left: list[heroAt].offsetLeft - heroTrack.offsetLeft, behavior: smooth && !matchMedia('(prefers-reduced-motion: reduce)').matches ? 'smooth' : 'auto' });
+  [...heroDots.children].forEach((d, k) => d.setAttribute('aria-selected', String(k === heroAt)));
+}
+heroTrack.addEventListener('scroll', () => { const list = heroSlides(); const k = list.reduce((b, s, i) => Math.abs(s.offsetLeft - heroTrack.offsetLeft - heroTrack.scrollLeft) < Math.abs(list[b].offsetLeft - heroTrack.offsetLeft - heroTrack.scrollLeft) ? i : b, 0); if (k !== heroAt) { heroAt = k; [...heroDots.children].forEach((d, j) => d.setAttribute('aria-selected', String(j === k))); } }, { passive: true });
+heroEl.querySelector('.prev').addEventListener('click', () => heroGo(heroAt - 1));
+heroEl.querySelector('.next').addEventListener('click', () => heroGo(heroAt + 1));
+['pointerenter', 'focusin'].forEach(ev => heroEl.addEventListener(ev, () => { heroHold = true; }));
+['pointerleave', 'focusout'].forEach(ev => heroEl.addEventListener(ev, () => { heroHold = false; }));
+heroGo(0, false);
+Couch.hero = d => { heroGo(heroAt + d); setTimeout(() => { const sl = heroSlides()[heroAt]; if (sl) sl.focus({ preventScroll: true }); }, 400); }; // couch mode: left and right turn the banner
+if (!matchMedia('(prefers-reduced-motion: reduce)').matches && heroCount > 1) setInterval(() => { if (!heroHold && !document.hidden && !heroEl.hidden && heroEl.getBoundingClientRect().bottom > 0) heroGo(heroAt + 1); }, 7000);
 const showTop3 = list => {
   const ol = tourney.querySelector('.t-top'); ol.textContent = '';
   const head = document.createElement('li'); head.innerHTML = '<span>WORLD TOP 3</span>'; ol.append(head);
@@ -819,10 +909,15 @@ function renderLevel() {
 renderLevel();
 const passEl = document.getElementById('passStrip');
 PassView.init(passEl, { onChange: () => { tixShow(); renderLevel(); }, before: () => loadFloor() });
+// couch mode (shared/couch.js): arrows and controllers get round the lobby; the walkable floor has its own controls
+Couch.init({
+  active: () => !document.documentElement.classList.contains('booting') && document.getElementById('boot').hidden && (!!document.querySelector('.set:not([hidden]),.ps:not([hidden]),.pc:not([hidden])') || floorView.hidden),
+  views: [vGrid, vFloor, vProfile], onSettings: () => Settings.open()
+});
 function setView(v) {
   const walk = v === 'floor', prof = v === 'profile';
   floorView.hidden = !walk; document.getElementById('cabs').hidden = walk || prof; profileView.hidden = !prof; missionsEl.hidden = prof || !window.MISSIONS; lvlEl.hidden = prof || !window.XP; if (!prof) renderLevel(); passEl.hidden = prof || !(window.PASS && PASS.season()); if (!prof) PassView.render();
-  if (feat) tourney.hidden = prof;
+  document.getElementById('hero').hidden = prof || !heroCount;
   vGrid.setAttribute('aria-pressed', String(!walk && !prof)); vFloor.setAttribute('aria-pressed', String(walk)); vProfile.setAttribute('aria-pressed', String(prof));
   if (walk) loadFloor().then(() => { if (!floorView.hidden) Floor.start(); }, () => {}); else if (window.Floor && floorP) floorP.then(() => { if (floorView.hidden) Floor.stop(); }, () => {});
   if (prof) Profile.render();
@@ -887,7 +982,10 @@ reset.addEventListener('click', () => {
   const get = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
   const IDLE = (+new URLSearchParams(location.search).get('idle') || 60) * 1000; // ?idle=5 shortens it for testing
   const chip = window.Chip, B = window.Boot, snd = B ? B.sound : new Proxy({}, { get: () => () => {} });
-  const fl = B ? B.flight(document.getElementById('bootCv')) : { start() {}, slam() {}, cruise() {}, still() {}, stop() {} };
+  const fl = B ? B.flight(document.getElementById('bootCv')) : { start() {}, slam() {}, cruise() {}, still() {}, stop() {}, dive() {} };
+  // a returning player (they've played, or saved initials) gets a shorter, personal boot
+  const ini = /^[A-Z]{3}$/.test(get('arcade:initials') || '') ? get('arcade:initials') : '';
+  let back = !!ini; try { back = back || Object.keys(localStorage).some(k => k.startsWith('arcade:plays:')); } catch (e) {}
   // mode: boot (stage: gate → bios → flight → title), attract, entering (the coin and the doors) or lobby
   let mode = boot.hidden ? 'lobby' : 'boot', stage = 'gate', idleT = 0, cycleT = 0, slamT = 0;
   const sleep = ms => new Promise(r => setTimeout(r, reduced ? 0 : ms));
@@ -929,17 +1027,18 @@ reset.addEventListener('click', () => {
     mode = 'entering'; rush = false; clearInterval(cycleT); boot.classList.remove('hof');
     try { sessionStorage.setItem('bitcade:booted', '1'); } catch (e) {}
     boot.classList.add('coined'); snd.coin(1.0);
-    await beat(1080);
+    await beat(back ? 700 : 1080);
+    fl.dive(); snd.swell(1.2); // the camera dives down the road toward the doors
     const led = document.getElementById('bootLed'); led.textContent = 'CREDIT 01'; led.classList.add('lit'); snd.credit();
-    await beat(380);
+    await beat(back ? 260 : 380);
     if (rush) return fadeOut();
     boot.classList.add('doors'); void boot.offsetWidth; boot.classList.add('shut'); snd.doorsClose(0.38);
     await beat(380); boot.classList.add('jolt'); fl.stop();
     await beat(260);
-    for (let i = 0; i < 7 && !rush; i++) { letters(i).forEach(s => s.classList.add('lit')); snd.letter(i); await beat(115); }
+    for (let i = 0; i < 7 && !rush; i++) { letters(i).forEach(s => s.classList.add('lit')); snd.letter(i); await beat(back ? 70 : 115); }
     if (rush) return fadeOut();
     boot.classList.add('lit'); snd.shine();
-    await beat(520);
+    await beat(back ? 340 : 520);
     if (rush) return fadeOut();
     done(); boot.classList.add('open'); snd.doorsOpen();
     setTimeout(() => { if (mode === 'lobby') reset(); }, 800);
@@ -1003,7 +1102,7 @@ reset.addEventListener('click', () => {
   /* ---------- the boot sequence ---------- */
   if (mode === 'lobby') return armIdle();
   watchPads();
-  document.getElementById('bootSub').textContent = `${document.querySelectorAll('.cab').length} CLASSIC GAMES · NO QUARTERS REQUIRED`;
+  document.getElementById('bootSub').textContent = back && window.XP ? `WELCOME BACK${ini ? ', ' + ini : ''} · LEVEL ${XP.info().level} · ${XP.info().title}` : `${document.querySelectorAll('.cab').length} CLASSIC GAMES · NO QUARTERS REQUIRED`;
   if (reduced) { stage = 'title'; boot.classList.add('on', 'scene', 'slam'); fl.still(); }
   else boot.classList.add('gate');
   async function bios() {
@@ -1014,7 +1113,8 @@ reset.addEventListener('click', () => {
     const line = (cls = '') => { const d = document.createElement('div'); if (cls) d.className = cls; post.appendChild(d); return d; };
     const type = async (el, text) => { el.classList.add('cur'); for (let i = 1; i <= text.length && !gone(); i++) { el.textContent = text.slice(0, i); if (i % 2 === 0) await sleep(12); if (i % 9 === 0 && Math.random() < 0.6) snd.disk(2); } el.classList.remove('cur'); };
     const check = async (label, value) => { const d = line(); await type(d, label + value); if (gone()) return; await sleep(70); d.insertAdjacentHTML('beforeend', '  <span class="ok">OK</span>'); snd.ok(); };
-    await sleep(620); if (gone()) return;
+    await sleep(back ? 380 : 620); if (gone()) return;
+    if (back) return welcome(line, type, check, gone);
     await type(line(), 'BITCADE SYSTEMS INC.   BIOS V1.84'); if (gone()) return;
     await type(line('dim'), '(C) 2026 BITCADE. ALL RIGHTS RESERVED.'); if (gone()) return;
     line(); await sleep(120);
@@ -1031,6 +1131,23 @@ reset.addEventListener('click', () => {
     line(); await type(line('ok'), 'ALL SYSTEMS GO. LOADING BITCADE...'); if (gone()) return;
     await sleep(420); if (gone()) return;
     toFlight(); // then the logo lands, and it waits on the title until a key, click, tap or controller button
+  }
+  /** The returning player's BIOS: who you are, where you're up to, what's waiting. */
+  async function welcome(line, type, check, gone) {
+    const v = window.XP ? XP.info() : null, tix = window.TICKETS ? TICKETS.balance() : 0;
+    const rewards = window.PASS && PASS.season() ? PASS.ready().length : 0, left = window.MISSIONS ? MISSIONS.list().filter(m => !m.done).length : 0;
+    let last = ''; try { const r = JSON.parse(get('bitcade:recent') || '[]')[0], g = r && B && B.games && B.games.list.find(x => x.slug === r); last = g ? g.name.toUpperCase() : ''; } catch (e) {}
+    await type(line(), 'BITCADE SYSTEMS INC.   BIOS V1.84'); if (gone()) return;
+    line(); await sleep(60);
+    await check('PLAYER ...... ', `${ini || 'GUEST'} DETECTED`); if (gone()) return;
+    if (v) { await check('LEVEL ....... ', `${v.level} · ${v.title}`); if (gone()) return; }
+    await check('TICKETS ..... ', tix.toLocaleString()); if (gone()) return;
+    if (last) { await check('LAST GAME ... ', last); if (gone()) return; }
+    const waiting = [rewards ? `${rewards} PASS REWARD${rewards === 1 ? '' : 'S'}` : '', left ? `${left} MISSION${left === 1 ? '' : 'S'} LEFT TODAY` : ''].filter(Boolean).join(' · ');
+    if (waiting) { const d = line('warn'); await type(d, 'WAITING ..... ' + waiting); if (gone()) return; snd.beep(); }
+    line(); await type(line('ok'), `WELCOME BACK${ini ? ', ' + ini : ''}. LOADING BITCADE...`); if (gone()) return;
+    await sleep(300); if (gone()) return;
+    toFlight();
   }
 })();
 </script>
