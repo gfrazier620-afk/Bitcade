@@ -128,6 +128,22 @@ window.BADGES = {
     { id: 'wave10', name: 'Holdout', desc: 'Reach wave 10' },
     { id: 'flawless', name: 'None Shall Pass', desc: 'Hold five waves without losing a life' },
     { id: 'max', name: 'Fortified', desc: 'Fully upgrade a tower' }],
+  'sky-squadron': [
+    { id: 'boss', name: 'Ace Pilot', desc: 'Bring down a battleship or a sky fortress' },
+    { id: 'power', name: 'Full Power', desc: 'Power your guns all the way up' },
+    { id: 'stage3', name: 'Squadron Leader', desc: 'Reach the third stage' }],
+  'street-sweepers': [
+    { id: 'boss', name: 'Street Boss', desc: 'Beat a Rust Gang boss' },
+    { id: 'clean', name: 'Clean Sweep', desc: 'Clear a street without losing a life' },
+    { id: 'duo', name: 'Partners', desc: 'Clear a street with both players standing' }],
+  'gem-cascade': [
+    { id: 'cascade', name: 'Avalanche', desc: 'Set off a five-step cascade' },
+    { id: 'star', name: 'Star Maker', desc: 'Make a star gem (five in a row)' },
+    { id: 'daily', name: 'Daily Gem', desc: 'Finish a daily board' }],
+  'knockout-kings': [
+    { id: 'star', name: 'Star Punch', desc: 'Land a star punch' },
+    { id: 'perfect', name: 'Untouchable', desc: 'Win a fight without being hit' },
+    { id: 'champ', name: 'Champion', desc: 'Beat the Iron Duke for the belt' }],
   'blip-sports': [
     { id: 'fbwin', name: 'Gridiron Win', desc: 'Win a football game' },
     { id: 'bbwin', name: 'Ballpark Win', desc: 'Win a baseball game' },
@@ -146,7 +162,7 @@ window.WEEKLY = (() => {
   const ROTATION = ['rock-rift', 'light-trail', 'wallbuster', 'garden-gunner', 'crater-lander', 'circuit-chase',
     'scaffold-scramble', 'back-alley-brawl', 'swarm-strike', 'highrise-handyman', 'volley-duel', 'turbo-tour', 'raptor-ridge', 'marsh-marksman',
     'pixel-peaks', 'pop-lagoon', 'neon-steps', 'twin-blast', 'stackdown', 'hedge-hop', 'wing-duel', 'neon-noodle', 'sky-shield', 'mole-patrol',
-    'star-siege', 'nitro-lane', 'cube-hopper', 'blast-brigade', 'dungeon-delve', 'lucky-line', 'rampart-rush'];
+    'star-siege', 'nitro-lane', 'cube-hopper', 'blast-brigade', 'dungeon-delve', 'lucky-line', 'rampart-rush', 'sky-squadron', 'street-sweepers', 'gem-cascade', 'knockout-kings'];
   const DAY = 864e5, EPOCH = Date.UTC(2024, 0, 1), FIRST = 145; // EPOCH is a Monday; week 145 is the one starting 2026-10-12
   const index = (now = Date.now()) => Math.floor((now - EPOCH) / (7 * DAY));
   const start = (now = Date.now()) => EPOCH + index(now) * 7 * DAY;
@@ -220,10 +236,11 @@ window.MISSIONS = (() => {
     'hedge-hop': 1500, 'scaffold-scramble': 500, 'swarm-strike': 4000, 'garden-gunner': 1500, 'cube-hopper': 1200, 'light-trail': 500,
     'wing-duel': 1500, 'twin-blast': 5000, 'mole-patrol': 1500, 'turbo-tour': 6000, 'raptor-ridge': 4000, 'marsh-marksman': 8000,
     'pixel-peaks': 3000, 'pop-lagoon': 3000, 'neon-steps': 25000,
-    'blast-brigade': 3000, 'dungeon-delve': 800, 'lucky-line': 300, 'rampart-rush': 2500
+    'blast-brigade': 3000, 'dungeon-delve': 800, 'lucky-line': 300, 'rampart-rush': 2500,
+    'sky-squadron': 12000, 'street-sweepers': 2500, 'gem-cascade': 3500, 'knockout-kings': 4000
   };
   const AREAS = { RACEWAY: ['turbo-tour', 'nitro-lane', 'light-trail'], 'SHOOTING GALLERY': ['raptor-ridge', 'marsh-marksman'] };
-  const DAILY = ['stackdown', 'wallbuster', 'twin-blast', 'mole-patrol', 'wing-duel'];
+  const DAILY = ['stackdown', 'wallbuster', 'twin-blast', 'mole-patrol', 'wing-duel', 'gem-cascade'];
   const name = slug => slug.split('-').map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
   const REWARD = 10, BONUS = 20;
   function rng(seed) { let h = 2166136261; for (const ch of seed) h = Math.imul(h ^ ch.charCodeAt(0), 16777619); return () => { h += 0x6d2b79f5; let t = h; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }

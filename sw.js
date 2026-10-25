@@ -13,10 +13,10 @@
  *
  * Adding a game? Add its slug to GAMES. The smoke tests check that GAMES matches games/.
  */
-const VERSION = 'bitcade-v40', RUNTIME = 'bitcade-runtime';
+const VERSION = 'bitcade-v41', RUNTIME = 'bitcade-runtime';
 const GAMES = ['neon-noodle', 'wallbuster', 'star-siege', 'rock-rift', 'stackdown', 'back-alley-brawl', 'circuit-chase',
   'highrise-handyman', 'nitro-lane', 'volley-duel', 'crater-lander', 'sky-shield', 'hedge-hop', 'scaffold-scramble', 'swarm-strike', 'garden-gunner', 'cube-hopper',
-  'light-trail', 'wing-duel', 'twin-blast', 'mole-patrol', 'turbo-tour', 'raptor-ridge', 'marsh-marksman', 'pixel-peaks', 'pop-lagoon', 'neon-steps', 'blast-brigade', 'dungeon-delve', 'lucky-line', 'rampart-rush', 'blip-sports'];
+  'light-trail', 'wing-duel', 'twin-blast', 'mole-patrol', 'turbo-tour', 'raptor-ridge', 'marsh-marksman', 'pixel-peaks', 'pop-lagoon', 'neon-steps', 'blast-brigade', 'dungeon-delve', 'lucky-line', 'rampart-rush', 'sky-squadron', 'street-sweepers', 'gem-cascade', 'knockout-kings', 'blip-sports'];
 const FONTS = ['bungee-400', 'bungee-shade-400', 'rubik', 'silkscreen-400', 'russo-one-400', 'chakra-petch-400', 'chakra-petch-500', 'chakra-petch-600', 'chakra-petch-700', 'vt323-400'];
 const SHELL = ['./', 'manifest.json', 'shared/fonts.css', ...FONTS.map(f => `shared/fonts/${f}.woff2`), 'shared/arcade.js', 'shared/arcade.css', 'shared/world.js', 'shared/badges.js', 'shared/chip.js', 'shared/boot.js', 'shared/prizes.js', 'shared/floor-play.js', 'shared/floor.js', 'shared/profile.js', 'shared/shelves.js', 'shared/pass.js', 'shared/settings.js', 'shared/couch.js', 'shared/story.js', 'shared/save.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', ...GAMES.map(g => `games/${g}/`),

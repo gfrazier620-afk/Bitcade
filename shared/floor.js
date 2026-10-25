@@ -119,6 +119,7 @@ window.Floor = (() => {
     for (let i = 0; i < 4; i++) slots.push([1244 + i * 94, 400]);
     slots.push([680, 1110], [762, 1110]); // the newest cabinets, by the entrance
     for (let i = 0; i < 5; i++) slots.push([60 + i * 98, 400]); // and below the raceway, if the arcade grows
+    slots.push([2012, 116], [2110, 116], [1712, 400], [1806, 400], [1950, 400], [2044, 400]); // then the far end of the shooting gallery
     rest.forEach((g, i) => addCab(g, 'upright', ...slots[Math.min(i, slots.length - 1)]));
     FIXED.forEach(o => objs.push({ ...o, base: o.y + o.h }));
   }

@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Sky Squadron</title>
+<link rel="manifest" href="../../manifest.json">
+<meta name="theme-color" content="#0f0c1f">
+<link rel="icon" type="image/png" href="../../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../../icons/apple-touch-icon.png">
+<link rel="preload" href="../../shared/fonts/bungee-400.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="../../shared/fonts/silkscreen-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../../shared/fonts.css">
+<link rel="stylesheet" href="../../shared/arcade.css">
+</head>
+<body data-game="sky-squadron" data-pad="2:KeyX 1:KeyC" style="--game:#4fa8ff">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>SKY SQUADRON</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <div class="pad">
+    <div class="dp"><button class="u" data-k="ArrowUp" aria-label="Up">▲</button><button class="l" data-k="ArrowLeft" aria-label="Left">◀</button><button class="r" data-k="ArrowRight" aria-label="Right">▶</button><button class="d" data-k="ArrowDown" aria-label="Down">▼</button></div>
+    <div class="ab"><button class="sm" data-k="KeyC">LOOP</button><button class="sm" data-k="KeyX">BOMB</button><button data-k="Space">FIRE</button></div>
+  </div>
+  <p class="help"><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> or WASD fly · hold <kbd>Space</kbd> or <kbd>Z</kbd> to fire · <kbd>X</kbd> bomb · <kbd>C</kbd> loop-the-loop (dodges everything) · <kbd>P</kbd> pause · on touch, drag to fly (it fires by itself) · gamepad: A fire, X bomb, B loop</p>
+</main>
+<script src="../../shared/chip.js"></script>
+<script src="../../shared/badges.js"></script>
+<script src="../../shared/arcade.js"></script>
+<script>
+(() => {
+/*
+ * Sky Squadron: a propeller fighter over the ocean, the screen scrolling up. Formations of fighters, bombers and
+ * gunboats come at you; wipe out a whole formation for a P (more guns, up to a five-way spread), bombers drop bombs (B)
+ * and gunboats medals (★ 500). X drops a bomb that wipes the sky of bullets and hurts everything; C flies a loop-the-loop
+ * that nothing can touch. Each stage ends with a boss: a battleship with turrets, or a giant bomber with four engines.
+ * One hit and you lose a plane (and a level of guns).
+ */
+const A = Arcade, cv = document.getElementById('cv');
+const W = 360, H = 540, ctx = A.canvas(cv, W, H), OUT = '#0a0612';
+function shade(hex, k) {
+  let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join('');
+  const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+/** Boxes [x, y, w, h, colour]: an outline pass, then fills lit from above. */
+function paint(x, list) {
+  x.fillStyle = OUT; for (const q of list) x.fillRect(q[0] - 1, q[1] - 1, q[2] + 2, q[3] + 2);
+  for (const [px, py, w, h, c] of list) { x.fillStyle = c; x.fillRect(px, py, w, h); if (w > 2 && h > 2) { x.fillStyle = shade(c, 0.32); x.fillRect(px, py, w, 1); x.fillStyle = shade(c, -0.3); x.fillRect(px, py + h - 1, w, 1); } }
+}
+const sprite = (w, h, fn) => { const c = document.createElement('canvas'); c.width = w; c.height = h; fn(c.getContext('2d'), w, h); return c; };
+
+/* ---------- sprites, drawn once ---------- */
+const HERO = sprite(36, 34, x => paint(x, [[3, 13, 30, 7, '#4fa8ff'], [12, 26, 12, 4, '#3d86d8'], [15, 4, 6, 26, '#6ab8ff'], [16, 2, 4, 3, '#ff4f6d'], [16, 10, 4, 5, '#bfe8ff'], [3, 13, 4, 7, '#ff4f6d'], [29, 13, 4, 7, '#ff4f6d']]));
+const FIGHTER = sprite(28, 26, x => paint(x, [[2, 6, 24, 6, '#6a7a4a'], [9, 1, 10, 3, '#5a6a3a'], [11, 2, 6, 20, '#7a8a5a'], [12, 20, 4, 3, '#c8203a'], [12, 9, 4, 4, '#2a3a4a'], [2, 6, 3, 6, '#c8203a'], [23, 6, 3, 6, '#c8203a']]));
+const BOMBER = sprite(78, 56, x => { paint(x, [[2, 16, 74, 12, '#6a6a7a'], [30, 2, 18, 50, '#7a7a8a'], [24, 46, 30, 6, '#5a5a6a'], [10, 12, 8, 14, '#4a4a58'], [24, 12, 8, 14, '#4a4a58'], [46, 12, 8, 14, '#4a4a58'], [60, 12, 8, 14, '#4a4a58'], [34, 36, 10, 8, '#2a3a4a'], [36, 50, 6, 4, '#c8203a']]); });
+const BOAT = sprite(26, 50, x => { paint(x, [[4, 4, 18, 42, '#5a6070'], [8, 14, 10, 14, '#7a8090'], [10, 30, 6, 8, '#3a4050']]); x.fillStyle = OUT; x.beginPath(); x.moveTo(4, 46); x.lineTo(13, 50); x.lineTo(22, 46); x.fill(); });
+
+/* ---------- the sea below: water, wave lines, islands; clouds above ---------- */
+const THEMES = [{ name: 'OPEN SEA', sea: ['#1a5aa8', '#2a7ac8'], foam: 'rgba(255,255,255,.18)', isle: '#4fa860', sand: '#e8d090' },
+  { name: 'SUNSET STRAIT', sea: ['#7a3a6a', '#d8784a'], foam: 'rgba(255,230,180,.22)', isle: '#6a8a4a', sand: '#e8b070' },
+  { name: 'NIGHT RAID', sea: ['#0a1a3a', '#1a3060'], foam: 'rgba(160,200,255,.14)', isle: '#2a5a4a', sand: '#8a8a70' }];
+let theme = THEMES[0], bgY = 0, islands = [], clouds = [];
+const seaTile = THEMES.map(t => sprite(W, 180, x => {
+  const g = x.createLinearGradient(0, 0, W, 0); g.addColorStop(0, t.sea[0]); g.addColorStop(0.5, t.sea[1]); g.addColorStop(1, t.sea[0]); /* sideways only, so the tiles meet without a seam */ x.fillStyle = g; x.fillRect(0, 0, W, 180);
+  x.strokeStyle = t.foam; x.lineWidth = 2; let s = 3; const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < 26; i++) { const wx = r() * W, wy = r() * 180, wl = 12 + r() * 20; x.beginPath(); x.moveTo(wx, wy); x.quadraticCurveTo(wx + wl / 2, wy - 4, wx + wl, wy); x.stroke(); }
+}));
+function island() {
+  const pts = [], n = 9, rx = A.rand(30, 70), ry = A.rand(24, 54);
+  for (let i = 0; i < n; i++) { const a = i / n * 6.283, k = A.rand(0.75, 1.15); pts.push([Math.cos(a) * rx * k, Math.sin(a) * ry * k]); }
+  return { x: A.rand(20, W - 20), y: -120, pts, palms: Array.from({ length: 3 + (Math.random() * 4 | 0) }, () => [A.rand(-rx * 0.5, rx * 0.5), A.rand(-ry * 0.5, ry * 0.5)]) };
+}
+function drawIsland(x, s) {
+  const path = (k) => { x.beginPath(); s.pts.forEach(([px, py], i) => { const X = s.x + px * k, Y = s.y + py * k; i ? x.lineTo(X, Y) : x.moveTo(X, Y); }); x.closePath(); };
+  x.fillStyle = 'rgba(255,255,255,.25)'; path(1.22); x.fill();
+  x.fillStyle = OUT; path(1.1); x.fill(); x.fillStyle = theme.sand; path(1.06); x.fill();
+  x.fillStyle = theme.isle; path(0.86); x.fill(); x.fillStyle = shade(theme.isle, 0.25); path(0.5); x.fill();
+  for (const [px, py] of s.palms) { x.fillStyle = OUT; x.beginPath(); x.arc(s.x + px, s.y + py, 6, 0, 6.29); x.fill(); x.fillStyle = shade(theme.isle, -0.25); x.beginPath(); x.arc(s.x + px, s.y + py, 4.5, 0, 6.29); x.fill(); }
+}
+
+/* ---------- state ---------- */
+let state = 'title', stage = 1, score = 0, lives = 3, stageT = 0, waveT = 0, boss = null, clearT = 0, nextLife = 50000, msg = '', msgT = 0, formations = 0;
+let shots = [], foes = [], bad = [], items = [], bombFx = [];
+const me = { x: W / 2, y: H - 80, inv: 0, power: 1, bombs: 3, loop: 0, loopCD: 0, fireT: 0, dead: 0, tilt: 0 };
+const say = (t, s = 2) => { msg = t; msgT = s; };
+const lv = () => stage - 1;
+function newStage() {
+  theme = THEMES[(stage - 1) % THEMES.length]; stageT = 0; waveT = 1.2; boss = null; bad = []; islands = [island()]; islands[0].y = 160;
+  say(`STAGE ${stage} · ${theme.name}`, 2.4); A.jingle([392, 523, 659, 784], 0.09);
+}
+function newGame() {
+  stage = 1; score = 0; A.setScore(0); lives = A.easy ? 5 : 3; nextLife = 50000; formations = 0;
+  Object.assign(me, { x: W / 2, y: H - 80, inv: 2, power: 1, bombs: 3, loop: 0, loopCD: 0, fireT: 0, dead: 0 });
+  shots = []; foes = []; bad = []; items = []; bombFx = []; clouds = []; newStage(); state = 'play';
+}
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+A.onPress(c => {
+  if (c === 'KeyP' || c === 'Escape') return pause();
+  if (state !== 'play' || me.dead) return;
+  if (c === 'KeyX' || c === 'KeyB') bomb();
+  if (c === 'KeyC' || c === 'ShiftLeft' || c === 'ShiftRight') loopTheLoop();
+});
+A.onHide(pause);
+const add = (n, x, y, c = '#ffd23d') => {
+  score += n; A.setScore(score); if (x !== undefined) A.pop(x, y, '+' + n, c);
+  if (score >= nextLife) { nextLife += 50000; lives++; say('EXTRA PLANE!', 1.6); A.jingle([784, 988, 1319, 1568], 0.08); }
+};
+
+/* ---------- waves: formations of fighters, bombers and gunboats; then the boss ---------- */
+function formation(kind) {
+  const id = ++formations, n = { vee: 5, sine: 6, swoop: 4 }[kind], side = Math.random() < 0.5 ? -1 : 1, cx = A.rand(80, W - 80);
+  for (let i = 0; i < n; i++) {
+    const f = { kind: 'fighter', id, hp: 1 + Math.floor(lv() / 2), r: 11, t: -i * (kind === 'vee' ? 0 : 0.28), fireT: A.rand(0.8, 2.6), path: kind, i, side, cx, x: -50, y: -50 };
+    if (kind === 'vee') { f.ox = (i - 2) * 30; f.oy = -Math.abs(i - 2) * 26; }
+    foes.push(f);
+  }
+  foes.filter(f => f.id === id).forEach(f => { f.left = n; f.group = foes.filter(g => g.id === id); });
+}
+function spawnWave() {
+  const r = Math.random(), late = stageT > 18;
+  if (r < 0.26) formation('vee'); else if (r < 0.5) formation('sine'); else if (r < 0.68) formation('swoop');
+  else if (r < 0.84 && late) foes.push({ kind: 'bomber', hp: 14 + lv() * 4, r: 30, x: A.rand(70, W - 70), y: -60, t: 0, fireT: 1.5 });
+  else { for (let i = 0; i < 2; i++) foes.push({ kind: 'boat', hp: 5 + lv() * 2, r: 14, x: A.rand(40, W - 40), y: -60 - i * 70, t: 0, fireT: A.rand(1, 2) }); }
+}
+function spawnBoss() {
+  const ship = stage % 2 === 1, k = 1 + lv() * 0.35;
+  boss = ship
+    ? { kind: 'ship', x: W / 2, y: -170, vx: 34, t: 0, parts: [[-44, -60, 'turret'], [44, -60, 'turret'], [-44, 40, 'turret'], [44, 40, 'turret'], [0, -10, 'core']].map(([ox, oy, k2]) => ({ ox, oy, kind: k2, hp: Math.round((k2 === 'core' ? 46 : 10) * k), max: Math.round((k2 === 'core' ? 46 : 10) * k), r: k2 === 'core' ? 22 : 15, fireT: A.rand(0.6, 1.6), ang: Math.PI / 2, hit: 0 })) }
+    : { kind: 'fortress', x: W / 2, y: -110, vx: 46, t: 0, parts: [[-86, -4, 'engine'], [-48, -6, 'engine'], [48, -6, 'engine'], [86, -4, 'engine'], [0, 6, 'core']].map(([ox, oy, k2]) => ({ ox, oy, kind: k2, hp: Math.round((k2 === 'core' ? 50 : 9) * k), max: Math.round((k2 === 'core' ? 50 : 9) * k), r: k2 === 'core' ? 24 : 14, fireT: A.rand(0.8, 2), ang: Math.PI / 2, hit: 0 })) };
+  say(ship ? 'BATTLESHIP AHEAD!' : 'SKY FORTRESS!', 2.4); A.tone(70, 1.2, 'sawtooth', 0.06, 0, 40); A.shake(5, 0.8);
+}
+function aimShot(x, y, sp, spread = 0) { const a = Math.atan2(me.y - y, me.x - x) + spread; bad.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: 4 }); }
+
+/* ---------- you: guns, bombs, the loop ---------- */
+function fire() {
+  const p = me.power, y = me.y - 16, sp = -620;
+  const mk = (dx, ang) => shots.push({ x: me.x + dx, y, vx: Math.sin(ang) * 620, vy: sp * Math.cos(ang) });
+  if (p === 1) mk(0, 0);
+  if (p === 2) { mk(-6, 0); mk(6, 0); }
+  if (p === 3) { mk(0, 0); mk(-8, -0.12); mk(8, 0.12); }
+  if (p === 4) { mk(-5, 0); mk(5, 0); mk(-10, -0.16); mk(10, 0.16); }
+  if (p >= 5) { mk(0, 0); mk(-6, -0.08); mk(6, 0.08); mk(-12, -0.22); mk(12, 0.22); }
+  A.tone(1100 + p * 40, 0.04, 'square', 0.018, 0, 700);
+}
+function bomb() {
+  if (me.bombs <= 0 || me.loop > 0) return;
+  me.bombs--; me.inv = Math.max(me.inv, 1.6); bombFx.push({ x: me.x, y: me.y - 60, t: 0 });
+  bad = []; A.flash('#fff6c2', 0.4); A.shake(10, 0.6); A.sfx('boom'); A.hitstop(0.08);
+  for (const f of foes) hurt(f, 12);
+  if (boss) for (const p of boss.parts) if (p.hp > 0) hurtPart(p, 8);
+}
+function loopTheLoop() { if (me.loopCD > 0 || me.loop > 0) return; me.loop = 0.9; me.loopCD = 2.6; A.tone(500, 0.5, 'triangle', 0.04, 0, 1300); }
+function die() {
+  if (me.inv > 0 || me.loop > 0 || me.dead) return;
+  me.dead = 1.6; lives--; A.shake(9, 0.5); A.sfx('boom'); A.flash('#ff4f6d', 0.2); A.hitstop(0.1);
+  A.burst(me.x, me.y, { n: 30, colors: ['#ffd23d', '#ff8a3d', '#fff'], speed: 220, life: 0.8 }); A.burst(me.x, me.y, { n: 10, kind: 'smoke', color: '#5a5048', speed: 60, life: 1.2, size: 10 });
+  bad = bad.filter(b => Math.hypot(b.x - me.x, b.y - me.y) > 120);
+}
+function hurt(f, n) {
+  if (f.dead) return; f.hp -= n; f.hit = 0.06;
+  if (f.hp > 0) return;
+  f.dead = true;
+  const pts = { fighter: 100, bomber: 1000, boat: 300 }[f.kind];
+  add(pts, f.x, f.y - 10);
+  A.burst(f.x, f.y, { n: f.kind === 'fighter' ? 12 : 26, colors: ['#ffd23d', '#ff8a3d', '#fff'], speed: 160, life: 0.5 }); A.burst(f.x, f.y, { n: 4, kind: 'smoke', color: '#4a4048', speed: 40, life: 0.9, size: 8 });
+  A.shake(f.kind === 'fighter' ? 2 : 6, 0.25); A.sfx('boom');
+  if (f.kind === 'fighter' && f.group && f.group.every(g => g.dead)) { items.push({ kind: 'P', x: f.x, y: f.y, vy: 50 }); A.pop(f.x, f.y - 26, 'FORMATION!', '#5ee7ff'); add(500); }
+  if (f.kind === 'bomber') items.push({ kind: Math.random() < 0.5 ? 'B' : 'P', x: f.x, y: f.y, vy: 50 });
+  if (f.kind === 'boat') items.push({ kind: 'M', x: f.x, y: f.y, vy: 30 });
+}
+function hurtPart(p, n) {
+  p.hp -= n; p.hit = 0.06; if (p.hp > 0) return;
+  const px = boss.x + p.ox, py = boss.y + p.oy;
+  A.burst(px, py, { n: 26, colors: ['#ffd23d', '#ff8a3d', '#fff'], speed: 180, life: 0.6 }); A.shake(7, 0.4); A.sfx('boom'); add(p.kind === 'core' ? 0 : 800, px, py);
+  if (p.kind === 'core') bossDown();
+}
+function bossDown() {
+  const b = boss; add(10000 * stage, b.x, b.y); A.badge('boss'); A.flash('#fff', 0.5); A.hitstop(0.2); A.shake(14, 1.2);
+  for (let i = 0; i < 10; i++) setTimeout(() => { A.burst(b.x + A.rand(-90, 90), b.y + A.rand(-80, 80), { n: 24, colors: ['#ffd23d', '#ff8a3d', '#fff'], speed: 200, life: 0.7 }); A.sfx('boom'); }, i * 120);
+  b.dying = 1.6; bad = []; A.jingle([523, 659, 784, 1047, 1319, 1568], 0.1, 'square');
+}
+
+/* ---------- update ---------- */
+function update(dt) {
+  if (msgT > 0) msgT -= dt;
+  const scroll = 46 + lv() * 4;
+  bgY = (bgY + scroll * dt) % 180;
+  for (const s of islands) s.y += scroll * dt; islands = islands.filter(s => s.y < H + 140);
+  if (Math.random() < dt * 0.25) islands.push(island());
+  for (const c of clouds) c.y += c.v * dt; clouds = clouds.filter(c => c.y < H + 80);
+  if (Math.random() < dt * 0.5) clouds.push({ x: A.rand(-40, W + 40), y: -70, v: A.rand(90, 160), s: A.rand(0.7, 1.4), hi: Math.random() < 0.3 });
+  for (const b of bombFx) b.t += dt; bombFx = bombFx.filter(b => b.t < 0.8);
+  if (state !== 'play') return;
+  // you
+  if (me.dead) { me.dead -= dt; if (me.dead <= 0) { if (lives <= 0) return gameOver(); Object.assign(me, { dead: 0, x: W / 2, y: H - 80, inv: 2.4, power: Math.max(1, me.power - 1), bombs: Math.max(me.bombs, 2), loop: 0 }); } }
+  else {
+    let dx = (A.held('ArrowRight', 'KeyD') ? 1 : 0) - (A.held('ArrowLeft', 'KeyA') ? 1 : 0), dy = (A.held('ArrowDown', 'KeyS') ? 1 : 0) - (A.held('ArrowUp', 'KeyW') ? 1 : 0);
+    const l = Math.hypot(dx, dy) || 1; me.x += dx / l * 210 * dt; me.y += dy / l * 210 * dt;
+    if (drag) { me.x += (drag.tx - me.x) * Math.min(1, dt * 14); me.y += (drag.ty - me.y) * Math.min(1, dt * 14); }
+    me.x = A.clamp(me.x, 16, W - 16); me.y = A.clamp(me.y, 40, H - 24);
+    me.tilt += ((dx || (drag ? Math.sign(drag.tx - me.x) * 0.6 : 0)) - me.tilt) * Math.min(1, dt * 8);
+    if (me.inv > 0) me.inv -= dt; if (me.loop > 0) { me.loop -= dt; me.y -= 30 * dt; } if (me.loopCD > 0) me.loopCD -= dt;
+    me.fireT -= dt; if ((A.held('Space', 'KeyZ', 'KeyJ') || drag) && me.fireT <= 0 && me.loop <= 0) { me.fireT = 0.11; fire(); }
+  }
+  // waves, then the boss
+  stageT += dt;
+  if (!boss) { waveT -= dt; if (waveT <= 0 && stageT < 52) { waveT = Math.max(1.1, 2.3 - lv() * 0.15 - stageT * 0.012); spawnWave(); } if (stageT >= 56 && !foes.length) spawnBoss(); }
+  // shots
+  for (const s of shots) { s.x += s.vx * dt; s.y += s.vy * dt; }
+  for (const s of shots) {
+    for (const f of foes) if (!f.dead && Math.hypot(s.x - f.x, s.y - f.y) < f.r + 3) { s.hit = true; hurt(f, 1); break; }
+    if (!s.hit && boss && !boss.dying) for (const p of boss.parts) if (p.hp > 0 && Math.hypot(s.x - (boss.x + p.ox), s.y - (boss.y + p.oy)) < p.r + 3) { s.hit = true; hurtPart(p, 1); break; }
+  }
+  shots = shots.filter(s => !s.hit && s.y > -20 && s.x > -20 && s.x < W + 20);
+  // enemies
+  const k = 1 + lv() * 0.12;
+  for (const f of foes) {
+    if (f.dead) continue; f.t += dt; if (f.hit > 0) f.hit -= dt;
+    if (f.kind === 'fighter') {
+      if (f.t < 0) continue;
+      const t = f.t * k;
+      if (f.path === 'vee') { f.x = f.cx + f.ox; f.y = -40 + f.oy + t * 120; if (t > 2.6) f.x += (f.ox < 0 ? -1 : f.ox > 0 ? 1 : 0) * (t - 2.6) * 160; }
+      if (f.path === 'sine') { f.x = f.cx + Math.sin(t * 2.4) * 90; f.y = -30 + t * 110; }
+      if (f.path === 'swoop') { const a = t * 1.1; f.x = f.side < 0 ? -30 + a * 180 : W + 30 - a * 180; f.y = 60 + Math.sin(a * 1.6) * 120 + a * 40; }
+      f.fireT -= dt; if (f.fireT <= 0 && f.y > 20 && f.y < H * 0.6) { f.fireT = A.rand(1.6, 3) / k; aimShot(f.x, f.y + 8, 170 + lv() * 15); }
+      if (f.y > H + 40 || f.x < -60 || f.x > W + 60) { if (f.t > 1) f.gone = true; }
+    } else if (f.kind === 'bomber') {
+      f.y += 42 * dt; f.x += Math.sin(f.t * 0.8) * 20 * dt; f.fireT -= dt;
+      if (f.fireT <= 0 && f.y > 0) { f.fireT = 1.8 / k; for (let i = -2; i <= 2; i++) aimShot(f.x, f.y + 20, 150, i * 0.22); A.tone(300, 0.1, 'square', 0.03); }
+      if (f.y > H + 60) f.gone = true;
+    } else if (f.kind === 'boat') {
+      f.y += scroll * dt; f.fireT -= dt; if (f.fireT <= 0 && f.y > 0 && f.y < H - 80) { f.fireT = 2 / k; aimShot(f.x, f.y, 150); }
+      if (f.y > H + 60) f.gone = true;
+    }
+    if (!me.dead && Math.hypot(me.x - f.x, me.y - f.y) < f.r + 6 && f.kind !== 'boat') { die(); hurt(f, 99); }
+  }
+  foes = foes.filter(f => !f.dead && !f.gone);
+  // the boss
+  if (boss) {
+    const b = boss; b.t += dt;
+    if (b.dying) { b.dying -= dt; b.y += 30 * dt; if (b.dying <= 0) { boss = null; stageClear(); } }
+    else {
+      const homeY = b.kind === 'ship' ? 150 : 110; if (b.y < homeY) b.y += 60 * dt;
+      else { b.x += b.vx * dt; if (b.x < 110 || b.x > W - 110) b.vx = -b.vx; }
+      const angry = b.parts.filter(p => p.kind !== 'core' && p.hp > 0).length === 0;
+      for (const p of b.parts) {
+        if (p.hp <= 0) continue; if (p.hit > 0) p.hit -= dt;
+        const px = b.x + p.ox, py = b.y + p.oy; p.ang = Math.atan2(me.y - py, me.x - px);
+        p.fireT -= dt;
+        if (p.fireT <= 0 && b.y > 40) {
+          if (p.kind === 'core') { p.fireT = angry ? 0.9 : 2.4; const n = angry ? 14 : 10, a0 = b.t; for (let i = 0; i < n; i++) { const a = a0 + i / n * 6.283; bad.push({ x: px, y: py, vx: Math.cos(a) * 130, vy: Math.sin(a) * 130, r: 5 }); } A.tone(220, 0.2, 'square', 0.04); }
+          else { p.fireT = A.rand(1.1, 1.8) / k; for (let i = 0; i < 3; i++) setTimeout(() => { if (boss === b && p.hp > 0 && state === 'play') aimShot(b.x + p.ox, b.y + p.oy, 190 + lv() * 12); }, i * 110); }
+        }
+      }
+      if (!me.dead && Math.hypot(me.x - b.x, me.y - b.y) < 70) die();
+    }
+  }
+  // bullets
+  for (const b of bad) { b.x += b.vx * dt; b.y += b.vy * dt; if (!me.dead && Math.hypot(b.x - me.x, b.y - me.y) < b.r + 4) { if (me.loop > 0) { if (!b.grazed) { b.grazed = true; add(50, me.x, me.y - 20, '#5ee7ff'); } } else { b.dead = true; die(); } } }
+  bad = bad.filter(b => !b.dead && b.x > -10 && b.x < W + 10 && b.y > -10 && b.y < H + 10);
+  // pickups
+  for (const it of items) { it.y += it.vy * dt; it.x += Math.sin(it.y / 30) * 20 * dt;
+    if (!me.dead && Math.hypot(it.x - me.x, it.y - me.y) < 20) { it.got = true; A.sfx('powerup');
+      if (it.kind === 'P') { if (me.power < 5) { me.power++; say(me.power === 5 ? 'FULL POWER!' : 'POWER UP!', 1.2); if (me.power === 5) A.badge('power'); } else add(1000, it.x, it.y - 10); }
+      if (it.kind === 'B') { me.bombs = Math.min(6, me.bombs + 1); say('+1 BOMB', 1); }
+      if (it.kind === 'M') add(500, it.x, it.y - 10, '#ffd23d'); } }
+  items = items.filter(it => !it.got && it.y < H + 20);
+}
+function stageClear() {
+  const bonus = 5000 * stage; add(bonus); say(`STAGE CLEAR! +${bonus}`, 2.6);
+  if (stage >= 3) A.badge('stage3');
+  setTimeout(() => { if (state !== 'play') return; stage++; newStage(); }, 2600);
+}
+function gameOver() {
+  state = 'over'; const rec = A.submit(score);
+  A.overlay({ title: 'SHOT DOWN', big: `SCORE ${score.toLocaleString()} · STAGE ${stage}`, sub: rec ? 'New high score!' : `Best: ${A.best().toLocaleString()}`, btn: 'Fly again', onGo: newGame });
+}
+
+/* ---------- touch: drag anywhere to fly (the plane keeps its distance from your finger), it fires by itself ---------- */
+let drag = null;
+cv.addEventListener('pointerdown', e => { if (state !== 'play' || e.pointerType === 'mouse') return; const r = cv.getBoundingClientRect(), px = (e.clientX - r.left) / r.width * W, py = (e.clientY - r.top) / r.height * H; drag = { ox: me.x - px, oy: me.y - py, tx: me.x, ty: me.y }; });
+cv.addEventListener('pointermove', e => { if (!drag) return; const r = cv.getBoundingClientRect(); drag.tx = (e.clientX - r.left) / r.width * W + drag.ox; drag.ty = (e.clientY - r.top) / r.height * H + drag.oy; });
+['pointerup', 'pointercancel'].forEach(ev => cv.addEventListener(ev, () => { drag = null; }));
+
+/* ---------- drawing ---------- */
+function render(t) {
+  // the sea, scrolling down
+  const tile = seaTile[THEMES.indexOf(theme)];
+  for (let y = -180 + bgY; y < H; y += 180) ctx.drawImage(tile, 0, Math.round(y));
+  for (const s of islands) drawIsland(ctx, s);
+  for (const c of clouds) if (!c.hi) cloud(c, 0.35);
+  // gunboats sit on the water
+  for (const f of foes) if (f.kind === 'boat') { ctx.drawImage(BOAT, Math.round(f.x - 13), Math.round(f.y - 25)); ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.fillRect(f.x - 6, f.y + 25, 12, 4 + Math.sin(t / 80) * 2); if (f.hit > 0) flashAt(f.x, f.y, 16); }
+  if (boss) drawBoss(t);
+  // shadows, then planes
+  for (const f of foes) if (f.kind !== 'boat' && f.t >= 0) { ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.fillRect(f.x - f.r + 14, f.y + 18, f.r * 2, 6); }
+  for (const f of foes) {
+    if (f.kind === 'fighter' && f.t >= 0) { ctx.drawImage(FIGHTER, Math.round(f.x - 14), Math.round(f.y - 13)); prop(f.x, f.y + 12, 6, t); if (f.hit > 0) flashAt(f.x, f.y, 12); }
+    if (f.kind === 'bomber') { ctx.drawImage(BOMBER, Math.round(f.x - 39), Math.round(f.y - 28)); [-30, -16, 8, 22].forEach(o => prop(f.x + o + 4, f.y + 0, 7, t)); if (f.hit > 0) flashAt(f.x, f.y, 34); }
+  }
+  for (const it of items) {
+    const c = { P: '#ff4f6d', B: '#3d7bff', M: '#ffd23d' }[it.kind], bob = Math.sin(t / 120) * 2;
+    ctx.fillStyle = OUT; ctx.beginPath(); ctx.arc(it.x, it.y + bob, 11, 0, 6.29); ctx.fill(); ctx.fillStyle = c; ctx.beginPath(); ctx.arc(it.x, it.y + bob, 9, 0, 6.29); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.font = '11px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(it.kind === 'M' ? '★' : it.kind, it.x, it.y + bob + 1);
+  }
+  // you
+  if (state !== 'title' && !me.dead && !(me.inv > 0 && Math.floor(t / 70) % 2)) {
+    const k = me.loop > 0 ? me.loop / 0.9 : 0, s = k ? 0.6 + Math.abs(Math.cos(k * Math.PI)) * 0.55 : 1;
+    ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.fillRect(me.x - 4, me.y + 24, 26, 7);
+    ctx.save(); ctx.translate(me.x, me.y); ctx.scale(s * (1 - Math.abs(me.tilt) * 0.12), s * (k ? (Math.cos(k * Math.PI * 2) < 0 ? -1 : 1) : 1)); ctx.drawImage(HERO, -18, -17); prop(0, -15, 8, t); ctx.restore();
+  }
+  for (const s of shots) { ctx.fillStyle = '#fff6c2'; ctx.fillRect(s.x - 1.5, s.y - 6, 3, 10); ctx.fillStyle = '#ffd23d'; ctx.fillRect(s.x - 1.5, s.y + 2, 3, 3); }
+  for (const b of bad) { ctx.fillStyle = OUT; ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 1.5, 0, 6.29); ctx.fill(); ctx.fillStyle = '#ff4fd1'; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 6.29); ctx.fill(); ctx.fillStyle = '#fff'; ctx.fillRect(b.x - 1, b.y - 1, 2, 2); }
+  for (const b of bombFx) { const r = b.t * 520; ctx.strokeStyle = `rgba(255,246,194,${1 - b.t / 0.8})`; ctx.lineWidth = 14; ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, 6.29); ctx.stroke(); }
+  for (const c of clouds) if (c.hi) cloud(c, 0.55);
+  // the strip along the top
+  if (state !== 'title') {
+    ctx.fillStyle = 'rgba(10,6,18,.55)'; ctx.fillRect(0, 0, W, 20);
+    ctx.font = '9px Silkscreen, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+    for (let i = 0; i < lives; i++) { ctx.fillStyle = '#4fa8ff'; ctx.fillRect(8 + i * 12, 6, 8, 3); ctx.fillRect(10 + i * 12, 3, 4, 10); }
+    ctx.fillStyle = '#ff4f6d'; ctx.fillText(`P${me.power}`, 90, 10); ctx.fillStyle = '#7ab0ff'; ctx.fillText('●'.repeat(me.bombs), 120, 10);
+    ctx.textAlign = 'right'; ctx.fillStyle = me.loopCD > 0 ? '#5a5070' : '#5ee7ff'; ctx.fillText(me.loopCD > 0 ? 'LOOP …' : 'LOOP READY', W - 70, 10); ctx.fillStyle = '#fff'; ctx.fillText(`STAGE ${stage}`, W - 8, 10);
+    if (boss && !boss.dying) { const tot = boss.parts.reduce((a, p) => a + p.max, 0), left = boss.parts.reduce((a, p) => a + Math.max(0, p.hp), 0); ctx.fillStyle = OUT; ctx.fillRect(W / 2 - 91, 26, 182, 8); ctx.fillStyle = '#ff4f6d'; ctx.fillRect(W / 2 - 90, 27, 180 * left / tot, 6); }
+  }
+  if (msgT > 0 && state !== 'title') { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '20px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = OUT; ctx.fillText(msg, W / 2 + 2, H * 0.36 + 2); ctx.fillStyle = '#fff6c2'; ctx.fillText(msg, W / 2, H * 0.36); ctx.globalAlpha = 1; }
+}
+function prop(x, y, r, t) { ctx.fillStyle = 'rgba(230,230,240,.45)'; ctx.beginPath(); ctx.ellipse(x, y, r * (0.6 + Math.abs(Math.sin(t / 25)) * 0.4), 1.6, 0, 0, 6.29); ctx.fill(); }
+function flashAt(x, y, r) { ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.29); ctx.fill(); ctx.globalCompositeOperation = 'source-over'; }
+function cloud(c, a) {
+  ctx.globalAlpha = a; ctx.fillStyle = theme === THEMES[2] ? '#8a9ac8' : '#ffffff';
+  for (const [ox, oy, r] of [[0, 0, 26], [24, 6, 20], [-22, 8, 18], [8, -12, 18]]) { ctx.beginPath(); ctx.arc(c.x + ox * c.s, c.y + oy * c.s, r * c.s, 0, 6.29); ctx.fill(); }
+  ctx.globalAlpha = 1;
+}
+function drawBoss(t) {
+  const b = boss, X = b.x, Y = b.y, shake = b.dying ? (Math.random() - 0.5) * 6 : 0;
+  ctx.save(); ctx.translate(X + shake, Y);
+  if (b.kind === 'ship') {
+    // a long grey hull pointing down the screen, a wake behind
+    ctx.fillStyle = 'rgba(255,255,255,.3)'; ctx.beginPath(); ctx.moveTo(-50, -140); ctx.lineTo(50, -140); ctx.lineTo(80, -210); ctx.lineTo(-80, -210); ctx.fill();
+    ctx.fillStyle = OUT; ctx.beginPath(); ctx.moveTo(-64, -140); ctx.lineTo(64, -140); ctx.lineTo(64, 90); ctx.lineTo(0, 150); ctx.lineTo(-64, 90); ctx.closePath(); ctx.fill();
+    const g = ctx.createLinearGradient(-60, 0, 60, 0); g.addColorStop(0, '#4a5060'); g.addColorStop(0.5, '#7a8090'); g.addColorStop(1, '#3a404e'); ctx.fillStyle = g;
+    ctx.beginPath(); ctx.moveTo(-60, -136); ctx.lineTo(60, -136); ctx.lineTo(60, 88); ctx.lineTo(0, 144); ctx.lineTo(-60, 88); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,.2)'; for (let i = -120; i < 80; i += 20) ctx.fillRect(-56, i, 112, 2);
+    paint(ctx, [[-22, -40, 44, 60, '#8a909e'], [-14, -54, 28, 16, '#9aa0ae']]);
+  } else {
+    // a sky fortress: huge wings, four engines, a long fuselage
+    ctx.fillStyle = 'rgba(0,0,0,.2)'; ctx.fillRect(-120 + 30, 30, 240, 30);
+    paint(ctx, [[-120, -18, 240, 28, '#6a6a7a'], [-24, -70, 48, 140, '#7a7a8a'], [-60, 54, 120, 14, '#5a5a6a']]);
+    ctx.fillStyle = 'rgba(0,0,0,.18)'; for (let i = -110; i < 110; i += 18) ctx.fillRect(i, -16, 2, 24);
+  }
+  for (const p of b.parts) {
+    if (p.hp <= 0) { ctx.fillStyle = 'rgba(30,20,20,.7)'; ctx.beginPath(); ctx.arc(p.ox, p.oy, p.r * 0.8, 0, 6.29); ctx.fill(); if (Math.random() < 0.3) A.burst(X + p.ox, Y + p.oy, { n: 1, kind: 'smoke', color: '#3a3038', speed: 30, life: 0.8, size: 6 }); continue; }
+    const hit = p.hit > 0;
+    if (p.kind === 'turret') { paint(ctx, [[p.ox - 13, p.oy - 13, 26, 26, hit ? '#ffffff' : '#9aa0ae']]); ctx.save(); ctx.translate(p.ox, p.oy); ctx.rotate(p.ang); paint(ctx, [[0, -3, 22, 6, '#3a404e']]); ctx.restore(); ctx.fillStyle = '#c8203a'; ctx.fillRect(p.ox - 3, p.oy - 3, 6, 6); }
+    else if (p.kind === 'engine') { paint(ctx, [[p.ox - 11, p.oy - 16, 22, 30, hit ? '#ffffff' : '#4a4a58']]); ctx.fillStyle = 'rgba(230,230,240,.5)'; ctx.beginPath(); ctx.ellipse(p.ox, p.oy + 16, 13 * Math.abs(Math.sin(t / 30)), 2, 0, 0, 6.29); ctx.fill(); }
+    else { const pulse = 0.6 + Math.sin(t / 120) * 0.4; ctx.fillStyle = OUT; ctx.beginPath(); ctx.arc(p.ox, p.oy, p.r + 2, 0, 6.29); ctx.fill(); const cg = ctx.createRadialGradient(p.ox - 5, p.oy - 6, 2, p.ox, p.oy, p.r); cg.addColorStop(0, hit ? '#fff' : '#ffb0b0'); cg.addColorStop(1, hit ? '#fff' : `rgba(200,30,50,${0.7 + pulse * 0.3})`); ctx.fillStyle = cg; ctx.beginPath(); ctx.arc(p.ox, p.oy, p.r, 0, 6.29); ctx.fill(); }
+  }
+  ctx.restore();
+}
+A.loop(dt => update(dt), render);
+
+/* Attract demo: hold fire, slide under the nearest target, step out of the way of bullets, loop when one's too close. */
+A.attract({
+  start: newGame,
+  stop: () => { state = 'title'; foes = []; shots = []; bad = []; items = []; boss = null; },
+  bot: () => {
+    if (state !== 'play' || me.dead) return [];
+    const keys = ['Space'];
+    const target = boss ? (boss.parts.find(p => p.hp > 0 && p.kind !== 'core') || boss.parts.find(p => p.kind === 'core')) : null;
+    let tx = target ? boss.x + target.ox : (foes.filter(f => f.t >= 0).sort((a, b) => b.y - a.y)[0] || { x: W / 2 }).x;
+    const threat = bad.filter(b => b.y < me.y + 10 && b.y > me.y - 110 && Math.abs(b.x - me.x) < 40).sort((a, b) => Math.hypot(a.x - me.x, a.y - me.y) - Math.hypot(b.x - me.x, b.y - me.y))[0];
+    if (threat) { tx = me.x + (threat.x < me.x ? 60 : -60); if (Math.hypot(threat.x - me.x, threat.y - me.y) < 30 && me.loopCD <= 0) keys.push('!KeyC'); }
+    if (bad.filter(b => Math.hypot(b.x - me.x, b.y - me.y) < 60).length >= 4 && me.bombs > 1) keys.push('!KeyX');
+    if (tx > me.x + 6) keys.push('ArrowRight'); else if (tx < me.x - 6) keys.push('ArrowLeft');
+    if (me.y < H - 110) keys.push('ArrowDown'); else if (me.y > H - 70) keys.push('ArrowUp');
+    return keys;
+  }
+});
+newStage(); clouds = Array.from({ length: 5 }, () => ({ x: A.rand(0, W), y: A.rand(0, H), v: A.rand(90, 160), s: A.rand(0.7, 1.4), hi: Math.random() < 0.3 }));
+A.overlay({ title: 'SKY SQUADRON', sub: 'Fly the last fighter of the squadron over the ocean. Shoot down whole formations for a P (more guns), drop bombs to clear the sky, and loop-the-loop through anything. A battleship or a sky fortress waits at the end of every stage.', btn: 'Take off', scores: true, onGo: newGame });
+})();
+</script>
+</body>
+</html>

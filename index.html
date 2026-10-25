@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#0f0c1f">
 <link rel="icon" type="image/png" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<meta name="description" content="Thirty-two classic-style arcade games in your browser. Free, no installs, works on phone and keyboard.">
+<meta name="description" content="Thirty-six classic-style arcade games in your browser. Free, no installs, works on phone and keyboard.">
 <link rel="preload" href="shared/fonts/bungee-shade-400.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="shared/fonts/bungee-400.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="shared/fonts/silkscreen-400.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="shared/fonts.css">
 <link rel="stylesheet" href="shared/arcade.css">
@@ -500,7 +500,7 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
 <div class="lobby">
   <header class="marquee">
     <h1 class="logo">BITCADE</h1>
-    <p class="tag">THIRTY-TWO CLASSIC-STYLE GAMES · NO QUARTERS REQUIRED</p>
+    <p class="tag">THIRTY-SIX CLASSIC-STYLE GAMES · NO QUARTERS REQUIRED</p>
     <div class="coin" aria-hidden="true">▶ PICK A CABINET ◀</div>
     <div class="stats" id="stats"></div>
   </header>
@@ -653,6 +653,18 @@ const GAMES = [
   { slug: 'rampart-rush', genre: 'strategy', added: '2026-10-22', name: 'Rampart Rush', kind: 'Tower defense', c: '#b48cff', blurb: 'Build and upgrade towers to stop the march on your castle.',
     px: ['....V.......', '....VV......', '.A.AA.A.....', '.AAAAAA.....', '.AAKKAA..G..', '.AAKKAA.GGG.', 'DDDDDDDDDDDD', 'GGGGGGGGGGGG'],
     px2: ['....VV......', '....V.......', '.A.AA.A.....', '.AAAAAA.....', '.AAKKAA.G...', '.AAKKAA.GGG.', 'DDDDDDDDDDDD', 'GGGGGGGGGGGG'] },
+  { slug: 'sky-squadron', genre: 'shooter', added: '2026-10-25', name: 'Sky Squadron', kind: 'Plane shooter', c: '#4fa8ff', blurb: 'Fly the last fighter over the ocean. Loop-the-loop past battleships.',
+    px: ['..G.....G...', '.GGG...GGG..', '..G.....G...', '.....W......', '............', '.....B......', '.BBBBBBBBB..', '....BBB.....'],
+    px2: ['...G.....G..', '..GGG...GGG.', '...G.....G..', '............', '.....W......', '.....B......', '.BBBBBBBBB..', '....BRB.....'] },
+  { slug: 'street-sweepers', genre: 'fighting action 2p', added: '2026-10-25', name: 'Street Sweepers', kind: 'Beat \'em up · 2P', c: '#ff6fae', blurb: 'The clean-up crew walks three streets to sweep out the Rust Gang.',
+    px: ['..Y.....X...', '.SS.....SS..', '.OOSS..VVV..', '.OO....VV...', '.OO....VV...', '.O.O...V.V..', '.O.O...V.V..', 'AAAAAAAAAAAA'],
+    px2: ['..Y.........', '.SS.........', '.OO.....X...', '.OOSS...SS..', '.OO...VVVVV.', '.O.O........', '.O.O........', 'AAAAAAAAAAAA'] },
+  { slug: 'gem-cascade', daily: true, genre: 'puzzle', added: '2026-10-25', name: 'Gem Cascade', kind: 'Match-3 puzzle', c: '#3df0c8', blurb: 'Swap gems into lines of three. Chain reactions, flame, cross and star gems.',
+    px: ['RR.CC.YY.GG.', 'RR.CC.YY.GG.', '............', 'MM.YY.YY.YY.', 'MM.YY.YY.YY.', '............', 'GG.RR.CC.MM.', 'GG.RR.CC.MM.'],
+    px2: ['RR.CC.YY.GG.', 'RR.CC.YY.GG.', '............', 'MM.W..W..W..', 'MM..W..W..W.', '............', 'GG.RR.CC.MM.', 'GG.RR.CC.MM.'] },
+  { slug: 'knockout-kings', genre: 'fighting sports', added: '2026-10-25', name: 'Knockout Kings', kind: 'Cartoon boxing', c: '#ff4a4a', blurb: 'Read every tell, dodge, counter. Five fighters stand between you and the belt.',
+    px: ['....SSS.....', '....SKS.....', 'RR..SSS..RR.', 'RR.SSSSS.RR.', '...SSSSS....', '...BBBBB....', 'GG.......GG.', 'GG.......GG.'],
+    px2: ['....SSS.....', 'RR..SKS..RR.', 'RR..SSS..RR.', '...SSSSS....', '...SGGS.....', '...BGGB.....', '.........GG.', '.........GG.'] },
   { slug: 'blip-sports', genre: 'sports', added: '2026-10-11', name: 'Blip Sports', kind: 'LED football + baseball', c: '#ff3a22', blurb: 'The 1978 handheld feel. Pick your team, beat the CPU.', label: 'WINS',
     px: ['............', '.RR..RR..RR.', '............', '.RR..WW..RR.', '............', '.RR..RR..RR.', '............', '............'],
     px2: ['............', '.RR..RR..RR.', '............', '.RR..RWW.RR.', '............', '.RR..RR..RR.', '............', '............'] }

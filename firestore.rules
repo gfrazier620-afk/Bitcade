@@ -14,7 +14,8 @@ service cloud.firestore {
         'light-trail': 200000, 'wing-duel': 1000000, 'twin-blast': 2000000, 'mole-patrol': 1000000,
         'turbo-tour': 2000000, 'raptor-ridge': 2000000, 'marsh-marksman': 3000000,
         'pixel-peaks': 2000000, 'pop-lagoon': 5000000, 'neon-steps': 500000,
-        'blast-brigade': 3000000, 'dungeon-delve': 2000000, 'lucky-line': 200000, 'rampart-rush': 2000000
+        'blast-brigade': 3000000, 'dungeon-delve': 2000000, 'lucky-line': 200000, 'rampart-rush': 2000000,
+        'sky-squadron': 5000000, 'street-sweepers': 2000000, 'gem-cascade': 2000000, 'knockout-kings': 2000000
       };
     }
 
@@ -43,7 +44,7 @@ service cloud.firestore {
     function dayStart(day) { return timestamp.date(int(day[0:4]), int(day[5:7]), int(day[8:10])); }
     match /daily/{game}/days/{day}/scores/{id} {
       allow read: if true;
-      allow create: if game in ['stackdown', 'wallbuster', 'twin-blast', 'mole-patrol', 'wing-duel']
+      allow create: if game in ['stackdown', 'wallbuster', 'twin-blast', 'mole-patrol', 'wing-duel', 'gem-cascade']
         && day.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
         && request.time > dayStart(day) - duration.value(14, 'h')
         && request.time < dayStart(day) + duration.value(36, 'h')

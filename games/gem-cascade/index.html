@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Gem Cascade</title>
+<link rel="manifest" href="../../manifest.json">
+<meta name="theme-color" content="#0f0c1f">
+<link rel="icon" type="image/png" href="../../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../../icons/apple-touch-icon.png">
+<link rel="preload" href="../../shared/fonts/bungee-400.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="../../shared/fonts/silkscreen-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../../shared/fonts.css">
+<link rel="stylesheet" href="../../shared/arcade.css">
+</head>
+<body data-game="gem-cascade" style="--game:#3df0c8">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>GEM CASCADE</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <div class="pad">
+    <div class="dp"><button class="u" data-k="ArrowUp" aria-label="Up">▲</button><button class="l" data-k="ArrowLeft" aria-label="Left">◀</button><button class="r" data-k="ArrowRight" aria-label="Right">▶</button><button class="d" data-k="ArrowDown" aria-label="Down">▼</button></div>
+    <div class="ab"><button data-k="Space">PICK</button></div>
+  </div>
+  <p class="help">Drag a gem onto its neighbour to swap them, or click one then the other · keys: <kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> move, <kbd>Space</kbd> pick up, then an arrow to swap · <kbd>P</kbd> pause · gamepad: d-pad and A</p>
+</main>
+<script src="../../shared/chip.js"></script>
+<script src="../../shared/badges.js"></script>
+<script src="../../shared/arcade.js"></script>
+<script>
+(() => {
+/*
+ * Gem Cascade: swap two neighbouring gems to line up three or more of a kind. Lines clear, everything above falls,
+ * and new gems drop in; each chain reaction scores more (×2, ×3…). Four in a row leaves a flame gem (it blows up the
+ * 3×3 round it), an L or T leaves a cross gem (its whole row and column), five in a row a star gem (swap it with any gem
+ * to clear every gem of that colour). Blitz: 90 seconds, a second back for every special made. Daily: the same board
+ * and the same falling gems for everyone today.
+ */
+const A = Arcade, cv = document.getElementById('cv');
+const W = 360, H = 540, ctx = A.canvas(cv, W, H), OUT = '#0a0612', N = 8, S = 40, BX = 20, BY = 126, LEN = 90;
+function shade(hex, k) {
+  let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join('');
+  const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+const sprite = (w, h, fn) => { const c = document.createElement('canvas'); c.width = w; c.height = h; fn(c.getContext('2d'), w, h); return c; };
+
+/* ---------- seven gems, each its own cut: outlined, shaded from the top-left, facets and a glint ---------- */
+const COLS = ['#ff3d5a', '#ff9a2a', '#ffe14d', '#3dd65a', '#3d9aff', '#b86bff', '#e8f0ff'];
+const SHAPES = [
+  r => [[0, -r], [r * 0.95, -r * 0.3], [r * 0.6, r * 0.85], [-r * 0.6, r * 0.85], [-r * 0.95, -r * 0.3]], // pentagon
+  r => [[-r * 0.5, -r], [r * 0.5, -r], [r, 0], [r * 0.5, r], [-r * 0.5, r], [-r, 0]], // hexagon
+  r => [[0, -r * 1.05], [r * 0.85, 0], [0, r * 1.05], [-r * 0.85, 0]], // diamond
+  r => [[-r * 0.7, -r * 0.85], [r * 0.7, -r * 0.85], [r * 0.85, -r * 0.6], [r * 0.85, r * 0.6], [r * 0.7, r * 0.85], [-r * 0.7, r * 0.85], [-r * 0.85, r * 0.6], [-r * 0.85, -r * 0.6]], // emerald cut
+  r => Array.from({ length: 12 }, (_, i) => [Math.cos(i / 12 * 6.283) * r, Math.sin(i / 12 * 6.283) * r]), // round
+  r => [[0, -r], [r, r * 0.8], [-r, r * 0.8]], // triangle
+  r => Array.from({ length: 10 }, (_, i) => { const a = i / 10 * 6.283 - Math.PI / 2, k = i % 2 ? 0.48 : 1; return [Math.cos(a) * r * k, Math.sin(a) * r * k]; }) // star
+];
+const GEMS = COLS.map((c, i) => sprite(S, S, x => {
+  const pts = SHAPES[i](15), path = (k, dx = 0, dy = 0) => { x.beginPath(); pts.forEach(([px, py], j) => j ? x.lineTo(S / 2 + px * k + dx, S / 2 + py * k + dy) : x.moveTo(S / 2 + px * k + dx, S / 2 + py * k + dy)); x.closePath(); };
+  x.fillStyle = 'rgba(0,0,0,.35)'; path(1.05, 1, 2); x.fill();
+  x.fillStyle = OUT; path(1.16); x.fill();
+  const g = x.createLinearGradient(S / 2 - 14, S / 2 - 14, S / 2 + 12, S / 2 + 14); g.addColorStop(0, shade(c, 0.45)); g.addColorStop(0.5, c); g.addColorStop(1, shade(c, -0.4)); x.fillStyle = g; path(1); x.fill();
+  x.fillStyle = shade(c, 0.25); path(0.55, -1, -1); x.fill(); // the table facet
+  x.strokeStyle = 'rgba(255,255,255,.35)'; x.lineWidth = 1; pts.forEach(([px, py]) => { x.beginPath(); x.moveTo(S / 2 + px * 0.55 - 1, S / 2 + py * 0.55 - 1); x.lineTo(S / 2 + px, S / 2 + py); x.stroke(); });
+  x.fillStyle = 'rgba(255,255,255,.85)'; x.fillRect(S / 2 - 7, S / 2 - 9, 4, 3); x.fillRect(S / 2 - 8, S / 2 - 6, 2, 2);
+}));
+
+/* ---------- state ---------- */
+let state = 'title', grid = [], score = 0, timeLeft = LEN, chain = 0, cur = { r: 3, c: 3 }, sel = null, anim = null, idleT = 0, daily = false, rnd = Math.random, msg = '', msgT = 0, best5 = 0, shimmer = 0, ending = 0;
+const say = (t, s = 1.4) => { msg = t; msgT = s; };
+const gem = (t, sp = null) => ({ t, sp, dy: 0, pop: 0 });
+const randT = () => Math.floor(rnd() * 7);
+function fill() {
+  grid = Array.from({ length: N }, () => Array(N).fill(null));
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) { let t; do t = randT(); while ((c >= 2 && grid[r][c - 1].t === t && grid[r][c - 2].t === t) || (r >= 2 && grid[r - 1][c].t === t && grid[r - 2][c].t === t)); grid[r][c] = gem(t); grid[r][c].dy = -(N - r) * S - 60; }
+  if (!findMove()) fill();
+}
+function newGame(isDaily) {
+  daily = isDaily; rnd = daily ? A.seeded('gem-cascade:' + A.today()) : Math.random;
+  score = 0; A.setScore(0); timeLeft = LEN * (A.easy ? 1.5 : 1); chain = 0; sel = null; anim = { kind: 'fall' }; idleT = 0; best5 = 0; ending = 0; cur = { r: 3, c: 3 };
+  fill(); state = 'play'; say(daily ? `DAILY · ${A.today().slice(5)}` : 'BLITZ · 90 SECONDS', 1.6); A.jingle([523, 659, 784, 1047], 0.08);
+}
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+A.onHide(pause);
+
+/* ---------- matching ---------- */
+function runs() { // every horizontal and vertical line of 3+ of one colour: [{ cells: [[r, c]...], dir }]
+  const out = [];
+  for (let r = 0; r < N; r++) { let c = 0; while (c < N) { const g = grid[r][c]; let e = c + 1; if (g && g.sp !== 'star') while (e < N && grid[r][e] && grid[r][e].t === g.t && grid[r][e].sp !== 'star') e++; if (g && e - c >= 3) out.push({ cells: Array.from({ length: e - c }, (_, k) => [r, c + k]), dir: 'h' }); c = Math.max(e, c + 1); } }
+  for (let c = 0; c < N; c++) { let r = 0; while (r < N) { const g = grid[r][c]; let e = r + 1; if (g && g.sp !== 'star') while (e < N && grid[e][c] && grid[e][c].t === g.t && grid[e][c].sp !== 'star') e++; if (g && e - r >= 3) out.push({ cells: Array.from({ length: e - r }, (_, k) => [r + k, c]), dir: 'v' }); r = Math.max(e, r + 1); } }
+  return out;
+}
+const swap = (a, b) => { const t = grid[a.r][a.c]; grid[a.r][a.c] = grid[b.r][b.c]; grid[b.r][b.c] = t; };
+function findMove() {
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) for (const [dr, dc] of [[0, 1], [1, 0]]) {
+    const a = { r, c }, b = { r: r + dr, c: c + dc }; if (b.r >= N || b.c >= N) continue;
+    if (grid[r][c].sp === 'star' || grid[b.r][b.c].sp === 'star') return { a, b, n: 9 };
+    swap(a, b); const rs = runs(); swap(a, b);
+    if (rs.length) return { a, b, n: rs.reduce((s, x) => s + x.cells.length, 0) };
+  }
+  return null;
+}
+/** Clear what's matched (and what the specials take with them), leave new specials behind, then let it fall. */
+function resolve(moved) {
+  const rs = runs(); if (!rs.length) return false;
+  chain++;
+  const kill = new Set(), make = [], key = (r, c) => r * N + c;
+  // specials: 5 in a line → star; L or T (two runs sharing a gem) → cross; 4 → flame
+  const owner = new Map(); rs.forEach((run, i) => run.cells.forEach(([r, c]) => { const k = key(r, c); owner.set(k, (owner.get(k) || []).concat(i)); }));
+  const used = new Set();
+  for (const [k, list] of owner) if (list.length > 1) { const [r, c] = [Math.floor(k / N), k % N]; make.push({ r, c, sp: 'cross', t: grid[r][c].t }); list.forEach(i => used.add(i)); }
+  rs.forEach((run, i) => {
+    if (used.has(i) || run.cells.length < 4) return;
+    const at = run.cells.find(([r, c]) => moved && moved.some(m => m.r === r && m.c === c)) || run.cells[Math.floor(run.cells.length / 2)];
+    make.push({ r: at[0], c: at[1], sp: run.cells.length >= 5 ? 'star' : 'flame', t: grid[at[0]][at[1]].t });
+  });
+  rs.forEach(run => run.cells.forEach(([r, c]) => kill.add(key(r, c))));
+  // specials caught in the blast go off too, one after another
+  const queue = [...kill]; const done = new Set();
+  while (queue.length) {
+    const k = queue.shift(); if (done.has(k)) continue; done.add(k);
+    const r = Math.floor(k / N), c = k % N, g = grid[r][c]; if (!g || !g.sp) continue;
+    const hit = [];
+    if (g.sp === 'flame') for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) hit.push([r + dr, c + dc]);
+    if (g.sp === 'cross') for (let i = 0; i < N; i++) hit.push([r, i], [i, c]);
+    if (g.sp === 'star') for (let rr = 0; rr < N; rr++) for (let cc = 0; cc < N; cc++) if (grid[rr][cc] && grid[rr][cc].t === g.t) hit.push([rr, cc]);
+    for (const [hr, hc] of hit) if (hr >= 0 && hc >= 0 && hr < N && hc < N && grid[hr][hc]) { const hk = key(hr, hc); if (!kill.has(hk)) { kill.add(hk); queue.push(hk); } }
+    boom(r, c, g);
+  }
+  make.forEach(m => kill.delete(key(m.r, m.c)));
+  const pts = kill.size * 10 * chain + make.length * 100;
+  score += pts; A.setScore(score);
+  const mid = [...kill].reduce((a, k) => [a[0] + k % N, a[1] + Math.floor(k / N)], [0, 0]).map(v => v / Math.max(1, kill.size));
+  A.pop(BX + mid[0] * S + S / 2, BY + mid[1] * S + S / 2, `+${pts}${chain > 1 ? ` ×${chain}` : ''}`, chain > 2 ? '#ffd23d' : '#fff');
+  for (const k of kill) { const r = Math.floor(k / N), c = k % N; const g = grid[r][c]; A.burst(BX + c * S + S / 2, BY + r * S + S / 2, { n: 5, color: COLS[g.t], speed: 110, life: 0.4, size: 3 }); grid[r][c] = null; }
+  for (const m of make) { grid[m.r][m.c] = gem(m.t, m.sp); if (!ending) timeLeft = Math.min(LEN * 2, timeLeft + 1); A.ring(BX + m.c * S + S / 2, BY + m.r * S + S / 2, '#fff', 30); if (m.sp === 'star') { A.badge('star'); say('STAR GEM!'); } else say(m.sp === 'cross' ? 'CROSS GEM!' : 'FLAME GEM!'); }
+  if (chain >= 2) say(`CASCADE ×${chain}!`, 1); if (chain >= 5) A.badge('cascade');
+  best5 = Math.max(best5, chain);
+  A.tone(440 * Math.pow(1.12, Math.min(chain, 10)), 0.08, 'triangle', 0.05); if (chain > 1) A.tone(660 * Math.pow(1.12, Math.min(chain, 10)), 0.08, 'triangle', 0.03, 0.05);
+  A.shake(Math.min(8, 1 + chain), 0.15);
+  anim = { kind: 'fall' }; drop();
+  return true;
+}
+function boom(r, c, g) {
+  const x = BX + c * S + S / 2, y = BY + r * S + S / 2;
+  if (g.sp === 'flame') { A.burst(x, y, { n: 20, colors: ['#ffd23d', '#ff8a3d', '#fff'], speed: 200, life: 0.5 }); A.sfx('boom'); A.shake(6, 0.25); }
+  if (g.sp === 'cross') { A.flash('#fff', 0.12); A.tone(1200, 0.2, 'sawtooth', 0.04, 0, 300); beams.push({ r, c, t: 0.35 }); }
+  if (g.sp === 'star') { A.flash(COLS[g.t], 0.25); A.jingle([784, 988, 1319, 1568, 1976], 0.05, 'triangle'); A.ring(x, y, '#fff', 160); }
+}
+let beams = [];
+function drop() { // gems fall into the gaps; new ones come in from the top
+  for (let c = 0; c < N; c++) {
+    let w = N - 1;
+    for (let r = N - 1; r >= 0; r--) if (grid[r][c]) { if (w !== r) { grid[w][c] = grid[r][c]; grid[w][c].dy -= (w - r) * S; grid[r][c] = null; } w--; }
+    for (let r = w; r >= 0; r--) { grid[r][c] = gem(randT()); grid[r][c].dy = -(w + 1) * S - 20; }
+  }
+}
+/* ---------- moves ---------- */
+function trySwap(a, b) {
+  if (state !== 'play' || anim || ending) return;
+  if (b.r < 0 || b.c < 0 || b.r >= N || b.c >= N) return;
+  const ga = grid[a.r][a.c], gb = grid[b.r][b.c];
+  idleT = 0; sel = null; chain = 0;
+  if (ga.sp === 'star' || gb.sp === 'star') { // a star swapped clears every gem of the other's colour
+    const st = ga.sp === 'star' ? a : b, other = ga.sp === 'star' ? gb : ga;
+    anim = { kind: 'swap', a, b, t: 0, then: () => resolveStar(st === a ? b : a, other.sp === 'star' ? other.t : other.t) }; // the star ends up where the other gem was
+    swap(a, b); A.sfx('select'); return;
+  }
+  swap(a, b);
+  const ok = runs().length > 0;
+  anim = { kind: 'swap', a, b, t: 0, back: !ok, then: ok ? () => resolve([a, b]) : null };
+  A.tone(ok ? 660 : 200, 0.06, 'square', 0.03);
+}
+function resolveStar(at, t) {
+  chain = 1; const kill = [];
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) if (grid[r][c] && (grid[r][c].t === t || (r === at.r && c === at.c))) kill.push([r, c]);
+  boom(at.r, at.c, { sp: 'star', t });
+  kill.forEach(([r, c]) => { A.burst(BX + c * S + S / 2, BY + r * S + S / 2, { n: 6, color: COLS[t], speed: 140, life: 0.5, size: 3 }); grid[r][c] = null; });
+  const pts = kill.length * 30; score += pts; A.setScore(score); A.pop(W / 2, BY + 40, `STAR! +${pts}`, '#ffd23d');
+  anim = { kind: 'fall' }; drop();
+}
+A.onPress(c => {
+  if (c === 'KeyP' || c === 'Escape') return pause();
+  if (state !== 'play') return;
+  const d = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1], KeyW: [-1, 0], KeyS: [1, 0], KeyA: [0, -1], KeyD: [0, 1] }[c];
+  if (d) { if (sel) trySwap(sel, { r: sel.r + d[0], c: sel.c + d[1] }); else { cur.r = A.clamp(cur.r + d[0], 0, N - 1); cur.c = A.clamp(cur.c + d[1], 0, N - 1); A.tone(880, 0.02, 'square', 0.015); } idleT = 0; return; }
+  if (c === 'Space' || c === 'Enter' || c === 'KeyJ') { sel = sel ? null : { r: cur.r, c: cur.c }; A.sfx('select'); idleT = 0; }
+});
+// the pointer: drag a gem onto a neighbour, or click one and then the other
+let down = null;
+const cellAt = e => { const r = cv.getBoundingClientRect(), x = (e.clientX - r.left) / r.width * W, y = (e.clientY - r.top) / r.height * H; return { r: Math.floor((y - BY) / S), c: Math.floor((x - BX) / S), x, y }; };
+cv.addEventListener('pointerdown', e => { if (state !== 'play') return; const p = cellAt(e); if (p.r < 0 || p.c < 0 || p.r >= N || p.c >= N) return; down = p; cur = { r: p.r, c: p.c };
+  if (sel && Math.abs(sel.r - p.r) + Math.abs(sel.c - p.c) === 1) { trySwap(sel, p); down = null; } else if (sel && sel.r === p.r && sel.c === p.c) sel = null; else sel = { r: p.r, c: p.c }; });
+cv.addEventListener('pointermove', e => { if (!down) return; const p = cellAt(e), dx = p.x - (BX + down.c * S + S / 2), dy = p.y - (BY + down.r * S + S / 2); if (Math.max(Math.abs(dx), Math.abs(dy)) > S * 0.55) { const to = Math.abs(dx) > Math.abs(dy) ? { r: down.r, c: down.c + Math.sign(dx) } : { r: down.r + Math.sign(dy), c: down.c }; trySwap(down, to); down = null; } });
+['pointerup', 'pointercancel'].forEach(ev => cv.addEventListener(ev, () => { down = null; }));
+
+/* ---------- update ---------- */
+function update(dt) {
+  if (msgT > 0) msgT -= dt; shimmer += dt;
+  for (const b of beams) b.t -= dt; beams = beams.filter(b => b.t > 0);
+  if (state !== 'play') { if (state === 'title') settle(dt); return; }
+  if (!anim && !ending) { idleT += dt; timeLeft -= dt; if (timeLeft <= 10 && Math.ceil(timeLeft) !== Math.ceil(timeLeft + dt)) A.tone(1200, 0.05, 'square', 0.03); }
+  if (timeLeft <= 0 && !anim && !ending) { ending = 1.5; say("TIME'S UP!", 1.5); A.jingle([784, 659, 523], 0.12, 'triangle'); // specials left on the board go off for a last bonus
+    const left = []; for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) if (grid[r][c] && grid[r][c].sp) left.push([r, c]);
+    left.forEach(([r, c], i) => setTimeout(() => { if (state === 'play' && grid[r][c] && grid[r][c].sp) { score += 500; A.setScore(score); A.pop(BX + c * S + S / 2, BY + r * S, '+500', '#ffd23d'); boom(r, c, grid[r][c]); grid[r][c].sp = null; } }, 200 + i * 220)); }
+  if (ending) { ending -= dt; if (ending <= 0 && !anim) return gameOver(); }
+  if (!anim) return;
+  if (anim.kind === 'swap') { anim.t += dt / 0.16; if (anim.t >= 1) { if (anim.back) { swap(anim.a, anim.b); anim = { kind: 'swap', a: anim.a, b: anim.b, t: 0, back: false, then: null, undo: true }; A.tone(160, 0.08, 'square', 0.03); } else { const f = anim.then; anim = null; if (f) f(); } } }
+  else if (anim.kind === 'fall') { if (settle(dt)) { anim = null; if (!resolve()) { chain = 0; if (!findMove()) { say('NO MOVES · SHUFFLE', 1.4); shuffle(); } } } }
+}
+/** Gems slide down to their place; true once they're all there. */
+function settle(dt) {
+  let moving = false;
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) { const g = grid[r] && grid[r][c]; if (!g || g.dy >= 0) continue; g.v = (g.v || 0) + 2200 * dt; g.dy = Math.min(0, g.dy + g.v * dt); if (g.dy === 0) { g.v = 0; g.land = 0.12; } else moving = true; }
+  return !moving;
+}
+function shuffle() { const all = grid.flat(); do { for (let i = all.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [all[i], all[j]] = [all[j], all[i]]; } for (let k = 0; k < all.length; k++) grid[Math.floor(k / N)][k % N] = all[k]; } while (runs().length || !findMove()); all.forEach(g => { g.dy = -30; }); anim = { kind: 'fall' }; }
+function gameOver() {
+  state = 'over'; if (daily) A.badge('daily');
+  const rec = A.submit(score, daily);
+  A.overlay({ title: "TIME'S UP", big: `SCORE ${score.toLocaleString()}`, sub: `BEST CASCADE ×${best5}${rec ? ' · New high score!' : ''}`, daily: true, btn: daily ? 'Retry daily' : 'Play again', onGo: () => newGame(daily), alt: { btn: daily ? 'Blitz' : 'Daily', onGo: () => newGame(!daily) } });
+}
+
+/* ---------- drawing ---------- */
+let bg = null;
+function backdrop() {
+  bg = sprite(W, H, x => {
+    const g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#0e1a3a'); g.addColorStop(1, '#241038'); x.fillStyle = g; x.fillRect(0, 0, W, H);
+    let s = 9; const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    for (let i = 0; i < 40; i++) { x.fillStyle = `rgba(${['94,231,255', '255,123,240', '255,225,77'][i % 3]},${0.1 + r() * 0.2})`; const px = r() * W, py = r() * H, k = 2 + r() * 4; x.beginPath(); x.moveTo(px, py - k); x.lineTo(px + k, py); x.lineTo(px, py + k); x.lineTo(px - k, py); x.fill(); }
+    x.fillStyle = OUT; x.fillRect(BX - 8, BY - 8, N * S + 16, N * S + 16);
+    const fg = x.createLinearGradient(0, BY - 6, 0, BY + N * S + 6); fg.addColorStop(0, '#c89a2a'); fg.addColorStop(0.5, '#ffe9a0'); fg.addColorStop(1, '#8a6418'); x.fillStyle = fg; x.fillRect(BX - 6, BY - 6, N * S + 12, N * S + 12);
+    for (let r2 = 0; r2 < N; r2++) for (let c = 0; c < N; c++) { x.fillStyle = (r2 + c) % 2 ? '#1a1636' : '#221c44'; x.fillRect(BX + c * S, BY + r2 * S, S, S); }
+  });
+}
+function render(t) {
+  if (!bg) backdrop();
+  ctx.drawImage(bg, 0, 0);
+  // the timer and the title strip
+  ctx.font = '22px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = OUT; ctx.fillText('GEM CASCADE', W / 2 + 2, 36); ctx.fillStyle = '#3df0c8'; ctx.fillText('GEM CASCADE', W / 2, 34);
+  if (state !== 'title') {
+    const k = Math.max(0, Math.min(1, timeLeft / LEN)), low = timeLeft < 10;
+    ctx.fillStyle = OUT; ctx.fillRect(BX - 2, 70, N * S + 4, 14); ctx.fillStyle = '#2a2050'; ctx.fillRect(BX, 72, N * S, 10);
+    const tg = ctx.createLinearGradient(BX, 0, BX + N * S, 0); tg.addColorStop(0, low ? '#ff4f6d' : '#3df0c8'); tg.addColorStop(1, low ? '#ff9a3d' : '#5ee7ff'); ctx.fillStyle = tg; ctx.fillRect(BX, 72, N * S * k, 10);
+    ctx.font = '10px Silkscreen, monospace'; ctx.textAlign = 'left'; ctx.fillStyle = low && Math.floor(t / 250) % 2 ? '#ff4f6d' : '#fff'; ctx.fillText(`TIME ${Math.max(0, Math.ceil(timeLeft))}`, BX, 98);
+    ctx.textAlign = 'right'; ctx.fillStyle = '#ffd23d'; ctx.fillText(daily ? `DAILY ${A.today().slice(5)}` : 'BLITZ', BX + N * S, 98);
+  }
+  // gems
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
+    const g = grid[r] && grid[r][c]; if (!g) continue;
+    let x = BX + c * S, y = BY + r * S + g.dy;
+    if (anim && anim.kind === 'swap') { const k = anim.t * anim.t * (3 - 2 * anim.t), isA = anim.a.r === r && anim.a.c === c, isB = anim.b.r === r && anim.b.c === c; if (isA || isB) { const o = isA ? anim.b : anim.a; x += (o.c - c) * S * (1 - k); y += (o.r - r) * S * (1 - k); } }
+    if (y < BY - S) continue;
+    const sq = g.land > 0 ? (g.land -= 1 / 60, 1 - g.land * 0.8) : 1;
+    ctx.save(); ctx.beginPath(); ctx.rect(BX, BY - 2, N * S, N * S + 4); ctx.clip();
+    ctx.translate(x + S / 2, y + S); ctx.scale(2 - sq, sq); ctx.drawImage(GEMS[g.t], -S / 2, -S); ctx.restore();
+    if (g.sp) special(g, x + S / 2, y + S / 2, t);
+  }
+  for (const b of beams) { ctx.globalAlpha = b.t / 0.35; ctx.fillStyle = '#fff'; ctx.fillRect(BX, BY + b.r * S + S / 2 - 4, N * S, 8); ctx.fillRect(BX + b.c * S + S / 2 - 4, BY, 8, N * S); ctx.globalAlpha = 1; }
+  // the cursor, what's picked up, and a hint when you've been still a while
+  if (state === 'play' && !ending) {
+    const pulse = 2 + Math.sin(t / 150) * 1.5;
+    if (sel) { ctx.strokeStyle = '#ffd23d'; ctx.lineWidth = 3; ctx.strokeRect(BX + sel.c * S + 2, BY + sel.r * S + 2, S - 4, S - 4); }
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(BX + cur.c * S + pulse, BY + cur.r * S + pulse, S - pulse * 2, S - pulse * 2);
+    if (idleT > 6 && !anim) { const m = findMove(); if (m) { ctx.globalAlpha = 0.4 + Math.sin(t / 120) * 0.3; ctx.fillStyle = '#fff'; [m.a, m.b].forEach(p => ctx.fillRect(BX + p.c * S + 4, BY + p.r * S + 4, S - 8, S - 8)); ctx.globalAlpha = 1; } }
+  }
+  if (msgT > 0 && state !== 'title') { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '20px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = OUT; ctx.fillText(msg, W / 2 + 2, BY + N * S + 34); ctx.fillStyle = '#ffd23d'; ctx.fillText(msg, W / 2, BY + N * S + 32); ctx.globalAlpha = 1; }
+}
+function special(g, x, y, t) {
+  if (g.sp === 'flame') { for (let i = 0; i < 3; i++) { const a = t / 200 + i * 2.09; ctx.fillStyle = ['#ff8a3d', '#ffd23d', '#ff4f6d'][i]; ctx.beginPath(); ctx.arc(x + Math.cos(a) * 13, y + Math.sin(a) * 13, 3, 0, 6.29); ctx.fill(); } ctx.strokeStyle = 'rgba(255,170,60,.8)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, 17, 0, 6.29); ctx.stroke(); }
+  if (g.sp === 'cross') { ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fillRect(x - 15, y - 1.5, 30, 3); ctx.fillRect(x - 1.5, y - 15, 3, 30); ctx.strokeStyle = 'rgba(255,255,255,.6)'; ctx.lineWidth = 1; ctx.strokeRect(x - 17, y - 17, 34, 34); }
+  if (g.sp === 'star') { ctx.save(); ctx.translate(x, y); ctx.rotate(t / 600); ctx.fillStyle = OUT; ctx.beginPath(); for (let i = 0; i < 10; i++) { const a = i / 10 * 6.283, k = i % 2 ? 8 : 18; ctx.lineTo(Math.cos(a) * k, Math.sin(a) * k); } ctx.fill(); const g2 = ctx.createRadialGradient(0, 0, 2, 0, 0, 16); g2.addColorStop(0, '#fff'); g2.addColorStop(1, `hsl(${(t / 5) % 360},90%,60%)`); ctx.fillStyle = g2; ctx.beginPath(); for (let i = 0; i < 10; i++) { const a = i / 10 * 6.283, k = i % 2 ? 6 : 15; ctx.lineTo(Math.cos(a) * k, Math.sin(a) * k); } ctx.fill(); ctx.restore(); }
+}
+A.loop(update, render);
+
+/* Attract demo: find the move that clears the most, walk the cursor there, pick it up and swap. */
+let botT = 0, plan = null;
+A.attract({
+  start: () => newGame(false),
+  stop: () => { state = 'title'; fill(); },
+  bot: dt => {
+    if (state !== 'play' || anim || ending) return [];
+    if ((botT -= dt) > 0) return []; botT = 0.13;
+    if (!plan) { let best = null; for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) for (const [dr, dc, k] of [[0, 1, 'ArrowRight'], [1, 0, 'ArrowDown']]) { const a = { r, c }, b = { r: r + dr, c: c + dc }; if (b.r >= N || b.c >= N) continue; swap(a, b); const star = grid[r][c].sp === 'star' || grid[b.r][b.c].sp === 'star', m = runs().reduce((s, x) => s + x.cells.length, 0), n = star ? 12 : m ? m + (grid[r][c].sp || grid[b.r][b.c].sp ? 3 : 0) : 0; swap(a, b); if (n && (!best || n > best.n)) best = { a, k, n }; } plan = best || { a: { r: 0, c: 0 }, k: 'ArrowRight' }; sel = null; }
+    if (cur.r !== plan.a.r || cur.c !== plan.a.c) return ['!' + (cur.r < plan.a.r ? 'ArrowDown' : cur.r > plan.a.r ? 'ArrowUp' : cur.c < plan.a.c ? 'ArrowRight' : 'ArrowLeft')];
+    if (!sel) return ['!Space'];
+    const k = plan.k; plan = null; return ['!' + k];
+  }
+});
+fill();
+A.overlay({ title: 'GEM CASCADE', sub: 'Swap two gems to line up three or more. Chain reactions score more and more. Four in a row makes a flame gem, an L or T a cross gem, five a star gem. 90 seconds, and every special buys a second. <b>Daily</b> gives everyone the same board today.', btn: 'Blitz', scores: true, daily: true, onGo: () => newGame(false), alt: { btn: 'Daily', onGo: () => newGame(true) } });
+})();
+</script>
+</body>
+</html>

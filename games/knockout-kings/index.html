@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Knockout Kings</title>
+<link rel="manifest" href="../../manifest.json">
+<meta name="theme-color" content="#0f0c1f">
+<link rel="icon" type="image/png" href="../../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../../icons/apple-touch-icon.png">
+<link rel="preload" href="../../shared/fonts/bungee-400.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="../../shared/fonts/silkscreen-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../../shared/fonts.css">
+<link rel="stylesheet" href="../../shared/arcade.css">
+</head>
+<body data-game="knockout-kings" data-pad="0:KeyJ 1:KeyK 2:Space 3:Space" style="--game:#ff4a4a">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>KNOCKOUT KINGS</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <div class="pad">
+    <div class="dp"><button class="u" data-k="ArrowUp" aria-label="Block">▲</button><button class="l" data-k="ArrowLeft" aria-label="Dodge left">◀</button><button class="r" data-k="ArrowRight" aria-label="Dodge right">▶</button><button class="d" data-k="ArrowDown" aria-label="Duck">▼</button></div>
+    <div class="ab"><button class="sm" data-k="Space">★ STAR</button><button class="sm" data-k="KeyK">BODY</button><button data-k="KeyJ">JAB</button></div>
+  </div>
+  <p class="help"><kbd>←</kbd><kbd>→</kbd> dodge · <kbd>↓</kbd> duck · hold <kbd>↑</kbd> block · <kbd>J</kbd> jab (head) · <kbd>K</kbd> body blow · <kbd>Space</kbd> star punch when you've earned a ★ · <kbd>P</kbd> pause · gamepad: A jab, B body, X/Y star, d-pad dodge, duck and block</p>
+</main>
+<script src="../../shared/chip.js"></script>
+<script src="../../shared/badges.js"></script>
+<script src="../../shared/arcade.js"></script>
+<script>
+(() => {
+/*
+ * Knockout Kings: cartoon boxing seen from behind your boxer, Kid Comet. Each opponent telegraphs every attack (a
+ * wind-up, a flash, a sound): dodge left or right, duck, or block, depending on the punch. Make them miss and they're
+ * open for a moment: punches land double, and a clean counter earns a star. Spend a star on a star punch (Space).
+ * Jabs go to the head, body blows low; punch into their guard and you lose a heart, and with no hearts left you're
+ * too tired to punch for a bit. Knock them down three times for a KO. Five opponents up to the champion, the Iron Duke.
+ */
+const A = Arcade, cv = document.getElementById('cv');
+const W = 480, H = 360, ctx = A.canvas(cv, W, H), OUT = '#0a0612', CX = W / 2;
+function shade(hex, k) {
+  let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join('');
+  const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+const sprite = (w, h, fn) => { const c = document.createElement('canvas'); c.width = w; c.height = h; fn(c.getContext('2d'), w, h); return c; };
+/** A blob drawn the house way: an outline, then a fill lit from the top-left. */
+function blob(x, y, rx, ry, c, rot = 0) {
+  ctx.fillStyle = OUT; ctx.beginPath(); ctx.ellipse(x, y, rx + 2.5, ry + 2.5, rot, 0, 6.29); ctx.fill();
+  const g = ctx.createRadialGradient(x - rx * 0.35, y - ry * 0.4, 1, x, y, Math.max(rx, ry)); g.addColorStop(0, shade(c, 0.35)); g.addColorStop(0.6, c); g.addColorStop(1, shade(c, -0.3));
+  ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(x, y, rx, ry, rot, 0, 6.29); ctx.fill();
+}
+
+/* ---------- the arena: a dark hall, the crowd, the ring (drawn once) ---------- */
+const ARENA = sprite(W, H, x => {
+  const g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#0a0614'); g.addColorStop(1, '#2a1030'); x.fillStyle = g; x.fillRect(0, 0, W, H);
+  for (let i = 0; i < 5; i++) { const lg = x.createRadialGradient(60 + i * 90, -20, 4, 60 + i * 90, -20, 160); lg.addColorStop(0, 'rgba(255,240,200,.18)'); lg.addColorStop(1, 'rgba(255,240,200,0)'); x.fillStyle = lg; x.fillRect(0, 0, W, 200); }
+  let s = 5; const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  for (let row = 0; row < 5; row++) for (let i = 0; i < 26; i++) { const px = i * 19 + (row % 2) * 9 + r() * 4, py = 120 + row * 16; x.fillStyle = `rgb(${30 + row * 8},${18 + row * 6},${40 + row * 8})`; x.beginPath(); x.arc(px, py, 7, 0, 6.29); x.fill(); x.fillRect(px - 8, py + 4, 16, 14); }
+  // the canvas floor and the ring posts
+  x.fillStyle = '#c8c4d8'; x.beginPath(); x.moveTo(-40, H); x.lineTo(60, 214); x.lineTo(W - 60, 214); x.lineTo(W + 40, H); x.fill();
+  x.fillStyle = 'rgba(0,0,0,.08)'; for (let i = 0; i < 12; i++) x.fillRect(0, 220 + i * 12, W, 1);
+  x.fillStyle = '#e8203a'; x.font = '22px Bungee, sans-serif'; x.textAlign = 'center'; x.globalAlpha = 0.18; x.fillText('KNOCKOUT KINGS', CX, 300); x.globalAlpha = 1;
+  [[46, 120], [W - 46, 120]].forEach(([px, py]) => { x.fillStyle = OUT; x.fillRect(px - 7, py - 2, 14, 104); x.fillStyle = '#c8c8d8'; x.fillRect(px - 5, py, 10, 100); });
+});
+function ropes() { [['#e8203a', 150], ['#f4f4f4', 168], ['#3d6aff', 186]].forEach(([c, y]) => { ctx.fillStyle = OUT; ctx.fillRect(0, y - 2, W, 6); ctx.fillStyle = c; ctx.fillRect(0, y - 1, W, 4); ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.fillRect(0, y - 1, W, 1); }); }
+
+/* ---------- five opponents ---------- */
+const FOES = [
+  { name: 'TUBBY THUNDER', skin: '#f0b080', trunks: '#3d9aff', glove: '#c8203a', hair: '#3a2414', girth: 1.35, hp: 90, speed: 1.0, moves: ['jab', 'jab', 'hookL', 'hookR', 'belly'], style: 'tubby', blurb: 'All belly, no brakes.' },
+  { name: 'PROFESSOR JAB', skin: '#e0a878', trunks: '#5a3aa8', glove: '#3a3a4a', hair: '#e8e8f0', girth: 1.0, hp: 100, speed: 1.15, moves: ['jab', 'jab', 'flurry', 'hookL', 'hookR', 'upper'], style: 'prof', blurb: 'Has studied every punch ever thrown.' },
+  { name: 'GLACIER GLENN', skin: '#b8d8f0', trunks: '#e8f4ff', glove: '#5ee7ff', hair: '#ffffff', girth: 1.15, hp: 120, speed: 1.2, moves: ['jab', 'hookL', 'hookR', 'upper', 'freeze'], style: 'ice', blurb: 'Cool as ice. Hits like a glacier.' },
+  { name: 'ROCKET RITA', skin: '#c8885a', trunks: '#ff4fd1', glove: '#ffd23d', hair: '#1a1018', girth: 0.95, hp: 120, speed: 1.4, moves: ['jab', 'jab', 'hookL', 'hookR', 'upper', 'rocket', 'flurry'], style: 'rita', blurb: 'Zero to knockout in half a second.' },
+  { name: 'THE IRON DUKE', skin: '#a8704a', trunks: '#ffd23d', glove: '#2a2a34', hair: '#1a1018', girth: 1.2, hp: 160, speed: 1.55, moves: ['jab', 'hookL', 'hookR', 'upper', 'rocket', 'flurry', 'belly'], style: 'duke', blurb: 'The champion. Never lost a title fight.' }];
+// how each attack is beaten: dodge either way (L/R), duck, or block
+const AVOID = { jab: ['L', 'R', 'D', 'B'], hookL: ['R', 'D'], hookR: ['L', 'D'], upper: ['L', 'R'], belly: ['L', 'R'], rocket: ['D'], flurry: ['B'], freeze: ['L', 'R'] };
+const DMG = { jab: 8, hookL: 14, hookR: 14, upper: 20, belly: 16, rocket: 18, flurry: 5, freeze: 22 };
+const TELL = { jab: 0.65, hookL: 0.85, hookR: 0.85, upper: 0.95, belly: 1.0, rocket: 0.9, flurry: 0.6, freeze: 1.1 };
+const HINT = { jab: 'DODGE, DUCK OR BLOCK', hookL: 'DODGE RIGHT OR DUCK', hookR: 'DODGE LEFT OR DUCK', upper: 'DODGE!', belly: 'DODGE!', rocket: 'DUCK!', flurry: 'BLOCK!', freeze: 'DODGE!' };
+
+/* ---------- state ---------- */
+let state = 'title', fight = 0, loop = 0, score = 0, lives = 3, msg = '', msgT = 0, clock = 0, perfect = true;
+const me = { hp: 100, hearts: 20, stars: 0, act: null, actT: 0, tired: 0, down: 0, mash: 0, downs: 0, flash: 0, punchHand: 0 };
+const op = { hp: 100, max: 100, act: 'guard', t: 0, next: 1.5, move: null, guard: 'high', open: 0, flash: 0, downs: 0, count: 0, sway: 0, hitT: 0, flurryN: 0, face: 'calm' };
+const F = () => FOES[fight];
+const say = (t, s = 1.4) => { msg = t; msgT = s; };
+function startFight() {
+  const f = F(), k = 1 + loop * 0.35;
+  Object.assign(op, { hp: Math.round(f.hp * k), max: Math.round(f.hp * k), act: 'intro', t: 0, next: 1.4, move: null, guard: 'high', open: 0, flash: 0, downs: 0, count: 0, face: 'calm' });
+  Object.assign(me, { hp: 100, hearts: 20, stars: 0, act: null, actT: 0, tired: 0, down: 0, mash: 0, downs: 0, flash: 0 });
+  clock = 180; perfect = true; say(`FIGHT ${fight + 1 + loop * 5} · ${f.name}`, 2.2); A.jingle([392, 523, 659, 784], 0.1);
+}
+function newGame() { fight = 0; loop = 0; score = 0; A.setScore(0); lives = A.easy ? 5 : 3; startFight(); state = 'play'; }
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+A.onHide(pause);
+const add = (n, x, y, c = '#ffd23d') => { score += n; A.setScore(score); if (x !== undefined) A.pop(x, y, '+' + n, c); };
+
+/* ---------- you ---------- */
+const busy = () => me.down || (me.act && me.actT > 0);
+A.onPress(c => {
+  if (c === 'KeyP' || c === 'Escape') return pause();
+  if (state !== 'play') return;
+  if (me.down) { if (['KeyJ', 'KeyK', 'Space', 'KeyZ', 'KeyX'].includes(c)) { me.mash += 1; A.tone(300 + me.mash * 20, 0.04, 'square', 0.03); } return; }
+  if (busy() || op.act === 'down' || op.act === 'intro') return;
+  if (c === 'ArrowLeft' || c === 'KeyA') act('L', 0.42); else if (c === 'ArrowRight' || c === 'KeyD') act('R', 0.42);
+  else if (c === 'ArrowDown' || c === 'KeyS') act('D', 0.42);
+  else if (c === 'KeyJ' || c === 'KeyZ') punch('jab'); else if (c === 'KeyK' || c === 'KeyX') punch('body');
+  else if (c === 'Space' || c === 'KeyL' || c === 'Enter') punch('star');
+});
+function act(a, t) { me.act = a; me.actT = t; A.tone(a === 'D' ? 180 : 240, 0.06, 'triangle', 0.03, 0, a === 'D' ? 120 : 420); }
+function punch(kind) {
+  if (me.tired > 0) { A.tone(120, 0.1, 'square', 0.03); return; }
+  if (kind === 'star' && me.stars <= 0) return;
+  me.act = kind; me.actT = kind === 'star' ? 0.55 : 0.24; me.punchHand = kind === 'jab' ? 0 : kind === 'body' ? 1 : 2;
+  setTimeout(() => land(kind), kind === 'star' ? 300 : 110);
+}
+function land(kind) {
+  if (state !== 'play' || op.act === 'down' || me.down) return;
+  const attacking = op.act === 'tell' || op.act === 'strike';
+  if (kind === 'star') { me.stars--; }
+  const blocked = kind !== 'star' && !op.open && !attacking && ((kind === 'jab' && op.guard === 'high') || (kind === 'body' && op.guard === 'low'));
+  if (blocked) { me.hearts = Math.max(0, me.hearts - 1); A.tone(140, 0.08, 'square', 0.04); A.pop(CX, 120, 'BLOCKED', '#a39bc4'); if (!me.hearts) tire(); op.guard = op.guard === 'high' ? 'low' : 'high'; return; }
+  const open = op.open > 0, dmg = kind === 'star' ? (open ? 34 : 24) : (kind === 'jab' ? 4 : 5) * (open ? 2 : 1);
+  op.hp -= dmg; op.flash = 0.12; op.hitT = 0.25; op.face = 'hurt'; op.sway = kind === 'body' ? 0 : (me.punchHand ? 1 : -1) * 10;
+  if (attacking && kind !== 'star') { op.act = 'guard'; op.t = 0; op.next = 1.2; op.open = 0.8; say('COUNTER!', 0.9); } // a punch during the wind-up interrupts it
+  const pts = kind === 'star' ? 300 : open ? 40 : 10; add(pts, CX + A.rand(-30, 30), 110);
+  if (open && kind !== 'star' && Math.random() < 0.25 && me.stars < 3) { me.stars++; A.pop(CX, 70, '★ STAR!', '#ffd23d'); A.jingle([988, 1319], 0.06, 'square'); }
+  A.hitstop(kind === 'star' ? 0.2 : 0.05); A.shake(kind === 'star' ? 12 : open ? 5 : 3, 0.2);
+  A.burst(CX + A.rand(-20, 20), kind === 'body' ? 200 : 110, { n: kind === 'star' ? 30 : 8, colors: kind === 'star' ? ['#ffd23d', '#fff', '#ff4fd1'] : ['#fff', '#ffd23d'], speed: kind === 'star' ? 240 : 120, life: 0.35 });
+  A.tone(kind === 'star' ? 90 : 160, kind === 'star' ? 0.3 : 0.08, 'square', 0.06, 0, 50); if (kind === 'star') { A.badge('star'); A.flash('#fff', 0.3); }
+  if (op.hp <= 0) knockdown();
+}
+function tire() { me.tired = 2.5; say('TIRED!', 1.2); A.tone(200, 0.4, 'triangle', 0.04, 0, 90); }
+
+/* ---------- the opponent: guard, then a tell, then the punch; open after a miss ---------- */
+function pickMove() {
+  const f = F(), m = f.moves[Math.floor(Math.random() * f.moves.length)];
+  op.move = m; op.act = 'tell'; op.t = 0; op.face = 'angry'; op.flurryN = m === 'flurry' ? 4 : 0;
+  op.tellT = TELL[m] / (f.speed * (1 + loop * 0.15)); A.tone(m === 'upper' || m === 'rocket' ? 520 : 300, 0.12, 'square', 0.035, 0, m === 'upper' ? 900 : 200);
+}
+function strike() {
+  const m = op.move, ok = me.act && (me.act === 'B' || me.actT > 0) && AVOID[m].includes(me.act) && !(m === 'flurry' && me.act !== 'B');
+  op.act = 'strike'; op.t = 0;
+  if (ok) { // a miss: they're open
+    if (m !== 'flurry' || --op.flurryN <= 0) { op.open = 1.3 / (1 + loop * 0.1); op.face = 'dizzy'; add(20, CX, 90, '#5ee7ff'); A.tone(880, 0.06, 'triangle', 0.03); say(m === 'flurry' ? 'BLOCKED THEM ALL!' : 'MISSED! HIT THEM!', 0.9); }
+    else { A.tone(600, 0.05, 'square', 0.02); op.act = 'tell'; op.t = op.tellT * 0.55; }
+    return;
+  }
+  // a hit on you
+  const dmg = Math.round(DMG[m] * (1 + loop * 0.2)); me.hp -= dmg; me.flash = 0.25; me.hearts = Math.max(0, me.hearts - 3); perfect = false;
+  A.shake(m === 'upper' || m === 'freeze' ? 12 : 7, 0.3); A.flash('#ff4f6d', 0.18); A.sfx('hurt'); A.tone(80, 0.25, 'sawtooth', 0.06, 0, 40); A.hitstop(0.08);
+  if (!me.hearts) tire();
+  if (m === 'flurry' && --op.flurryN > 0) { op.act = 'tell'; op.t = op.tellT * 0.55; }
+  if (me.hp <= 0) { me.hp = 0; me.down = 1; me.mash = 0; me.downs++; op.act = 'guard'; op.next = 9; say('YOU\'RE DOWN! MASH TO GET UP!', 2); A.tone(60, 0.8, 'sawtooth', 0.06, 0, 30); }
+}
+function knockdown() {
+  op.hp = 0; op.act = 'down'; op.t = 0; op.downs++; op.count = 0; op.getUp = 2 + Math.floor(Math.random() * 3) + op.downs * 2; op.open = 0; op.face = 'ko'; add(1000, CX, 100);
+  A.shake(14, 0.6); A.flash('#fff', 0.3); A.sfx('boom'); say(op.downs >= 3 ? 'KNOCKOUT!' : 'DOWN!', 1.6);
+}
+function winFight() {
+  const bonus = 3000 * (fight + 1 + loop * 5) + Math.round(clock) * 20; add(bonus); say(`YOU WIN! +${bonus}`, 2.6);
+  A.jingle([523, 659, 784, 1047, 784, 1047, 1319, 1568], 0.1, 'square');
+  if (perfect) A.badge('perfect');
+  if (fight === 4) A.badge('champ');
+  state = 'between'; setTimeout(() => { if (state !== 'between') return; fight++; if (fight >= FOES.length) { fight = 0; loop++; say('TITLE DEFENSE!', 2); } startFight(); state = 'play'; }, 2800);
+}
+function loseFight(why) {
+  lives--; say(why, 2.2); A.jingle([392, 330, 262, 196], 0.16, 'triangle');
+  state = 'between'; setTimeout(() => { if (state !== 'between') return; if (lives <= 0) return gameOver(); startFight(); state = 'play'; say(`REMATCH! ${lives} LEFT`, 1.8); }, 2600);
+}
+function gameOver() {
+  state = 'over'; const rec = A.submit(score);
+  A.overlay({ title: 'DOWN AND OUT', big: `SCORE ${score.toLocaleString()} · FIGHT ${fight + 1 + loop * 5}`, sub: rec ? 'New high score!' : `Best: ${A.best().toLocaleString()}`, btn: 'Back in the ring', onGo: newGame });
+}
+
+/* ---------- update ---------- */
+function update(dt) {
+  if (msgT > 0) msgT -= dt;
+  if (state !== 'play') return;
+  if (me.flash > 0) me.flash -= dt; if (op.flash > 0) op.flash -= dt; if (op.hitT > 0) op.hitT -= dt; else if (op.face === 'hurt') op.face = 'calm';
+  op.sway *= 1 - dt * 8;
+  if (me.actT > 0) { me.actT -= dt; if (me.actT <= 0 && me.act !== 'B') me.act = null; }
+  const blocking = A.held('ArrowUp', 'KeyW') && !me.down && !(me.act && me.act !== 'B' && me.actT > 0);
+  if (blocking) { me.act = 'B'; me.actT = 0.05; } else if (me.act === 'B') me.act = null; // holding up blocks
+  if (me.tired > 0 && (me.tired -= dt) <= 0) { me.hearts = 10; say('SECOND WIND', 1); }
+  if (op.act !== 'down' && !me.down) { clock -= dt; if (clock <= 0) { clock = 0; return op.hp / op.max < me.hp / 100 ? (add(500), winFight()) : loseFight('THE JUDGES SAY NO'); } }
+  // you, getting up
+  if (me.down) {
+    me.down += dt; const need = 8 + me.downs * 6;
+    if (me.mash >= need) { me.down = 0; me.hp = 45 - me.downs * 8; op.next = 1.2; op.act = 'guard'; say('BACK UP!', 1); A.jingle([523, 659, 784], 0.08); }
+    else if (me.down > 10 || me.downs >= 3) { me.down = 0; return loseFight(me.downs >= 3 ? 'THREE KNOCKDOWNS · TKO' : 'COUNTED OUT'); }
+    return;
+  }
+  // them
+  op.t += dt;
+  if (op.open > 0) { op.open -= dt; if (op.open <= 0) { op.face = 'calm'; op.act = 'guard'; op.t = 0; op.next = 0.6 + Math.random() * 0.8; } return; }
+  if (op.act === 'intro') { if (op.t > 1.4) { op.act = 'guard'; op.t = 0; op.next = 0.8; } return; }
+  if (op.act === 'down') {
+    if (op.downs >= 3) { if (op.t > 1.2) return winFight(); return; }
+    const getUp = op.getUp;
+    if (Math.floor(op.t) > op.count) { op.count = Math.floor(op.t); if (op.count <= 10) { say(String(op.count), 0.8); A.tone(440, 0.08, 'square', 0.04); } }
+    if (op.count >= Math.min(9, getUp) && op.t > op.count + 0.5) { op.act = 'guard'; op.t = 0; op.next = 0.8; op.hp = Math.round(op.max * (0.55 - op.downs * 0.12)); op.face = 'angry'; say('THEY\'RE UP!', 1); }
+    return;
+  }
+  if (op.act === 'guard') { if (op.t > op.next) { if (Math.random() < 0.3) { op.guard = op.guard === 'high' ? 'low' : 'high'; op.t = 0; op.next = 0.5; } else pickMove(); } return; }
+  if (op.act === 'tell' && op.t >= op.tellT) strike();
+  else if (op.act === 'strike' && op.t > 0.32) { if (op.open <= 0) { op.act = 'guard'; op.t = 0; op.face = 'calm'; op.next = (0.7 + Math.random() * 1.1) / F().speed; } }
+}
+
+/* ---------- drawing ---------- */
+function drawOpponent(t) {
+  const f = F(), g = f.girth, tellK = op.act === 'tell' ? op.t / op.tellT : 0, m = op.move;
+  const down = op.act === 'down', bob = Math.sin(t / 260) * 3, open = op.open > 0;
+  let ox = CX + op.sway + (open ? Math.sin(t / 90) * 4 : 0), oy = 0;
+  if (op.act === 'tell') { if (m === 'hookL') ox -= 14 * tellK; if (m === 'hookR') ox += 14 * tellK; if (m === 'upper' || m === 'rocket') oy += 14 * tellK; if (m === 'belly') oy -= 6 * tellK; }
+  if (op.act === 'strike' && !open) { oy += m === 'belly' ? 10 : 0; }
+  if (down) { ctx.save(); ctx.translate(CX, 220); ctx.rotate(-1.3 + Math.min(1, op.t * 3) * -0.2); ctx.translate(-CX, -220); }
+  const by = 196 + bob + oy, hit = op.flash > 0, C = c => hit ? '#ffffff' : c;
+  ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(CX, 236, 70 * g, 12, 0, 0, 6.29); ctx.fill();
+  // legs and trunks
+  blob(ox - 22 * g, by + 36, 14 * g, 26, C(f.skin)); blob(ox + 22 * g, by + 36, 14 * g, 26, C(f.skin));
+  blob(ox, by + 14, 40 * g, 22, C(f.trunks)); ctx.fillStyle = shade(f.trunks, -0.4); ctx.fillRect(ox - 40 * g, by + 2, 80 * g, 5);
+  // body
+  blob(ox, by - 34, 44 * g, 42, C(f.skin));
+  if (f.style === 'tubby') { blob(ox, by - 16, 34 * g, 24, C(f.skin)); ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.beginPath(); ctx.ellipse(ox, by - 12, 3, 2, 0, 0, 6.29); ctx.fill(); } // the belly (and its button)
+  ctx.fillStyle = 'rgba(0,0,0,.12)'; ctx.fillRect(ox - 1, by - 60, 2, 40);
+  // head and face
+  const hy = by - 92 + (op.face === 'hurt' ? -4 : 0);
+  blob(ox, hy, 28, 30, C(f.skin));
+  if (f.style === 'prof') { ctx.fillStyle = f.hair; ctx.fillRect(ox - 26, hy - 30, 52, 10); }
+  else if (f.style === 'ice') { ctx.fillStyle = '#e8f8ff'; for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(ox + i * 11 - 6, hy - 22); ctx.lineTo(ox + i * 11, hy - 40); ctx.lineTo(ox + i * 11 + 6, hy - 22); ctx.fill(); } }
+  else if (f.style === 'rita') { blob(ox, hy - 22, 26, 12, f.hair); blob(ox + 26, hy - 30, 9, 14, f.hair, 0.6); }
+  else if (f.style === 'duke') { ctx.fillStyle = '#ffd23d'; ctx.beginPath(); ctx.moveTo(ox - 20, hy - 26); ctx.lineTo(ox - 14, hy - 44); ctx.lineTo(ox - 6, hy - 32); ctx.lineTo(ox, hy - 48); ctx.lineTo(ox + 6, hy - 32); ctx.lineTo(ox + 14, hy - 44); ctx.lineTo(ox + 20, hy - 26); ctx.fill(); ctx.strokeStyle = OUT; ctx.lineWidth = 2; ctx.stroke(); }
+  else { blob(ox, hy - 24, 20, 8, f.hair); }
+  const face = op.face;
+  ctx.fillStyle = OUT;
+  if (face === 'dizzy' || face === 'ko') { ctx.font = '12px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('x', ox - 10, hy + 2); ctx.fillText('x', ox + 10, hy + 2); if (face === 'dizzy') for (let i = 0; i < 3; i++) { const a = t / 180 + i * 2.1; ctx.fillStyle = '#ffd23d'; ctx.fillText('★', ox + Math.cos(a) * 30, hy - 36 + Math.sin(a) * 6); } }
+  else { ctx.fillRect(ox - 13, hy - 4, 6, face === 'angry' ? 4 : 6); ctx.fillRect(ox + 7, hy - 4, 6, face === 'angry' ? 4 : 6); if (face === 'angry') { ctx.fillRect(ox - 15, hy - 10, 10, 3); ctx.fillRect(ox + 5, hy - 10, 10, 3); } }
+  if (f.style === 'prof') { ctx.strokeStyle = OUT; ctx.lineWidth = 2; ctx.strokeRect(ox - 16, hy - 8, 12, 10); ctx.strokeRect(ox + 4, hy - 8, 12, 10); ctx.beginPath(); ctx.moveTo(ox - 4, hy - 3); ctx.lineTo(ox + 4, hy - 3); ctx.stroke(); }
+  if (f.style === 'tubby' || f.style === 'duke') { ctx.fillStyle = f.style === 'duke' ? '#1a1018' : '#5a3418'; ctx.fillRect(ox - 12, hy + 8, 24, 4); }
+  ctx.fillStyle = OUT; ctx.fillRect(ox - 6, hy + (face === 'hurt' ? 14 : 16), 12, face === 'hurt' ? 6 : 3);
+  // gloves: guard high or low, pulled back for a tell, out for the strike
+  const glove = (gx, gy, r) => { blob(gx, gy, r, r * 0.9, C(f.glove)); ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.beginPath(); ctx.ellipse(gx - r * 0.3, gy - r * 0.4, r * 0.3, r * 0.2, 0, 0, 6.29); ctx.fill(); };
+  let L = [ox - 34 * g, op.guard === 'high' ? hy + 30 : by - 20], R = [ox + 34 * g, op.guard === 'high' ? hy + 30 : by - 20], rL = 20, rR = 20;
+  if (open) { L = [ox - 54 * g, by - 6]; R = [ox + 54 * g, by - 6]; }
+  if (op.act === 'tell') {
+    const glow = 0.4 + Math.abs(Math.sin(t / 60)) * 0.6;
+    if (m === 'jab' || m === 'flurry') { R = [ox + 44, hy + 20 - tellK * 10]; rR = 20; }
+    if (m === 'hookL') L = [ox - 70 * g - tellK * 20, hy + 10];
+    if (m === 'hookR') R = [ox + 70 * g + tellK * 20, hy + 10];
+    if (m === 'upper' || m === 'rocket') R = [ox + 30, by + 10];
+    if (m === 'belly') { L = [ox - 60 * g, by - 40]; R = [ox + 60 * g, by - 40]; }
+    if (m === 'freeze') { L = [ox - 26, hy - 30]; R = [ox + 26, hy - 30]; ctx.fillStyle = `rgba(160,230,255,${glow * 0.5})`; ctx.beginPath(); ctx.arc(ox, hy - 40, 34, 0, 6.29); ctx.fill(); }
+    ctx.fillStyle = `rgba(255,220,80,${glow * 0.6})`; const gp = m === 'hookL' || m === 'belly' ? L : R; ctx.beginPath(); ctx.arc(gp[0], gp[1], 30, 0, 6.29); ctx.fill();
+  }
+  if (op.act === 'strike' && !open) { const big = m === 'upper' || m === 'freeze' || m === 'rocket' ? 34 : 30; if (m === 'hookL' || m === 'belly') { L = [CX - 40 + Math.sin(op.t * 9) * 30, 260]; rL = big; } else { R = [CX + 20, 250]; rR = big; } }
+  glove(...L, rL); glove(...R, rR);
+  if (down) ctx.restore();
+}
+function drawYou(t) {
+  if (state === 'title') return;
+  const a = me.act, k = me.actT > 0 ? me.actT : 0;
+  let x = CX, y = H + 10;
+  if (a === 'L') x -= 96 * Math.sin(Math.min(1, (0.42 - k) / 0.12) * Math.PI / 2) * (k > 0.1 ? 1 : k / 0.1);
+  if (a === 'R') x += 96 * Math.sin(Math.min(1, (0.42 - k) / 0.12) * Math.PI / 2) * (k > 0.1 ? 1 : k / 0.1);
+  if (a === 'D') y += 46 * (k > 0.1 ? 1 : k / 0.1);
+  if (me.down) y += 90 * Math.min(1, me.down * 3);
+  ctx.globalAlpha = 0.92; const hit = me.flash > 0 && Math.floor(t / 50) % 2, C = c => hit ? '#ff9a9a' : c;
+  // back, shoulders, head (from behind)
+  blob(x, y - 40, 62, 44, C('#e8a878')); ctx.fillStyle = 'rgba(0,0,0,.15)'; ctx.fillRect(x - 1, y - 80, 2, 50);
+  blob(x, y - 96, 24, 26, C('#e8a878')); blob(x, y - 108, 24, 16, C('#3a2414'));
+  ctx.fillStyle = '#3dff8f'; ctx.fillRect(x - 24, y - 92, 48, 5); // a green headband
+  // gloves
+  const punching = a === 'jab' || a === 'body' || a === 'star', pk = punching ? Math.sin(Math.max(0, 1 - k / (a === 'star' ? 0.55 : 0.24)) * Math.PI) : 0;
+  let L = [x - 50, y - 92], R = [x + 50, y - 92];
+  if (a === 'B') { L = [x - 22, y - 120]; R = [x + 22, y - 120]; }
+  if (a === 'jab') L = [x - 50 + pk * 40, y - 92 - pk * 100];
+  if (a === 'body') R = [x + 50 - pk * 40, y - 92 - pk * 40];
+  if (a === 'star') R = [x + 50 - pk * 50, y - 92 - pk * 150];
+  [[L, a === 'jab' ? 1 - pk * 0.35 : 1], [R, a === 'body' || a === 'star' ? 1 - pk * 0.35 : 1]].forEach(([p, s]) => { blob(p[0], p[1], 24 * s, 22 * s, C('#3dc85a')); ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.beginPath(); ctx.ellipse(p[0] - 6 * s, p[1] - 8 * s, 7 * s, 4 * s, 0, 0, 6.29); ctx.fill(); });
+  if (a === 'star' && pk > 0.5) { ctx.fillStyle = '#ffd23d'; ctx.font = '26px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('★', R[0], R[1] - 30); }
+  ctx.globalAlpha = 1;
+}
+function render(t) {
+  ctx.drawImage(ARENA, 0, 0);
+  for (let i = 0; i < 3; i++) if (Math.random() < 0.04) { ctx.fillStyle = 'rgba(255,255,255,.8)'; ctx.fillRect(Math.random() * W, 112 + Math.random() * 70, 3, 3); } // camera flashes
+  ropes();
+  drawOpponent(t);
+  ctx.fillStyle = 'rgba(232,32,58,.85)'; ctx.fillRect(0, 186, W, 2); // the bottom rope runs in front of their legs
+  drawYou(t);
+  // the hud: both health bars, hearts, stars, the clock
+  if (state !== 'title') {
+    const bar = (x, w, k, c, label, right) => { ctx.fillStyle = OUT; ctx.fillRect(x - 1, 8, w + 2, 14); ctx.fillStyle = '#2a2040'; ctx.fillRect(x, 9, w, 12); ctx.fillStyle = c; ctx.fillRect(right ? x + w * (1 - k) : x, 9, w * Math.max(0, k), 12); ctx.font = '9px Silkscreen, monospace'; ctx.textAlign = right ? 'right' : 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff'; ctx.fillText(label, right ? x + w : x, 30); };
+    bar(10, 170, me.hp / 100, me.hp > 30 ? '#3dff8f' : '#ff4f6d', `KID COMET${me.tired > 0 ? ' · TIRED' : ''}`, false);
+    bar(W - 180, 170, op.hp / op.max, '#ff4a4a', F().name, true);
+    ctx.textAlign = 'center'; ctx.font = '16px Bungee, sans-serif'; ctx.fillStyle = clock < 20 ? '#ff4f6d' : '#fff'; ctx.fillText(`${Math.floor(clock / 60)}:${String(Math.floor(clock % 60)).padStart(2, '0')}`, CX, 16);
+    ctx.font = '10px Silkscreen, monospace'; ctx.fillStyle = '#ff4f6d'; ctx.textAlign = 'left'; ctx.fillText(`♥ ${me.hearts}`, 10, 44); ctx.fillStyle = '#ffd23d'; ctx.fillText('★'.repeat(me.stars) + '☆'.repeat(3 - me.stars), 56, 44);
+    ctx.textAlign = 'right'; ctx.fillStyle = '#a39bc4'; ctx.fillText(`DOWNS ${'●'.repeat(op.downs)}${'○'.repeat(3 - op.downs)} · REMATCHES ${lives}`, W - 10, 44);
+    if (op.act === 'tell' && fight < 2 && loop === 0) { ctx.font = '10px Silkscreen, monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffe14d'; ctx.fillText(HINT[op.move], CX, 62); } // early fights spell it out
+    if (me.down) { ctx.fillStyle = 'rgba(10,6,18,.6)'; ctx.fillRect(CX - 120, 250, 240, 40); ctx.fillStyle = '#ff4f6d'; ctx.font = '14px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillText(`MASH J/K! ${Math.min(10, Math.floor(me.down))}`, CX, 266); ctx.fillStyle = '#3dff8f'; ctx.fillRect(CX - 100, 278, 200 * Math.min(1, me.mash / (8 + me.downs * 6)), 6); }
+  }
+  if (op.act === 'intro' && state === 'play') { ctx.fillStyle = 'rgba(10,6,18,.7)'; ctx.fillRect(0, 250, W, 60); ctx.textAlign = 'center'; ctx.font = '20px Bungee, sans-serif'; ctx.fillStyle = '#ff4a4a'; ctx.fillText(F().name, CX, 272); ctx.font = '11px Silkscreen, monospace'; ctx.fillStyle = '#fff'; ctx.fillText(F().blurb.toUpperCase(), CX, 294); }
+  if (msgT > 0 && state !== 'title') { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '24px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = OUT; ctx.fillText(msg, CX + 2, 92); ctx.fillStyle = '#ffd23d'; ctx.fillText(msg, CX, 90); ctx.globalAlpha = 1; }
+}
+A.loop(dt => update(dt), render);
+
+/* Attract demo: read the tell and do what beats it, then punch while they're open; star punch when there's one. */
+let botT = 0;
+A.attract({
+  start: newGame,
+  stop: () => { state = 'title'; Object.assign(op, { act: 'guard', open: 0, face: 'calm', downs: 0, hp: op.max }); },
+  bot: dt => {
+    if (state !== 'play') return [];
+    if (me.down) return Math.random() < 0.5 ? ['!KeyJ'] : [];
+    if (op.act === 'tell' && op.t > op.tellT * 0.6 && !busy()) { const a = AVOID[op.move][0]; return a === 'B' ? ['ArrowUp'] : ['!' + { L: 'ArrowLeft', R: 'ArrowRight', D: 'ArrowDown' }[a]]; }
+    if ((botT -= dt) > 0) return op.act === 'tell' && AVOID[op.move][0] === 'B' ? ['ArrowUp'] : [];
+    botT = 0.18;
+    if (op.open > 0 && !busy()) return [me.stars > 0 ? '!Space' : Math.random() < 0.5 ? '!KeyJ' : '!KeyK'];
+    if (op.act === 'guard' && Math.random() < 0.15 && !busy()) return [op.guard === 'high' ? '!KeyK' : '!KeyJ'];
+    return [];
+  }
+});
+A.overlay({ title: 'KNOCKOUT KINGS', sub: 'Five fighters stand between Kid Comet and the belt. Watch for each tell, then dodge (←→), duck (↓) or block (↑). Make them miss and they\'re open: hit them with jabs (J) and body blows (K), and save your stars (★) for a star punch (Space).', btn: 'Fight!', scores: true, onGo: newGame });
+})();
+</script>
+</body>
+</html>
