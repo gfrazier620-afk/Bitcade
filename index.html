@@ -769,7 +769,7 @@ if (feat) {
  * day) and the Arcade Pass. Each shows that game's footage.
  */
 const heroTrack = document.getElementById('heroTrack');
-const STORIES = { 'dungeon-delve': ['THE FIVE DEPTHS', 'Five floors down to Morrowgast the lich. Buy upgrades with the gems you find, then try Boss Rush.'], 'blast-brigade': ['OPERATION IRON DAWN', 'Five fronts, from the desert to the Iron Fortress and its walking Colossus. Then hold out in Survival.'], 'pixel-peaks': ['THE EIGHT PEAKS', 'Climb all eight to the summit, where Grumble the storm cloud waits. Then race the Time Trial.'], 'turbo-tour': ['THE GRAND TOUR', 'Six races against five rivals. Finish in the top three to go on, and beat Vex Valentine in the final.'] };
+const STORIES = { 'dungeon-delve': ['THE FIVE DEPTHS', 'Five floors down to Morrowgast the lich. Buy upgrades with the gems you find, then try Boss Rush.'], 'blast-brigade': ['OPERATION IRON DAWN', 'Five fronts, from the desert to the Iron Fortress and its walking Colossus. Then hold out in Survival.'], 'pixel-peaks': ['THE EIGHT PEAKS', 'Climb all eight to the summit, where Grumble the storm cloud waits. Then race the Time Trial.'], 'turbo-tour': ['THE GRAND TOUR', 'Six races against five rivals. Finish in the top three to go on, and beat Vex Valentine in the final.'], 'sky-squadron': ['WINGS OVER THE WORLD', 'Six regions to free from the Iron Armada, all the way to the Sky Leviathan. Then the Boss Rush.'], 'knockout-kings': ['FROM THE BOTTOM', 'A back-alley bout to the world title in seven fights, with Coach Del in your corner. Then the Gauntlet.'] };
 function heroSlide({ g, kick, title, text, cta, href, onGo, cls }) {
   const a = document.createElement(href ? 'a' : 'button'); a.className = 'hero-slide' + (cls ? ' ' + cls : ''); if (href) a.href = href; else a.type = 'button';
   if (g) a.style.setProperty('--c', g.c);
@@ -784,7 +784,7 @@ if (feat) { heroTrack.append(tourney); tourney.insertAdjacentHTML('afterbegin', 
   const nw = GAMES.slice().sort((a, b) => (b.added || '').localeCompare(a.added || '') || GAMES.indexOf(b) - GAMES.indexOf(a))[0];
   if (nw) heroSlide({ g: nw, kick: '✦ NEW ARRIVAL', title: nw.name, text: nw.blurb, cta: 'PLAY NOW ▶', href: `games/${nw.slug}/` });
   const ids = Object.keys(STORIES), sg = GAMES.find(g => g.slug === ids[Math.floor(Date.now() / 864e5) % ids.length]);
-  if (sg) heroSlide({ g: sg, kick: `★ STORY MODE · ${sg.name.toUpperCase()}`, title: STORIES[sg.slug][0], text: STORIES[sg.slug][1] + ' Four cabinets have a story now.', cta: 'PLAY THE STORY ▶', href: `games/${sg.slug}/` });
+  if (sg) heroSlide({ g: sg, kick: `★ STORY MODE · ${sg.name.toUpperCase()}`, title: STORIES[sg.slug][0], text: STORIES[sg.slug][1] + ' Six cabinets have a story now.', cta: 'PLAY THE STORY ▶', href: `games/${sg.slug}/` });
   if (window.PASS && PASS.season()) {
     const se = PASS.season(), ready = PASS.ready().length;
     heroSlide({ kick: '✦ ARCADE PASS · SEASON 1', title: se.name, text: `Tier ${PASS.tier()} of ${PASS.TIERS}. Every bit of XP climbs it: tickets, prizes, and pass-only finishes like the Diamond Cabinet. ${ready ? ready + ' reward' + (ready === 1 ? '' : 's') + ' waiting.' : ''}`, cta: ready ? `CLAIM ${ready} ▶` : 'OPEN THE PASS ▶', onGo: () => PassView.open(), cls: 'pass' });

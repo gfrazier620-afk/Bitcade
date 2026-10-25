@@ -27,6 +27,7 @@
 <script src="../../shared/chip.js"></script>
 <script src="../../shared/badges.js"></script>
 <script src="../../shared/arcade.js"></script>
+<script src="../../shared/story.js"></script>
 <script>
 (() => {
 /*
@@ -34,7 +35,9 @@
  * gunboats come at you; wipe out a whole formation for a P (more guns, up to a five-way spread), bombers drop bombs (B)
  * and gunboats medals (★ 500). X drops a bomb that wipes the sky of bullets and hurts everything; C flies a loop-the-loop
  * that nothing can touch. Each stage ends with a boss: a battleship with turrets, or a giant bomber with four engines.
- * One hit and you lose a plane (and a level of guns).
+ * One hit and you lose a plane (and a level of guns). Every sixth stage the boss is the Sky Leviathan, a huge airship.
+ * Story mode (shared/story.js): Wings Over the World, six regions to free from the Iron Armada, with hangar upgrades
+ * bought with medals (a wingman among them), then HARD and a Boss Rush.
  */
 const A = Arcade, cv = document.getElementById('cv');
 const W = 360, H = 540, ctx = A.canvas(cv, W, H), OUT = '#0a0612';
@@ -58,7 +61,10 @@ const BOAT = sprite(26, 50, x => { paint(x, [[4, 4, 18, 42, '#5a6070'], [8, 14, 
 
 /* ---------- the sea below: water, wave lines, islands; clouds above ---------- */
 const THEMES = [{ name: 'OPEN SEA', sea: ['#1a5aa8', '#2a7ac8'], foam: 'rgba(255,255,255,.18)', isle: '#4fa860', sand: '#e8d090' },
+  { name: 'DESERT COAST', sea: ['#1a8a9a', '#3ab8b0'], foam: 'rgba(255,255,255,.2)', isle: '#d8a858', sand: '#f0d8a0', dunes: true },
   { name: 'SUNSET STRAIT', sea: ['#7a3a6a', '#d8784a'], foam: 'rgba(255,230,180,.22)', isle: '#6a8a4a', sand: '#e8b070' },
+  { name: 'FROZEN NORTH', sea: ['#2a5a8a', '#5a8ab8'], foam: 'rgba(255,255,255,.3)', isle: '#e8f4ff', sand: '#b8d8f0', ice: true },
+  { name: 'VOLCANO ISLES', sea: ['#2a1420', '#5a2228'], foam: 'rgba(255,140,80,.18)', isle: '#3a2a2a', sand: '#ff6a2a', lava: true },
   { name: 'NIGHT RAID', sea: ['#0a1a3a', '#1a3060'], foam: 'rgba(160,200,255,.14)', isle: '#2a5a4a', sand: '#8a8a70' }];
 let theme = THEMES[0], bgY = 0, islands = [], clouds = [];
 const seaTile = THEMES.map(t => sprite(W, 180, x => {
@@ -76,25 +82,37 @@ function drawIsland(x, s) {
   x.fillStyle = 'rgba(255,255,255,.25)'; path(1.22); x.fill();
   x.fillStyle = OUT; path(1.1); x.fill(); x.fillStyle = theme.sand; path(1.06); x.fill();
   x.fillStyle = theme.isle; path(0.86); x.fill(); x.fillStyle = shade(theme.isle, 0.25); path(0.5); x.fill();
+  if (theme.lava) { const g = x.createRadialGradient(s.x, s.y, 2, s.x, s.y, 18); g.addColorStop(0, '#fff0a0'); g.addColorStop(0.4, '#ff8a2a'); g.addColorStop(1, 'rgba(255,60,20,0)'); x.fillStyle = g; x.beginPath(); x.arc(s.x, s.y, 18, 0, 6.29); x.fill(); return; } // a crater, glowing
+  if (theme.ice) return; // ice floes: no trees
   for (const [px, py] of s.palms) { x.fillStyle = OUT; x.beginPath(); x.arc(s.x + px, s.y + py, 6, 0, 6.29); x.fill(); x.fillStyle = shade(theme.isle, -0.25); x.beginPath(); x.arc(s.x + px, s.y + py, 4.5, 0, 6.29); x.fill(); }
 }
 
 /* ---------- state ---------- */
 let state = 'title', stage = 1, score = 0, lives = 3, stageT = 0, waveT = 0, boss = null, clearT = 0, nextLife = 50000, msg = '', msgT = 0, formations = 0;
 let shots = [], foes = [], bad = [], items = [], bombFx = [];
-const me = { x: W / 2, y: H - 80, inv: 0, power: 1, bombs: 3, loop: 0, loopCD: 0, fireT: 0, dead: 0, tilt: 0 };
+const me = { x: W / 2, y: H - 80, inv: 0, power: 1, bombs: 3, loop: 0, loopCD: 0, fireT: 0, dead: 0, tilt: 0, armor: 0 };
+let S = null, hard = false, rush = false, rushI = 0, rushT = 0; const RUSH = [1, 2, 3, 4, 6]; // story runs; the boss rush (by stage)
+const up = id => S ? S.lv(id) : 0;
+const wing = { x: W / 2 - 30, y: H - 60, fireT: 0 };
 const say = (t, s = 2) => { msg = t; msgT = s; };
-const lv = () => stage - 1;
+const lv = () => stage - 1 + (hard ? 2 : 0);
 function newStage() {
   theme = THEMES[(stage - 1) % THEMES.length]; stageT = 0; waveT = 1.2; boss = null; bad = []; islands = [island()]; islands[0].y = 160;
-  say(`STAGE ${stage} · ${theme.name}`, 2.4); A.jingle([392, 523, 659, 784], 0.09);
+  if (rush) say(`BOSS ${rushI + 1} OF ${RUSH.length}`, 2);
+  else if (S.run) { S.reach(stage - 1); say(`${S.stageName(stage - 1).toUpperCase()}`, 2.6); }
+  else say(`STAGE ${stage} · ${theme.name}`, 2.4);
+  A.jingle([392, 523, 659, 784], 0.09);
 }
-function newGame() {
-  stage = 1; score = 0; A.setScore(0); lives = A.easy ? 5 : 3; nextLife = 50000; formations = 0;
-  Object.assign(me, { x: W / 2, y: H - 80, inv: 2, power: 1, bombs: 3, loop: 0, loopCD: 0, fireT: 0, dead: 0 });
-  shots = []; foes = []; bad = []; items = []; bombFx = []; clouds = []; newStage(); state = 'play';
+function reset() {
+  score = 0; A.setScore(0); lives = A.easy ? 5 : 3; nextLife = 50000; formations = 0;
+  Object.assign(me, { x: W / 2, y: H - 80, inv: 2, power: 1 + up('guns'), bombs: 3 + up('bombs'), loop: 0, loopCD: 0, fireT: 0, dead: 0, armor: up('armor') });
+  Object.assign(wing, { x: W / 2 - 30, y: H - 60 });
+  shots = []; foes = []; bad = []; items = []; bombFx = []; clouds = [];
 }
-function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+function newGame() { S.run = null; hard = false; rush = false; stage = 1; reset(); newStage(); state = 'play'; }
+/** A story run: a region of Wings Over the World (then on to the next), or the Boss Rush. */
+function storyGame(run) { hard = run.hard; rush = run.mode === 'rush'; rushI = 0; rushT = 0; stage = rush ? RUSH[0] : run.stage + 1; reset(); newStage(); state = 'play'; }
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play', alt: S.quit() }); }
 A.onPress(c => {
   if (c === 'KeyP' || c === 'Escape') return pause();
   if (state !== 'play' || me.dead) return;
@@ -125,6 +143,10 @@ function spawnWave() {
 }
 function spawnBoss() {
   const ship = stage % 2 === 1, k = 1 + lv() * 0.35;
+  if (stage % 6 === 0) { // the Sky Leviathan: a giant airship, four turrets, two engines and the bridge underneath
+    boss = { kind: 'leviathan', x: W / 2, y: -200, vx: 26, t: 0, parts: [[-58, -80, 'turret'], [58, -80, 'turret'], [-58, 40, 'turret'], [58, 40, 'turret'], [-34, -150, 'engine'], [34, -150, 'engine'], [0, 70, 'core']].map(([ox, oy, k2]) => ({ ox, oy, kind: k2, hp: Math.round((k2 === 'core' ? 90 : k2 === 'engine' ? 16 : 12) * k), max: Math.round((k2 === 'core' ? 90 : k2 === 'engine' ? 16 : 12) * k), r: k2 === 'core' ? 24 : 15, fireT: A.rand(0.6, 1.6), ang: Math.PI / 2, hit: 0 })) };
+    say('THE SKY LEVIATHAN!', 2.6); A.tone(50, 1.6, 'sawtooth', 0.07, 0, 30); A.shake(8, 1.2); return;
+  }
   boss = ship
     ? { kind: 'ship', x: W / 2, y: -170, vx: 34, t: 0, parts: [[-44, -60, 'turret'], [44, -60, 'turret'], [-44, 40, 'turret'], [44, 40, 'turret'], [0, -10, 'core']].map(([ox, oy, k2]) => ({ ox, oy, kind: k2, hp: Math.round((k2 === 'core' ? 46 : 10) * k), max: Math.round((k2 === 'core' ? 46 : 10) * k), r: k2 === 'core' ? 22 : 15, fireT: A.rand(0.6, 1.6), ang: Math.PI / 2, hit: 0 })) }
     : { kind: 'fortress', x: W / 2, y: -110, vx: 46, t: 0, parts: [[-86, -4, 'engine'], [-48, -6, 'engine'], [48, -6, 'engine'], [86, -4, 'engine'], [0, 6, 'core']].map(([ox, oy, k2]) => ({ ox, oy, kind: k2, hp: Math.round((k2 === 'core' ? 50 : 9) * k), max: Math.round((k2 === 'core' ? 50 : 9) * k), r: k2 === 'core' ? 24 : 14, fireT: A.rand(0.8, 2), ang: Math.PI / 2, hit: 0 })) };
@@ -150,9 +172,10 @@ function bomb() {
   for (const f of foes) hurt(f, 12);
   if (boss) for (const p of boss.parts) if (p.hp > 0) hurtPart(p, 8);
 }
-function loopTheLoop() { if (me.loopCD > 0 || me.loop > 0) return; me.loop = 0.9; me.loopCD = 2.6; A.tone(500, 0.5, 'triangle', 0.04, 0, 1300); }
+function loopTheLoop() { if (me.loopCD > 0 || me.loop > 0) return; me.loop = 0.9; me.loopCD = 2.6 - up('loop') * 0.6; A.tone(500, 0.5, 'triangle', 0.04, 0, 1300); }
 function die() {
   if (me.inv > 0 || me.loop > 0 || me.dead) return;
+  if (me.armor > 0) { me.armor--; me.inv = 1.4; A.flash('#5ee7ff', 0.2); A.tone(200, 0.2, 'square', 0.05, 0, 600); say('ARMOR HIT!', 1); return; }
   me.dead = 1.6; lives--; A.shake(9, 0.5); A.sfx('boom'); A.flash('#ff4f6d', 0.2); A.hitstop(0.1);
   A.burst(me.x, me.y, { n: 30, colors: ['#ffd23d', '#ff8a3d', '#fff'], speed: 220, life: 0.8 }); A.burst(me.x, me.y, { n: 10, kind: 'smoke', color: '#5a5048', speed: 60, life: 1.2, size: 10 });
   bad = bad.filter(b => Math.hypot(b.x - me.x, b.y - me.y) > 120);
@@ -165,7 +188,8 @@ function hurt(f, n) {
   add(pts, f.x, f.y - 10);
   A.burst(f.x, f.y, { n: f.kind === 'fighter' ? 12 : 26, colors: ['#ffd23d', '#ff8a3d', '#fff'], speed: 160, life: 0.5 }); A.burst(f.x, f.y, { n: 4, kind: 'smoke', color: '#4a4048', speed: 40, life: 0.9, size: 8 });
   A.shake(f.kind === 'fighter' ? 2 : 6, 0.25); A.sfx('boom');
-  if (f.kind === 'fighter' && f.group && f.group.every(g => g.dead)) { items.push({ kind: 'P', x: f.x, y: f.y, vy: 50 }); A.pop(f.x, f.y - 26, 'FORMATION!', '#5ee7ff'); add(500); }
+  if (f.kind === 'fighter' && f.group && f.group.every(g => g.dead)) { items.push({ kind: 'P', x: f.x, y: f.y, vy: 50 }); A.pop(f.x, f.y - 26, 'FORMATION!', '#5ee7ff'); add(500); S.bank(1); }
+  if (f.kind === 'bomber') S.bank(2);
   if (f.kind === 'bomber') items.push({ kind: Math.random() < 0.5 ? 'B' : 'P', x: f.x, y: f.y, vy: 50 });
   if (f.kind === 'boat') items.push({ kind: 'M', x: f.x, y: f.y, vy: 30 });
 }
@@ -176,7 +200,7 @@ function hurtPart(p, n) {
   if (p.kind === 'core') bossDown();
 }
 function bossDown() {
-  const b = boss; add(10000 * stage, b.x, b.y); A.badge('boss'); A.flash('#fff', 0.5); A.hitstop(0.2); A.shake(14, 1.2);
+  const b = boss; add(10000 * stage, b.x, b.y); A.badge('boss'); S.bank(b.kind === 'leviathan' ? 40 : 15); A.flash('#fff', 0.5); A.hitstop(0.2); A.shake(14, 1.2);
   for (let i = 0; i < 10; i++) setTimeout(() => { A.burst(b.x + A.rand(-90, 90), b.y + A.rand(-80, 80), { n: 24, colors: ['#ffd23d', '#ff8a3d', '#fff'], speed: 200, life: 0.7 }); A.sfx('boom'); }, i * 120);
   b.dying = 1.6; bad = []; A.jingle([523, 659, 784, 1047, 1319, 1568], 0.1, 'square');
 }
@@ -202,10 +226,11 @@ function update(dt) {
     me.tilt += ((dx || (drag ? Math.sign(drag.tx - me.x) * 0.6 : 0)) - me.tilt) * Math.min(1, dt * 8);
     if (me.inv > 0) me.inv -= dt; if (me.loop > 0) { me.loop -= dt; me.y -= 30 * dt; } if (me.loopCD > 0) me.loopCD -= dt;
     me.fireT -= dt; if ((A.held('Space', 'KeyZ', 'KeyJ') || drag) && me.fireT <= 0 && me.loop <= 0) { me.fireT = 0.11; fire(); }
+    if (up('wing')) { wing.x += (me.x - 34 - wing.x) * Math.min(1, dt * 5); wing.y += (me.y + 16 - wing.y) * Math.min(1, dt * 5); wing.fireT -= dt; if ((A.held('Space', 'KeyZ', 'KeyJ') || drag) && wing.fireT <= 0) { wing.fireT = 0.2; shots.push({ x: wing.x, y: wing.y - 10, vx: 0, vy: -600 }); } }
   }
   // waves, then the boss
-  stageT += dt;
-  if (!boss) { waveT -= dt; if (waveT <= 0 && stageT < 52) { waveT = Math.max(1.1, 2.3 - lv() * 0.15 - stageT * 0.012); spawnWave(); } if (stageT >= 56 && !foes.length) spawnBoss(); }
+  stageT += dt; if (rush) { rushT += dt; if (!boss && !foes.length && stageT > 1.5) spawnBoss(); }
+  if (!boss && !rush) { waveT -= dt; if (waveT <= 0 && stageT < 52) { waveT = Math.max(1.1, 2.3 - lv() * 0.15 - stageT * 0.012); spawnWave(); } if (stageT >= 56 && !foes.length) spawnBoss(); }
   // shots
   for (const s of shots) { s.x += s.vx * dt; s.y += s.vy * dt; }
   for (const s of shots) {
@@ -241,7 +266,7 @@ function update(dt) {
     const b = boss; b.t += dt;
     if (b.dying) { b.dying -= dt; b.y += 30 * dt; if (b.dying <= 0) { boss = null; stageClear(); } }
     else {
-      const homeY = b.kind === 'ship' ? 150 : 110; if (b.y < homeY) b.y += 60 * dt;
+      const homeY = b.kind === 'ship' ? 150 : b.kind === 'leviathan' ? 190 : 110; if (b.y < homeY) b.y += 60 * dt;
       else { b.x += b.vx * dt; if (b.x < 110 || b.x > W - 110) b.vx = -b.vx; }
       const angry = b.parts.filter(p => p.kind !== 'core' && p.hp > 0).length === 0;
       for (const p of b.parts) {
@@ -264,16 +289,21 @@ function update(dt) {
     if (!me.dead && Math.hypot(it.x - me.x, it.y - me.y) < 20) { it.got = true; A.sfx('powerup');
       if (it.kind === 'P') { if (me.power < 5) { me.power++; say(me.power === 5 ? 'FULL POWER!' : 'POWER UP!', 1.2); if (me.power === 5) A.badge('power'); } else add(1000, it.x, it.y - 10); }
       if (it.kind === 'B') { me.bombs = Math.min(6, me.bombs + 1); say('+1 BOMB', 1); }
-      if (it.kind === 'M') add(500, it.x, it.y - 10, '#ffd23d'); } }
+      if (it.kind === 'M') { add(500, it.x, it.y - 10, '#ffd23d'); S.bank(2); } } }
   items = items.filter(it => !it.got && it.y < H + 20);
 }
 function stageClear() {
-  const bonus = 5000 * stage; add(bonus); say(`STAGE CLEAR! +${bonus}`, 2.6);
+  if (rush) { if (++rushI >= RUSH.length) { state = 'over'; return S.modeEnd(rushT * 1000, { title: 'BOSS RUSH CLEAR!', big: `${rushT.toFixed(2)} SECONDS` }); } say('NEXT!', 1.2); setTimeout(() => { if (state !== 'play') return; stage = RUSH[rushI]; newStage(); }, 1600); return; }
+  const bonus = 5000 * stage; add(bonus); say(S.run ? 'REGION FREED!' : `STAGE CLEAR! +${bonus}`, 2.6);
   if (stage >= 3) A.badge('stage3');
+  if (S.run && S.clear(stage - 1)) { setTimeout(() => { if (state !== 'play') return; state = 'over'; S.win(); }, 2600); return; }
   setTimeout(() => { if (state !== 'play') return; stage++; newStage(); }, 2600);
 }
 function gameOver() {
-  state = 'over'; const rec = A.submit(score);
+  state = 'over';
+  if (S.run && rush) return S.modeEnd(0, { title: 'SHOT DOWN', big: `BOSS ${rushI + 1} OF ${RUSH.length}` });
+  if (S.run) { S.run.stage = stage - 1; return S.fail({ title: 'SHOT DOWN', big: S.stageName(stage - 1).toUpperCase(), sub: 'Spend your medals in the hangar, then fly it again' }); }
+  const rec = A.submit(score);
   A.overlay({ title: 'SHOT DOWN', big: `SCORE ${score.toLocaleString()} · STAGE ${stage}`, sub: rec ? 'New high score!' : `Best: ${A.best().toLocaleString()}`, btn: 'Fly again', onGo: newGame });
 }
 
@@ -308,6 +338,8 @@ function render(t) {
   if (state !== 'title' && !me.dead && !(me.inv > 0 && Math.floor(t / 70) % 2)) {
     const k = me.loop > 0 ? me.loop / 0.9 : 0, s = k ? 0.6 + Math.abs(Math.cos(k * Math.PI)) * 0.55 : 1;
     ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.fillRect(me.x - 4, me.y + 24, 26, 7);
+    if (up('wing')) { ctx.save(); ctx.translate(wing.x, wing.y); ctx.scale(0.62, 0.62); ctx.drawImage(HERO, -18, -17); prop(0, -15, 8, t); ctx.restore(); }
+    if (me.armor > 0) { ctx.strokeStyle = 'rgba(94,231,255,.6)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(me.x, me.y, 22 + Math.sin(t / 150), 0, 6.29); ctx.stroke(); }
     ctx.save(); ctx.translate(me.x, me.y); ctx.scale(s * (1 - Math.abs(me.tilt) * 0.12), s * (k ? (Math.cos(k * Math.PI * 2) < 0 ? -1 : 1) : 1)); ctx.drawImage(HERO, -18, -17); prop(0, -15, 8, t); ctx.restore();
   }
   for (const s of shots) { ctx.fillStyle = '#fff6c2'; ctx.fillRect(s.x - 1.5, s.y - 6, 3, 10); ctx.fillStyle = '#ffd23d'; ctx.fillRect(s.x - 1.5, s.y + 2, 3, 3); }
@@ -320,7 +352,7 @@ function render(t) {
     ctx.font = '9px Silkscreen, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
     for (let i = 0; i < lives; i++) { ctx.fillStyle = '#4fa8ff'; ctx.fillRect(8 + i * 12, 6, 8, 3); ctx.fillRect(10 + i * 12, 3, 4, 10); }
     ctx.fillStyle = '#ff4f6d'; ctx.fillText(`P${me.power}`, 90, 10); ctx.fillStyle = '#7ab0ff'; ctx.fillText('●'.repeat(me.bombs), 120, 10);
-    ctx.textAlign = 'right'; ctx.fillStyle = me.loopCD > 0 ? '#5a5070' : '#5ee7ff'; ctx.fillText(me.loopCD > 0 ? 'LOOP …' : 'LOOP READY', W - 70, 10); ctx.fillStyle = '#fff'; ctx.fillText(`STAGE ${stage}`, W - 8, 10);
+    ctx.textAlign = 'right'; ctx.fillStyle = me.loopCD > 0 ? '#5a5070' : '#5ee7ff'; ctx.fillText(me.loopCD > 0 ? 'LOOP …' : 'LOOP READY', W - 100, 10); ctx.fillStyle = '#fff'; ctx.fillText(rush ? `${rushT.toFixed(1)}s` : S && S.run ? `REGION ${stage}/6${hard ? ' HARD' : ''}` : `STAGE ${stage}`, W - 8, 10);
     if (boss && !boss.dying) { const tot = boss.parts.reduce((a, p) => a + p.max, 0), left = boss.parts.reduce((a, p) => a + Math.max(0, p.hp), 0); ctx.fillStyle = OUT; ctx.fillRect(W / 2 - 91, 26, 182, 8); ctx.fillStyle = '#ff4f6d'; ctx.fillRect(W / 2 - 90, 27, 180 * left / tot, 6); }
   }
   if (msgT > 0 && state !== 'title') { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '20px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = OUT; ctx.fillText(msg, W / 2 + 2, H * 0.36 + 2); ctx.fillStyle = '#fff6c2'; ctx.fillText(msg, W / 2, H * 0.36); ctx.globalAlpha = 1; }
@@ -335,7 +367,16 @@ function cloud(c, a) {
 function drawBoss(t) {
   const b = boss, X = b.x, Y = b.y, shake = b.dying ? (Math.random() - 0.5) * 6 : 0;
   ctx.save(); ctx.translate(X + shake, Y);
-  if (b.kind === 'ship') {
+  if (b.kind === 'leviathan') {
+    // a vast airship from above: a ribbed envelope, tail fins, the Armada's red wheel, the bridge slung underneath
+    ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(30, 40, 92, 190, 0, 0, 6.29); ctx.fill();
+    for (const sx of [-1, 1]) { ctx.fillStyle = OUT; ctx.beginPath(); ctx.moveTo(sx * 40, -160); ctx.lineTo(sx * 110, -210); ctx.lineTo(sx * 70, -120); ctx.fill(); ctx.fillStyle = '#5a3a6a'; ctx.beginPath(); ctx.moveTo(sx * 42, -158); ctx.lineTo(sx * 104, -204); ctx.lineTo(sx * 68, -124); ctx.fill(); }
+    ctx.fillStyle = OUT; ctx.beginPath(); ctx.ellipse(0, -20, 88, 186, 0, 0, 6.29); ctx.fill();
+    const g = ctx.createLinearGradient(-86, 0, 86, 0); g.addColorStop(0, '#3a2a4a'); g.addColorStop(0.45, '#8a7a9a'); g.addColorStop(1, '#2a1e38'); ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(0, -20, 84, 182, 0, 0, 6.29); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,.25)'; ctx.lineWidth = 2; for (let i = -150; i < 150; i += 22) { const w = Math.sqrt(Math.max(0, 1 - Math.pow((i + 20) / 182, 2))) * 84; ctx.beginPath(); ctx.moveTo(-w, i); ctx.lineTo(w, i); ctx.stroke(); }
+    ctx.fillStyle = OUT; ctx.beginPath(); ctx.arc(0, -10, 22, 0, 6.29); ctx.fill(); ctx.strokeStyle = '#c8203a'; ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(0, -10, 15, 0, 6.29); ctx.stroke(); for (let i = 0; i < 6; i++) { const a = i / 6 * 6.283 + t / 900; ctx.beginPath(); ctx.moveTo(0, -10); ctx.lineTo(Math.cos(a) * 15, -10 + Math.sin(a) * 15); ctx.stroke(); }
+    ctx.fillStyle = 'rgba(255,255,255,.12)'; ctx.beginPath(); ctx.ellipse(-30, -60, 18, 110, 0, 0, 6.29); ctx.fill();
+  } else if (b.kind === 'ship') {
     // a long grey hull pointing down the screen, a wake behind
     ctx.fillStyle = 'rgba(255,255,255,.3)'; ctx.beginPath(); ctx.moveTo(-50, -140); ctx.lineTo(50, -140); ctx.lineTo(80, -210); ctx.lineTo(-80, -210); ctx.fill();
     ctx.fillStyle = OUT; ctx.beginPath(); ctx.moveTo(-64, -140); ctx.lineTo(64, -140); ctx.lineTo(64, 90); ctx.lineTo(0, 150); ctx.lineTo(-64, 90); ctx.closePath(); ctx.fill();
@@ -377,8 +418,38 @@ A.attract({
     return keys;
   }
 });
+S = Story({
+  title: 'WINGS OVER THE WORLD', coin: 'MEDALS', coinColor: '#ffd23d',
+  stages: [
+    { name: 'Coral Sea', sub: 'The Iron Armada\'s first fleet has the islands surrounded. Break the blockade.' },
+    { name: 'Desert Coast', sub: 'Gunboats in the turquoise shallows, a sky fortress over the dunes.' },
+    { name: 'Sunset Strait', sub: 'The Armada\'s battleships hold the strait. Sink the flagship.' },
+    { name: 'Frozen North', sub: 'Ice floes and a sky fortress that never lands. Stay sharp in the cold.' },
+    { name: 'Volcano Isles', sub: 'The Armada\'s forge, ringed with lava. Their best battleship guards it.' },
+    { name: 'The Iron Citadel', sub: 'Admiral Vortex\'s home. Somewhere above it floats the Sky Leviathan.' }],
+  upgrades: [
+    { id: 'guns', name: 'Gunsmith', desc: 'Start every region with more guns.', cost: [40, 100, 180] },
+    { id: 'bombs', name: 'Bomb Bay', desc: 'One more bomb to start.', cost: [30, 70] },
+    { id: 'armor', name: 'Armor Plating', desc: 'Shrug off one hit every life.', cost: [80, 180] },
+    { id: 'loop', name: 'Stunt Training', desc: 'Your loop-the-loop is ready sooner.', cost: [50, 110] },
+    { id: 'wing', name: 'Wingman', desc: 'Lieutenant Pip flies at your side and fires with you.', cost: [150] }],
+  mode: { id: 'rush', name: 'BOSS RUSH', desc: 'Every boss back to back, ending with the Sky Leviathan, against the clock.', lower: true },
+  intro: [
+    'The Iron Armada came out of the north, and one by one the skies went dark.',
+    'Admiral Vortex rules six regions from a flying fortress called the Sky Leviathan.',
+    'Only one squadron is still flying: the Blue Falcons. Only one of its planes is still whole.',
+    'Captain Skye Hart, you have the last fighter. Bring back the sky.'],
+  ending: [
+    'The Leviathan\'s bridge bursts into flame. The great airship tilts, groans and sinks below the clouds.',
+    'Across six regions the Armada\'s guns fall silent. Ships turn for home.',
+    'One by one, the Blue Falcons\' old planes take off again, painted fresh.',
+    'Captain Skye Hart lands at sunrise. The sky is blue all the way to the horizon.'],
+  cast: [['THE PILOT', 'CAPTAIN SKYE HART'], ['THE WINGMAN', 'LIEUTENANT PIP'], ['THE ADMIRAL', 'VORTEX']],
+  play: storyGame,
+  stop: () => { state = 'title'; S.run = null; rush = false; hard = false; foes = []; shots = []; bad = []; items = []; boss = null; }
+});
 newStage(); clouds = Array.from({ length: 5 }, () => ({ x: A.rand(0, W), y: A.rand(0, H), v: A.rand(90, 160), s: A.rand(0.7, 1.4), hi: Math.random() < 0.3 }));
-A.overlay({ title: 'SKY SQUADRON', sub: 'Fly the last fighter of the squadron over the ocean. Shoot down whole formations for a P (more guns), drop bombs to clear the sky, and loop-the-loop through anything. A battleship or a sky fortress waits at the end of every stage.', btn: 'Take off', scores: true, onGo: newGame });
+S.title({ title: 'SKY SQUADRON', sub: 'Fly the last fighter of the squadron over the ocean. Shoot down whole formations for a P (more guns), drop bombs to clear the sky, and loop-the-loop through anything. A battleship or a sky fortress waits at the end of every stage.', btn: 'Take off', scores: true, onGo: newGame });
 })();
 </script>
 </body>

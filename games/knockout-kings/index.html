@@ -27,6 +27,7 @@
 <script src="../../shared/chip.js"></script>
 <script src="../../shared/badges.js"></script>
 <script src="../../shared/arcade.js"></script>
+<script src="../../shared/story.js"></script>
 <script>
 (() => {
 /*
@@ -35,6 +36,8 @@
  * open for a moment: punches land double, and a clean counter earns a star. Spend a star on a star punch (Space).
  * Jabs go to the head, body blows low; punch into their guard and you lose a heart, and with no hearts left you're
  * too tired to punch for a bit. Knock them down three times for a KO. Five opponents up to the champion, the Iron Duke.
+ * Story mode (shared/story.js): From the Bottom, a seven-fight career from a back-alley bout to the world title, with
+ * training bought with prize purses, then HARD and the Gauntlet (every fighter back to back on one health bar).
  */
 const A = Arcade, cv = document.getElementById('cv');
 const W = 480, H = 360, ctx = A.canvas(cv, W, H), OUT = '#0a0612', CX = W / 2;
@@ -72,6 +75,10 @@ const FOES = [
   { name: 'GLACIER GLENN', skin: '#b8d8f0', trunks: '#e8f4ff', glove: '#5ee7ff', hair: '#ffffff', girth: 1.15, hp: 120, speed: 1.2, moves: ['jab', 'hookL', 'hookR', 'upper', 'freeze'], style: 'ice', blurb: 'Cool as ice. Hits like a glacier.' },
   { name: 'ROCKET RITA', skin: '#c8885a', trunks: '#ff4fd1', glove: '#ffd23d', hair: '#1a1018', girth: 0.95, hp: 120, speed: 1.4, moves: ['jab', 'jab', 'hookL', 'hookR', 'upper', 'rocket', 'flurry'], style: 'rita', blurb: 'Zero to knockout in half a second.' },
   { name: 'THE IRON DUKE', skin: '#a8704a', trunks: '#ffd23d', glove: '#2a2a34', hair: '#1a1018', girth: 1.2, hp: 160, speed: 1.55, moves: ['jab', 'hookL', 'hookR', 'upper', 'rocket', 'flurry', 'belly'], style: 'duke', blurb: 'The champion. Never lost a title fight.' }];
+// the story's career: two fighters you only meet there, round the five from the ladder
+const SAM = { name: 'SLUGGER SAM', skin: '#f0c090', trunks: '#8a5a3a', glove: '#a8703a', hair: '#c8203a', girth: 1.05, hp: 70, speed: 0.85, moves: ['jab', 'jab', 'hookL', 'hookR'], style: 'sam', blurb: 'Fights in the alley behind the laundromat. Swings wild.' };
+const MAX = { name: 'MEGA MAULER MAX', skin: '#c08050', trunks: '#16161e', glove: '#ff4a4a', hair: '#3dff8f', girth: 1.5, hp: 170, speed: 1.35, moves: ['upper', 'belly', 'rocket', 'hookL', 'hookR', 'freeze', 'jab'], style: 'max', blurb: 'Undefeated. Unstoppable. Unbelievably large.' };
+const CAREER = [SAM, FOES[0], FOES[1], FOES[2], FOES[3], MAX, FOES[4]];
 // how each attack is beaten: dodge either way (L/R), duck, or block
 const AVOID = { jab: ['L', 'R', 'D', 'B'], hookL: ['R', 'D'], hookR: ['L', 'D'], upper: ['L', 'R'], belly: ['L', 'R'], rocket: ['D'], flurry: ['B'], freeze: ['L', 'R'] };
 const DMG = { jab: 8, hookL: 14, hookR: 14, upper: 20, belly: 16, rocket: 18, flurry: 5, freeze: 22 };
@@ -80,18 +87,27 @@ const HINT = { jab: 'DODGE, DUCK OR BLOCK', hookL: 'DODGE RIGHT OR DUCK', hookR:
 
 /* ---------- state ---------- */
 let state = 'title', fight = 0, loop = 0, score = 0, lives = 3, msg = '', msgT = 0, clock = 0, perfect = true;
-const me = { hp: 100, hearts: 20, stars: 0, act: null, actT: 0, tired: 0, down: 0, mash: 0, downs: 0, flash: 0, punchHand: 0 };
+let S = null, gauntlet = false, beaten = 0, list = FOES; // story runs: the career, or the Gauntlet
+const up = id => S ? S.lv(id) : 0;
+const me = { max: 100, hp: 100, hearts: 20, stars: 0, act: null, actT: 0, tired: 0, down: 0, mash: 0, downs: 0, flash: 0, punchHand: 0 };
 const op = { hp: 100, max: 100, act: 'guard', t: 0, next: 1.5, move: null, guard: 'high', open: 0, flash: 0, downs: 0, count: 0, sway: 0, hitT: 0, flurryN: 0, face: 'calm' };
-const F = () => FOES[fight];
+const F = () => list[fight];
 const say = (t, s = 1.4) => { msg = t; msgT = s; };
 function startFight() {
   const f = F(), k = 1 + loop * 0.35;
   Object.assign(op, { hp: Math.round(f.hp * k), max: Math.round(f.hp * k), act: 'intro', t: 0, next: 1.4, move: null, guard: 'high', open: 0, flash: 0, downs: 0, count: 0, face: 'calm' });
-  Object.assign(me, { hp: 100, hearts: 20, stars: 0, act: null, actT: 0, tired: 0, down: 0, mash: 0, downs: 0, flash: 0 });
-  clock = 180; perfect = true; say(`FIGHT ${fight + 1 + loop * 5} · ${f.name}`, 2.2); A.jingle([392, 523, 659, 784], 0.1);
+  const keep = gauntlet && fight > 0 ? Math.min(me.max, me.hp + 30) : null; // the Gauntlet: one health bar, a breather between fights
+  me.max = 100 + up('health') * 15;
+  Object.assign(me, { hp: keep || me.max, hearts: 20 + up('stamina') * 5, stars: up('star'), act: null, actT: 0, tired: 0, down: 0, mash: 0, downs: 0, flash: 0 });
+  clock = 180; perfect = true;
+  if (S && S.run && !gauntlet) { S.reach(fight); say(`${S.stageName(fight).toUpperCase()} · ${f.name}`, 2.4); }
+  else say(gauntlet ? `GAUNTLET ${fight + 1}/${list.length} · ${f.name}` : `FIGHT ${fight + 1 + loop * 5} · ${f.name}`, 2.2);
+  A.jingle([392, 523, 659, 784], 0.1);
 }
-function newGame() { fight = 0; loop = 0; score = 0; A.setScore(0); lives = A.easy ? 5 : 3; startFight(); state = 'play'; }
-function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+function newGame() { S.run = null; list = FOES; gauntlet = false; fight = 0; loop = 0; score = 0; A.setScore(0); lives = A.easy ? 5 : 3; startFight(); state = 'play'; }
+/** A story run: a fight of the career (then the next), or the Gauntlet. */
+function storyGame(run) { list = CAREER; gauntlet = run.mode === 'gauntlet'; loop = run.hard ? 1 : 0; fight = gauntlet ? 0 : run.stage; beaten = 0; score = 0; A.setScore(0); lives = 1; me.hp = 0; startFight(); state = 'play'; }
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play', alt: S.quit() }); }
 A.onHide(pause);
 const add = (n, x, y, c = '#ffd23d') => { score += n; A.setScore(score); if (x !== undefined) A.pop(x, y, '+' + n, c); };
 
@@ -102,8 +118,9 @@ A.onPress(c => {
   if (state !== 'play') return;
   if (me.down) { if (['KeyJ', 'KeyK', 'Space', 'KeyZ', 'KeyX'].includes(c)) { me.mash += 1; A.tone(300 + me.mash * 20, 0.04, 'square', 0.03); } return; }
   if (busy() || op.act === 'down' || op.act === 'intro') return;
-  if (c === 'ArrowLeft' || c === 'KeyA') act('L', 0.42); else if (c === 'ArrowRight' || c === 'KeyD') act('R', 0.42);
-  else if (c === 'ArrowDown' || c === 'KeyS') act('D', 0.42);
+  const dodge = 0.42 + up('speed') * 0.07; // speed bag work: a longer dodge
+  if (c === 'ArrowLeft' || c === 'KeyA') act('L', dodge); else if (c === 'ArrowRight' || c === 'KeyD') act('R', dodge);
+  else if (c === 'ArrowDown' || c === 'KeyS') act('D', dodge);
   else if (c === 'KeyJ' || c === 'KeyZ') punch('jab'); else if (c === 'KeyK' || c === 'KeyX') punch('body');
   else if (c === 'Space' || c === 'KeyL' || c === 'Enter') punch('star');
 });
@@ -120,7 +137,7 @@ function land(kind) {
   if (kind === 'star') { me.stars--; }
   const blocked = kind !== 'star' && !op.open && !attacking && ((kind === 'jab' && op.guard === 'high') || (kind === 'body' && op.guard === 'low'));
   if (blocked) { me.hearts = Math.max(0, me.hearts - 1); A.tone(140, 0.08, 'square', 0.04); A.pop(CX, 120, 'BLOCKED', '#a39bc4'); if (!me.hearts) tire(); op.guard = op.guard === 'high' ? 'low' : 'high'; return; }
-  const open = op.open > 0, dmg = kind === 'star' ? (open ? 34 : 24) : (kind === 'jab' ? 4 : 5) * (open ? 2 : 1);
+  const open = op.open > 0, dmg = Math.round((kind === 'star' ? (open ? 34 : 24) : (kind === 'jab' ? 4 : 5) * (open ? 2 : 1)) * (1 + up('power') * 0.25));
   op.hp -= dmg; op.flash = 0.12; op.hitT = 0.25; op.face = 'hurt'; op.sway = kind === 'body' ? 0 : (me.punchHand ? 1 : -1) * 10;
   if (attacking && kind !== 'star') { op.act = 'guard'; op.t = 0; op.next = 1.2; op.open = 0.8; say('COUNTER!', 0.9); } // a punch during the wind-up interrupts it
   const pts = kind === 'star' ? 300 : open ? 40 : 10; add(pts, CX + A.rand(-30, 30), 110);
@@ -161,10 +178,20 @@ function winFight() {
   const bonus = 3000 * (fight + 1 + loop * 5) + Math.round(clock) * 20; add(bonus); say(`YOU WIN! +${bonus}`, 2.6);
   A.jingle([523, 659, 784, 1047, 784, 1047, 1319, 1568], 0.1, 'square');
   if (perfect) A.badge('perfect');
-  if (fight === 4) A.badge('champ');
+  if (F() === FOES[4]) A.badge('champ');
+  S.bank([60, 80, 100, 120, 140, 170, 220][fight] || 100); // the prize purse
+  if (S.run) { state = 'between';
+    setTimeout(() => { if (state !== 'between') return;
+      if (gauntlet) { beaten++; if (++fight >= list.length) { state = 'over'; return S.modeEnd(beaten, { title: 'GAUNTLET CLEARED!', big: `ALL ${beaten} FIGHTERS` }); } startFight(); state = 'play'; return; }
+      if (S.clear(fight)) { state = 'over'; return S.win(); }
+      fight++; startFight(); state = 'play'; }, 2800);
+    return; }
   state = 'between'; setTimeout(() => { if (state !== 'between') return; fight++; if (fight >= FOES.length) { fight = 0; loop++; say('TITLE DEFENSE!', 2); } startFight(); state = 'play'; }, 2800);
 }
 function loseFight(why) {
+  if (S.run) { state = 'between'; say(why, 2.2); A.jingle([392, 330, 262, 196], 0.16, 'triangle');
+    setTimeout(() => { if (state !== 'between') return; state = 'over'; if (gauntlet) return S.modeEnd(beaten, { title: 'OUT OF THE GAUNTLET', big: `${beaten} FIGHTER${beaten === 1 ? '' : 'S'} BEATEN` }); S.run.stage = fight; S.fail({ title: why, big: `${S.stageName(fight).toUpperCase()} · ${F().name}`, sub: 'Train up with your prize money, then try again' }); }, 2400);
+    return; }
   lives--; say(why, 2.2); A.jingle([392, 330, 262, 196], 0.16, 'triangle');
   state = 'between'; setTimeout(() => { if (state !== 'between') return; if (lives <= 0) return gameOver(); startFight(); state = 'play'; say(`REMATCH! ${lives} LEFT`, 1.8); }, 2600);
 }
@@ -183,11 +210,11 @@ function update(dt) {
   const blocking = A.held('ArrowUp', 'KeyW') && !me.down && !(me.act && me.act !== 'B' && me.actT > 0);
   if (blocking) { me.act = 'B'; me.actT = 0.05; } else if (me.act === 'B') me.act = null; // holding up blocks
   if (me.tired > 0 && (me.tired -= dt) <= 0) { me.hearts = 10; say('SECOND WIND', 1); }
-  if (op.act !== 'down' && !me.down) { clock -= dt; if (clock <= 0) { clock = 0; return op.hp / op.max < me.hp / 100 ? (add(500), winFight()) : loseFight('THE JUDGES SAY NO'); } }
+  if (op.act !== 'down' && !me.down) { clock -= dt; if (clock <= 0) { clock = 0; return op.hp / op.max < me.hp / me.max ? (add(500), winFight()) : loseFight('THE JUDGES SAY NO'); } }
   // you, getting up
   if (me.down) {
-    me.down += dt; const need = 8 + me.downs * 6;
-    if (me.mash >= need) { me.down = 0; me.hp = 45 - me.downs * 8; op.next = 1.2; op.act = 'guard'; say('BACK UP!', 1); A.jingle([523, 659, 784], 0.08); }
+    me.down += dt; const need = Math.max(4, 8 + me.downs * 6 - up('chin') * 3);
+    if (me.mash >= need) { me.down = 0; me.hp = Math.round(me.max * 0.45) - me.downs * 8; op.next = 1.2; op.act = 'guard'; say('BACK UP!', 1); A.jingle([523, 659, 784], 0.08); }
     else if (me.down > 10 || me.downs >= 3) { me.down = 0; return loseFight(me.downs >= 3 ? 'THREE KNOCKDOWNS · TKO' : 'COUNTED OUT'); }
     return;
   }
@@ -230,6 +257,8 @@ function drawOpponent(t) {
   if (f.style === 'prof') { ctx.fillStyle = f.hair; ctx.fillRect(ox - 26, hy - 30, 52, 10); }
   else if (f.style === 'ice') { ctx.fillStyle = '#e8f8ff'; for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(ox + i * 11 - 6, hy - 22); ctx.lineTo(ox + i * 11, hy - 40); ctx.lineTo(ox + i * 11 + 6, hy - 22); ctx.fill(); } }
   else if (f.style === 'rita') { blob(ox, hy - 22, 26, 12, f.hair); blob(ox + 26, hy - 30, 9, 14, f.hair, 0.6); }
+  else if (f.style === 'sam') { ctx.fillStyle = '#c8203a'; ctx.fillRect(ox - 27, hy - 18, 54, 7); ctx.fillRect(ox + 22, hy - 16, 14, 4); } // a red bandana
+  else if (f.style === 'max') { ctx.fillStyle = OUT; ctx.fillRect(ox - 7, hy - 46, 14, 22); ctx.fillStyle = f.hair; ctx.fillRect(ox - 5, hy - 44, 10, 20); } // a green mohawk
   else if (f.style === 'duke') { ctx.fillStyle = '#ffd23d'; ctx.beginPath(); ctx.moveTo(ox - 20, hy - 26); ctx.lineTo(ox - 14, hy - 44); ctx.lineTo(ox - 6, hy - 32); ctx.lineTo(ox, hy - 48); ctx.lineTo(ox + 6, hy - 32); ctx.lineTo(ox + 14, hy - 44); ctx.lineTo(ox + 20, hy - 26); ctx.fill(); ctx.strokeStyle = OUT; ctx.lineWidth = 2; ctx.stroke(); }
   else { blob(ox, hy - 24, 20, 8, f.hair); }
   const face = op.face;
@@ -291,13 +320,13 @@ function render(t) {
   // the hud: both health bars, hearts, stars, the clock
   if (state !== 'title') {
     const bar = (x, w, k, c, label, right) => { ctx.fillStyle = OUT; ctx.fillRect(x - 1, 8, w + 2, 14); ctx.fillStyle = '#2a2040'; ctx.fillRect(x, 9, w, 12); ctx.fillStyle = c; ctx.fillRect(right ? x + w * (1 - k) : x, 9, w * Math.max(0, k), 12); ctx.font = '9px Silkscreen, monospace'; ctx.textAlign = right ? 'right' : 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff'; ctx.fillText(label, right ? x + w : x, 30); };
-    bar(10, 170, me.hp / 100, me.hp > 30 ? '#3dff8f' : '#ff4f6d', `KID COMET${me.tired > 0 ? ' · TIRED' : ''}`, false);
+    bar(10, 170, me.hp / me.max, me.hp > 30 ? '#3dff8f' : '#ff4f6d', `KID COMET${me.tired > 0 ? ' · TIRED' : ''}`, false);
     bar(W - 180, 170, op.hp / op.max, '#ff4a4a', F().name, true);
     ctx.textAlign = 'center'; ctx.font = '16px Bungee, sans-serif'; ctx.fillStyle = clock < 20 ? '#ff4f6d' : '#fff'; ctx.fillText(`${Math.floor(clock / 60)}:${String(Math.floor(clock % 60)).padStart(2, '0')}`, CX, 16);
     ctx.font = '10px Silkscreen, monospace'; ctx.fillStyle = '#ff4f6d'; ctx.textAlign = 'left'; ctx.fillText(`♥ ${me.hearts}`, 10, 44); ctx.fillStyle = '#ffd23d'; ctx.fillText('★'.repeat(me.stars) + '☆'.repeat(3 - me.stars), 56, 44);
-    ctx.textAlign = 'right'; ctx.fillStyle = '#a39bc4'; ctx.fillText(`DOWNS ${'●'.repeat(op.downs)}${'○'.repeat(3 - op.downs)} · REMATCHES ${lives}`, W - 10, 44);
+    ctx.textAlign = 'right'; ctx.fillStyle = '#a39bc4'; ctx.fillText(`DOWNS ${'●'.repeat(op.downs)}${'○'.repeat(3 - op.downs)}${S.run ? (gauntlet ? ` · BEATEN ${beaten}` : '') : ` · REMATCHES ${lives}`}`, W - 10, 44);
     if (op.act === 'tell' && fight < 2 && loop === 0) { ctx.font = '10px Silkscreen, monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffe14d'; ctx.fillText(HINT[op.move], CX, 62); } // early fights spell it out
-    if (me.down) { ctx.fillStyle = 'rgba(10,6,18,.6)'; ctx.fillRect(CX - 120, 250, 240, 40); ctx.fillStyle = '#ff4f6d'; ctx.font = '14px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillText(`MASH J/K! ${Math.min(10, Math.floor(me.down))}`, CX, 266); ctx.fillStyle = '#3dff8f'; ctx.fillRect(CX - 100, 278, 200 * Math.min(1, me.mash / (8 + me.downs * 6)), 6); }
+    if (me.down) { ctx.fillStyle = 'rgba(10,6,18,.6)'; ctx.fillRect(CX - 120, 250, 240, 40); ctx.fillStyle = '#ff4f6d'; ctx.font = '14px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillText(`MASH J/K! ${Math.min(10, Math.floor(me.down))}`, CX, 266); ctx.fillStyle = '#3dff8f'; ctx.fillRect(CX - 100, 278, 200 * Math.min(1, me.mash / Math.max(4, 8 + me.downs * 6 - up('chin') * 3)), 6); }
   }
   if (op.act === 'intro' && state === 'play') { ctx.fillStyle = 'rgba(10,6,18,.7)'; ctx.fillRect(0, 250, W, 60); ctx.textAlign = 'center'; ctx.font = '20px Bungee, sans-serif'; ctx.fillStyle = '#ff4a4a'; ctx.fillText(F().name, CX, 272); ctx.font = '11px Silkscreen, monospace'; ctx.fillStyle = '#fff'; ctx.fillText(F().blurb.toUpperCase(), CX, 294); }
   if (msgT > 0 && state !== 'title') { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '24px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = OUT; ctx.fillText(msg, CX + 2, 92); ctx.fillStyle = '#ffd23d'; ctx.fillText(msg, CX, 90); ctx.globalAlpha = 1; }
@@ -320,7 +349,39 @@ A.attract({
     return [];
   }
 });
-A.overlay({ title: 'KNOCKOUT KINGS', sub: 'Five fighters stand between Kid Comet and the belt. Watch for each tell, then dodge (←→), duck (↓) or block (↑). Make them miss and they\'re open: hit them with jabs (J) and body blows (K), and save your stars (★) for a star punch (Space).', btn: 'Fight!', scores: true, onGo: newGame });
+S = Story({
+  title: 'FROM THE BOTTOM', coin: 'PURSE $', coinColor: '#3dff8f',
+  stages: [
+    { name: 'Back-Alley Bash', sub: 'No ring, no rules, no crowd. Just Slugger Sam and a chalk line behind the laundromat.' },
+    { name: 'Gym Sparring', sub: 'Coach Del Price lets you spar Tubby Thunder. Pass, and she\'ll train you.' },
+    { name: 'City Championship', sub: 'The first real belt. Professor Jab has studied tapes of you.' },
+    { name: 'Regional Final', sub: 'Glacier Glenn never gets rattled. Make him.' },
+    { name: 'National Final', sub: 'Rocket Rita is the fastest fighter in the country.' },
+    { name: 'Title Eliminator', sub: 'Mega Mauler Max stands between you and a title shot. He has never been knocked down.' },
+    { name: 'World Title', sub: 'The Iron Duke. The belt. Everything you trained for.' }],
+  upgrades: [
+    { id: 'health', name: 'Roadwork', desc: '15 more health in every fight.', cost: [40, 90, 160] },
+    { id: 'stamina', name: 'Jump Rope', desc: 'Five more hearts before you tire.', cost: [30, 70] },
+    { id: 'power', name: 'Heavy Bag', desc: 'Every punch lands 25% harder.', cost: [50, 120, 220] },
+    { id: 'speed', name: 'Speed Bag', desc: 'Dodges and ducks last a little longer.', cost: [60, 140] },
+    { id: 'star', name: 'Star Training', desc: 'Start every fight with a star.', cost: [90] },
+    { id: 'chin', name: 'Iron Chin', desc: 'Getting up off the canvas takes fewer presses.', cost: [70] }],
+  mode: { id: 'gauntlet', name: 'GAUNTLET', desc: 'All seven fighters back to back on one health bar.' },
+  intro: [
+    'Kid Comet works nights at the Spin Cycle laundromat.',
+    'Behind it, every Friday, there are fights. No ring, no belts, just a chalk line and a crowd.',
+    'Tonight Coach Del Price is watching from the doorway. She trained champions once.',
+    '"Win this one," she says, "and I\'ll take you all the way to the top."'],
+  ending: [
+    'The bell. The Iron Duke is on the canvas, and he is not getting up.',
+    'Coach Del climbs through the ropes with the belt over her shoulder.',
+    'The crowd chants a name nobody knew a year ago: KID COMET.',
+    'Tomorrow morning there is a shift at the laundromat. The Kid is going in anyway.'],
+  cast: [['THE FIGHTER', 'KID COMET'], ['THE COACH', 'DEL PRICE'], ['THE CHAMPION', 'THE IRON DUKE']],
+  play: storyGame,
+  stop: () => { state = 'title'; S.run = null; gauntlet = false; list = FOES; fight = 0; Object.assign(op, { act: 'guard', open: 0, face: 'calm', downs: 0 }); }
+});
+S.title({ title: 'KNOCKOUT KINGS', sub: 'Five fighters stand between Kid Comet and the belt. Watch for each tell, then dodge (←→), duck (↓) or block (↑). Make them miss and they\'re open: hit them with jabs (J) and body blows (K), and save your stars (★) for a star punch (Space).', btn: 'Fight!', scores: true, onGo: newGame });
 })();
 </script>
 </body>

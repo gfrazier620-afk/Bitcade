@@ -821,7 +821,7 @@ console.log('\nArcade Pass');
 
 /* ---------- story mode in the flagship games ---------- */
 console.log('\nStory mode');
-for (const [slug, chapters, coin] of [['dungeon-delve', 5, 'GEMS'], ['blast-brigade', 5, 'MEDALS'], ['pixel-peaks', 8, 'GEMS'], ['turbo-tour', 6, 'PRIZE $']]) {
+for (const [slug, chapters, coin] of [['dungeon-delve', 5, 'GEMS'], ['blast-brigade', 5, 'MEDALS'], ['pixel-peaks', 8, 'GEMS'], ['turbo-tour', 6, 'PRIZE $'], ['sky-squadron', 6, 'MEDALS'], ['knockout-kings', 7, 'PURSE $']]) {
   const { page, errors, close } = await open(`/games/${slug}/?feature=none`);
   check(/STORY/.test(await page.textContent('#ov .go2')), `${slug}: the title screen has a ★ STORY button`);
   await page.evaluate(([slug, coin]) => localStorage.setItem('arcade:story:' + slug, JSON.stringify({ earned: 500 })), [slug, coin]);
