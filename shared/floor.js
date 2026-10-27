@@ -16,7 +16,8 @@
  * Floor.start() / Floor.stop() as the view is shown or hidden. Floor.preview(prize, ctx, w, h) draws prize previews.
  */
 window.Floor = (() => {
-  const VW = 960, VH = 600, WW = 2880, WH = 1320, WALL = 170, OUT = '#0a0612', CELL = 16;
+  const VW = 960, VH = 600, GW = 2880, GH = 1320, WALL = 170, OUT = '#0a0612', CELL = 16;
+  let WW = GW, WH = GH, level = 0; // the floor you're on: 0 the ground floor, 1 the Loft (whose size is LOFT)
   const WALK = 150, RUN = 290;
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
   let PAL = {}, opt = null, cv = null, ctx = null, dpr = 1, running = false, raf = 0, last = 0, play = null;
@@ -65,7 +66,7 @@ window.Floor = (() => {
     { name: 'PRIZE CORNER', x: 1600, y: 620, w: 640, h: 700, c: '#ffd23d' },
     { name: 'VIP ROOM', x: 2240, y: 0, w: 640, h: 1320, c: '#ffd23d', vip: true }
   ];
-  const zoneAt = (x, y) => ZONES.find(z => x >= z.x && x < z.x + z.w && y >= z.y && y < z.y + z.h);
+  const zoneAt = (x, y) => zones().find(z => x >= z.x && x < z.x + z.w && y >= z.y && y < z.y + z.h);
 
   /* ---------- layout ---------- */
   const RACERS = ['turbo-tour', 'nitro-lane', 'light-trail'], GUNS = ['raptor-ridge', 'marsh-marksman'], TABLE = 'blip-sports', DANCE = 'neon-steps';
@@ -87,6 +88,7 @@ window.Floor = (() => {
     { kind: 'sofa', x: 150, y: 776, w: 110, h: 44, solid: [[150, 788, 110, 32]], seats: [[180, 832], [232, 832]] },
     { kind: 'beanbag', x: 92, y: 884, w: 40, h: 30, solid: [[94, 896, 36, 18]], seats: [[112, 922]] },
     { kind: 'beanbag', x: 290, y: 884, w: 40, h: 30, solid: [[292, 896, 36, 18]], seats: [[310, 922]] },
+    { kind: 'stairs', x: 700, y: 640, w: 160, h: 150, spot: [780, 812], solid: [[700, 700, 160, 90]] },
     { kind: 'board', x: 1000, y: 648, w: 240, h: 150, spot: [1120, 820], solid: [[1004, 770, 232, 28]] },
     { kind: 'booth', x: 1400, y: 640, w: 104, h: 136, spot: [1452, 796], solid: [[1400, 716, 104, 60]] },
     { kind: 'shelf', x: 1830, y: 604, w: 300, h: 82, solid: [[1830, 650, 300, 36]] },
@@ -120,8 +122,8 @@ window.Floor = (() => {
     slots.push([680, 1110], [762, 1110]); // the newest cabinets, by the entrance
     for (let i = 0; i < 5; i++) slots.push([60 + i * 98, 400]); // and below the raceway, if the arcade grows
     slots.push([2012, 116], [2110, 116], [1712, 400], [1806, 400], [1950, 400], [2044, 400]); // then the far end of the shooting gallery
-    slots.push([652, 644], [736, 644], [820, 644], [904, 644], [1626, 650], [1712, 650], [370, 770], [548, 770]); // a row in the entrance hall, two in the prize corner, two in the lounge
-    rest.forEach((g, i) => addCab(g, 'upright', ...slots[Math.min(i, slots.length - 1)]));
+    rest.forEach((g, i) => { if (i < slots.length) addCab(g, 'upright', ...slots[i]); }); // the rest go upstairs to the Loft
+    loftGames = rest.slice(slots.length);
     FIXED.forEach(o => objs.push({ ...o, base: o.y + o.h }));
   }
   /*
@@ -130,7 +132,7 @@ window.Floor = (() => {
    * for the rest), the VIP prize counter, your records wall, a golden soda bar, velvet sofas and VIP regulars.
    */
   const VIPX = 2248, DOOR = { y0: 606, y1: 704 };
-  const VWALL = [[2232, WALL, 16, DOOR.y0 - WALL], [2232, DOOR.y1, 16, WH - DOOR.y1]];
+  const VWALL = [[2232, WALL, 16, DOOR.y0 - WALL], [2232, DOOR.y1, 16, GH - DOOR.y1]];
   let vipOpen = false, vipNew = false;
   function layoutVip() {
     objs = objs.filter(o => !o.vip); cabs = cabs.filter(c => !c.vip);
@@ -154,11 +156,11 @@ window.Floor = (() => {
   /** Things you can walk up to and use. */
   const usable = () => objs.filter(o => o.spot);
   function buildSolids() {
-    const all = objs.filter(o => o.kind !== 'decor' && o.kind !== 'plant');
-    for (const k of Object.keys(DECOR)) if (owns(k)) all.push({ kind: 'decor', id: k, ...DECOR[k], base: DECOR[k].y + DECOR[k].h, solid: [[DECOR[k].x, DECOR[k].y + DECOR[k].h * 0.55, DECOR[k].w, DECOR[k].h * 0.45]] });
-    if (owns('plants')) PLANTS.forEach(([px, py]) => all.push({ kind: 'plant', x: px, y: py, w: 26, h: 44, base: py + 44, solid: [[px + 4, py + 30, 18, 14]] }));
+    const all = objs.filter(o => o.kind !== 'decor' && (o.kind !== 'plant' || o.fixed));
+    if (!level) for (const k of Object.keys(DECOR)) if (owns(k)) all.push({ kind: 'decor', id: k, ...DECOR[k], base: DECOR[k].y + DECOR[k].h, solid: [[DECOR[k].x, DECOR[k].y + DECOR[k].h * 0.55, DECOR[k].w, DECOR[k].h * 0.45]] });
+    if (!level && owns('plants')) PLANTS.forEach(([px, py]) => all.push({ kind: 'plant', x: px, y: py, w: 26, h: 44, base: py + 44, solid: [[px + 4, py + 30, 18, 14]] }));
     objs = all;
-    solids = [...objs.flatMap(o => o.solid || []), ...VWALL].map(([x, y, w, h]) => ({ x, y, w, h }));
+    solids = [...objs.flatMap(o => o.solid || []), ...(level ? [] : VWALL)].map(([x, y, w, h]) => ({ x, y, w, h }));
     const C = Math.ceil(WW / CELL), R = Math.ceil(WH / CELL); blocked = new Uint8Array(C * R);
     for (let j = 0; j < R; j++) for (let i = 0; i < C; i++) blocked[j * C + i] = hit(i * CELL + CELL / 2, j * CELL + CELL / 2, 11) ? 1 : 0;
   }
@@ -295,6 +297,7 @@ window.Floor = (() => {
   }
   const WALL_SIGNS = [['BITCADE', 1120, 56, 40, '#ff4fa3'], ['RACEWAY', 290, 56, 28, '#ff7a3d'], ['SHOOTING GALLERY', 1950, 50, 22, '#7dd63d'], ['VIP ROOM', 2560, 46, 30, '#ffd23d']];
   function background() {
+    if (level) return loftBackground();
     const eq = equip(), key = (eq.carpet || '') + (owns('sign') ? 's' : '');
     if (bg && key === bgKey) return;
     bgKey = key;
@@ -338,6 +341,127 @@ window.Floor = (() => {
     x.fillStyle = '#0c0920'; x.fillRect(0, WH - 24, WW, 24); x.fillStyle = '#ff4fa3'; x.fillRect(0, WH - 25, WW, 2); gx.fillStyle = '#ff4fa3'; gx.fillRect(0, WH - 25, WW, 2);
     x.fillStyle = OUT; x.fillRect(1052, WH - 26, 136, 26); x.fillStyle = 'rgba(94,231,255,.35)'; x.fillRect(1056, WH - 22, 62, 22); x.fillRect(1122, WH - 22, 62, 22);
     x.fillStyle = '#c0c6d0'; x.fillRect(1112, WH - 18, 3, 12); x.fillRect(1125, WH - 18, 3, 12);
+  }
+
+
+  /*
+   * The Loft, upstairs: a second floor with its own objects, people and background, swapped in when you ride the
+   * escalator in the entrance hall (`level` 1). New Arrivals (the cabinets that don't fit downstairs, so the newest)
+   * and the Sky Deck (windows over Neon City, telescopes, sofas, and Ticket Tide, the coin pusher).
+   */
+  const LOFT = { w: 1920, h: 1180 };
+  const LOFT_ZONES = [{ name: 'NEW ARRIVALS', x: 0, y: 0, w: 1120, h: LOFT.h, c: '#3dff8f' }, { name: 'SKY DECK', x: 1120, y: 0, w: LOFT.w - 1120, h: LOFT.h, c: '#5ee7ff' }];
+  const LOFT_SLOTS = [...Array.from({ length: 8 }, (_, i) => [120 + i * 110, 430]), /* the row along the runner first */ ...Array.from({ length: 10 }, (_, i) => [70 + i * 96, 116]), ...Array.from({ length: 6 }, (_, i) => [380 + i * 110, 720])];
+  const LOFT_LAMPS = [[300, 360], [760, 360], [300, 700], [760, 700], [560, 1000], [1300, 420], [1700, 420], [1500, 620], [1300, 900], [1700, 900], [1820, 640]];
+  const zones = () => level ? LOFT_ZONES : ZONES;
+  let loftGames = [];
+  const saved = [null, { objs: [], cabs: [], solids: [], blocked: null, bg: null, glowBg: null, bgKey: null, people: [] }];
+  /** Swap the floor in play: everything that belongs to one floor is put away and the other's comes out. */
+  function swap(to) {
+    if (to === level) return;
+    saved[level] = { objs, cabs, solids, blocked, bg, glowBg, bgKey, people: npcs.splice(0) };
+    const s = saved[to]; level = to;
+    objs = s.objs; cabs = s.cabs; solids = s.solids; blocked = s.blocked; bg = s.bg; glowBg = s.glowBg; bgKey = s.bgKey; npcs.push(...s.people);
+    WW = to ? LOFT.w : GW; WH = to ? LOFT.h : GH; MAP.h = MAP.w * WH / WW;
+    near = null; shownNear = undefined; route = []; arriveAct = null;
+  }
+  function layoutLoft() {
+    swap(1); objs = []; cabs = [];
+    loftGames.forEach((g, i) => addCab(g, 'upright', ...LOFT_SLOTS[Math.min(i, LOFT_SLOTS.length - 1)]));
+    objs.push(
+      { kind: 'stairs', down: true, x: 120, y: 930, w: 160, h: 150, spot: [200, 1112], solid: [[120, 990, 160, 90]] },
+      { kind: 'pusher', x: 1250, y: 560, w: 120, h: 150, spot: [1310, 730], npcSpot: [1310, 730], solid: [[1250, 650, 120, 60]] },
+      { kind: 'scope', x: 1440, y: 196, w: 34, h: 64, spot: [1457, 284], solid: [[1444, 238, 26, 22]] },
+      { kind: 'scope', x: 1760, y: 196, w: 34, h: 64, spot: [1777, 284], solid: [[1764, 238, 26, 22]] },
+      { kind: 'sofa', x: 1480, y: 820, w: 110, h: 44, solid: [[1480, 832, 110, 32]], seats: [[1510, 876], [1562, 876]] },
+      { kind: 'sofa', x: 1700, y: 820, w: 110, h: 44, solid: [[1700, 832, 110, 32]], seats: [[1730, 876], [1782, 876]] },
+      { kind: 'beanbag', x: 1560, y: 1040, w: 40, h: 30, solid: [[1562, 1052, 36, 18]], seats: [[1580, 1078]] },
+      ...[[1150, 1090], [1860, 1090], [40, 560], [1080, 560], [1150, 300], [1880, 400]].map(([px, py]) => ({ kind: 'plant', fixed: true, x: px, y: py, w: 26, h: 44, solid: [[px + 4, py + 30, 18, 14]] })));
+    objs.forEach(o => { if (o.base === undefined) o.base = o.y + o.h; });
+    buildSolids(); spawnLoftPeople(); swap(0);
+  }
+  function spawnLoftPeople() {
+    for (let i = 0; i < 6; i++) {
+      const z = pick(LOFT_ZONES); let px, py, k = 0;
+      do { px = rnd(z.x + 40, z.x + z.w - 40); py = rnd(WALL + 60, z.y + z.h - 60); } while (hit(px, py) && k++ < 40);
+      npcs.push({ loft: true, x: px, y: py, dir: 'down', walk: 0, moving: false, look: randomLook(), path: [], act: null, t: rnd(0, 3), pose: '', bubble: null, greetT: 0, speed: rnd(80, 110) });
+    }
+  }
+  /** Ride the escalator: fade out, swap floors, arrive at the other end. */
+  function ride(o) {
+    if (me.ride) return; me.ride = { t: 0, to: o.down ? 0 : 1, done: false }; route = []; me.vx = me.vy = 0; keys.clear();
+    if (play) play.sound.zone();
+  }
+  function goLevel(to) {
+    swap(to); buildSolids();
+    const s = objs.find(o => o.kind === 'stairs');
+    me.x = s.spot[0]; me.y = s.spot[1]; me.dir = 'down'; pet.x = me.x + 20; pet.y = me.y; trail.length = 0; puffs.length = 0;
+    zoneName = ''; if (running) snapCamera(); showCard();
+  }
+  function loftBackground() {
+    const eq = equip(), key = 'loft' + (eq.carpet || '');
+    if (bg && key === bgKey) return;
+    bgKey = key;
+    bg = document.createElement('canvas'); bg.width = WW; bg.height = WH; const x = bg.getContext('2d');
+    glowBg = document.createElement('canvas'); glowBg.width = WW; glowBg.height = WH; const gx = glowBg.getContext('2d');
+    carpet(x, eq.carpet, WW, WH - WALL, WALL); carpet(gx, eq.carpet, WW, WH - WALL, WALL, true);
+    // the sky deck: dark wooden boards, a glowing edge
+    x.fillStyle = '#1c1426'; x.fillRect(1120, WALL, WW - 1120, WH - WALL); gx.clearRect(1120, WALL, WW - 1120, WH - WALL);
+    for (let y = WALL; y < WH; y += 22) { x.fillStyle = '#261c32'; x.fillRect(1120, y, WW - 1120, 2); for (let i = 1120 + ((y / 22) % 3) * 70; i < WW; i += 210) { x.fillStyle = '#140e1c'; x.fillRect(i, y, 2, 22); } }
+    [x, gx].forEach(c => { c.fillStyle = '#5ee7ff'; c.fillRect(1118, WALL, 3, WH - WALL); });
+    // the new arrivals runner, with green neon edges
+    x.fillStyle = OUT; x.fillRect(46, 560, 1028, 120); x.fillStyle = '#12301e'; x.fillRect(50, 564, 1020, 112);
+    [x, gx].forEach(c => { c.strokeStyle = '#3dff8f'; c.lineWidth = 2; c.strokeRect(58, 572, 1004, 96); });
+    for (let i = 90; i < 1060; i += 60) { x.fillStyle = 'rgba(61,255,143,.35)'; x.beginPath(); x.moveTo(i, 608); x.lineTo(i + 18, 620); x.lineTo(i, 632); x.fill(); }
+    // the back wall: panels and rail like downstairs, signs, and the big windows over the city
+    const wg = x.createLinearGradient(0, 0, 0, WALL); wg.addColorStop(0, '#0e0a20'); wg.addColorStop(1, '#221a44'); x.fillStyle = wg; x.fillRect(0, 0, WW, WALL);
+    x.fillStyle = 'rgba(255,255,255,.035)'; for (let i = 0; i < 1120; i += 48) x.fillRect(i, 0, 2, WALL);
+    for (const [wx, ww] of [[1140, 230], [1400, 230], [1660, 240]]) {
+      const sky = x.createLinearGradient(0, 14, 0, 150); sky.addColorStop(0, '#05041a'); sky.addColorStop(1, '#2a1650'); x.fillStyle = OUT; x.fillRect(wx - 4, 10, ww + 8, 148); x.fillStyle = sky; x.fillRect(wx, 14, ww, 140);
+      for (let k = 0; k < 26; k++) { x.fillStyle = `rgba(255,255,255,${0.3 + (k % 3) * 0.25})`; x.fillRect(wx + (k * 53 + wx) % ww, 18 + (k * 29) % 70, 1 + (k % 4 === 0), 1 + (k % 4 === 0)); }
+      for (let b = 0; b < 9; b++) { // the skyline, lit windows and all
+        const bw = 18 + (b * 13 + wx) % 22, bh = 30 + (b * 37 + wx) % 70, bx = wx + b * (ww / 9), by = 154 - bh;
+        x.fillStyle = '#0c0a1e'; x.fillRect(bx, by, bw, bh);
+        for (let j = by + 5; j < 150; j += 8) for (let i = bx + 3; i < bx + bw - 3; i += 6) if (((i * 7 + j * 3 + b) % 5) < 2) { x.fillStyle = ['#ffd23d', '#5ee7ff', '#ff4fa3'][(i + j) % 3]; x.fillRect(i, j, 2, 3); gx.fillStyle = 'rgba(255,210,61,.5)'; gx.fillRect(i, j, 2, 3); }
+      }
+      x.fillStyle = OUT; x.fillRect(wx + ww / 2 - 2, 14, 4, 140); x.fillRect(wx, 82, ww, 4);
+      [x, gx].forEach(c => { c.strokeStyle = '#5ee7ff'; c.lineWidth = 2; c.strokeRect(wx - 2, 12, ww + 4, 144); });
+    }
+    x.fillStyle = '#fff6d8'; x.beginPath(); x.arc(1820, 44, 16, 0, 6.29); x.fill(); x.fillStyle = '#2a1650'; x.beginPath(); x.arc(1828, 40, 14, 0, 6.29); x.fill(); // a crescent moon
+    x.fillStyle = OUT; x.fillRect(0, WALL - 4, WW, 6); [x, gx].forEach(c => { c.fillStyle = '#3dff8f'; c.fillRect(0, WALL - 3, 1120, 2); c.fillStyle = '#5ee7ff'; c.fillRect(1120, WALL - 3, WW - 1120, 2); });
+    neon(x, 'THE LOFT', 560, 52, 38, '#3dff8f'); x.font = '12px Silkscreen, monospace'; x.textAlign = 'center'; x.fillStyle = '#8affb8'; x.fillText('★ NEW ARRIVALS ★', 560, 92);
+    x.fillStyle = '#0c0920'; x.fillRect(0, WALL, 16, WH - WALL); x.fillRect(WW - 16, WALL, 16, WH - WALL);
+    x.fillStyle = '#0c0920'; x.fillRect(0, WH - 24, WW, 24); [x, gx].forEach(c => { c.fillStyle = '#3dff8f'; c.fillRect(0, WH - 25, WW, 2); });
+  }
+  /** The escalator: moving steps between glass rails, and a sign saying where it goes. */
+  function drawStairs(x, t, o) {
+    const { x: X, y: Y, w, h } = o, s = (t / 40) % 14;
+    paint(x, [[X, Y + 50, w, h - 50, '#2a2440'], [X + 8, Y + 6, 18, h - 10, '#8a94a8'], [X + w - 26, Y + 6, 18, h - 10, '#8a94a8']]);
+    x.save(); x.beginPath(); x.rect(X + 30, Y + 14, w - 60, h - 20); x.clip();
+    x.fillStyle = '#3a3450'; x.fillRect(X + 30, Y + 14, w - 60, h - 20);
+    for (let k = -1; k < 12; k++) { const yy = Y + 14 + k * 14 + (o.down ? s : 14 - s); x.fillStyle = '#5a5470'; x.fillRect(X + 30, yy, w - 60, 10); x.fillStyle = '#ffd23d'; x.fillRect(X + 30, yy, w - 60, 2); }
+    x.restore();
+    x.fillStyle = 'rgba(160,230,255,.25)'; x.fillRect(X + 26, Y + 6, 4, h - 10); x.fillRect(X + w - 30, Y + 6, 4, h - 10);
+    x.fillStyle = '#3dff8f'; x.fillRect(X + 12, Y + 2, 10, 4); x.fillRect(X + w - 22, Y + 2, 10, 4);
+    const label = o.down ? '▼ GROUND FLOOR' : '▲ THE LOFT', sw = 132;
+    x.fillStyle = OUT; x.fillRect(X + w / 2 - sw / 2 - 2, Y - 34, sw + 4, 26); x.fillStyle = 'rgba(10,6,18,.92)'; x.fillRect(X + w / 2 - sw / 2, Y - 32, sw, 22);
+    neon(x, label, X + w / 2, Y - 21, 12, '#3dff8f');
+  }
+  /** Ticket Tide on the floor: a glass case of coins under a chasing-light marquee. */
+  function drawPusher(x, t, o) {
+    const { x: X, y: Y, w, h } = o;
+    paint(x, [[X, Y + 20, w, h - 20, '#5a2a8a'], [X + 10, Y + 34, w - 20, 60, '#1a2a4a'], [X + 6, Y + 100, w - 12, 12, '#c8a040'], [X + 14, Y + 116, w - 28, 26, '#3a1a5a']]);
+    for (let i = 0; i < 9; i++) for (let j = 0; j < 3; j++) { x.fillStyle = (i + j) % 4 ? '#d8a83a' : '#ffe680'; x.beginPath(); x.arc(X + 18 + i * 10 + (j % 2) * 5, Y + 62 + j * 9, 4, 0, 6.29); x.fill(); }
+    const px = Math.sin(t / 400) * 6; x.fillStyle = '#8a94a8'; x.fillRect(X + 12, Y + 36, w - 24, 14 + px); x.fillStyle = 'rgba(255,255,255,.12)'; x.fillRect(X + 14, Y + 36, 8, 56);
+    x.fillStyle = OUT; x.fillRect(X + w / 2 - 12, Y + 122, 24, 6);
+    paint(x, [[X - 4, Y, w + 8, 24, '#2a1a3e']]); neon(x, 'TICKET TIDE', X + w / 2, Y + 12, 11, '#ffd23d');
+    for (let i = 0; i < 8; i++) { x.fillStyle = Math.floor(t / 120 + i) % 3 === 0 ? '#fff6c2' : '#7a5a2a'; x.fillRect(X + 4 + i * (w - 12) / 7, Y + 24, 4, 4); }
+  }
+  /** A coin-op telescope pointed at the windows. */
+  function drawScope(x, t, o) {
+    const { x: X, y: Y } = o;
+    paint(x, [[X + 14, Y + 30, 6, 30, '#6a6a7a'], [X + 6, Y + 56, 22, 6, '#4a4a5a'], [X + 2, Y + 8, 30, 18, '#c8a040'], [X - 4, Y + 12, 8, 10, '#8a6a2a']]);
+    x.fillStyle = '#9ad8ff'; x.fillRect(X + 28, Y + 12, 4, 10);
   }
 
   /* ---------- sprites ---------- */
@@ -525,6 +649,7 @@ window.Floor = (() => {
     const occupied = new Set(npcs.map(o => o.act && o.act.seat && o.act.seat.join()));
     let act = null;
     if (n.vip) return planVip(n);
+    if (n.loft) return planLoft(n);
     if (r < 0.5) { const free = [...cabs, ...objs.filter(o => o.npcSpot)].filter(c => !c.vip && !c.user && near !== c && !(me.entering && me.entering.c === c)); const c = free.length && pick(free); if (c) { c.user = n; act = { type: 'play', obj: c, to: c.npcSpot || (c.type === 'racer' ? c.seat : c.spot), dur: rnd(10, 26) }; } }
     else if (r < 0.62 && feat) act = { type: 'watch', obj: feat, to: [feat.spot[0] + pick([-34, 34, -18, 18]), feat.spot[1] + rnd(14, 34)], dur: rnd(8, 16) };
     else if (r < 0.74) { const seats = objs.filter(o => o.seats && !o.vip).flatMap(o => o.seats).filter(s => !occupied.has(s.join())); if (seats.length) { const s = pick(seats); act = { type: 'sit', seat: s, to: s, dur: rnd(10, 22) }; } }
@@ -544,6 +669,15 @@ window.Floor = (() => {
     if (!act) act = { type: 'wander', to: [rnd(2290, 2840), rnd(560, 1180)], dur: rnd(2, 4) };
     n.act = act; n.path = findPath(n.x, n.y, act.to[0], act.to[1]); n.t = act.dur;
   }
+  /** Loft regulars: play the new arrivals or the coin pusher, sit on the sky deck, look out of the windows, wander. */
+  function planLoft(n) {
+    const r = Math.random(), occupied = new Set(npcs.map(o => o.act && o.act.seat && o.act.seat.join())); let act = null;
+    if (r < 0.5) { const free = [...cabs, ...objs.filter(o => o.npcSpot)].filter(c => !c.user && near !== c && !(me.entering && me.entering.c === c)); const c = free.length && pick(free); if (c) { c.user = n; act = { type: 'play', obj: c, to: c.npcSpot || c.spot, dur: rnd(10, 26) }; } }
+    else if (r < 0.66) { const seats = objs.filter(o => o.seats).flatMap(o => o.seats).filter(s => !occupied.has(s.join())); if (seats.length) { const s = pick(seats); act = { type: 'sit', seat: s, to: s, dur: rnd(10, 22) }; } }
+    else if (r < 0.82) act = { type: 'watch', to: [rnd(1160, 1880), rnd(250, 300)], dur: rnd(4, 9) };
+    if (!act) { const z = pick(LOFT_ZONES); act = { type: 'wander', to: [rnd(z.x + 40, z.x + z.w - 40), rnd(WALL + 60, z.y + z.h - 60)], dur: rnd(1, 3) }; }
+    n.act = act; n.path = findPath(n.x, n.y, act.to[0], act.to[1]); n.t = act.dur;
+  }
   function spawnVipPeople() {
     for (let i = npcs.length - 1; i >= 0; i--) if (npcs[i].vip) npcs.splice(i, 1);
     if (!vipOpen) return;
@@ -560,7 +694,7 @@ window.Floor = (() => {
     wander: ['THIS PLACE IS SICK', 'WHERE\'S THE RACEWAY?', 'FREE PLAY? NO WAY', 'LOVE THE CARPET']
   };
   function chatter() {
-    const g = pick(cabs).g, wr = opt.world && opt.world(g.slug), feat = opt.featured && cabs.find(c => c.g.slug === opt.featured);
+    const pc = pick(cabs); if (!pc) return null; const g = pc.g, wr = opt.world && opt.world(g.slug), feat = opt.featured && cabs.find(c => c.g.slug === opt.featured);
     const r = Math.random();
     if (wr && r < 0.3) return `${wr.n} HAS ${(+wr.s).toLocaleString()} ON ${g.name.toUpperCase()}?!`;
     if (feat && r < 0.42) return `TOURNAMENT\'S ON ${feat.g.name.toUpperCase()}!`;
@@ -742,6 +876,7 @@ window.Floor = (() => {
   /* ---------- walking ---------- */
   function step(dt, t) {
     if (me.entering) { me.entering.t += dt; return; }
+    if (me.ride) { const r = me.ride; r.t += dt; if (r.t >= 0.45 && !r.done) { r.done = true; goLevel(r.to); } if (r.t >= 0.9) me.ride = null; return; }
     let dx = 0, dy = 0;
     if (!mode) {
       if (keys.has('ArrowLeft') || keys.has('KeyA')) dx--; if (keys.has('ArrowRight') || keys.has('KeyD')) dx++;
@@ -781,7 +916,7 @@ window.Floor = (() => {
     near = null; let best = 30;
     for (const o of usable()) { const d = Math.hypot(me.x - o.spot[0], (me.y - o.spot[1]) * 1.4); if (d < best) { best = d; near = o; } }
     if (near !== shownNear) { shownNear = near; showCard(); if (near && play) play.sound.notice(near); }
-    if (vipOpen && vipNew && me.x > 2120 && Math.abs(me.y - 656) < 90) { // the first time through: a welcome
+    if (!level && vipOpen && vipNew && me.x > 2120 && Math.abs(me.y - 656) < 90) { // the first time through: a welcome
       vipNew = false; try { localStorage.setItem('bitcade:vipseen', '1'); } catch (e) {}
       const s = STAFF.find(s => s.name === 'bouncer'); say(s, 'WELCOME TO THE VIP ROOM!', 3.2); me.bubble = { text: 'WHOA!', t: 2, cheer: true };
       if (play) play.sound.fanfare && play.sound.fanfare();
@@ -800,6 +935,7 @@ window.Floor = (() => {
     if (!near) return;
     const o = near;
     if (o.kind === 'cab') return enter(o);
+    if (o.kind === 'stairs') return ride(o);
     if (o.kind === 'counter' || o.kind === 'vipcounter') return opt.onCounter();
     if (o.kind === 'vipdoor') {
       const s = STAFF.find(s => s.name === 'bouncer');
@@ -820,7 +956,7 @@ window.Floor = (() => {
   }
   function showCard() {
     const card = opt.card; if (!card) return;
-    if (!near) { card.innerHTML = '<span class="fl-tip">Walk up to a cabinet to play it. Explore: the raceway, the shooting gallery, the lounge, the claw…</span>'; return; }
+    if (!near) { card.innerHTML = level ? '<span class="fl-tip">The Loft: the newest cabinets, the Sky Deck and Ticket Tide. The escalator takes you back down.</span>' : '<span class="fl-tip">Walk up to a cabinet to play it. Explore: the raceway, the shooting gallery, the lounge, the claw… and take the escalator up to the Loft.</span>'; return; }
     card.innerHTML = '';
     const info = document.createElement('div'), b = document.createElement('b'), small = document.createElement('small'), go = document.createElement('button');
     let c = near.c || '#5ee7ff';
@@ -835,6 +971,7 @@ window.Floor = (() => {
       go.textContent = vipOpen ? 'GO IN ▶' : 'ASK ▶';
     }
     else if (near.kind === 'vipcounter') { b.textContent = 'VIP PRIZE COUNTER'; small.textContent = `TICKETS ${TICKETS.balance().toLocaleString()} · VIP exclusives: tuxedo, golden suit, velvet carpet, platinum cabinets`; go.textContent = 'OPEN ▶'; c = '#ffd23d'; }
+    else if (near.kind === 'stairs') { b.textContent = near.down ? 'ESCALATOR · GROUND FLOOR' : 'ESCALATOR · THE LOFT'; small.textContent = near.down ? 'Back down to the main floor, the raceway, the lounge and the prize corner' : `Upstairs: ${loftGames.length} new arrival${loftGames.length === 1 ? '' : 's'}, the Sky Deck and Ticket Tide, the coin pusher`; go.textContent = near.down ? 'GO DOWN ▼' : 'GO UP ▲'; c = '#3dff8f'; }
     else if (near.kind === 'counter') { b.textContent = 'PRIZE COUNTER'; small.textContent = `TICKETS ${TICKETS.balance().toLocaleString()} · cosmetics for every game and this floor`; go.textContent = 'OPEN ▶'; c = '#ffd23d'; }
     else if (play) { const k = play.card(near); b.textContent = k.title; small.textContent = k.sub; go.textContent = k.btn; c = k.c; }
     card.style.setProperty('--c', c);
@@ -899,6 +1036,13 @@ window.Floor = (() => {
   function collectLights(t) {
     const L = [];
     for (const c of cabs) { const [sx, sy, sw, sh] = c.screen; L.push({ x: sx + sw / 2, y: c.type === 'table' ? sy + 30 : c.base + 6, r: c.type === 'table' ? 90 : 120, a: 0.9, c: mastered.has(c.g.slug) ? '#ffd23d' : c.g.c }); }
+    if (level) { // upstairs: lamps, the windows' moonlight, the coin pusher, the escalator, the sign
+      LOFT_LAMPS.forEach(([x, y]) => L.push({ x, y, r: 230, a: 0.45 }));
+      L.push({ x: 1520, y: 240, r: 360, a: 0.75, c: '#9ad8ff' }, { x: 1310, y: 640, r: 170, a: 0.95, c: '#ffd23d' }, { x: 200, y: 1010, r: 170, a: 0.85, c: '#3dff8f' }, { x: 560, y: 120, r: 300, a: 0.9, c: '#3dff8f' }, { x: 560, y: 620, r: 260, a: 0.6, c: '#3dff8f' });
+      const feat = cabs.find(c => c.g.slug === opt.featured); if (feat) L.push({ x: feat.spot[0], y: feat.spot[1] - 10, r: 170, a: 1, c: '#ffd23d' });
+      L.push({ x: me.x, y: me.y - 16, r: 110, a: 0.5 }); return L;
+    }
+    L.push({ x: 780, y: 720, r: 170, a: 0.85, c: '#3dff8f' });
     const flick = Math.sin(t / 97) > 0.97 || Math.sin(t / 61) > 0.985 ? 0.25 : 1; // the raceway sign is on the blink
     WALL_SIGNS.forEach(([, x, y], i) => L.push({ x, y: y + 60, r: i ? 200 : 300, a: 0.9 * (i === 1 ? flick : 1), c: WALL_SIGNS[i][4] }));
     LAMPS.forEach(([x, y]) => L.push({ x, y, r: 230, a: 0.42 }));
@@ -954,14 +1098,14 @@ window.Floor = (() => {
       x.fillStyle = 'rgba(10,6,18,.85)'; x.fillRect(cx - w / 2, cy - 16, w, 30); x.strokeStyle = c; x.lineWidth = 2; x.strokeRect(cx - w / 2, cy - 16, w, 30);
       neon(x, text, cx, cy, size, c);
     };
-    [[2400, 560], [2720, 560], [2400, 980], [2720, 980]].forEach(([cx, cy]) => { // chandeliers
+    if (level) { hang('SKY DECK', 1500, 420, '#5ee7ff'); hang('NEW ARRIVALS', 560, 380, '#3dff8f'); hang('TICKET TIDE', 1310, 500, '#ffd23d', 14); }
+    else [[2400, 560], [2720, 560], [2400, 980], [2720, 980]].forEach(([cx, cy]) => { // chandeliers
       if (!visible(cx, cy, 120)) return;
       x.strokeStyle = '#6a5020'; x.lineWidth = 1; x.beginPath(); x.moveTo(cx, cy - 90); x.lineTo(cx, cy - 30); x.stroke();
       x.fillStyle = '#c89a2a'; x.fillRect(cx - 24, cy - 32, 48, 4);
       for (let i = 0; i < 5; i++) { const px = cx - 22 + i * 11, tw = 0.6 + 0.4 * Math.sin(t / 200 + i + cx); x.fillStyle = `rgba(255,240,180,${tw})`; x.beginPath(); x.arc(px, cy - 22, 3, 0, 6.29); x.fill(); x.fillStyle = 'rgba(220,240,255,.7)'; x.fillRect(px - 1, cy - 18, 2, 6); }
     });
-    if (!vipOpen) hang('VIP', 2240, 560, '#ffd23d', 16);
-    hang('LOUNGE', 330, 760, '#b48cff'); hang('SNACKS', 175, 606, '#ffb03d', 14); hang('PRIZES', 1980, 580, '#ffd23d', 20);
+    if (!level) { if (!vipOpen) hang('VIP', 2240, 560, '#ffd23d', 16); hang('LOUNGE', 330, 760, '#b48cff'); hang('SNACKS', 175, 606, '#ffb03d', 14); hang('PRIZES', 1980, 580, '#ffd23d', 20); }
     const feat = cabs.find(c => c.g.slug === opt.featured);
     if (feat && visible(feat.x, feat.y, 200)) {
       const cx = feat.x + feat.w / 2; x.globalCompositeOperation = 'lighter';
@@ -1350,6 +1494,9 @@ window.Floor = (() => {
       case 'skee': return drawSkee(x, t, o);
       case 'bench': return drawBench(x, o);
       case 'plant': return drawPlant(x, o.x, o.y);
+      case 'stairs': return drawStairs(x, t, o);
+      case 'pusher': return drawPusher(x, t, o);
+      case 'scope': return drawScope(x, t, o);
       case 'decor':
         if (o.id === 'redeem') return drawRedeem(x, t, o.x, o.y);
         if (o.id === 'gumball') return drawGumball(x, o.x, o.y);
@@ -1405,14 +1552,12 @@ window.Floor = (() => {
     x.setTransform(S, 0, 0, S, -cam.x * S, -cam.y * S); x.imageSmoothingEnabled = false;
     x.globalCompositeOperation = 'lighter'; x.globalAlpha = 0.5; x.drawImage(glowBg, sx, sy, sw, sh, sx, sy, sw, sh); x.globalAlpha = 1; x.globalCompositeOperation = 'source-over';
     pools(x, L);
-    if (owns('disco')) discoSpots(x, t);
-    if (owns('strips')) drawStrips(x, t);
-    drawTargets(x, t);
+    if (!level) { if (owns('disco')) discoSpots(x, t); if (owns('strips')) drawStrips(x, t); drawTargets(x, t); }
     for (const p of puffs) { x.fillStyle = `rgba(200,190,230,${p.t})`; x.beginPath(); x.arc(p.x, p.y - (0.5 - p.t) * 10, 3 + (0.5 - p.t) * 8, 0, 6.29); x.fill(); }
     drawTrail(x);
     // everything standing, back to front
     const list = objs.filter(o => visible(o.x, o.y, 120)).map(o => [o.base, () => drawObj(x, o, t)]);
-    for (const s of STAFF) if (visible(s.x, s.y)) list.push([s.y, () => drawWalker(x, s.x, s.y, s.dir || 'down', 0, false, s.look, s.bubble && s.bubble.t > 2 ? 'wave' : '')]);
+    if (!level) for (const s of STAFF) if (visible(s.x, s.y)) list.push([s.y, () => drawWalker(x, s.x, s.y, s.dir || 'down', 0, false, s.look, s.bubble && s.bubble.t > 2 ? 'wave' : '')]);
     for (const n of npcs) if (visible(n.x, n.y)) list.push([n.y, () => drawWalker(x, n.x, n.y, n.dir, n.walk, n.moving, n.look, n.pose, n.prop)]);
     const em = me.emote ? emoteLook(me.emote) : null;
     list.push([me.y, () => {
@@ -1426,7 +1571,7 @@ window.Floor = (() => {
     x.setTransform(dpr, 0, 0, dpr, 0, 0); x.globalAlpha = 0.34; x.imageSmoothingEnabled = true; x.drawImage(lightCv, 0, 0, VW, VH); x.globalAlpha = 1;
     x.setTransform(S, 0, 0, S, -cam.x * S, -cam.y * S);
     glows(x, t);
-    if (owns('disco')) drawDisco(x, t);
+    if (!level && owns('disco')) drawDisco(x, t);
     overhead(x, t);
     if (route.length && !mode) { const [tx, ty] = route[route.length - 1]; x.strokeStyle = 'rgba(255,255,255,.55)'; x.lineWidth = 2; x.beginPath(); x.ellipse(tx, ty, 10 + Math.sin(t / 150), 4, 0, 0, 6.29); x.stroke(); }
     // on the screen: speech bubbles, the area name, the minimap, whatever's open
@@ -1436,10 +1581,11 @@ window.Floor = (() => {
       x.font = '9px Silkscreen, monospace'; x.textAlign = 'center'; x.textBaseline = 'middle'; const w = x.measureText(tx).width + 12;
       x.fillStyle = 'rgba(10,6,18,.75)'; x.fillRect(nx - w / 2, ny - 7, w, 14); x.strokeStyle = lv.level >= 30 ? '#ffd23d' : '#5ee7ff'; x.lineWidth = 1; x.strokeRect(nx - w / 2 + .5, ny - 6.5, w - 1, 13);
       x.fillStyle = lv.level >= 30 ? '#ffd23d' : '#fff'; x.fillText(tx, nx, ny + 1); } }
-    for (const n of [...npcs, ...STAFF, me]) if (n.bubble && visible(n.x, n.y, 0)) bubble(x, (n.x - cam.x) * zoom, (n.y - 50 - cam.y) * zoom, n.bubble.text, n === me);
+    for (const n of [...npcs, ...(level ? [] : STAFF), me]) if (n.bubble && visible(n.x, n.y, 0)) bubble(x, (n.x - cam.x) * zoom, (n.y - 50 - cam.y) * zoom, n.bubble.text, n === me);
+    if (me.ride) { const r = me.ride, a = r.t < 0.45 ? r.t / 0.45 : Math.max(0, (0.9 - r.t) / 0.45); x.fillStyle = `rgba(5,2,12,${a})`; x.fillRect(0, 0, VW, VH); x.globalAlpha = a; neon(x, r.to ? 'GOING UP…' : 'GOING DOWN…', VW / 2, VH / 2, 30, '#3dff8f'); x.globalAlpha = 1; }
     if (me.entering) { const k = Math.min(1, me.entering.t / 0.8); x.fillStyle = `rgba(255,255,255,${Math.max(0, k - 0.75) * 2})`; x.fillRect(0, 0, VW, VH); return; }
     if (zoneT > 0 && zoneName) {
-      const a = Math.min(1, zoneT * 2, (2.4 - zoneT) * 4), z = ZONES.find(z => z.name === zoneName);
+      const a = Math.min(1, zoneT * 2, (2.4 - zoneT) * 4), z = zones().find(z => z.name === zoneName);
       x.globalAlpha = a; x.font = '26px Bungee, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
       x.fillStyle = OUT; x.fillText(zoneName, VW / 2 + 3, VH - 37); x.shadowColor = z.c; x.shadowBlur = 16; x.fillStyle = z.c; x.fillText(zoneName, VW / 2, VH - 40); x.shadowBlur = 0; x.globalAlpha = 1;
     }
@@ -1457,17 +1603,18 @@ window.Floor = (() => {
   function minimap(x, t) {
     const { x: mx, y: my, w, h } = MAP, k = w / WW;
     x.fillStyle = 'rgba(10,6,18,.6)'; x.fillRect(mx - 3, my - 3, w + 6, h + 6); x.strokeStyle = 'rgba(255,255,255,.25)'; x.lineWidth = 1; x.strokeRect(mx - 3.5, my - 3.5, w + 7, h + 7);
-    for (const z of ZONES) { x.fillStyle = rgba(z.c, z.name === zoneName ? 0.22 : 0.09); x.fillRect(mx + z.x * k, my + Math.max(WALL, z.y) * k, z.w * k - 1, (z.y ? z.h : z.h - WALL) * k - 1); }
+    for (const z of zones()) { x.fillStyle = rgba(z.c, z.name === zoneName ? 0.22 : 0.09); x.fillRect(mx + z.x * k, my + Math.max(WALL, z.y) * k, z.w * k - 1, (z.y ? z.h : z.h - WALL) * k - 1); }
     for (const o of objs) { if (o.kind === 'plant' || o.kind === 'seat') continue; x.fillStyle = o.kind === 'cab' ? (mastered.has(o.g.slug) ? '#ffd23d' : o.g.c) : o.kind === 'counter' ? '#ffd23d' : o.kind === 'claw' ? '#5ee7ff' : 'rgba(255,255,255,.35)'; x.fillRect(mx + o.x * k, my + o.y * k, Math.max(2, o.w * k), Math.max(2, o.h * k)); }
     x.fillStyle = 'rgba(255,255,255,.55)'; for (const n of npcs) x.fillRect(mx + n.x * k - 1, my + n.y * k - 1, 2, 2);
     const vw = VW / zoom, vh = VH / zoom; x.strokeStyle = 'rgba(255,255,255,.4)'; x.strokeRect(mx + cam.x * k, my + cam.y * k, vw * k, vh * k);
     x.fillStyle = Math.floor(t / 300) % 2 ? '#fff' : '#ffd23d'; x.fillRect(mx + me.x * k - 2, my + me.y * k - 2, 4, 4);
+    x.font = '9px Silkscreen, monospace'; x.textAlign = 'right'; x.textBaseline = 'top'; x.fillStyle = level ? '#3dff8f' : 'rgba(255,255,255,.6)'; x.fillText(level ? 'THE LOFT · 2F' : 'GROUND · 1F', mx + w, my + h + 6);
   }
 
   /* ---------- the kit floor-play.js builds on ---------- */
   const kit = {
     VW, VH, OUT, shade, paint, rgba, star, neon, drawWalker, randomLook, icon, footage, owns,
-    get opt() { return opt; }, get me() { return me; }, get cabs() { return cabs; }, get npcs() { return npcs; }, get mastered() { return mastered; },
+    get opt() { return opt; }, get me() { return me; }, get cabs() { return cabs; }, get allCabs() { return [...cabs, ...((saved[1 - level] || {}).cabs || [])]; }, get level() { return level; }, get npcs() { return npcs; }, get mastered() { return mastered; },
     look: () => equip().outfit || '', initials, booth, held: c => keys.has(c), say: (text, dur, cheer) => { me.bubble = { text, t: dur || 2.4, cheer }; },
     staffSay: (who, text) => { const s = STAFF.find(s => s.name === who); if (s) say(s, text, 2.6); },
     open: m => { mode = m; keys.clear(); route = []; me.vx = me.vy = 0; showCard(); },
@@ -1489,15 +1636,16 @@ window.Floor = (() => {
       play = window.FloorPlay ? window.FloorPlay(kit) : null;
       if (window.Prizes) Prizes.onChange(() => { bgKey = null; buildSolids(); showCard(); });
       if (document.fonts) { document.fonts.ready.then(() => { bgKey = null; }); document.fonts.addEventListener('loadingdone', () => { bgKey = null; }); } // the neon signs use Bungee
-      buildSolids(); spawnPeople(); cabs.forEach(c => footage(c.g.slug));
+      buildSolids(); spawnPeople(); layoutLoft(); [...cabs, ...saved[1].cabs].forEach(c => footage(c.g.slug));
     },
     start() {
       if (running) return; running = true;
-      mastered = new Set(cabs.filter(c => { const i = opt.info(c.g); return i.all && i.got === i.all; }).map(c => c.g.slug));
+      const upstairs = level; if (upstairs) swap(0); // the VIP room is downstairs
+      mastered = new Set([...cabs, ...saved[1].cabs].filter(c => { const i = opt.info(c.g); return i.all && i.got === i.all; }).map(c => c.g.slug));
       const wasOpen = vipOpen; layoutVip(); if (vipOpen !== wasOpen || !npcs.some(n => n.vip) !== !vipOpen) spawnVipPeople();
       try { vipNew = vipOpen && localStorage.getItem('bitcade:vipseen') !== '1'; } catch (e) {}
       const bouncer = STAFF.find(s => s.name === 'bouncer'); bouncer.y = vipOpen ? 590 : 712;
-      buildSolids(); bgKey = null; shownNear = undefined; me.entering = null; me.pose = ''; mode = null;
+      buildSolids(); bgKey = null; if (upstairs) { swap(1); buildSolids(); bgKey = null; } shownNear = undefined; me.entering = null; me.ride = null; me.pose = ''; mode = null;
       zoom = baseZoom = cv.clientWidth && cv.clientWidth < 700 ? 2.3 : 1.6; snapCamera();
       npcs.forEach(n => { if (!n.act) n.t = rnd(0, 2); });
       last = performance.now(); raf = requestAnimationFrame(frame);
@@ -1505,10 +1653,12 @@ window.Floor = (() => {
     },
     stop() { running = false; cancelAnimationFrame(raf); keys.clear(); route = []; mode = null; if (play) play.sound.stop(); },
     /** Test and debug hook: where the walker is, what it's standing at, and what's open. */
-    state: () => ({ x: me.x, y: me.y, near: near && (near.kind === 'cab' ? near.g.slug : near.kind), mode: mode ? mode.name : null, people: npcs.length, zone: zoneName }),
-    /** Put the walker in front of a cabinet (by slug) or a thing ('counter', 'claw', 'jukebox', 'board', 'booth', 'snack'). */
+    state: () => ({ x: me.x, y: me.y, near: near && (near.kind === 'cab' ? near.g.slug : near.kind), mode: mode ? mode.name : null, people: npcs.length, zone: zoneName, level, loft: loftGames.map(g => g.slug) }),
+    /** Put the walker in front of a cabinet (by slug) or a thing ('counter', 'claw', 'jukebox', 'board', 'booth', 'snack', 'stairs', 'pusher'), upstairs or down. */
     goTo(what) {
       if (Array.isArray(what)) { me.x = what[0]; me.y = what[1]; route = []; if (running) snapCamera(); return; }
+      const other = saved[1 - level], there = other && (other.cabs.find(c => c.g.slug === what && !c.vip) || other.objs.find(o => o.kind === what && o.spot));
+      if (there && !cabs.find(c => c.g.slug === what && !c.vip) && !objs.find(o => o.kind === what && o.spot)) { swap(1 - level); buildSolids(); } // it's on the other floor
       const o = cabs.find(c => c.g.slug === what && !c.vip) || objs.find(o => o.kind === what && o.spot);
       if (o) { me.x = o.spot[0]; me.y = o.spot[1]; me.vx = me.vy = 0; route = []; }
       me.dir = 'up'; if (running) snapCamera();

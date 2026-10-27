@@ -407,6 +407,18 @@ console.log('\nArcade floor');
     check((await page.evaluate(() => Floor.state().mode)) === m, `the ${{ skee: 'skee-ball lanes', pinball: 'pinball machines', hockey: 'air hockey table', golf: 'mini-golf course' }[m]} ${m === 'hockey' || m === 'golf' ? 'is' : 'are'} playable`);
     await page.keyboard.press('Escape'); await wait(100);
   }
+  await page.evaluate(() => Floor.goTo('stairs')); await wait(150);
+  check(/THE LOFT/.test(await page.textContent('#floorCard')), 'the escalator in the entrance goes up to the Loft');
+  await page.keyboard.press('Enter'); await wait(1100);
+  const upstairs = await page.evaluate(() => Floor.state());
+  check(upstairs.level === 1 && upstairs.zone === 'NEW ARRIVALS' && upstairs.people > 0, 'riding it takes you up to the Loft, with its own arcade-goers');
+  await page.evaluate(s => Floor.goTo(s), upstairs.loft[0]); await wait(150);
+  check(upstairs.loft.length > 0 && await page.evaluate(s => Floor.state().near === s && Floor.state().level === 1, upstairs.loft[0]), "the cabinets that don't fit downstairs are up there");
+  await page.evaluate(() => Floor.goTo('pusher')); await wait(150); await page.keyboard.press('Enter'); await wait(150);
+  check((await page.evaluate(() => Floor.state().mode)) === 'pusher', 'Ticket Tide, the coin pusher, is playable');
+  await page.keyboard.press('Escape'); await wait(100);
+  await page.evaluate(() => Floor.goTo('stairs')); await wait(150); await page.keyboard.press('Enter'); await wait(1100);
+  check((await page.evaluate(() => Floor.state().level)) === 0, 'and the escalator brings you back down');
   await page.evaluate(() => Floor.goTo('vipdoor')); await wait(150);
   check(/LOCKED/.test(await page.textContent('#floorCard')), 'the VIP room starts locked');
   await page.evaluate(() => Floor.goTo([2210, 650])); await page.keyboard.down('ArrowRight'); await wait(600); await page.keyboard.up('ArrowRight');

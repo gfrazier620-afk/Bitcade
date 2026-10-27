@@ -117,7 +117,7 @@ window.FloorPlay = kit => {
 
   /* ---------- the jukebox ---------- */
   function jukebox() {
-    const list = [{ slug: '', name: 'BITCADE THEME', c: '#ff4fa3' }, ...kit.cabs.map(c => ({ slug: c.g.slug, name: c.g.name.toUpperCase() + ' THEME', c: c.g.c }))];
+    const list = [{ slug: '', name: 'BITCADE THEME', c: '#ff4fa3' }, ...kit.allCabs.map(c => ({ slug: c.g.slug, name: c.g.name.toUpperCase() + ' THEME', c: c.g.c }))];
     const cur = () => get('bitcade:jukebox') || '';
     let sel = Math.max(0, list.findIndex(l => l.slug === cur())), rows = [];
     const choose = () => { const l = list[sel]; kit.opt.onJukebox(l.slug); sound.select(); kit.say(`♪ ${l.name}`, 2.2); kit.refreshCard(); };
@@ -866,7 +866,7 @@ window.FloorPlay = kit => {
   function records() {
     const st = window.VIP ? VIP.status() : { badges: 0, mastered: 0, earned: 0 };
     let plays = 0; try { Object.keys(localStorage).filter(k => k.startsWith('arcade:plays:')).forEach(k => { plays += +localStorage.getItem(k) || 0; }); } catch (e) {}
-    const rows = kit.cabs.filter(c => !c.vip).map(c => ({ n: c.g.name.toUpperCase(), b: kit.opt.info(c.g).best || 0, c: c.g.c, gold: kit.mastered.has(c.g.slug) })).sort((a, b) => b.b - a.b);
+    const rows = kit.allCabs.filter(c => !c.vip).map(c => ({ n: c.g.name.toUpperCase(), b: kit.opt.info(c.g).best || 0, c: c.g.c, gold: kit.mastered.has(c.g.slug) })).sort((a, b) => b.b - a.b);
     return {
       name: 'records',
       draw(x) {
@@ -1103,7 +1103,94 @@ window.FloorPlay = kit => {
   }
 
   /* ---------- using things ---------- */
+
+  /* ---------- Ticket Tide, the Loft's coin pusher: 15 free coins a day; coins pushed off the front edge pay tickets ---------- */
+  const PUSH_DAY = 15;
+  const coinsToday = () => { let s = null; try { s = JSON.parse(get('bitcade:pusher') || 'null'); } catch (e) {} return PUSH_DAY - (s && s.d === today() ? s.n : 0); };
+  const spendCoin = () => { let s = null; try { s = JSON.parse(get('bitcade:pusher') || 'null'); } catch (e) {} set('bitcade:pusher', JSON.stringify({ d: today(), n: (s && s.d === today() ? s.n : 0) + 1 })); };
+  let pusherBed = null; // the coins on the bed stay there between goes, like a real machine
+  function pusher() {
+    const L = 250, Rt = 710, TOP = 150, EDGE = 468, CR = 15, SHELF = 70;
+    if (!pusherBed) { pusherBed = []; for (let j = 0; j < 7; j++) for (let i = 0; i < 15; i++) if (Math.random() < 0.9) pusherBed.push({ x: L + 18 + i * 30 + (j % 2) * 14 + rnd(-3, 3), y: EDGE - 14 - j * 26 + rnd(-3, 3), gold: false }); /* packed right up to the edge */ pusherBed[Math.floor(Math.random() * pusherBed.length)].gold = true; }
+    const coins = pusherBed; let falling = [], won = 0, paid = 0, t = 0, aimT = 0, drops = [], msgs = [], shown = 0;
+    const front = () => TOP + SHELF + Math.sin(t * 1.4) * 34 + 34; // the pusher's front edge goes back and forth
+    function drop() {
+      if (coinsToday() <= 0) { sound.back(); msgs.push({ text: 'NO FREE COINS LEFT TODAY', t: 1.6 }); return; }
+      spendCoin(); const ax = L + 30 + (Math.sin(aimT * 1.9) * 0.5 + 0.5) * (Rt - L - 60);
+      drops.push({ x: ax, k: 0 }); sound.beep(false);
+    }
+    function settle() { const owed = Math.floor(won / 2) - paid; if (owed > 0) { paid += owed; const r = award(owed); if (r.give) kit.say(`+${r.give} TICKETS FROM TICKET TIDE!`, 2.6, true); } }
+    function physics(dt) {
+      const f = front();
+      for (const c of coins) if (c.y - CR < f) c.y = f + CR; // the pusher shoves the front row along
+      for (let it = 0; it < 4; it++) for (let i = 0; i < coins.length; i++) for (let j = i + 1; j < coins.length; j++) {
+        const a = coins[i], b = coins[j], dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 0.01, o = CR * 2 - d;
+        if (o <= 0) continue;
+        const nx = dx / d, ny = dy / d;
+        // coins only ever get pushed away from the pusher: the one nearer the back holds, the other slides
+        if (a.y < b.y) { b.x += nx * o * 0.8; b.y += Math.max(0, ny) * o + 0.01; a.x -= nx * o * 0.2; }
+        else { a.x -= nx * o * 0.8; a.y += Math.max(0, -ny) * o + 0.01; b.x += nx * o * 0.2; }
+      }
+      for (const c of coins) { c.x = Math.max(L + CR, Math.min(Rt - CR, c.x)); if (c.y - CR < f) c.y = f + CR; }
+      for (let i = coins.length - 1; i >= 0; i--) if (coins[i].y > EDGE + 4) { // over the edge: it falls into the tray
+        const c = coins.splice(i, 1)[0]; won += c.gold ? 10 : 1; falling.push({ ...c, vy: 0, t: 0 });
+        if (c.gold) { sound.fanfare(); msgs.push({ text: 'GOLD COIN! +10', t: 1.8 }); } else sound.clank();
+        if (!coins.some(c => c.gold) && Math.random() < 0.5) coins[Math.floor(Math.random() * coins.length)].gold = true;
+      }
+      if (Math.floor(won / 2) > paid) settle();
+    }
+    const coin = (x, cx, cy, r, gold, a = 1) => {
+      x.globalAlpha = a; x.fillStyle = OUT; x.beginPath(); x.arc(cx, cy, r + 2, 0, 6.29); x.fill();
+      x.fillStyle = gold ? '#ffe680' : '#d8a83a'; x.beginPath(); x.arc(cx, cy, r, 0, 6.29); x.fill();
+      x.fillStyle = gold ? '#fff6c2' : '#f0c860'; x.beginPath(); x.arc(cx, cy, r * 0.72, 0, 6.29); x.fill();
+      x.fillStyle = gold ? '#ff4fa3' : '#b8862a'; x.font = `${Math.round(r * 1.1)}px Bungee, sans-serif`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(gold ? '★' : 'B', cx, cy + 1);
+      x.globalAlpha = 1;
+    };
+    return {
+      name: 'pusher',
+      draw(x, now, dt) {
+        dt = Math.min(0.033, dt || 0.016); t += dt; aimT += dt;
+        physics(dt);
+        for (const d of drops) { d.k += dt / 0.5; if (d.k >= 1 && !d.done) { d.done = true; coins.push({ x: d.x + rnd(-3, 3), y: front() + CR + 2, gold: false }); sound.thud(); } }
+        drops = drops.filter(d => !d.done);
+        // the cabinet: a dark glass case with a gold frame and chasing lights
+        x.fillStyle = 'rgba(5,2,12,.94)'; x.fillRect(0, 0, VW, VH);
+        x.fillStyle = OUT; x.fillRect(L - 34, 60, Rt - L + 68, 500); x.fillStyle = '#3a1a5a'; x.fillRect(L - 30, 64, Rt - L + 60, 492);
+        for (let i = 0; i < 24; i++) { const on = Math.floor(now / 120 + i) % 3 === 0; x.fillStyle = on ? '#fff6c2' : '#7a5a2a'; x.beginPath(); x.arc(L - 16 + i * (Rt - L + 32) / 23, 76, 4, 0, 6.29); x.fill(); }
+        // the bed
+        const g = x.createLinearGradient(0, TOP, 0, EDGE); g.addColorStop(0, '#1a2a4a'); g.addColorStop(1, '#2a4a6a'); x.fillStyle = g; x.fillRect(L, TOP, Rt - L, EDGE - TOP);
+        x.fillStyle = 'rgba(255,255,255,.05)'; for (let y = TOP; y < EDGE; y += 18) x.fillRect(L, y, Rt - L, 1);
+        // the pusher: a chrome shelf, its front edge moving
+        const f = front();
+        x.fillStyle = OUT; x.fillRect(L - 2, TOP - 4, Rt - L + 4, f - TOP + 6); x.fillStyle = '#8a94a8'; x.fillRect(L, TOP, Rt - L, f - TOP);
+        x.fillStyle = '#c8d0e0'; x.fillRect(L, f - 8, Rt - L, 6); x.fillStyle = '#5a6478'; for (let i = L + 20; i < Rt; i += 40) x.fillRect(i, TOP + 4, 3, f - TOP - 14);
+        for (const c of coins) coin(x, c.x, c.y, CR, c.gold);
+        // the edge and the tray below it
+        x.fillStyle = '#ffd23d'; x.fillRect(L, EDGE + CR - 2, Rt - L, 3);
+        x.fillStyle = '#140c24'; x.fillRect(L, EDGE + CR + 2, Rt - L, 70);
+        for (const c of falling) { c.t += dt; c.vy += 900 * dt; c.y += c.vy * dt; coin(x, c.x, Math.min(c.y, EDGE + CR + 50), CR * 0.9, c.gold, Math.max(0, 1 - c.t * 1.2)); }
+        falling = falling.filter(c => c.t < 0.9);
+        // the coin slot along the top: where the next coin will drop
+        const ax = L + 30 + (Math.sin(aimT * 1.9) * 0.5 + 0.5) * (Rt - L - 60);
+        x.fillStyle = '#2a2054'; x.fillRect(L, 96, Rt - L, 26); x.fillStyle = OUT; x.fillRect(L + 6, 106, Rt - L - 12, 6);
+        if (coinsToday() > 0) { coin(x, ax, 109, 11, false); x.fillStyle = 'rgba(255,214,61,.25)'; x.fillRect(ax - 1, 122, 2, f - 122); }
+        for (const d of drops) coin(x, d.x, 109 + (f + CR - 109) * d.k, 11 + d.k * 4, false);
+        kit.neon(x, 'TICKET TIDE', VW / 2, 36, 26, '#ffd23d');
+        // the side panels: coins and winnings
+        x.font = '12px Silkscreen, monospace'; x.textAlign = 'left'; x.textBaseline = 'middle'; x.fillStyle = 'rgba(255,255,255,.6)'; x.fillText('FREE COINS', 40, 150); x.fillText('COINS WON', 40, 250);
+        kit.neon(x, String(coinsToday()), 90, 190, 34, '#5ee7ff'); kit.neon(x, String(won), 90, 290, 34, '#3dff8f');
+        x.font = '12px Silkscreen, monospace'; x.textAlign = 'left'; x.fillStyle = 'rgba(255,255,255,.6)'; x.fillText('TICKETS', VW - 170, 150); kit.neon(x, String(paid), VW - 110, 190, 34, '#ffd23d');
+        x.font = '10px Silkscreen, monospace'; x.textAlign = 'left'; x.fillStyle = '#a39bc4'; x.fillText('2 COINS = 1 TICKET', VW - 190, 250); x.fillText('★ GOLD COIN = 10', VW - 190, 270);
+        for (const m of msgs) { m.t -= dt; x.globalAlpha = Math.max(0, Math.min(1, m.t * 2)); kit.neon(x, m.text, VW / 2, 330, 24, '#ffd23d'); x.globalAlpha = 1; } msgs = msgs.filter(m => m.t > 0);
+        hint(x, coinsToday() > 0 ? 'DROP A COIN: ENTER, SPACE OR TAP · ESC LEAVE' : 'OUT OF FREE COINS TODAY · COME BACK TOMORROW · ESC LEAVE', VH - 14);
+      },
+      key(c) { if (isClose(c)) { settle(); sound.back(); return kit.close(); } if (c === 'Enter' || c === 'Space') drop(); },
+      tap() { drop(); }
+    };
+  }
   function use(o) {
+    if (o.kind === 'pusher') return kit.open(pusher());
+    if (o.kind === 'scope') { kit.me.dir = 'up'; kit.say(pick(['I CAN SEE MY HOUSE FROM HERE!', 'IS THAT THE RACEWAY ON THE ROOF?', 'SO MANY NEON SIGNS!', 'A SHOOTING STAR!', 'THE CITY NEVER SLEEPS', 'THERE\'S ANOTHER ARCADE OVER THERE!']), 2.8); sound.select(); return; }
     if (o.kind === 'jukebox') return kit.open(jukebox());
     if (o.kind === 'board') return kit.open(board());
     if (o.kind === 'booth') return kit.open(photobooth());
@@ -1120,7 +1207,7 @@ window.FloorPlay = kit => {
     if (o.kind === 'snack') { kit.staffSay('snack', pick(['ONE BITCOLA, COMING UP!', 'HERE YOU GO!', 'ON THE HOUSE!', 'STAY HYDRATED!'])); kit.me.prop = 'soda'; kit.me.propT = 60; sound.fizz(); }
   }
   function card(o) {
-    const juke = get('bitcade:jukebox') || '', jg = juke && kit.cabs.find(c => c.g.slug === juke);
+    const juke = get('bitcade:jukebox') || '', jg = juke && kit.allCabs.find(c => c.g.slug === juke);
     if (o.kind === 'jukebox') return { title: 'JUKEBOX', sub: `NOW PLAYING: ${jg ? jg.g.name.toUpperCase() + ' THEME' : 'BITCADE THEME'} · pick any game's tune for the lobby`, btn: 'CHOOSE ▶', c: '#ff4fd1' };
     if (o.kind === 'board') return { title: 'HIGH-SCORE WALL', sub: 'World records for every cabinet, and your bests', btn: 'LOOK ▶', c: '#5ee7ff' };
     if (o.kind === 'booth') return { title: 'PHOTO BOOTH', sub: 'Four shots of you in your outfit, as a strip to save', btn: 'SNAP ▶', c: '#ff4fa3' };
@@ -1136,6 +1223,8 @@ window.FloorPlay = kit => {
     if (o.kind === 'records') return { title: 'YOUR RECORDS', sub: 'Every best score you hold, your badges and your totals', btn: 'LOOK ▶', c: '#ffd23d' };
     if (o.kind === 'vipbar') return { title: 'GOLDEN SODA BAR', sub: 'VIPs drink gold. It tastes like winning.', btn: 'ORDER ▶', c: '#ffd23d' };
     if (o.kind === 'snack') return { title: 'SNACK BAR', sub: 'Free sodas. It’s that kind of arcade.', btn: 'GRAB ONE ▶', c: '#ffb03d' };
+    if (o.kind === 'pusher') { const n = coinsToday(); return { title: 'TICKET TIDE', sub: `COIN PUSHER · ${n} FREE COIN${n === 1 ? '' : 'S'} TODAY · a ticket per 2 coins over the edge (${left()} more today)`, btn: 'PLAY ▶', c: '#ffd23d' }; }
+    if (o.kind === 'scope') return { title: 'TELESCOPE', sub: 'Look out over Neon City from the Sky Deck', btn: 'LOOK ▶', c: '#9ad8ff' };
     return { title: o.kind.toUpperCase(), sub: '', btn: 'USE ▶', c: '#5ee7ff' };
   }
   return { sound, use, card, tick: (dt, now, s) => cabinetNoise(dt, s) };
