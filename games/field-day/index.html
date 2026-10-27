@@ -26,6 +26,7 @@
 <script src="../../shared/chip.js"></script>
 <script src="../../shared/badges.js"></script>
 <script src="../../shared/arcade.js"></script>
+<script src="../../shared/story.js"></script>
 <script>
 (() => {
 /*
@@ -33,6 +34,9 @@
  * hold the action key to set an angle and let go to jump or throw. Beat the qualifying mark in each event to stay in:
  * 100 metres, 110 metre hurdles (jump each one), long jump and javelin (three tries each, don't cross the line).
  * Then round two, with tougher marks. Race a CPU rival, or a friend in the other lane.
+ * Story mode (shared/story.js): Road to the Games, five meets from the school sports day to the World Games, each
+ * against a named rival with tougher marks; sponsor money buys spikes, stamina, spring shoes, a strong arm, hurdle
+ * drills and steady nerves (your lane only). Beating it opens a 100-metre TIME TRIAL.
  */
 const A = Arcade, cv = document.getElementById('cv');
 const W = 560, H = 420, ctx = A.canvas(cv, W, H), OUT = '#0a0612', PX = 22, PH = 188, GROUND = 150;
@@ -45,16 +49,18 @@ const EVENTS = [
 const HURDLES = Array.from({ length: 10 }, (_, k) => 13.72 + k * 9.14);
 let state = 'title', two = false, round = 1, ei = 0, ev = EVENTS[0], lanes = [], score = 0, phase = 'marks', cueT = 0, cue = '', clock = 0, msg = '', msgT = 0, results = null, lost = false;
 const say = (t, s = 1.6) => { msg = t; msgT = s; };
+let S = null, meet = 0, trial = false;
+const up = id => S ? S.lv(id) : 0, sto = () => !!(S && S.run);
 const qual = e => e.race ? e.q * (1 - (round - 1) * 0.05) + (A.easy ? 1.5 : 0) : e.q * (1 + (round - 1) * 0.07) - (A.easy ? (e.id === 'jav' ? 10 : 1) : 0);
 const KEYS1 = { L: ['ArrowLeft', 'KeyA', 'KeyZ'], R: ['ArrowRight', 'KeyD', 'KeyX'], act: ['Space', 'ArrowUp', 'KeyW', 'KeyJ'] };
 const KEYS2 = [{ L: ['KeyA'], R: ['KeyD'], act: ['KeyW', 'KeyF'] }, { L: ['ArrowLeft'], R: ['ArrowRight'], act: ['ArrowUp', 'KeyL', 'Enter'] }];
 
-function mkLane(k, who) { return { k, who, name: who === 'cpu' ? 'CPU · ROCKET RAY' : two ? `PLAYER ${k + 1}` : 'YOU', c: [k ? '#3dc85a' : '#ff4f6d', '#5a9aff'][who === 'cpu' ? 1 : 0], pts: 0, out: false, fs: 0 }; }
+function mkLane(k, who) { return { k, who, name: who === 'cpu' ? (sto() ? (trial ? 'PACER' : RIVALS[meet][0]) : 'CPU · ROCKET RAY') : two ? `PLAYER ${k + 1}` : 'YOU', c: [k ? '#3dc85a' : '#ff4f6d', '#5a9aff'][who === 'cpu' ? 1 : 0], pts: 0, out: false, fs: 0 }; }
 function resetLane(l, keepTries) {
   Object.assign(l, { x: 0, v: 0, z: 0, vz: 0, last: null, ph: 'run', t: 0, time: null, ang: 0, leg: 0, hit: new Set(), jav: null, note: '', noteT: 0, foul: false, cpuT: 0 });
   if (!keepTries) { l.tries = []; l.best = null; }
 }
-function startGame(twoP) { two = twoP; round = 1; ei = 0; score = 0; A.setScore(0); lost = false; lanes = [mkLane(0, 'p1'), mkLane(1, two ? 'p2' : 'cpu')]; startEvent(); state = 'play'; }
+function startGame(twoP) { if (S) S.run = null; trial = false; two = twoP; round = 1; ei = 0; score = 0; A.setScore(0); lost = false; lanes = [mkLane(0, 'p1'), mkLane(1, two ? 'p2' : 'cpu')]; startEvent(); state = 'play'; }
 function startEvent() {
   ev = EVENTS[ei]; results = null; lanes.forEach(l => resetLane(l)); clock = 0;
   phase = 'marks'; cue = ev.race ? 'ON YOUR MARKS' : 'READY'; cueT = ev.race ? 1.3 : 1.2;
@@ -62,7 +68,7 @@ function startEvent() {
 }
 const keysOf = l => two ? KEYS2[l.k] : KEYS1;
 const human = l => l.who !== 'cpu';
-function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play', alt: S && S.quit() }); }
 A.onHide(pause);
 A.onPress(c => {
   if (c === 'KeyP' || c === 'Escape') return pause();
@@ -72,7 +78,7 @@ A.onPress(c => {
     if (!human(l) || l.out) continue; const K = keysOf(l), side = K.L.includes(c) ? 'L' : K.R.includes(c) ? 'R' : null;
     if (side) {
       if (phase === 'set' && ev.race) { falseStart(l); continue; }
-      if (phase === 'go' && l.ph === 'run' && l.z === 0 && side !== l.last) { l.v += 1.6 * (1 - l.v / 13); l.last = side; }
+      if (phase === 'go' && l.ph === 'run' && l.z === 0 && side !== l.last) { l.v += 1.6 * (1 + up('spikes') * 0.06) * (1 - l.v / 13); l.last = side; }
       else if (side === l.last) l.last = side;
     }
     if (K.act.includes(c) && phase === 'go') action(l);
@@ -80,7 +86,7 @@ A.onPress(c => {
 });
 function falseStart(l) {
   if (l.ph === 'dq') return; l.fs++; A.tone(150, 0.4, 'square', 0.05);
-  if (l.fs >= 2) { l.ph = 'dq'; l.note = 'DISQUALIFIED'; l.noteT = 99; say('FALSE START · DISQUALIFIED', 1.8); }
+  if (l.fs >= 2 + up('nerves')) { l.ph = 'dq'; l.note = 'DISQUALIFIED'; l.noteT = 99; say('FALSE START · DISQUALIFIED', 1.8); }
   else { say('FALSE START!', 1.4); phase = 'marks'; cue = 'ON YOUR MARKS'; cueT = 1.4; }
 }
 function action(l) {
@@ -90,8 +96,8 @@ function action(l) {
 function release(l) { // let go of the angle: take off, or throw
   if (l.x > ev.board) return foul(l);
   const th = l.ang * Math.PI / 180;
-  if (ev.id === 'long') { l.ph = 'air'; l.from = l.x; l.vx = l.v * Math.cos(th); l.vz = l.v * Math.sin(th) * 0.92; l.z = 0.001; A.sfx('jump'); }
-  else { const s = l.v * 2.9; l.ph = 'throw'; l.jav = { x: l.x + 0.4, y: 1.9, vx: s * Math.cos(th), vy: s * Math.sin(th) }; l.v *= 0.4; A.tone(400, 0.3, 'triangle', 0.035, 0, 900); }
+  if (ev.id === 'long') { l.ph = 'air'; l.from = l.x; const k = human(l) ? 1 + up('spring') * 0.04 : 1; l.vx = l.v * Math.cos(th) * k; l.vz = l.v * Math.sin(th) * 0.92 * k; l.z = 0.001; A.sfx('jump'); }
+  else { const s = l.v * 2.9 * (human(l) ? 1 + up('arm') * 0.05 : 1); l.ph = 'throw'; l.jav = { x: l.x + 0.4, y: 1.9, vx: s * Math.cos(th), vy: s * Math.sin(th) }; l.v *= 0.4; A.tone(400, 0.3, 'triangle', 0.035, 0, 900); }
 }
 function foul(l) { l.ph = 'mark'; l.foul = true; l.note = 'FOUL!'; l.noteT = 1.8; l.v = 0; l.tries.push(null); A.tone(160, 0.35, 'square', 0.04); }
 function mark(l, m) {
@@ -111,13 +117,13 @@ function stepLane(l, dt) {
   l.t += dt;
   if (l.who === 'cpu') cpu(l, dt);
   if (l.ph === 'run' || l.ph === 'charge') {
-    if (l.ph === 'run' && l.z === 0 && human(l)) l.v -= l.v * 0.35 * dt;
+    if (l.ph === 'run' && l.z === 0 && human(l)) l.v -= l.v * 0.35 * (1 - up('stamina') * 0.15) * dt;
     if (l.ph === 'charge') { l.ang = Math.min(70, l.ang + 110 * dt); if (human(l) && !keysOf(l).act.some(c => A.held(c))) release(l); if (l.ph === 'charge' && l.x > ev.board + 0.3) foul(l); }
     l.x += l.v * dt; l.leg += l.v * dt * 1.4;
     if (ev.board && l.ph === 'run' && l.x > ev.board + 0.3) foul(l);
   }
   if (ev.id === 'hurdles' && l.z > 0) { l.vz -= 12 * dt; l.z += l.vz * dt; if (l.z <= 0) { l.z = 0; l.vz = 0; } }
-  if (ev.id === 'hurdles') for (const [i, hx] of HURDLES.entries()) if (!l.hit.has(i) && Math.abs(l.x - hx) < 0.25 && l.z < 0.3) { l.hit.add(i); l.v *= 0.55; A.tone(120, 0.12, 'square', 0.04); }
+  if (ev.id === 'hurdles') for (const [i, hx] of HURDLES.entries()) if (!l.hit.has(i) && Math.abs(l.x - hx) < 0.25 && l.z < 0.3) { l.hit.add(i); l.v *= human(l) && up('hurdle') ? 0.75 : 0.55; A.tone(120, 0.12, 'square', 0.04); }
   if (ev.race && l.time === null && l.x >= ev.len) { l.time = l.t; l.ph = 'done'; l.note = `${l.time.toFixed(2)} S`; l.noteT = 99; if (ev.id === 'dash' && l.time < 10.5 && human(l)) A.badge('sprint'); A.tone(880, 0.2, 'triangle', 0.04); }
   if (l.ph === 'air') { l.vz -= 9.8 * dt; l.z += l.vz * dt; l.x += l.vx * dt; if (l.z <= 0) { l.z = 0; mark(l, Math.max(0, l.x - ev.board)); A.burst(...screen(l, l.x, 0), { n: 10, colors: ['#e8d8a0', '#c8b880'], speed: 70, life: 0.4 }); } }
   if (l.ph === 'throw') {
@@ -127,7 +133,7 @@ function stepLane(l, dt) {
   }
 }
 function cpu(l, dt) {
-  const target = 9.4 + round * 0.35 + Math.sin(l.t * 1.3 + l.k) * 0.3;
+  const target = (sto() ? (trial ? 10.4 : RIVALS[meet][1] + (S.run.hard ? 0.3 : 0)) : 9.4 + round * 0.35) + Math.sin(l.t * 1.3 + l.k) * 0.3;
   if (l.ph === 'run') { if (l.z === 0) l.v += (target - l.v) * dt * 1.4; l.v = Math.min(l.v, 12); }
   if (ev.id === 'hurdles' && l.z === 0) { const next = HURDLES.find(h => h > l.x); if (next && next - l.x < 1.55 + Math.random() * 0.2) action(l); }
   const want = 37 + (l.tries.length * 3) % 7;
@@ -163,11 +169,22 @@ function showResults() {
     return { l, m, ok: ok && !l.out, pts: ok ? pts : 0, was: l.out };
   }) };
   results.rows.forEach(r => { if (human(r.l) && !r.was && !r.ok) r.l.out = true; });
+  if (sto() && !trial && results.rows[0].ok) S.bank(15 + meet * 5);
   score = lanes[0].pts; A.setScore(score);
   const anyOk = results.rows.some(r => human(r.l) && r.ok);
   A.jingle(anyOk ? [523, 659, 784, 1047] : [392, 330, 262], 0.1, 'square');
 }
 function afterResults() {
+  if (sto()) {
+    const me = lanes[0], run = S.run; state = 'over';
+    if (trial) return S.modeEnd(me.time ? me.time * 1000 : 0, { title: 'TIME TRIAL', big: me.time ? `${me.time.toFixed(2)} SECONDS` : 'NO TIME' });
+    if (me.out) { run.stage = meet; return S.fail({ title: 'DID NOT QUALIFY', big: `${S.stageName(meet).toUpperCase()} · ${ev.name}`, sub: 'Spend your sponsor money on training, then try again' }); }
+    state = 'play';
+    if (ei + 1 < EVENTS.length) { ei++; return startEvent(); }
+    const beat = me.pts > lanes[1].pts; S.bank(50 + meet * 20 + (beat ? 40 : 0));
+    if (S.clear(meet)) { state = 'over'; return S.win(); }
+    meet++; return startMeet(beat);
+  }
   if (!lanes.some(l => human(l) && !l.out)) return gameOver();
   ei++; if (ei >= EVENTS.length) { ei = 0; round++; if (!lanes[0].out) A.badge('gold'); say(`ROUND ${round}!`, 2); }
   startEvent();
@@ -237,7 +254,7 @@ function render(t) {
   ctx.fillStyle = '#16121f'; ctx.fillRect(0, 0, W, H);
   if (state === 'title' || !lanes.length) { lanes = lanes.length ? lanes : [mkLane(0, 'p1'), mkLane(1, 'cpu')]; lanes.forEach(l => { if (l.x === undefined) resetLane(l); }); }
   for (const l of lanes) drawLane(l, t);
-  ctx.font = '12px Bungee, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#ffb23d'; ctx.fillText(`${ev.name}${round > 1 ? ' · R' + round : ''}`, 8, 13);
+  ctx.font = '12px Bungee, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#ffb23d'; ctx.fillText(sto() && !trial ? `${S.stageName(meet).toUpperCase()} · ${ev.name}` : `${ev.name}${round > 1 ? ' · R' + round : ''}`, 8, 13);
   ctx.font = '10px Silkscreen, monospace'; ctx.textAlign = 'right'; ctx.fillStyle = '#fff'; ctx.fillText(`QUALIFY ${ev.race ? '≤ ' + qual(ev).toFixed(1) + ' S' : '≥ ' + qual(ev).toFixed(1) + ' M'}`, W - 8, 13);
   ctx.fillStyle = '#ffb23d'; ctx.fillRect(0, 26 + PH, W, 4);
   if (state === 'play' && (phase === 'marks' || phase === 'set' || (phase === 'go' && cueT > 0))) { ctx.font = '30px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = OUT; ctx.fillText(cue, W / 2 + 2, H / 2 + 4); ctx.fillStyle = cue === 'GO!' ? '#8ad13d' : '#fff'; ctx.fillText(cue, W / 2, H / 2 + 2); }
@@ -260,7 +277,7 @@ A.loop(update, render);
 let botT = 0, botSide = false;
 A.attract({
   start: () => startGame(false),
-  stop: () => { state = 'title'; },
+  stop: () => { state = 'title'; if (S) S.run = null; trial = false; },
   bot: dt => {
     if (state !== 'play') return [];
     if (phase === 'results') return results && results.t > 1.6 ? ['!Space'] : [];
@@ -273,7 +290,46 @@ A.attract({
     return keys;
   }
 });
-A.overlay({ title: 'FIELD DAY', sub: 'Tap two keys one after the other to run (or the two RUN buttons). Hold JUMP to set the angle and let go to leap or throw. Qualify in the 100 metres, hurdles, long jump and javelin to stay in the games!', btn: '1 player', scores: true, onGo: () => startGame(false), alt: { btn: '2 players', onGo: () => startGame(true) } });
+const RIVALS = [['DASH DAWSON', 8.7], ['PENNY PACE', 9.2], ['HUGO HOPP', 9.6], ['ZOLA ZOOM', 10], ['LIGHTNING LENA', 10.5]]; // each meet's rival and her or his running speed
+function startMeet(beat) { // a meet: the four events, against that meet's rival, with tougher marks each time
+  round = 1 + meet * 0.6 + (S.run.hard ? 0.4 : 0); ei = 0; lanes = [mkLane(0, 'p1'), mkLane(1, 'cpu')];
+  S.reach(meet); startEvent(); state = 'play';
+  if (!trial) say(beat === undefined ? `${S.stageName(meet).toUpperCase()} · VS ${RIVALS[meet][0]}` : `${beat ? 'YOU BEAT THE RIVAL! · ' : ''}NEXT: ${S.stageName(meet).toUpperCase()}`, 2.4);
+}
+function storyGame(run) {
+  two = false; trial = run.mode === 'trial'; meet = trial ? 4 : run.stage; score = 0; A.setScore(0); lost = false; startMeet();
+}
+S = Story({
+  title: 'ROAD TO THE GAMES', coin: 'SPONSOR $', coinColor: '#3dff8f',
+  stages: [
+    { name: 'School Sports Day', sub: 'Where it all starts. Dash Dawson has won every race at Maple High for three years.' },
+    { name: 'County Meet', sub: 'Penny Pace never seems to get tired. Don\'t let her get away early.' },
+    { name: 'State Finals', sub: 'Hugo Hopp clears every hurdle like it isn\'t there.' },
+    { name: 'Nationals', sub: 'Zola Zoom holds the national record in the long jump. And she knows it.' },
+    { name: 'The World Games', sub: 'Lightning Lena, the fastest athlete alive. Qualify in all four, and the world is watching.' }],
+  upgrades: [
+    { id: 'spikes', name: 'Sprint Spikes', desc: 'Every tap gives a little more speed.', cost: [50, 120, 220] },
+    { id: 'stamina', name: 'Endurance', desc: 'You slow down less between taps.', cost: [60, 140] },
+    { id: 'spring', name: 'Spring Shoes', desc: 'Long jumps fly 4% further.', cost: [60, 130] },
+    { id: 'arm', name: 'Strong Arm', desc: 'Javelins fly 5% further.', cost: [60, 130] },
+    { id: 'hurdle', name: 'Hurdle Drills', desc: 'Clipping a hurdle costs you less speed.', cost: [80] },
+    { id: 'nerves', name: 'Steady Nerves', desc: 'One more false start before you\'re out.', cost: [50] }],
+  mode: { id: 'trial', name: 'TIME TRIAL', desc: '100 metres against the clock and a pacer.', lower: true },
+  intro: [
+    'Jess Quick runs to school every morning. Late, usually.',
+    'Coach Bolton watches from the gate with a stopwatch, and stops it, and stares at it.',
+    '"Sports day is on Friday," she says. "Then the county. Then, who knows?"',
+    'Five meets stand between Jess and the World Games. On your marks...'],
+  ending: [
+    'Lightning Lena crosses the line second, for the first time in her life.',
+    'She shakes Jess\'s hand, then lifts it into the air for the crowd.',
+    'Coach Bolton stops her stopwatch, and for once, she smiles at it.',
+    'Tomorrow Jess will run to school again. Still late, usually.'],
+  cast: [['THE ATHLETE', 'JESS QUICK'], ['THE COACH', 'COACH BOLTON'], ['THE CHAMPION', 'LIGHTNING LENA']],
+  play: storyGame,
+  stop: () => { state = 'title'; trial = false; }
+});
+S.title({ title: 'FIELD DAY', sub: 'Tap two keys one after the other to run (or the two RUN buttons). Hold JUMP to set the angle and let go to leap or throw. Qualify in the 100 metres, hurdles, long jump and javelin to stay in the games!', btn: '1 player', scores: true, onGo: () => startGame(false), alt2: { btn: '2 players', onGo: () => startGame(true) } });
 })();
 </script>
 </body>

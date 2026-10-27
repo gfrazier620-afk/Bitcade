@@ -27,6 +27,7 @@
 <script src="../../shared/chip.js"></script>
 <script src="../../shared/badges.js"></script>
 <script src="../../shared/arcade.js"></script>
+<script src="../../shared/story.js"></script>
 <script>
 (() => {
 /*
@@ -36,6 +37,9 @@
  *   Adventure: clear each stage's critters, then find the hatch hidden under a crate.
  *   Battle: four squads, last one standing wins the round, first to three rounds wins. After a minute the arena
  *   starts closing in from the edges. Play against three CPUs, or with a friend against two.
+ * Story mode (shared/story.js): The Critter Caper, six zones of Maple Town up to Queen Gloop (a boss critter who
+ * takes six blasts and keeps hatching puffs); bolts buy a bigger bag, hotter powder, boots, helmets and a blast suit.
+ * Beating it opens CRITTER RUSH, endless waves in one arena.
  */
 const A = Arcade, cv = document.getElementById('cv');
 const C = 15, R = 13, T = 32, TOP = 34, W = C * T, H = R * T + TOP, ctx = A.canvas(cv, W, H), OUT = '#0a0612';
@@ -63,12 +67,13 @@ function build() {
   for (let y = 0; y < R; y++) { grid.push([]); for (let x = 0; x < C; x++) grid[y].push(x === 0 || y === 0 || x === C - 1 || y === R - 1 || (x % 2 === 0 && y % 2 === 0) ? 1 : 0); }
   const corners = [[1, 1], [C - 2, 1], [1, R - 2], [C - 2, R - 2]], keep = new Set();
   for (const [cx, cy] of mode === 'adv' ? corners.slice(0, 1) : corners) for (const [dx, dy] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) keep.add((cy + dy) * C + cx + dx);
-  const dens = mode === 'adv' ? Math.min(0.6, 0.4 + stage * 0.03) : 0.72, crates = [];
+  if (boss() || rush) for (let y = R - 5; y <= R - 3; y++) for (let x = C - 6; x <= C - 3; x++) keep.add(y * C + x);
+  const dens = boss() || rush ? 0.28 : mode === 'adv' ? Math.min(0.6, 0.4 + stage * 0.03) : 0.72, crates = [];
   for (let y = 1; y < R - 1; y++) for (let x = 1; x < C - 1; x++) if (!grid[y][x] && !keep.has(y * C + x) && Math.random() < dens) { grid[y][x] = 2; crates.push(y * C + x); }
   crates.sort(() => Math.random() - 0.5);
   if (mode === 'adv') {
     const far = crates.filter(k => (k % C) + Math.floor(k / C) > 8);
-    hidden.set(far[0] || crates[0], 'exit');
+    if (!boss() && !rush) hidden.set(far[0] || crates[0], 'exit');
     const loot = ['bomb', 'fire', 'fire', 'bomb', stage % 2 ? 'speed' : 'fire', stage % 3 === 0 ? 'heart' : 'bomb'];
     crates.filter(k => !hidden.has(k)).slice(0, loot.length).forEach((k, n) => hidden.set(k, loot[n]));
   } else crates.forEach(k => { const r = Math.random(); if (r < 0.42) hidden.set(k, r < 0.16 ? 'bomb' : r < 0.32 ? 'fire' : 'speed'); });
@@ -76,7 +81,7 @@ function build() {
 }
 function drawBg() { // floor and stone, which never change, drawn once a stage
   bg = document.createElement('canvas'); bg.width = W; bg.height = R * T; const b = bg.getContext('2d');
-  const theme = mode === 'battle' ? ['#5a4a7a', '#52446f'] : [['#3f7a3a', '#3a7034'], ['#7a6a3a', '#706234'], ['#3a5a7a', '#34526f'], ['#6a3a4a', '#603444']][(stage - 1) % 4];
+  const theme = mode === 'battle' ? ['#5a4a7a', '#52446f'] : (stage >= 5 && S && S.run ? ['#4a4a5e', '#444458'] : [['#3f7a3a', '#3a7034'], ['#7a6a3a', '#706234'], ['#3a5a7a', '#34526f'], ['#6a3a4a', '#603444']][(stage - 1) % 4]);
   for (let y = 0; y < R; y++) for (let x = 0; x < C; x++) { b.fillStyle = theme[(x + y) % 2]; b.fillRect(x * T, y * T, T, T); }
   for (let y = 0; y < R; y++) for (let x = 0; x < C; x++) if (grid[y][x] === 1) {
     const X = x * T, Y = y * T; b.fillStyle = 'rgba(0,0,0,.3)'; b.fillRect(X + 4, Y + T, T - 2, 5);
@@ -85,10 +90,11 @@ function drawBg() { // floor and stone, which never change, drawn once a stage
 }
 
 /* ---------- the squad and the critters ---------- */
-const FOES = { puff: { sp: 1.3, pts: 100, c: '#ff7ab8' }, drip: { sp: 1.9, pts: 200, c: '#5ab8ff', chase: 0.35 }, spark: { sp: 3, pts: 400, c: '#ffd23d', chase: 0.15 }, ghost: { sp: 1.5, pts: 800, c: '#b48aff', chase: 0.45, ghost: true } };
+const FOES = { queen: { sp: 1.25, pts: 5000, c: '#8ad13d', chase: 0.5 }, puff: { sp: 1.3, pts: 100, c: '#ff7ab8' }, drip: { sp: 1.9, pts: 200, c: '#5ab8ff', chase: 0.35 }, spark: { sp: 3, pts: 400, c: '#ffd23d', chase: 0.15 }, ghost: { sp: 1.5, pts: 800, c: '#b48aff', chase: 0.45, ghost: true } };
 const SQUAD = [['#ff9a3d', 'ORANGE'], ['#3dc85a', 'GREEN'], ['#ff4f6d', 'RED'], ['#5a9aff', 'BLUE']];
 let state = 'title', mode = 'adv', two = false, stage = 1, score = 0, lives = 3, clock = 0, hurry = false, respawnT = 0, msg = '', msgT = 0;
-let round = 0, roundT = 0, closeI = 0, closeT = 0, roundOver = 0, lost = false, SPIRAL = [];
+let round = 0, roundT = 0, closeI = 0, closeT = 0, roundOver = 0, lost = false, SPIRAL = [], S = null, rush = false, wave = 0;
+const up = id => S ? S.lv(id) : 0, boss = () => !!(S && S.run && S.run.mode === 'story' && stage === 6);
 const say = (t, s = 2) => { msg = t; msgT = s; };
 function guy(i, x, y, cpu) { return { i, x, y, tx: x, ty: y, fx: x, fy: y, face: 'down', walk: 0, sp: 3.4, bombs: 1, range: 2, active: 0, c: SQUAD[i][0], cpu, alive: true, dieT: 0, inv: 0, wins: ents[i] ? ents[i].wins : 0, kills: 0, think: 0 }; }
 const add = (n, x, y, c = '#ffd23d') => { score += n; A.setScore(score); if (x !== undefined) A.pop(x * T + T / 2, y * T + TOP, '+' + n, c); };
@@ -155,14 +161,22 @@ function take(e, it) {
 }
 function die(e, by) {
   if (!e.alive || e.inv > 0) return;
+  if (e.suit > 0 && mode === 'adv') { e.suit--; e.inv = 2; A.shake(4, 0.2); A.tone(300, 0.2, 'square', 0.04, 0, 900); say('BLAST SUIT!', 1); return; }
   e.alive = false; e.dieT = 1.2; A.sfx('hurt'); A.burst(e.x * T + T / 2, e.y * T + T / 2 + TOP, { n: 18, colors: [e.c, '#fff', '#ffd23d'], speed: 140, life: 0.6 });
   if (by && by !== e && by.kills !== undefined) by.kills++;
   if (mode === 'adv') { lives--; respawnT = 1.8; A.flash('#ff4f6d', 0.15); }
 }
 function killFoe(f) {
-  if (!f.alive) return; f.alive = false; f.dieT = 0.7; add(FOES[f.kind].pts, f.x, f.y);
+  if (!f.alive || f.inv > 0) return;
+  if (f.kind === 'queen') {
+    if (--f.hp > 0) { f.inv = 1.4; A.shake(6, 0.3); A.flash('#8ad13d', 0.12); A.tone(160, 0.3, 'sawtooth', 0.05, 0, 60); say(`QUEEN GLOOP · ${f.hp} TO GO`, 1.2); f.sp *= 1.08; return; }
+    foes.forEach(o => { if (o !== f && o.alive) { o.alive = false; o.dieT = 0.7; } }); items.push({ x: Math.round(f.x), y: Math.round(f.y), kind: 'exit', t: 0 }); A.shake(10, 0.6); A.sfx('boom');
+  }
+  if (S && S.run) S.bank(f.kind === 'queen' ? 120 : 3);
+  f.alive = false; f.dieT = 0.7; add(FOES[f.kind].pts, f.x, f.y);
   A.burst(f.x * T + T / 2, f.y * T + T / 2 + TOP, { n: 14, colors: [FOES[f.kind].c, '#fff'], speed: 110, life: 0.5 });
-  if (!foes.some(o => o.alive)) { say('ALL CLEAR! FIND THE HATCH', 2.2); A.jingle([659, 784, 988, 1319], 0.07, 'square'); }
+  if (!foes.some(o => o.alive) && rush) { wave++; add(250 * wave); S.bank(10); setTimeout(() => { if (state === 'play' && rush) { spawnFoes(); say(`WAVE ${wave}`, 1.4); A.jingle([523, 659, 784], 0.07, 'square'); } }, 1200); return; }
+  if (!foes.some(o => o.alive)) { say(f.kind === 'queen' ? 'THE QUEEN IS DOWN! TO THE HATCH' : 'ALL CLEAR! FIND THE HATCH', 2.2); A.jingle([659, 784, 988, 1319], 0.07, 'square'); }
 }
 
 /* ---------- CPU brains (the battle CPUs and the attract demo share them) ---------- */
@@ -224,20 +238,26 @@ function spawnFoes() {
   const pool = ['puff', 'puff', ...(stage >= 2 ? ['drip'] : []), ...(stage >= 3 ? ['spark'] : []), ...(stage >= 4 ? ['ghost', 'drip'] : [])], open = [];
   for (let y = 1; y < R - 1; y++) for (let x = 1; x < C - 1; x++) if (!grid[y][x] && x + y > 7) open.push([x, y]);
   open.sort(() => Math.random() - 0.5);
+  if (boss()) { foes = [mkFoe('queen', C - 4, R - 4, 0), mkFoe('puff', open[0][0], open[0][1], 1)]; Object.assign(foes[0], { hp: 6, inv: 0, hatch: 4 }); return; }
+  if (rush) { const all = ['puff', 'drip', 'spark', 'ghost']; foes = open.slice(0, Math.min(12, 2 + wave)).map(([x, y], n) => mkFoe(all[Math.floor(Math.random() * Math.min(4, 1 + Math.ceil(wave / 2)))], x, y, n)); return; }
   foes = open.slice(0, Math.min(10, 3 + stage)).map(([x, y], n) => { const kind = n === 0 && stage >= 3 ? 'spark' : pool[Math.floor(Math.random() * pool.length)]; return { kind, x, y, tx: x, ty: y, fx: x, fy: y, sp: FOES[kind].sp * (1 + stage * 0.03), face: 'down', alive: true, walk: 0, ghost: FOES[kind].ghost, dieT: 0, dir: DL[n % 4] }; });
 }
-function startAdv() { mode = 'adv'; two = false; stage = 1; score = 0; A.setScore(0); lives = A.easy ? 5 : 3; lost = false; ents = []; ents = [guy(0, 1, 1, false)]; newStage(); state = 'play'; }
+const mkFoe = (kind, x, y, n) => ({ kind, x, y, tx: x, ty: y, fx: x, fy: y, sp: FOES[kind].sp * (1 + stage * 0.03), face: 'down', alive: true, walk: 0, ghost: FOES[kind].ghost, dieT: 0, dir: DL[n % 4] });
+function startAdv() { if (S) S.run = null; rush = false; mode = 'adv'; two = false; stage = 1; score = 0; A.setScore(0); lives = A.easy ? 5 : 3; lost = false; ents = []; ents = [guy(0, 1, 1, false)]; newStage(); state = 'play'; }
 function newStage() {
   build(); const p = ents[0], keep = { bombs: p.bombs, range: p.range, sp: p.sp };
-  ents = [Object.assign(guy(0, 1, 1, false), keep, { inv: 1.5 })]; spawnFoes(); clock = 200; hurry = false; respawnT = 0;
-  say(`STAGE ${stage}`, 2); A.jingle([392, 523, 659, 784], 0.08, 'square');
+  ents = [Object.assign(guy(0, 1, 1, false), keep, { inv: 1.5, suit: up('suit') })]; spawnFoes(); clock = rush ? Infinity : 200; hurry = false; respawnT = 0;
+  if (S && S.run && !rush) S.reach(stage - 1);
+  say(rush ? `WAVE ${wave}` : S && S.run ? `${stage} · ${S.stageName(stage - 1).toUpperCase()}` : `STAGE ${stage}`, 2); A.jingle([392, 523, 659, 784], 0.08, 'square');
 }
 function stageClear() {
   const bonus = 500 + Math.floor(clock) * 5; add(bonus); say(`STAGE CLEAR! +${bonus}`, 2.2); A.jingle([523, 659, 784, 1047, 1319], 0.09, 'square');
   if (stage >= 5) A.badge('stage5');
+  if (S && S.run) { S.bank(30 + stage * 12); if (S.clear(stage - 1)) { state = 'over'; setTimeout(() => S.win(), 1800); return; } }
   state = 'between'; setTimeout(() => { if (state !== 'between') return; stage++; newStage(); state = 'play'; }, 2300);
 }
 function startBattle(twoP) {
+  if (S) S.run = null; rush = false;
   mode = 'battle'; two = twoP; score = 0; A.setScore(0); round = 0; lost = false; ents = [];
   ents = [0, 1, 2, 3].map(i => guy(i, 0, 0, i > 0 && !(i === 1 && two))); newRound(); state = 'play';
 }
@@ -265,9 +285,10 @@ function matchOver(win) {
 }
 function gameOver() {
   if (lost) return; lost = true; state = 'over'; say('GAME OVER', 2);
+  if (S && S.run) { const run = S.run; setTimeout(() => { if (rush) return S.modeEnd(wave - 1, { title: 'OVERRUN!', big: `${wave - 1} WAVE${wave === 2 ? '' : 'S'} CLEARED` }); run.stage = stage - 1; S.fail({ title: 'THE SQUAD IS DOWN', big: `${stage} · ${S.stageName(stage - 1).toUpperCase()}`, sub: 'Spend your bolts on upgrades, then try again' }); }, 1300); return; }
   setTimeout(() => { const rec = A.submit(score); A.overlay({ title: 'GAME OVER', big: `SCORE ${score.toLocaleString()} · STAGE ${stage}`, sub: rec ? 'New high score!' : 'The critters win this time.', btn: 'Again', onGo: startAdv, alt: { btn: 'Battle vs CPU', onGo: () => startBattle(false) }, alt2: { btn: '2-player battle', onGo: () => startBattle(true) } }); }, 1300);
 }
-function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play', alt: S && S.quit() }); }
 A.onHide(pause);
 const SETS = [{ U: ['KeyW'], D: ['KeyS'], L: ['KeyA'], R: ['KeyD'], B: ['KeyF', 'Space'] }, { U: ['ArrowUp'], D: ['ArrowDown'], L: ['ArrowLeft'], R: ['ArrowRight'], B: ['KeyL', 'Enter'] }];
 const ONE = { U: ['KeyW', 'ArrowUp'], D: ['KeyS', 'ArrowDown'], L: ['KeyA', 'ArrowLeft'], R: ['KeyD', 'ArrowRight'], B: ['Space', 'KeyJ', 'KeyZ', 'KeyF', 'KeyX'] };
@@ -311,6 +332,8 @@ function update(dt) {
   // critters
   for (const f of foes) {
     if (!f.alive) { f.dieT -= dt; continue; }
+    if (f.inv > 0) f.inv -= dt;
+    if (f.kind === 'queen' && (f.hatch -= dt) <= 0) { f.hatch = 5.5 - (6 - f.hp) * 0.4; if (foes.filter(o => o.alive).length < 6) { foes.push(mkFoe(f.hp < 3 ? 'drip' : 'puff', Math.round(f.x), Math.round(f.y), foes.length)); A.tone(240, 0.15, 'triangle', 0.03, 0, 480); } }
     if (stepTo(f, dt)) {
       const opts = DL.filter(d => free(f, f.x + DIRS[d][0], f.y + DIRS[d][1])), p = ents[0], ch = FOES[f.kind].chase || 0;
       if (opts.length) {
@@ -366,8 +389,17 @@ function drawFoe(f, t) {
   const X = f.x * T + 16, Y = f.y * T + 16, c = FOES[f.kind].c;
   ctx.save(); if (!f.alive) { ctx.globalAlpha = f.dieT / 0.7; ctx.translate(X, Y); ctx.scale(1 + (0.7 - f.dieT), 1 - (0.7 - f.dieT)); ctx.translate(-X, -Y); }
   const bob = Math.sin(t / 140 + f.x * 3) * 1.5;
+  if (f.kind === 'queen') { // twice the size, with a crown; she flickers while hurt
+    if (f.inv > 0 && Math.floor(t / 70) % 2) { ctx.restore(); return; }
+    ctx.translate(X, Y - 4); ctx.scale(1.75, 1.75); ctx.translate(-X, -Y);
+    ctx.fillStyle = c; ctx.strokeStyle = OUT; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(X, Y + 2, 12 + bob, 11 - bob, 0, 0, 6.29); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#c8ff7a'; ctx.beginPath(); ctx.ellipse(X - 4, Y - 3, 4, 3, 0, 0, 6.29); ctx.fill();
+    ctx.fillStyle = '#ffd23d'; ctx.beginPath(); ctx.moveTo(X - 8, Y - 8); ctx.lineTo(X - 8, Y - 16); ctx.lineTo(X - 4, Y - 11); ctx.lineTo(X, Y - 17); ctx.lineTo(X + 4, Y - 11); ctx.lineTo(X + 8, Y - 16); ctx.lineTo(X + 8, Y - 8); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#ff4f6d'; ctx.fillRect(X - 1, Y - 13, 2, 2);
+  }
   ctx.fillStyle = OUT; ctx.fillStyle = c; ctx.strokeStyle = OUT; ctx.lineWidth = 2;
-  if (f.kind === 'puff') { ctx.beginPath(); ctx.ellipse(X, Y + 2, 12 + bob, 11 - bob, 0, 0, 6.29); ctx.fill(); ctx.stroke(); }
+  if (f.kind === 'queen') { /* drawn above */ }
+  else if (f.kind === 'puff') { ctx.beginPath(); ctx.ellipse(X, Y + 2, 12 + bob, 11 - bob, 0, 0, 6.29); ctx.fill(); ctx.stroke(); }
   else if (f.kind === 'drip') { ctx.beginPath(); ctx.moveTo(X, Y - 13 + bob); ctx.quadraticCurveTo(X + 13, Y + 4, X, Y + 13); ctx.quadraticCurveTo(X - 13, Y + 4, X, Y - 13 + bob); ctx.fill(); ctx.stroke(); }
   else if (f.kind === 'spark') { ctx.beginPath(); for (let k = 0; k < 16; k++) { const a = k / 16 * 6.283 + t / 200, r = k % 2 ? 7 : 13; ctx.lineTo(X + Math.cos(a) * r, Y + Math.sin(a) * r); } ctx.closePath(); ctx.fill(); ctx.stroke(); }
   else { ctx.globalAlpha *= 0.85; ctx.beginPath(); ctx.arc(X, Y - 2, 11, Math.PI, 0); for (let k = 0; k <= 4; k++) ctx.lineTo(X + 11 - k * 5.5, Y + 11 + (k % 2 ? -4 : 0) + bob); ctx.closePath(); ctx.fill(); ctx.stroke(); }
@@ -398,9 +430,12 @@ function render(t) {
   // the top bar
   ctx.font = '12px Silkscreen, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
   if (mode === 'adv') {
-    ctx.fillStyle = '#ff7a3d'; ctx.fillText(`STAGE ${stage}`, 10, TOP / 2); ctx.fillStyle = '#ff7ab8'; ctx.fillText('♥ ' + Math.max(0, lives), 110, TOP / 2);
+    ctx.fillStyle = '#ff7a3d'; ctx.fillText(rush ? `WAVE ${wave}` : `STAGE ${stage}`, 10, TOP / 2); ctx.fillStyle = '#ff7ab8'; ctx.fillText('♥ ' + Math.max(0, lives), 110, TOP / 2);
     ctx.fillStyle = '#c8c0e8'; ctx.fillText(`CRITTERS ${foes.filter(f => f.alive).length}`, 170, TOP / 2);
-    ctx.textAlign = 'right'; ctx.fillStyle = clock < 30 ? '#ff4f6d' : '#fff'; ctx.fillText(`TIME ${Math.max(0, Math.ceil(clock))}`, W - 10, TOP / 2);
+    ctx.textAlign = 'right'; const q = foes.find(f => f.kind === 'queen' && f.alive);
+    if (q) { ctx.fillStyle = '#8ad13d'; ctx.fillText('QUEEN ' + '●'.repeat(q.hp) + '○'.repeat(6 - q.hp), W - 10, TOP / 2); }
+    else if (rush) { ctx.fillStyle = '#fff'; ctx.fillText('CRITTER RUSH', W - 10, TOP / 2); }
+    else { ctx.fillStyle = clock < 30 ? '#ff4f6d' : '#fff'; ctx.fillText(`TIME ${Math.max(0, Math.ceil(clock))}`, W - 10, TOP / 2); }
   } else {
     ents.forEach((e, i) => { const x = 8 + i * 96; ctx.fillStyle = e.alive ? e.c : '#4a4460'; ctx.fillRect(x, 10, 14, 14); ctx.fillStyle = '#fff'; ctx.fillText(e.cpu ? 'CPU' : (i === 0 ? '1P' : '2P'), x + 18, TOP / 2); for (let w = 0; w < 3; w++) { ctx.fillStyle = w < e.wins ? '#ffd23d' : '#3a3450'; ctx.fillRect(x + 50 + w * 9, 13, 6, 8); } });
     ctx.textAlign = 'right'; ctx.fillStyle = roundT < 30 ? '#ff4f6d' : '#fff'; ctx.fillText(Math.max(0, Math.ceil(roundT)), W - 8, TOP / 2);
@@ -445,7 +480,7 @@ A.loop(dt => { if (state === 'between') { if (msgT > 0) msgT -= dt; for (const f
 let botTx = null, botTy = null, botDir = null;
 A.attract({
   start: () => { startAdv(); botTx = null; },
-  stop: () => { state = 'title'; foes = []; bombs = []; flames = []; ents = []; },
+  stop: () => { state = 'title'; foes = []; bombs = []; flames = []; ents = []; if (S) S.run = null; rush = false; },
   bot: () => {
     const p = ents[0]; if (state !== 'play' || !p || !p.alive) return [];
     const key = { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' };
@@ -456,7 +491,46 @@ A.attract({
     botDir = t.dir; botTx = cx + DIRS[t.dir][0]; botTy = cy + DIRS[t.dir][1]; return [key[t.dir]];
   }
 });
-A.overlay({ title: 'BOMB SQUAD', sub: 'Bombs blast in a cross and break the crates in their way. Watch your own fuse! <b>Adventure:</b> clear the critters, then find the hatch. <b>Battle:</b> last squad standing, first to three rounds.', btn: 'Adventure', scores: true, onGo: startAdv, alt: { btn: 'Battle vs CPU', onGo: () => startBattle(false) }, alt2: { btn: '2-player battle', onGo: () => startBattle(true) } });
+function storyGame(run) {
+  rush = run.mode === 'rush'; mode = 'adv'; two = false; score = 0; A.setScore(0); lost = false; wave = 1;
+  stage = rush ? 4 : run.stage + 1; lives = (A.easy ? 5 : 3) + up('heart');
+  ents = [Object.assign(guy(0, 1, 1, false), { bombs: 1 + up('bombs'), range: 2 + up('fire'), sp: 3.4 + up('boots') * 0.4 })];
+  newStage(); state = 'play';
+  if (run.hard) foes.forEach(f => f.sp *= 1.2);
+}
+S = Story({
+  title: 'THE CRITTER CAPER', coin: 'BOLTS', coinColor: '#c8d0e0',
+  stages: [
+    { name: 'Maple Meadow', sub: 'Puffs are popping up all over the town park. Clear them out, then find the hatch.' },
+    { name: 'Storm Drains', sub: 'Drips are leaking out of the sewers, and they come after you.' },
+    { name: 'Power Plant', sub: 'Sparks are loose in the turbine hall. They are very, very fast.' },
+    { name: 'Hollow Mill', sub: 'Ghosts drift right through the crates at the old mill.' },
+    { name: 'Factory Gates', sub: 'Every critter there is, guarding Doctor Gloop\'s front door.' },
+    { name: 'Queen Gloop', sub: 'Doctor Gloop\'s greatest creation. Six blasts to bring her down, and she keeps hatching.' }],
+  upgrades: [
+    { id: 'bombs', name: 'Bigger Bag', desc: 'Start every stage with one more bomb.', cost: [40, 100] },
+    { id: 'fire', name: 'Hot Powder', desc: 'Your blasts reach one tile further.', cost: [50, 120] },
+    { id: 'boots', name: 'Fast Boots', desc: 'Walk a little faster.', cost: [60, 140] },
+    { id: 'heart', name: 'Spare Helmet', desc: 'One more life every run.', cost: [80, 180] },
+    { id: 'suit', name: 'Blast Suit', desc: 'Shrug off the first hit in every stage.', cost: [150] }],
+  mode: { id: 'rush', name: 'CRITTER RUSH', desc: 'Endless waves of critters in one arena. How many can you clear?' },
+  intro: [
+    'Somebody has been breeding critters under Maple Town.',
+    'Puffs in the park. Drips in the drains. Sparks in the power plant.',
+    'Captain Fuse of the Bomb Squad knows that laugh on the radio: Doctor Gloop.',
+    '"Grab your bombs, squad," says the Captain. "We\'re going in."'],
+  ending: [
+    'Queen Gloop bursts into a thousand harmless bubbles.',
+    'Doctor Gloop is found hiding in a crate, which, luckily, nobody blew up.',
+    'Maple Town throws the Bomb Squad a parade. With fireworks, obviously.',
+    'Captain Fuse takes a bow, then checks the fuse on every single one.'],
+  cast: [['THE SQUAD LEADER', 'CAPTAIN FUSE'], ['THE VILLAIN', 'DOCTOR GLOOP'], ['THE MONSTER', 'QUEEN GLOOP']],
+  play: storyGame,
+  stop: () => { state = 'title'; foes = []; bombs = []; flames = []; ents = []; rush = false; }
+});
+const battleMenu = () => A.overlay({ title: 'BATTLE', sub: 'Four squads, one arena. Last one standing wins the round; first to three wins the match. After a minute the walls close in.', btn: 'vs 3 CPUs', onGo: () => startBattle(false), alt: { btn: '2 players', onGo: () => startBattle(true) }, alt2: { btn: 'Back', onGo: showTitle } });
+const showTitle = () => S.title({ title: 'BOMB SQUAD', sub: 'Bombs blast in a cross and break the crates in their way. Watch your own fuse! <b>Adventure:</b> clear the critters, then find the hatch. <b>Battle:</b> last squad standing, first to three rounds.', btn: 'Adventure', scores: true, onGo: startAdv, alt2: { btn: 'Battle', onGo: battleMenu } });
+showTitle();
 })();
 </script>
 </body>

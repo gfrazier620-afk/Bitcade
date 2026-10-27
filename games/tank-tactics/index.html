@@ -27,6 +27,7 @@
 <script src="../../shared/chip.js"></script>
 <script src="../../shared/badges.js"></script>
 <script src="../../shared/arcade.js"></script>
+<script src="../../shared/story.js"></script>
 <script>
 (() => {
 /*
@@ -35,6 +36,9 @@
  * under the trees. Flashing red tanks drop a power-up when hit: a star (faster shells, then two at once, then
  * steel-breaking), a shield, freeze, a grenade (every tank on screen), a shovel (steel round the flag for a while) or
  * an extra tank. Lose the flag (only enemy shells can hit it), or every tank, and it's over. One player, or two on one keyboard.
+ * Story mode (shared/story.js): Iron Front, six battlefields (each with its own mix of brick, steel, water and trees,
+ * and its own enemies) up to the Iron Baron, a fortress gun dug into the top of the map. Parts buy upgrades. Beating it
+ * opens ENDLESS SIEGE.
  */
 const A = Arcade, cv = document.getElementById('cv');
 const T = 32, Q = 16, G = 13, W = G * T + 96, H = G * T, ctx = A.canvas(cv, W, H), OUT = '#0a0612';
@@ -57,10 +61,10 @@ const BASE = { i: 12, j: 24 }; // the flag's quarter (it's 2×2)
 function fort(v) { for (let j = 20; j <= 25; j++) for (let i = 10; i <= 15; i++) if (!(i >= 12 && i <= 13 && j >= 24)) put(i, j, v); } // two bricks thick
 function buildMap() {
   map = new Array(N * N).fill(0);
-  const rnd = A.seeded('tank-tactics:' + stage), half = Math.ceil(G / 2);
+  const sto = S && S.run && !siege, rnd = A.seeded('tank-tactics:' + (sto ? 'story:' : '') + stage), half = Math.ceil(G / 2), mix = sto ? FRONT[stage - 1].mix : [0.34, 0.4, 0.45, 0.52];
   for (let j = 1; j < G - 1; j++) for (let i = 0; i < half; i++) {
     if (j >= G - 4 && i >= 3) continue; // keep the flag's surroundings and the start spots open
-    const r = rnd(); let v = r < 0.34 ? 1 : r < 0.4 ? 2 : r < 0.45 ? 3 : r < 0.52 ? 4 : 0;
+    const r = rnd(); let v = r < mix[0] ? 1 : r < mix[1] ? 2 : r < mix[2] ? 3 : r < mix[3] ? 4 : 0;
     if ((i === 0 || i === 6) && (v === 2 || v === 3)) v = 1; // the spawn columns never get steel or water, so every map can be shot through
     if (!v) continue;
     const solidCol = i % 2 === 1 && v === 1; // brick columns read like streets
@@ -70,11 +74,14 @@ function buildMap() {
   for (const sx of [0, 12, 24]) for (let a = 0; a < 2; a++) for (let b = 2; b < 4; b++) put(sx + a, b, 0);
   for (let j = 20; j < N; j++) for (let i = 6; i < 20; i++) put(i, j, 0);
   fort(1);
+  if (baron) for (let j = 2; j < 6; j++) for (let i = 11; i < 15; i++) put(i, j, 5); // the Iron Baron's fortress
 }
 
 /* ---------- tanks and shells ---------- */
 const DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
 const TYPES = { basic: { sp: 46, hp: 1, c: '#a8b0c0', pts: 100, shell: 200 }, fast: { sp: 92, hp: 1, c: '#c8c8a0', pts: 200, shell: 220 }, power: { sp: 52, hp: 1, c: '#c0c0d0', pts: 300, shell: 320 }, armor: { sp: 40, hp: 4, c: '#8a96a8', pts: 400, shell: 230 } };
+let S = null, siege = false, kills = 0, total = 20, baron = null;
+const up = id => S ? S.lv(id) : 0;
 let state = 'title', two = false, stage = 1, score = 0, players = [], foes = [], shells = [], items = [], booms = [], left = 20, clearT = 0, spawnT = 0, freezeT = 0, shovelT = 0, baseDead = false, msg = '', msgT = 0, lost = false;
 const say = (t, s = 2) => { msg = t; msgT = s; };
 function mkPlayer(i) { return { i, x: (i ? 16 : 8) * Q, y: 24 * Q, dir: 'up', sp: 76, lives: A.easy ? 5 : 3, star: 0, shield: 3, dead: 0, cool: 0, c: i ? '#3dc85a' : '#ffd23d', tread: 0 }; }
@@ -82,7 +89,7 @@ const occupied = (x, y, self) => [...players.filter(p => !p.dead && !p.out), ...
 function blocked(x, y) { // a tank's top-left corner at (x, y): any solid quarter under it?
   if (x < 0 || y < 0 || x > (N - 2) * Q || y > (N - 2) * Q) return true;
   const i0 = Math.floor(x / Q), j0 = Math.floor(y / Q), i1 = Math.floor((x + T - 1) / Q), j1 = Math.floor((y + T - 1) / Q);
-  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) { const v = at(i, j); if (v === 1 || v === 2 || v === 3) return true; if (i >= BASE.i && i <= BASE.i + 1 && j >= BASE.j) return true; }
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) { const v = at(i, j); if (v === 1 || v === 2 || v === 3 || v === 5) return true; if (i >= BASE.i && i <= BASE.i + 1 && j >= BASE.j) return true; }
   return false;
 }
 function drive(t, dir, dt) {
@@ -103,20 +110,25 @@ function fire(t, enemy) {
   if (!enemy) A.tone(300, 0.06, 'square', 0.03, 0, 140);
 }
 function spawnFoe() {
-  const spots = [0, 12 * Q, 24 * Q].filter(x => !occupied(x, 0, null));
+  const spots = (baron ? [0, 24 * Q] : [0, 12 * Q, 24 * Q]).filter(x => !occupied(x, 0, null));
   if (!spots.length) return;
-  const n = 20 - left, r = A.seeded('tank-tactics:foes:' + stage + ':' + n)();
-  const type = stage >= 2 && r < 0.18 + stage * 0.02 ? 'armor' : r < 0.45 ? 'fast' : r < 0.6 ? 'power' : 'basic';
-  foes.push({ type, x: spots[Math.floor(Math.random() * spots.length)], y: 0, dir: 'down', sp: TYPES[type].sp * (1 + Math.min(0.5, stage * 0.04)), hp: TYPES[type].hp, cool: 1, think: 0, carrier: n === 3 || n === 10 || n === 17, tread: 0, born: 0.6 });
+  const n = siege ? kills : total - left, r = A.seeded('tank-tactics:foes:' + stage + ':' + n)(), pool = S && S.run && !siege ? FRONT[stage - 1].pool : null;
+  const type = pool ? pool[Math.floor(r * pool.length)] : stage >= 2 && r < 0.18 + stage * 0.02 ? 'armor' : r < 0.45 ? 'fast' : r < 0.6 ? 'power' : 'basic';
+  foes.push({ type, x: spots[Math.floor(Math.random() * spots.length)], y: 0, dir: 'down', sp: TYPES[type].sp * (1 + Math.min(0.5, stage * 0.04)), hp: TYPES[type].hp, cool: 1, think: 0, carrier: siege ? n % 7 === 3 : n === 3 || n === 10 || n === 17, tread: 0, born: 0.6 });
+  if (S && S.run && S.run.hard) foes[foes.length - 1].sp *= 1.15;
   left--;
 }
 function newStage() {
-  buildMap(); foes = []; shells = []; items = []; booms = []; left = 20; clearT = 0; spawnT = 0.5; freezeT = 0; shovelT = 0; baseDead = false;
-  players.forEach((p, k) => Object.assign(p, { x: (k ? 16 : 8) * Q, y: 24 * Q, dir: 'up', shield: 3, dead: 0 }));
-  say(`STAGE ${stage}`, 2); A.jingle([392, 523, 659, 784, 1047], 0.08, 'square');
+  const sto = S && S.run && !siege; baron = sto && stage === 6 ? { hp: S.run.hard ? 30 : 20, max: S.run.hard ? 30 : 20, cool: 2, side: 0, hit: 0 } : null;
+  total = siege ? Infinity : sto ? FRONT[stage - 1].n : 20;
+  buildMap(); foes = []; shells = []; items = []; booms = []; left = total; clearT = 0; spawnT = 0.5; freezeT = 0; shovelT = 0; baseDead = false;
+  players.forEach((p, k) => Object.assign(p, { x: (k ? 16 : 8) * Q, y: 24 * Q, dir: 'up', shield: 3, dead: 0, armor: up('armor') }));
+  if (up('bunker')) { shovelT = 20; fort(2); }
+  if (sto) S.reach(stage - 1);
+  say(siege ? 'ENDLESS SIEGE' : sto ? `${stage} · ${S.stageName(stage - 1).toUpperCase()}` : `STAGE ${stage}`, 2); A.jingle([392, 523, 659, 784, 1047], 0.08, 'square');
 }
-function newGame(twoP) { two = twoP; stage = 1; score = 0; A.setScore(0); players = two ? [mkPlayer(0), mkPlayer(1)] : [mkPlayer(0)]; newStage(); state = 'play'; lost = false; }
-function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+function newGame(twoP) { if (S) S.run = null; siege = false; two = twoP; stage = 1; score = 0; A.setScore(0); players = two ? [mkPlayer(0), mkPlayer(1)] : [mkPlayer(0)]; newStage(); state = 'play'; lost = false; }
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play', alt: S && S.quit() }); }
 A.onHide(pause);
 const SETS = [{ U: ['KeyW'], D: ['KeyS'], L: ['KeyA'], R: ['KeyD'], F: ['KeyF'] }, { U: ['ArrowUp'], D: ['ArrowDown'], L: ['ArrowLeft'], R: ['ArrowRight'], F: ['KeyL', 'Enter'] }];
 const ONE = { U: ['KeyW', 'ArrowUp'], D: ['KeyS', 'ArrowDown'], L: ['KeyA', 'ArrowLeft'], R: ['KeyD', 'ArrowRight'], F: ['Space', 'KeyJ', 'KeyZ', 'KeyF'] };
@@ -125,10 +137,11 @@ A.onPress(c => { if (c === 'KeyP' || c === 'Escape') pause(); });
 const add = (n, x, y, c = '#ffd23d') => { score += n; A.setScore(score); if (x !== undefined) A.pop(x, y, '+' + n, c); };
 function boom(x, y, big) { booms.push({ x, y, t: 0, big }); A.burst(x, y, { n: big ? 24 : 8, colors: ['#ffd23d', '#ff8a3d', '#fff'], speed: big ? 180 : 90, life: big ? 0.6 : 0.3 }); if (big) { A.shake(5, 0.3); A.sfx('boom'); } else A.tone(120, 0.06, 'square', 0.03); }
 function killFoe(f, by) {
-  f.dead = true; const pts = TYPES[f.type].pts; add(pts, f.x + T / 2, f.y); boom(f.x + T / 2, f.y + T / 2, true);
+  f.dead = true; kills++; if (S && S.run) S.bank(f.type === 'armor' ? 8 : 4); const pts = TYPES[f.type].pts; add(pts, f.x + T / 2, f.y); boom(f.x + T / 2, f.y + T / 2, true);
 }
 function hitPlayer(p) {
   if (p.dead || p.shield > 0) return;
+  if (p.armor > 0) { p.armor--; p.shield = 1.5; A.tone(300, 0.2, 'square', 0.04, 0, 900); say('ARMOR HELD!', 1); return; }
   p.dead = 1.5; p.lives--; p.star = 0; boom(p.x + T / 2, p.y + T / 2, true); A.flash('#ff4f6d', 0.15);
 }
 function dropItem(f) {
@@ -148,11 +161,22 @@ function takeItem(p, it) {
 function stageClear() {
   const bonus = 1000 * stage; add(bonus); say(`STAGE CLEAR! +${bonus}`, 2.4); A.jingle([523, 659, 784, 1047, 1319], 0.09, 'square');
   if (stage >= 5) A.badge('stage5'); if (two && players.every(p => p.lives > 0)) A.badge('duo');
+  if (S && S.run) { S.bank(40 + stage * 12); if (S.clear(stage - 1)) { state = 'over'; setTimeout(() => S.win(), 2000); return; } }
   state = 'between'; setTimeout(() => { if (state !== 'between') return; stage++; newStage(); state = 'play'; }, 2400);
 }
 function gameOver(why) {
   if (lost) return; lost = true; state = 'over'; say(why, 2);
+  if (S && S.run) { const run = S.run; setTimeout(() => { if (siege) return S.modeEnd(kills, { title: 'THE SIEGE IS OVER', big: `${kills} TANK${kills === 1 ? '' : 'S'} STOPPED` }); run.stage = stage - 1; S.fail({ title: why, big: `${stage} · ${S.stageName(stage - 1).toUpperCase()}`, sub: 'Spend your parts on upgrades, then roll out again' }); }, 1200); return; }
   setTimeout(() => { const rec = A.submit(score); A.overlay({ title: 'GAME OVER', big: `SCORE ${score.toLocaleString()} · STAGE ${stage}`, sub: `${why}${rec ? ' · New high score!' : ''}`, btn: two ? 'Again (2P)' : 'Again', onGo: () => newGame(two), alt: { btn: two ? '1 player' : '2 players', onGo: () => newGame(!two) } }); }, 1200);
+}
+
+function hitBaron() {
+  baron.hp--; baron.hit = 0.15; add(100, 13 * Q, 3 * Q, '#ff4f6d'); A.tone(220, 0.08, 'square', 0.04);
+  if (baron.hp > 0) return;
+  for (let j = 2; j < 6; j++) for (let i = 11; i < 15; i++) put(i, j, 0);
+  for (let k = 0; k < 6; k++) setTimeout(() => boom(11 * Q + Math.random() * 64, 2 * Q + Math.random() * 64, true), k * 160);
+  foes.forEach(f => { if (!f.dead) killFoe(f); }); left = 0; add(10000, 13 * Q, 4 * Q, '#ffd23d'); S.bank(150);
+  say('THE IRON BARON FALLS!', 2.4); A.shake(12, 0.8); A.flash('#fff', 0.3);
 }
 
 /* ---------- update ---------- */
@@ -190,7 +214,16 @@ function update(dt) {
     if (Math.random() < dt * (0.45 + stage * 0.06)) fire(f, true);
   }
   foes = foes.filter(f => !f.dead);
-  if (!left && !foes.length && (clearT += dt) > 1.6) return stageClear();
+  if (baron && baron.hp > 0) {
+    if (baron.hit > 0) baron.hit -= dt;
+    if (freezeT <= 0 && (baron.cool -= dt) <= 0) { // a shell straight down, and one out of a side
+      baron.cool = (S.run.hard ? 1.0 : 1.4) * (0.6 + 0.4 * baron.hp / baron.max); baron.side ^= 1;
+      shells.push({ x: baron.side ? 14 * Q + 8 : 11 * Q + 8, y: 6 * Q + 4, dx: 0, dy: 1, sp: 240, owner: baron, enemy: true }, { x: baron.side ? 15 * Q + 4 : 11 * Q - 4, y: 4 * Q, dx: baron.side ? 1 : -1, dy: 0, sp: 220, owner: baron, enemy: true });
+      A.tone(140, 0.12, 'square', 0.04, 0, 70);
+    }
+  }
+  if (baron && baron.hp <= 0) { if ((clearT += dt) > 2) return stageClear(); }
+  else if (!baron && !left && !foes.length && (clearT += dt) > 1.6) return stageClear();
   // shells
   for (const s of shells) {
     const steps = 3; for (let k = 0; k < steps && !s.dead; k++) {
@@ -200,6 +233,7 @@ function update(dt) {
       if (s.x >= BASE.i * Q && s.x < (BASE.i + 2) * Q && s.y >= BASE.j * Q) { s.dead = true; if (!s.enemy) { boom(s.x, s.y, false); break; } baseDead = true; boom(BASE.i * Q + Q, BASE.j * Q + Q, true); A.flash('#ff4f6d', 0.3); return gameOver('THE FLAG HAS FALLEN'); }
       // walls: a shell takes out the two quarters across its path
       const i = Math.floor(s.x / Q), j = Math.floor(s.y / Q), v = at(i, j);
+      if (v === 5) { s.dead = true; boom(s.x, s.y, false); if (!s.enemy && baron && baron.hp > 0) hitBaron(); break; }
       if (v === 1 || v === 2) {
         s.dead = true;
         const pair = s.dx ? [[i, j], [i, j + (s.y % Q < Q / 2 ? -1 : 1)]] : [[i, j], [i + (s.x % Q < Q / 2 ? -1 : 1), j]];
@@ -245,6 +279,14 @@ function render(t) {
     else if (v === 2) { ctx.fillStyle = '#8a92a8'; ctx.fillRect(X, Y, Q, Q); ctx.fillStyle = '#c8d0e0'; ctx.fillRect(X + 3, Y + 3, Q - 6, Q - 6); ctx.fillStyle = '#e8eef8'; ctx.fillRect(X + 3, Y + 3, Q - 6, 2); ctx.strokeStyle = OUT; ctx.strokeRect(X + 0.5, Y + 0.5, Q - 1, Q - 1); }
     else if (v === 3) { ctx.fillStyle = '#1a4a9a'; ctx.fillRect(X, Y, Q, Q); ctx.fillStyle = 'rgba(160,210,255,.5)'; const o = Math.floor(t / 300 + i + j) % 3; ctx.fillRect(X + 2 + o * 3, Y + 5, 5, 1); ctx.fillRect(X + 6 - o, Y + 11, 5, 1); }
   }
+  if (baron && baron.hp > 0) { // the Iron Baron's fortress gun
+    const X = 11 * Q, Y = 2 * Q, c = baron.hit > 0 ? '#fff' : '#5a5a6e';
+    paint(ctx, [[X, Y, 64, 64, c], [X + 6, Y + 6, 52, 52, baron.hit > 0 ? '#fff' : '#3a3a4a'], [X + 22, Y + 50, 20, 18, '#4a4a5a']]);
+    ctx.fillStyle = OUT; ctx.beginPath(); ctx.arc(X + 32, Y + 30, 17, 0, 6.29); ctx.fill(); ctx.fillStyle = '#8a2a2a'; ctx.beginPath(); ctx.arc(X + 32, Y + 30, 15, 0, 6.29); ctx.fill();
+    ctx.fillStyle = '#ff4f6d'; ctx.globalAlpha = 0.5 + 0.5 * Math.sin(t / 140); ctx.beginPath(); ctx.arc(X + 32, Y + 30, 6, 0, 6.29); ctx.fill(); ctx.globalAlpha = 1;
+    ctx.fillStyle = '#8a8aa0'; for (const [a, b] of [[4, 4], [56, 4], [4, 56], [56, 56]]) ctx.fillRect(X + a, Y + b, 4, 4);
+    paint(ctx, [[X - 6, Y + 26, 8, 8, '#4a4a5a'], [X + 62, Y + 26, 8, 8, '#4a4a5a']]);
+  }
   // the flag in its fort
   const fx = BASE.i * Q, fy = BASE.j * Q;
   if (baseDead) { ctx.fillStyle = '#3a3030'; ctx.fillRect(fx, fy, T, T); }
@@ -274,9 +316,10 @@ function render(t) {
   const px = N * Q + 10;
   ctx.fillStyle = '#1a1626'; ctx.fillRect(N * Q, 0, W - N * Q, H);
   ctx.font = '10px Silkscreen, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillStyle = '#a39bc4'; ctx.fillText('ENEMIES', px, 12);
-  for (let k = 0; k < left; k++) { ctx.fillStyle = '#8a92a8'; ctx.fillRect(px + (k % 4) * 18, 30 + Math.floor(k / 4) * 16, 12, 12); ctx.fillStyle = OUT; ctx.fillRect(px + (k % 4) * 18 + 5, 30 + Math.floor(k / 4) * 16 - 2, 2, 6); }
+  for (let k = 0; k < Math.min(left, 20); k++) { ctx.fillStyle = '#8a92a8'; ctx.fillRect(px + (k % 4) * 18, 30 + Math.floor(k / 4) * 16, 12, 12); ctx.fillStyle = OUT; ctx.fillRect(px + (k % 4) * 18 + 5, 30 + Math.floor(k / 4) * 16 - 2, 2, 6); }
   players.forEach((p, k) => { ctx.fillStyle = p.c; ctx.fillText(`${k ? '2P' : '1P'} ×${Math.max(0, p.lives)}`, px, 140 + k * 36); ctx.fillStyle = '#ffd23d'; ctx.fillText('★'.repeat(p.star), px, 154 + k * 36); });
-  ctx.fillStyle = '#fff'; ctx.fillText(`STAGE ${stage}`, px, H - 40);
+  ctx.fillStyle = '#fff'; ctx.fillText(siege ? `KILLS ${kills}` : `STAGE ${stage}`, px, H - 40);
+  if (baron && baron.hp > 0) { ctx.fillStyle = '#ff4f6d'; ctx.fillText('BARON', px, H - 130); ctx.fillStyle = '#3a3450'; ctx.fillRect(px, H - 116, 76, 8); ctx.fillStyle = '#ff4f6d'; ctx.fillRect(px, H - 116, 76 * baron.hp / baron.max, 8); }
   if (freezeT > 0) { ctx.fillStyle = '#9ad8ff'; ctx.fillText(`FREEZE ${Math.ceil(freezeT)}`, px, H - 70); }
   if (shovelT > 0) { ctx.fillStyle = '#c8d0e0'; ctx.fillText(`STEEL ${Math.ceil(shovelT)}`, px, H - 84); }
   if (msgT > 0 && state !== 'title') { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '22px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = OUT; ctx.fillText(msg, N * Q / 2 + 2, H / 2 + 2); ctx.fillStyle = '#8ad13d'; ctx.fillText(msg, N * Q / 2, H / 2); ctx.globalAlpha = 1; }
@@ -287,7 +330,7 @@ A.loop(dt => { if (state === 'between') { if (msgT > 0) msgT -= dt; return; } up
 let botDir = 'up', botT = 0, botX = 0, botY = 0, botStuck = 0;
 A.attract({
   start: () => newGame(false),
-  stop: () => { state = 'title'; foes = []; shells = []; items = []; },
+  stop: () => { state = 'title'; foes = []; shells = []; items = []; if (S) S.run = null; siege = false; baron = null; },
   bot: dt => {
     const p = players[0]; if (state !== 'play' || !p || p.dead || p.out) return [];
     const keys = [], f = foes.filter(f => f.born <= 0).sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y))[0];
@@ -307,7 +350,49 @@ A.attract({
   }
 });
 buildMap();
-A.overlay({ title: 'TANK TACTICS', sub: 'Twenty enemy tanks a stage want the flag at the bottom of the maze. Shells break bricks; only a fully starred cannon breaks steel. Shoot the flashing tanks for power-ups. Bring a friend with 2 PLAYERS.', btn: '1 player', scores: true, onGo: () => newGame(false), alt: { btn: '2 players', onGo: () => newGame(true) } });
+const FRONT = [ // each battlefield's walls (brick, steel, water, trees as running totals), enemies and size
+  { mix: [0.42, 0.44, 0.46, 0.5], pool: ['basic', 'basic', 'fast'], n: 12 },
+  { mix: [0.22, 0.25, 0.27, 0.55], pool: ['basic', 'fast', 'fast'], n: 14 },
+  { mix: [0.24, 0.28, 0.42, 0.47], pool: ['basic', 'fast', 'power'], n: 16 },
+  { mix: [0.26, 0.4, 0.42, 0.45], pool: ['power', 'armor', 'basic'], n: 18 },
+  { mix: [0.48, 0.53, 0.55, 0.58], pool: ['basic', 'fast', 'power', 'armor'], n: 20 },
+  { mix: [0.3, 0.36, 0.38, 0.42], pool: ['fast', 'power', 'armor'], n: 12 }];
+function storyGame(run) {
+  two = false; siege = run.mode === 'siege'; kills = 0; stage = siege ? 4 : run.stage + 1; score = 0; A.setScore(0); lost = false;
+  const p = mkPlayer(0); p.lives += up('crew'); p.star = up('cannon'); p.sp *= 1 + up('treads') * 0.12; players = [p];
+  newStage(); state = 'play';
+}
+S = Story({
+  title: 'IRON FRONT', coin: 'PARTS', coinColor: '#c8a040',
+  stages: [
+    { name: 'Boot Camp', sub: 'Sergeant Sunny Sparks\'s first day in command. Twelve practice tanks, real shells.' },
+    { name: 'Pine Forest', sub: 'The Rust Legion hides its fast tanks under the trees. Keep your eyes open.' },
+    { name: 'River Delta', sub: 'Water everywhere. Your shells cross it; your treads don\'t.' },
+    { name: 'Desert Depot', sub: 'Steel bunkers and armoured tanks. Find the stars, or go around.' },
+    { name: 'City Siege', sub: 'Street by street, brick by brick. Twenty tanks want the flag.' },
+    { name: 'The Iron Baron', sub: 'The Baron\'s fortress gun is dug into the hill. Twenty direct hits, and it keeps firing.' }],
+  upgrades: [
+    { id: 'cannon', name: 'Bigger Cannon', desc: 'Start with a star (faster shells, then two at once).', cost: [60, 140] },
+    { id: 'treads', name: 'New Treads', desc: 'Drive 12% faster.', cost: [50, 110] },
+    { id: 'crew', name: 'Reserve Crew', desc: 'One more tank every run.', cost: [80, 180] },
+    { id: 'armor', name: 'Reactive Armor', desc: 'Shrug off the first hit in every stage.', cost: [120] },
+    { id: 'bunker', name: 'Steel Bunker', desc: 'Every stage starts with steel round the flag.', cost: [70] }],
+  mode: { id: 'siege', name: 'ENDLESS SIEGE', desc: 'The tanks never stop coming. How many can you stop?' },
+  intro: [
+    'The Rust Legion has rolled over the border with a thousand tanks.',
+    'Leading them: the Iron Baron, in a fortress gun the size of a house.',
+    'General Gale hands Sergeant Sunny Sparks the keys to a yellow tank and a flag.',
+    '"Hold that flag, Sergeant. All the way to the Baron\'s front door."'],
+  ending: [
+    'The Iron Baron\'s fortress gun cracks, smokes, and goes quiet.',
+    'The Rust Legion\'s tanks turn round and rattle back over the border.',
+    'General Gale pins a gold star on Sergeant Sparks. Make that Captain Sparks.',
+    'The yellow tank gets a fresh coat of paint. The flag never fell.'],
+  cast: [['THE HERO', 'CAPTAIN SUNNY SPARKS'], ['THE GENERAL', 'GENERAL GALE'], ['THE VILLAIN', 'THE IRON BARON']],
+  play: storyGame,
+  stop: () => { state = 'title'; foes = []; shells = []; items = []; siege = false; baron = null; }
+});
+S.title({ title: 'TANK TACTICS', sub: 'Twenty enemy tanks a stage want the flag at the bottom of the maze. Shells break bricks; only a fully starred cannon breaks steel. Shoot the flashing tanks for power-ups. Bring a friend with 2 PLAYERS.', btn: '1 player', scores: true, onGo: () => newGame(false), alt2: { btn: '2 players', onGo: () => newGame(true) } });
 })();
 </script>
 </body>
