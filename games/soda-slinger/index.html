@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Soda Slinger</title>
+<link rel="manifest" href="../../manifest.json">
+<meta name="theme-color" content="#0f0c1f">
+<link rel="icon" type="image/png" href="../../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../../icons/apple-touch-icon.png">
+<link rel="preload" href="../../shared/fonts/bungee-400.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="../../shared/fonts/silkscreen-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../../shared/fonts.css">
+<link rel="stylesheet" href="../../shared/arcade.css">
+</head>
+<body data-game="soda-slinger" style="--game:#ff5a8a">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>SODA SLINGER</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <div class="pad">
+    <div class="dp"><button class="u" data-k="ArrowUp" aria-label="Up a counter">▲</button><button class="l" data-k="ArrowLeft" aria-label="Walk left">◀</button><button class="r" data-k="ArrowRight" aria-label="Walk right">▶</button><button class="d" data-k="ArrowDown" aria-label="Down a counter">▼</button></div>
+    <div class="ab"><button data-k="Space">POUR</button></div>
+  </div>
+  <p class="help"><kbd>▲</kbd><kbd>▼</kbd> jump to another counter's fountain · hold <kbd>Space</kbd> to pour, let go to slide it · <kbd>◀</kbd><kbd>▶</kbd> walk the counter for empties and tips · <kbd>P</kbd> pause · gamepad: d-pad and A</p>
+</main>
+<script src="../../shared/chip.js"></script>
+<script src="../../shared/badges.js"></script>
+<script src="../../shared/arcade.js"></script>
+<script>
+(() => {
+/*
+ * Soda Slinger: four counters, a soda fountain at the end of each, and thirsty customers shuffling in from the door.
+ * Hold to pour, let go to slide the glass down the counter. A customer who catches it is pushed back toward the door
+ * (out of it, if they're close enough); otherwise they drink up and slide the empty back to you. Catch it. You lose a
+ * life if a full glass flies off the far end, an empty smashes at your end, or a customer reaches the fountain. Now
+ * and then someone leaves a tip on the counter: grab it and the jukebox puts on a show that freezes the room.
+ */
+const A = Arcade, cv = document.getElementById('cv');
+const W = 560, H = 420, ctx = A.canvas(cv, W, H), OUT = '#0a0612';
+function shade(hex, k) {
+  let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join('');
+  const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+function paint(x, list) {
+  x.fillStyle = OUT; for (const q of list) x.fillRect(q[0] - 1, q[1] - 1, q[2] + 2, q[3] + 2);
+  for (const [px, py, w, h, c] of list) { x.fillStyle = c; x.fillRect(px, py, w, h); if (w > 2 && h > 2) { x.fillStyle = shade(c, 0.3); x.fillRect(px, py, w, 1); x.fillStyle = shade(c, -0.3); x.fillRect(px, py + h - 1, w, 1); } }
+}
+const ROWS = 4, ROWY = [128, 206, 284, 362], DOOR = 58, END = 474, TAP = 492;
+const PLACES = [
+  { name: 'MAPLE DINER', wall: '#a83a4a', wall2: '#c84a5a', floor: ['#f4f0e8', '#2a2a3a'], top: '#e8e8f0', front: '#c83a4a', soda: '#7a3a1a', kind: 'diner' },
+  { name: 'SURF SHACK', wall: '#3aa8a0', wall2: '#5ac8b8', floor: ['#e8d8a0', '#d8c890'], top: '#c8a070', front: '#8a6a4a', soda: '#ff7a3d', kind: 'surf' },
+  { name: 'ROLLER RINK', wall: '#4a2a7a', wall2: '#6a3a9a', floor: ['#2a1a4a', '#3a2a5a'], top: '#ff5ac8', front: '#3a2a6a', soda: '#5ad8ff', kind: 'rink' },
+  { name: 'MOON BASE CAFE', wall: '#1a2a4a', wall2: '#2a3a5a', floor: ['#5a6a7a', '#4a5a6a'], top: '#c8d8e8', front: '#5a6a8a', soda: '#8ad13d', kind: 'moon' }
+];
+const LOOKS = { diner: [['#3d6aff', '#e8b890', 'cap'], ['#ffd23d', '#c8885a', 'bob'], ['#3dc85a', '#f4c8a0', 'bald']], surf: [['#ff7ab8', '#c8885a', 'shades'], ['#ffd23d', '#e8b890', 'bob'], ['#5a8aff', '#8a5a3a', 'cap']], rink: [['#ff5ac8', '#e8b890', 'puff'], ['#5ad8ff', '#8a5a3a', 'shades'], ['#ffd23d', '#f4c8a0', 'puff']], moon: [['#c8d8e8', '#8ad13d', 'dome'], ['#ff9a3d', '#b48aff', 'dome'], ['#e8e8f0', '#5ad8ff', 'antenna']] };
+let state = 'title', level = 1, score = 0, lives = 3, place = PLACES[0], cust = [], glasses = [], tips = [], me = null, toCome = 0, spawnT = [], showT = 0, msg = '', msgT = 0, lost = false, clean = true, bg = null;
+const say = (t, s = 1.6) => { msg = t; msgT = s; };
+const add = (n, x, y, c = '#ffd23d') => { score += n; A.setScore(score); if (x !== undefined) A.pop(x, y, '+' + n, c); };
+
+function drawBg() {
+  bg = document.createElement('canvas'); bg.width = W; bg.height = H; const b = bg.getContext('2d'), p = place;
+  b.fillStyle = p.wall; b.fillRect(0, 0, W, H);
+  for (let x = 0; x < W; x += 28) { b.fillStyle = p.wall2; b.fillRect(x, 0, 14, H); }
+  for (let y = 0; y < H; y += 20) for (let x = 0; x < W; x += 20) { b.fillStyle = p.floor[((x + y) / 20) % 2]; b.fillRect(x, y + 0, 20, 20); }
+  // each counter's back wall strip with decor, so the floor shows between counters as a checker aisle
+  ROWY.forEach((y, i) => {
+    b.fillStyle = p.wall; b.fillRect(0, y - 66, W, 50);
+    for (let x = 0; x < W; x += 28) { b.fillStyle = p.wall2; b.fillRect(x, y - 66, 14, 50); }
+    b.fillStyle = shade(p.wall, -0.4); b.fillRect(0, y - 18, W, 3);
+    // a window or poster
+    const dx = 150 + ((i * 97) % 220);
+    if (p.kind === 'moon') { b.fillStyle = '#05050f'; b.fillRect(dx, y - 60, 60, 34); b.fillStyle = '#fff'; for (let k = 0; k < 8; k++) b.fillRect(dx + (k * 23) % 58, y - 58 + (k * 13) % 30, 1, 1); b.fillStyle = '#c8c8d8'; b.beginPath(); b.arc(dx + 44, y - 46, 8, 0, 6.29); b.fill(); }
+    else if (p.kind === 'surf') { b.fillStyle = '#7ad8ff'; b.fillRect(dx, y - 60, 60, 34); b.fillStyle = '#3a8acf'; b.fillRect(dx, y - 40, 60, 14); b.fillStyle = '#ffd23d'; b.beginPath(); b.arc(dx + 14, y - 50, 6, 0, 6.29); b.fill(); }
+    else { b.fillStyle = shade(p.front, 0.2); b.fillRect(dx, y - 60, 40, 34); b.fillStyle = '#fff'; b.font = '9px Silkscreen, monospace'; b.textAlign = 'center'; b.fillText(['SODA', 'FLOAT', 'FIZZ', 'MALT'][i], dx + 20, y - 40); }
+    b.strokeStyle = OUT; b.lineWidth = 2; b.strokeRect(dx, y - 60, p.kind === 'diner' || p.kind === 'rink' ? 40 : 60, 34);
+    // the door
+    paint(b, [[4, y - 64, 46, 64, shade(p.wall, -0.45)], [8, y - 60, 38, 56, p.kind === 'moon' ? '#8a9ab8' : '#8a5a3a']]);
+    b.fillStyle = p.kind === 'moon' ? '#c8d8f8' : '#bfe8ff'; b.fillRect(14, y - 54, 26, 18); b.fillStyle = '#ffd23d'; b.fillRect(38, y - 30, 3, 4);
+    // the fountain
+    paint(b, [[TAP + 8, y - 70, 40, 72, '#c8c8d8'], [TAP + 12, y - 64, 32, 22, '#e8e8f8'], [TAP + 2, y - 42, 14, 6, '#a8a8b8']]);
+    b.fillStyle = p.soda; b.fillRect(TAP + 16, y - 60, 24, 12); b.fillStyle = 'rgba(255,255,255,.5)'; b.fillRect(TAP + 18, y - 58, 6, 3);
+  });
+}
+function counter(y) {
+  paint(ctx, [[DOOR - 4, y - 12, END - DOOR + 18, 12, place.top], [DOOR, y, END - DOOR + 10, 22, place.front]]);
+  ctx.fillStyle = shade(place.front, -0.25); for (let x = DOOR + 18; x < END; x += 38) ctx.fillRect(x, y + 4, 2, 15);
+  ctx.fillStyle = 'rgba(255,255,255,.25)'; ctx.fillRect(DOOR - 3, y - 11, END - DOOR + 16, 2);
+}
+
+/* ---------- people and glasses ---------- */
+function spawn(row) {
+  const looks = LOOKS[place.kind], l = looks[Math.floor(Math.random() * looks.length)];
+  cust.push({ row, x: DOOR + 10, state: 'walk', go: 0.9, t: Math.random() * 0.5, push: 0, drink: 0, body: l[0], skin: l[1], hat: l[2], sp: 22 + level * 3.2 });
+  toCome--; A.tone(880, 0.05, 'triangle', 0.02); A.tone(660, 0.05, 'triangle', 0.02, 0.06);
+}
+function startGame() { level = 1; score = 0; A.setScore(0); lives = A.easy ? 5 : 3; lost = false; newLevel(); }
+function newLevel() {
+  place = PLACES[(level - 1) % PLACES.length]; drawBg();
+  cust = []; glasses = []; tips = []; toCome = 12 + level * 4; spawnT = ROWY.map((_, i) => 0.6 + i * 0.9 + Math.random()); showT = 0; clean = true;
+  me = { row: 0, x: TAP, fill: 0, held: false, walk: 0, catchT: 0 }; state = 'play';
+  say(`${place.name} · ROUND ${level}`, 2.2); A.jingle([523, 659, 784, 1047], 0.08, 'square');
+}
+function reset() { // after a slip-up: clear the room, keep who's still to come
+  toCome += cust.filter(c => c.state !== 'out').length; cust = []; glasses = []; spawnT = ROWY.map((_, i) => 1.2 + i * 0.8); me.x = TAP; me.fill = 0;
+}
+function oops(why, x, y) {
+  if (state !== 'play') return; lives--; clean = false; A.sfx('hurt'); A.shake(5, 0.3); A.flash('#ff4f6d', 0.15); say(why, 1.6);
+  if (x !== undefined) A.burst(x, y, { n: 16, colors: ['#bfe8ff', '#fff', place.soda], speed: 140, life: 0.5 });
+  state = 'oops'; setTimeout(() => { if (state !== 'oops') return; if (lives <= 0) return gameOver(); reset(); state = 'play'; }, 1500);
+}
+function gameOver() {
+  if (lost) return; lost = true; state = 'over'; const rec = A.submit(score);
+  A.overlay({ title: 'CLOSING TIME', big: `SCORE ${score.toLocaleString()} · ROUND ${level}`, sub: `${place.name}${rec ? ' · New high score!' : ''}`, btn: 'Open up again', onGo: startGame });
+}
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+A.onHide(pause);
+const POUR = ['Space', 'KeyZ', 'KeyJ', 'KeyX', 'Enter'];
+A.onPress(c => {
+  if (c === 'KeyP' || c === 'Escape') return pause();
+  if (state !== 'play') return;
+  const d = c === 'ArrowUp' || c === 'KeyW' ? -1 : c === 'ArrowDown' || c === 'KeyS' ? 1 : 0;
+  if (d) { me.row = (me.row + d + ROWS) % ROWS; me.x = TAP; A.tone(440, 0.04, 'square', 0.02, 0, 660); }
+});
+
+/* ---------- update ---------- */
+function update(dt) {
+  if (msgT > 0) msgT -= dt;
+  if (state !== 'play') return;
+  const held = POUR.some(c => A.held(c));
+  if (me.catchT > 0) me.catchT -= dt;
+  // walking the counter
+  const wx = (A.held('ArrowRight') || A.held('KeyD') ? 1 : 0) - (A.held('ArrowLeft') || A.held('KeyA') ? 1 : 0);
+  if (wx) { me.x = A.clamp(me.x + wx * 190 * dt, DOOR + 30, TAP); me.walk += dt; if (me.fill > 0 && me.fill < 1) me.fill = 0; }
+  // pouring: hold at the fountain, let go to slide
+  if (me.x >= TAP - 1) {
+    if (held) { if (me.fill < 1) { me.fill = Math.min(1, me.fill + dt / 0.38); if (me.fill >= 1) A.tone(1200, 0.05, 'triangle', 0.03); } }
+    else if (me.held && me.fill >= 1) { glasses.push({ row: me.row, x: END - 6, full: true, v: -(250 + level * 8) }); me.fill = 0; A.tone(700, 0.12, 'triangle', 0.035, 0, 300); }
+  }
+  me.held = held;
+  // tips
+  tips = tips.filter(tp => { if (tp.row === me.row && Math.abs(tp.x - me.x) < 24) { add(1500, tp.x, ROWY[tp.row] - 40, '#5ee7ff'); showT = 3; say('SHOWTIME!', 2); A.jingle([523, 659, 784, 659, 523, 784, 1047], 0.1, 'square'); A.badge('tips'); return false; } return (tp.t -= dt) > 0; });
+  if (showT > 0) showT -= dt;
+  // customers come in
+  for (let r = 0; r < ROWS; r++) if (toCome > 0 && showT <= 0 && (spawnT[r] -= dt) <= 0) { spawnT[r] = A.rand(2.2, 4.6) / (1 + level * 0.1); spawn(r); }
+  for (const c of cust) {
+    c.t += dt;
+    if (c.state === 'walk' && showT <= 0) { // shuffle, pause, shuffle
+      if (c.t % 1.5 < c.go) c.x += c.sp * dt;
+      if (c.x >= END - 18) { c.state = 'grab'; oops('TOO SLOW!', END - 10, ROWY[c.row] - 30); return; }
+    }
+    if (c.state === 'pushed') { const d = Math.min(c.push, 210 * dt); c.x -= d; c.push -= d; if (c.x < DOOR + 4) { c.state = 'out'; add(50, DOOR + 30, ROWY[c.row] - 50); } else if (c.push <= 0) { c.state = 'drink'; c.drink = 1.1; } }
+    if (c.state === 'drink' && (c.drink -= dt) <= 0) {
+      c.state = 'walk'; glasses.push({ row: c.row, x: c.x + 16, full: false, v: 120 + level * 6 }); A.tone(500, 0.08, 'triangle', 0.025, 0, 700);
+      if (Math.random() < 0.12) tips.push({ row: c.row, x: c.x + 4, t: 7 });
+    }
+  }
+  // glasses on the move
+  for (const g of glasses) {
+    g.x += g.v * dt;
+    if (g.full) {
+      const c = cust.filter(c => c.row === g.row && c.state === 'walk' && c.x + 16 >= g.x).sort((a, b) => b.x - a.x)[0];
+      if (c) { g.done = true; c.state = 'pushed'; c.push = 78; A.tone(880, 0.05, 'square', 0.03); continue; }
+      if (g.x < DOOR - 6) { g.done = true; oops('SMASH!', DOOR, ROWY[g.row] - 14); return; }
+    } else {
+      if (me.row === g.row && g.x >= me.x - 14 && g.x <= me.x + 8) { g.done = true; add(100, me.x, ROWY[g.row] - 40, '#8ad13d'); me.catchT = 0.2; A.sfx('pickup'); continue; }
+      if (g.x > END + 12) { g.done = true; oops('CRASH!', END, ROWY[g.row] - 14); return; }
+    }
+  }
+  glasses = glasses.filter(g => !g.done);
+  cust = cust.filter(c => c.state !== 'out');
+  if (toCome <= 0 && !cust.length && !glasses.length) {
+    const bonus = 1000 * level + (clean ? 2000 : 0); add(bonus); say(clean ? `SPOTLESS! +${bonus}` : `ROUND CLEAR! +${bonus}`, 2.4);
+    if (clean) A.badge('spotless'); if (level >= 4) A.badge('moon');
+    A.jingle([523, 659, 784, 1047, 1319], 0.09, 'square'); state = 'between';
+    setTimeout(() => { if (state !== 'between') return; level++; newLevel(); }, 2400);
+  }
+}
+
+/* ---------- drawing ---------- */
+function drawPerson(c, t) {
+  const y = ROWY[c.row], X = Math.round(c.x), bob = c.state === 'walk' && c.t % 1.5 < c.go && showT <= 0 ? Math.floor(c.t * 8) % 2 : 0;
+  const dance = showT > 0 ? Math.round(Math.sin(t / 90 + c.x) * 3) : 0;
+  paint(ctx, [[X - 11, y - 36 - bob, 22, 26, c.body], [X - 8, y - 53 - bob + dance, 16, 15, c.skin]]);
+  ctx.fillStyle = shade(c.body, -0.25); ctx.fillRect(X - 10, y - 24 - bob, 20, 2);
+  // face looks right, toward the fountain
+  ctx.fillStyle = OUT; ctx.fillRect(X + 3, y - 48 - bob + dance, 2, 3);
+  if (c.state === 'drink') { paint(ctx, [[X + 6, y - 48 - bob, 7, 11, '#bfe8ff']]); ctx.fillStyle = place.soda; ctx.fillRect(X + 7, y - 44 - bob + (1.1 - c.drink) * 6, 5, Math.max(0, 7 - (1.1 - c.drink) * 6)); }
+  else ctx.fillRect(X + 2, y - 42 - bob + dance, 5, 1);
+  const hy = y - 56 - bob + dance;
+  if (c.hat === 'cap') paint(ctx, [[X - 9, hy, 18, 5, '#ff4f3d'], [X + 6, hy + 3, 7, 2, '#ff4f3d']]);
+  if (c.hat === 'bob') paint(ctx, [[X - 10, hy - 1, 20, 6, '#6a3a1a'], [X - 10, hy + 4, 5, 10, '#6a3a1a']]);
+  if (c.hat === 'shades') { paint(ctx, [[X - 9, hy, 18, 4, '#ffd23d']]); ctx.fillStyle = OUT; ctx.fillRect(X - 2, hy + 7, 9, 3); }
+  if (c.hat === 'puff') { ctx.fillStyle = OUT; ctx.beginPath(); ctx.arc(X - 1, hy + 2, 11, 0, 6.29); ctx.fill(); ctx.fillStyle = '#3a2a1a'; ctx.beginPath(); ctx.arc(X - 1, hy + 2, 10, 0, 6.29); ctx.fill(); ctx.fillStyle = c.skin; ctx.fillRect(X - 6, hy + 6, 14, 10); ctx.fillStyle = OUT; ctx.fillRect(X + 3, hy + 9, 2, 3); }
+  if (c.hat === 'dome') { ctx.strokeStyle = 'rgba(200,230,255,.8)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(X, hy + 9, 13, Math.PI, 0); ctx.stroke(); }
+  if (c.hat === 'antenna') { ctx.fillStyle = OUT; ctx.fillRect(X - 1, hy - 8, 2, 9); ctx.fillStyle = '#ff4f6d'; ctx.fillRect(X - 2, hy - 11, 4, 4); }
+  if (c.state === 'walk' && c.x > END - 90 && Math.floor(t / 150) % 2) { ctx.fillStyle = '#ff4f6d'; ctx.font = '12px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('!', X, y - 62); }
+}
+function drawGlass(g) {
+  const X = Math.round(g.x), Y = ROWY[g.row] - 12;
+  paint(ctx, [[X - 5, Y - 16, 10, 16, g.full ? place.soda : '#d8ecf8']]);
+  if (g.full) { ctx.fillStyle = '#fff'; ctx.fillRect(X - 5, Y - 18, 10, 4); ctx.fillStyle = '#ff4f6d'; ctx.fillRect(X + 2, Y - 24, 2, 8); }
+  else { ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.fillRect(X - 3, Y - 14, 2, 10); }
+}
+function drawMe(t) {
+  const y = ROWY[me.row], X = Math.round(me.x), step = me.x < TAP - 1 ? Math.floor(me.walk * 10) % 2 : 0;
+  paint(ctx, [[X - 11, y - 37 - step, 22, 27, '#f4f4ff'], [X - 8, y - 54 - step, 16, 15, '#e8b890'], [X - 9, y - 61 - step, 18, 7, '#f4f4ff'], [X - 4, y - 36 - step, 8, 4, '#ff4f3d']]);
+  ctx.fillStyle = OUT; ctx.fillRect(X - 5, y - 49 - step, 2, 3); ctx.fillRect(X - 5, y - 43 - step, 5, 1);
+  ctx.fillStyle = '#ff4f3d'; ctx.fillRect(X - 9, y - 58 - step, 18, 2);
+  if (me.catchT > 0) paint(ctx, [[X - 16, y - 34, 8, 12, '#d8ecf8']]);
+  if (me.x >= TAP - 1 && (me.fill > 0 || me.held)) { // the glass under the nozzle
+    const gx = TAP + 6, gy = y - 22; paint(ctx, [[gx, gy - 18, 10, 18, '#d8ecf8']]);
+    ctx.fillStyle = place.soda; const f = Math.round(16 * me.fill); ctx.fillRect(gx + 1, gy - 1 - f, 8, f);
+    if (me.fill < 1 && me.held) { ctx.fillStyle = place.soda; ctx.fillRect(gx + 4, gy - 30, 2, 12); }
+    if (me.fill >= 1) { ctx.fillStyle = '#fff'; ctx.fillRect(gx, gy - 20, 10, 3); }
+  }
+}
+function render(t) {
+  if (bg) ctx.drawImage(bg, 0, 0); else { ctx.fillStyle = '#2a1a3a'; ctx.fillRect(0, 0, W, H); }
+  for (let r = 0; r < ROWS; r++) {
+    for (const c of cust) if (c.row === r) drawPerson(c, t);
+    if (me && me.row === r && state !== 'title') drawMe(t);
+    counter(ROWY[r]);
+    for (const tp of tips) if (tp.row === r && (tp.t > 2 || Math.floor(t / 120) % 2)) { ctx.fillStyle = OUT; ctx.beginPath(); ctx.arc(tp.x, ROWY[r] - 16, 6, 0, 6.29); ctx.fill(); ctx.fillStyle = '#ffd23d'; ctx.beginPath(); ctx.arc(tp.x, ROWY[r] - 16, 5, 0, 6.29); ctx.fill(); ctx.fillStyle = '#fff6c2'; ctx.fillRect(tp.x - 2, ROWY[r] - 19, 2, 2); }
+    for (const g of glasses) if (g.row === r) drawGlass(g);
+  }
+  if (showT > 0) { // the jukebox show: lights sweep the room
+    for (let k = 0; k < 4; k++) { const x = W / 2 + Math.sin(t / 300 + k * 1.6) * 240; ctx.fillStyle = ['rgba(255,90,200,.12)', 'rgba(90,216,255,.12)', 'rgba(255,210,61,.12)', 'rgba(138,209,61,.12)'][k]; ctx.beginPath(); ctx.moveTo(W / 2, 0); ctx.lineTo(x - 60, H); ctx.lineTo(x + 60, H); ctx.fill(); }
+    ctx.fillStyle = '#ffd23d'; ctx.font = '14px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('♪ ♫ ♪', W / 2, 40 + Math.sin(t / 120) * 3);
+  }
+  if (state !== 'title' && me) {
+    ctx.fillStyle = 'rgba(10,6,18,.75)'; ctx.fillRect(0, 0, W, 24);
+    ctx.font = '11px Silkscreen, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.fillStyle = '#ff5a8a'; ctx.fillText(`${place.name} · ROUND ${level}`, 8, 12);
+    ctx.fillStyle = '#fff'; ctx.fillText(`WAITING ${toCome + cust.length}`, 250, 12);
+    ctx.textAlign = 'right'; ctx.fillStyle = '#ff4f6d'; ctx.fillText('♥'.repeat(Math.max(0, lives)), W - 8, 12);
+  }
+  if (msgT > 0 && state !== 'title') { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '22px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = OUT; ctx.fillText(msg, W / 2 + 2, H / 2 + 2); ctx.fillStyle = '#fff'; ctx.fillText(msg, W / 2, H / 2); ctx.globalAlpha = 1; }
+}
+A.loop(update, render);
+drawBg();
+
+/* Attract demo: deal with the most urgent counter first (an empty heading home, else the customer nearest the fountain), pour, let go. */
+let botPour = 0;
+A.attract({
+  start: startGame,
+  stop: () => { state = 'title'; cust = []; glasses = []; tips = []; },
+  bot: dt => {
+    if (state !== 'play' || !me) return [];
+    const empt = glasses.filter(g => !g.full).sort((a, b) => b.x - a.x)[0];
+    const need = r => cust.filter(c => c.row === r && c.state === 'walk').length - glasses.filter(g => g.full && g.row === r).length;
+    const near = r => Math.max(0, ...cust.filter(c => c.row === r && c.state === 'walk').map(c => c.x));
+    let row = me.row;
+    if (empt && empt.x > END - 140 && empt.row !== me.row) row = empt.row;
+    else { let best = -1; for (let r = 0; r < ROWS; r++) if (need(r) > 0 && near(r) > best) { best = near(r); row = r; } }
+    if (row !== me.row) { botPour = 0; return [((row - me.row + ROWS) % ROWS) <= ROWS / 2 ? '!ArrowDown' : '!ArrowUp']; }
+    if (me.x < TAP - 1) return ['ArrowRight'];
+    if (need(me.row) > 0 || me.fill > 0) { botPour += dt; if (me.fill < 1) return ['Space']; botPour = 0; return []; }
+    return [];
+  }
+});
+A.overlay({ title: 'SODA SLINGER', sub: 'Hold to pour at the fountain, let go to slide it down the counter. Catch the empties on their way back. Don’t let a glass fly off the end, or a customer reach you. Grab tips for a jukebox show.', btn: 'Open up', scores: true, onGo: startGame });
+})();
+</script>
+</body>
+</html>

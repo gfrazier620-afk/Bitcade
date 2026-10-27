@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#0f0c1f">
 <link rel="icon" type="image/png" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<meta name="description" content="Thirty-six classic-style arcade games in your browser. Free, no installs, works on phone and keyboard.">
+<meta name="description" content="Forty-four classic-style arcade games in your browser. Free, no installs, works on phone and keyboard.">
 <link rel="preload" href="shared/fonts/bungee-shade-400.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="shared/fonts/bungee-400.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="shared/fonts/silkscreen-400.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="shared/fonts.css">
 <link rel="stylesheet" href="shared/arcade.css">
@@ -500,7 +500,7 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
 <div class="lobby">
   <header class="marquee">
     <h1 class="logo">BITCADE</h1>
-    <p class="tag">THIRTY-SIX CLASSIC-STYLE GAMES · NO QUARTERS REQUIRED</p>
+    <p class="tag">FORTY-FOUR CLASSIC-STYLE GAMES · NO QUARTERS REQUIRED</p>
     <div class="coin" aria-hidden="true">▶ PICK A CABINET ◀</div>
     <div class="stats" id="stats"></div>
   </header>
@@ -665,6 +665,30 @@ const GAMES = [
   { slug: 'knockout-kings', genre: 'fighting sports', added: '2026-10-25', name: 'Knockout Kings', kind: 'Cartoon boxing', c: '#ff4a4a', blurb: 'Read every tell, dodge, counter. Five fighters stand between you and the belt.',
     px: ['....SSS.....', '....SKS.....', 'RR..SSS..RR.', 'RR.SSSSS.RR.', '...SSSSS....', '...BBBBB....', 'GG.......GG.', 'GG.......GG.'],
     px2: ['....SSS.....', 'RR..SKS..RR.', 'RR..SSS..RR.', '...SSSSS....', '...SGGS.....', '...BGGB.....', '.........GG.', '.........GG.'] },
+  { slug: 'tank-tactics', genre: 'shooter strategy 2p', added: '2026-10-26', name: 'Tank Tactics', kind: 'Tank battle · 2P', c: '#8ad13d', blurb: 'Hold the flag against twenty tanks a stage. Shells break brick; bring a friend.',
+    px: ['OO...W....OO', 'OO........OO', '.....Y......', '...AYYYA....', '...AYYYA....', '...AYYYA....', '............', 'OOOO.LL.OOOO'],
+    px2: ['OO........OO', 'OO...W....OO', '.....Y......', '...KYYYK....', '...KYYYK....', '...KYYYK....', '............', 'OOOO.LL.OOOO'] },
+  { slug: 'bomb-squad', genre: 'action 2p', added: '2026-10-26', name: 'Bomb Squad', kind: 'Bomb maze · battle', c: '#ff7a3d', blurb: 'Blast the crates, grab power-ups, trap the critters. Or a four-squad battle.',
+    px: ['.........Y..', '.WWW....K...', 'WKCKW..KKK..', '.WWW..KKKKK.', '.OOO..KKKKK.', '.O.O...KKK..', '............', 'AA.AA.AA.AA.'],
+    px2: ['........Y...', '.WWW...YOY..', 'WKCKW.YOWOY.', '.WWW...YOY..', '.OOO....Y...', '..OO........', '............', 'AA.AA.AA.AA.'] },
+  { slug: 'paper-route', genre: 'action', added: '2026-10-26', name: 'Paper Route', kind: 'Bike delivery', c: '#5ab8ff', blurb: 'A week on Maple Street. Mailboxes, doorsteps, dogs and traffic.',
+    px: ['..RRRRR.....', '.RRRRRRR....', '.PYPPPYP....', '.PPPTPPP..W.', '.GGGTGGG....', '......SB....', '.....BRRB...', '....K.K.K...'],
+    px2: ['..RRRRR.....', '.RRRRRRR..W.', '.PYPPPYP....', '.PPPTPPP....', '.GGGTGGG....', '.......SB...', '......BRRB..', '.....K.K.K..'] },
+  { slug: 'soda-slinger', genre: 'action', added: '2026-10-26', name: 'Soda Slinger', kind: 'Diner rush', c: '#ff5a8a', blurb: 'Pour, slide, catch the empties. Four counters and one soda jerk.',
+    px: ['.SS......W..', '.BB...T..WS.', 'DDDDDDDDDDA.', '............', '..SS.....W..', '..VV..T..WS.', 'DDDDDDDDDDA.', '............'],
+    px2: ['.SS....T..W.', '.BB.......WS', 'DDDDDDDDDDA.', '............', '..SS..T...W.', '..VV......WS', 'DDDDDDDDDDA.', '............'] },
+  { slug: 'pipe-panic', daily: true, genre: 'puzzle', added: '2026-10-26', name: 'Pipe Panic', kind: 'Pipe puzzle', c: '#8ad13d', blurb: 'Lay pipes from the queue before the goo comes. The longest road wins.',
+    px: ['AAAA..AAAA..', 'RLLA..ALAA..', 'AALA..ALA...', '..LAAAAAA...', '..LLLLA.....', '..AAAAA..AA.', '.........AA.', '............'],
+    px2: ['AAAA..AAAA..', 'RLLA..ALLA..', 'AALA..ALA...', '..LAAAALA...', '..LLLLLLA...', '..AAAAA..AA.', '.........AA.', '............'] },
+  { slug: 'boulder-bash', genre: 'puzzle action', added: '2026-10-26', name: 'Boulder Bash', kind: 'Dig and dodge', c: '#5ee7ff', blurb: 'Dig for diamonds and open the exit. Mind the falling boulders.',
+    px: ['TTTTAATTTTTT', 'TTTTAATTCCTT', 'TT......CCTT', 'TT.Y.....TTT', 'TTBB..TTTTTT', 'TTTT..TTAATT', 'TTCC..TTAATT', 'TTCCTTTTTTTT'],
+    px2: ['TTTT..TTTTTT', 'TTTTAATTCCTT', 'TT..AA..CCTT', 'TT.Y.....TTT', 'TTBB..TTTTTT', 'TTTT..TTAATT', 'TTCC..TTAATT', 'TTCCTTTTTTTT'] },
+  { slug: 'ten-pin-blitz', genre: 'sports 2p', added: '2026-10-26', name: 'Ten Pin Blitz', kind: 'Bowling · 2P', c: '#ff4f6d', blurb: 'Aim, power, hook. Ten frames to roll a perfect game.',
+    px: ['.W.W.W.W....', '..W.W.W.....', '...W.W......', '....W.......', 'DDDDDDDDDDDD', '.....BB.....', '....BBBB....', '.....BB.....'],
+    px2: ['W..W....W...', '..W..W.W....', '...BBW......', '..BBBB......', 'DDDBBDDDDDDD', '............', '............', '............'] },
+  { slug: 'field-day', genre: 'sports 2p', added: '2026-10-26', name: 'Field Day', kind: 'Track & field · 2P', c: '#ffb23d', blurb: 'Tap to sprint. Dash, hurdles, long jump and javelin. Qualify or go home.',
+    px: ['....S.......', '...RRR......', '..R.R.R.....', '....R...W.W.', '...B.B..WWW.', '..B...B.W.W.', '............', 'OOOOOOOOOOOO'],
+    px2: ['.....S......', '....RRR.....', '...RRR......', '....R...W.W.', '....BB..WWW.', '...B..B.W.W.', '............', 'OOOOOOOOOOOO'] },
   { slug: 'blip-sports', genre: 'sports', added: '2026-10-11', name: 'Blip Sports', kind: 'LED football + baseball', c: '#ff3a22', blurb: 'The 1978 handheld feel. Pick your team, beat the CPU.', label: 'WINS',
     px: ['............', '.RR..RR..RR.', '............', '.RR..WW..RR.', '............', '.RR..RR..RR.', '............', '............'],
     px2: ['............', '.RR..RR..RR.', '............', '.RR..RWW.RR.', '............', '.RR..RR..RR.', '............', '............'] }

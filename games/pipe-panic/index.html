@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Pipe Panic</title>
+<link rel="manifest" href="../../manifest.json">
+<meta name="theme-color" content="#0f0c1f">
+<link rel="icon" type="image/png" href="../../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../../icons/apple-touch-icon.png">
+<link rel="preload" href="../../shared/fonts/bungee-400.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="../../shared/fonts/silkscreen-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../../shared/fonts.css">
+<link rel="stylesheet" href="../../shared/arcade.css">
+</head>
+<body data-game="pipe-panic" style="--game:#8ad13d">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>PIPE PANIC</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <div class="pad">
+    <div class="dp"><button class="u" data-k="ArrowUp" aria-label="Up">▲</button><button class="l" data-k="ArrowLeft" aria-label="Left">◀</button><button class="r" data-k="ArrowRight" aria-label="Right">▶</button><button class="d" data-k="ArrowDown" aria-label="Down">▼</button></div>
+    <div class="ab"><button data-k="KeyF">FLOW</button><button data-k="Space">PLACE</button></div>
+  </div>
+  <p class="help">Arrows move · <kbd>Space</kbd> lays the next pipe (or tap a square) · <kbd>F</kbd> hurries the goo along when you're ready · <kbd>P</kbd> pause · gamepad: d-pad, A and B</p>
+</main>
+<script src="../../shared/chip.js"></script>
+<script src="../../shared/badges.js"></script>
+<script src="../../shared/arcade.js"></script>
+<script>
+(() => {
+/*
+ * Pipe Panic: goo is about to pour out of the valve. Lay the pipes from the queue (you can't choose the order) to give
+ * it the longest road you can. It has to run through a set number of pipes before it spills, or you lose a wrench.
+ * Laying over an empty pipe swaps it out (for a small fee); pipes with goo in them stay put. Goo through both ways of a
+ * crossover is a bonus. When you're happy, hurry it along with FLOW for extra points. Rocks turn up from level 3.
+ * Daily gives everyone the same valves and pieces today.
+ */
+const A = Arcade, cv = document.getElementById('cv');
+const S = 48, COLS = 10, ROWS = 7, BX = 76, BY = 40, W = BX + COLS * S + 4, H = BY + ROWS * S + 24, ctx = A.canvas(cv, W, H), OUT = '#0a0612';
+function shade(hex, k) {
+  let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join('');
+  const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+const D = { u: [0, -1], d: [0, 1], l: [-1, 0], r: [1, 0] }, OPP = { u: 'd', d: 'u', l: 'r', r: 'l' };
+const PIECES = { h: 'lr', v: 'ud', x: 'udlr', ne: 'ur', nw: 'ul', se: 'dr', sw: 'dl' };
+const WEIGHT = ['h', 'h', 'v', 'v', 'ne', 'nw', 'se', 'sw', 'ne', 'nw', 'se', 'sw', 'x'];
+let state = 'title', daily = false, rnd = Math.random, level = 1, score = 0, wrenches = 3, board = [], queue = [], cur = { x: 4, y: 3 }, lock = 0;
+let start = null, flow = null, wait = 0, waitMax = 0, flowT = 1.8, fast = false, dist = 0, need = 10, msg = '', msgT = 0, lost = false, swaps = [];
+const say = (t, s = 1.6) => { msg = t; msgT = s; };
+const add = (n, x, y, c = '#ffd23d') => { score += n; A.setScore(Math.max(0, score)); if (x !== undefined) A.pop(x, y, (n > 0 ? '+' : '') + n, c); };
+const at = (x, y) => x >= 0 && y >= 0 && x < COLS && y < ROWS ? board[y][x] : { rock: true };
+const piece = () => WEIGHT[Math.floor(rnd() * WEIGHT.length)];
+board = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => ({})));
+
+function newLevel() {
+  board = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => ({})));
+  const sx = 1 + Math.floor(rnd() * (COLS - 2)), sy = 1 + Math.floor(rnd() * (ROWS - 2)), dirs = 'udlr'.split('').filter(d => { const nx = sx + D[d][0] * 2, ny = sy + D[d][1] * 2; return nx >= 0 && ny >= 0 && nx < COLS && ny < ROWS; });
+  const out = dirs[Math.floor(rnd() * dirs.length)];
+  start = { x: sx, y: sy, out }; board[sy][sx] = { kind: 'start', open: out, fill: {} };
+  for (let k = 0; k < Math.min(8, level - 2); k++) { const x = Math.floor(rnd() * COLS), y = Math.floor(rnd() * ROWS); if (!board[y][x].kind && Math.abs(x - sx) + Math.abs(y - sy) > 2) board[y][x] = { rock: true }; }
+  queue = Array.from({ length: 5 }, piece); cur = { x: Math.min(COLS - 1, sx + 1), y: sy };
+  waitMax = wait = Math.max(8, 22 - level * 1.6); flowT = Math.max(0.6, 2.1 - level * 0.13); need = Math.min(30, 8 + level * 2); fast = false; dist = 0; lock = 0; swaps = [];
+  flow = { x: sx, y: sy, from: null, to: out, p: 0, k: 'start' };
+  state = 'play'; say(`LEVEL ${level} · ${need} PIPES`, 2); A.jingle([392, 523, 659, 784], 0.08, 'square');
+}
+function startGame(d) { daily = d; rnd = daily ? A.seeded('pipe-panic:' + A.today()) : Math.random; level = 1; score = 0; A.setScore(0); wrenches = A.easy ? 5 : 3; lost = false; newLevel(); }
+function place(x, y) {
+  if (state !== 'play' || lock > 0) return;
+  const c = at(x, y); if (c.rock || c.kind === 'start' || (c.kind && Object.keys(c.fill).length) || (flow && flow.x === x && flow.y === y)) { A.tone(140, 0.08, 'square', 0.03); return; }
+  if (c.kind) { add(-50, BX + x * S + S / 2, BY + y * S, '#ff4f6d'); swaps.push({ x, y, t: 0.3 }); lock = 0.25; A.noise(0.12, 0.04); }
+  board[y][x] = { kind: queue.shift(), fill: {} }; queue.push(piece()); A.tone(520, 0.05, 'square', 0.03, 0, 760);
+}
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+A.onHide(pause);
+A.onPress(c => {
+  if (c === 'KeyP' || c === 'Escape') return pause();
+  if (state !== 'play') return;
+  const m = { ArrowUp: 'u', KeyW: 'u', ArrowDown: 'd', KeyS: 'd', ArrowLeft: 'l', KeyA: 'l', ArrowRight: 'r', KeyD: 'r' }[c];
+  if (m) { cur.x = A.clamp(cur.x + D[m][0], 0, COLS - 1); cur.y = A.clamp(cur.y + D[m][1], 0, ROWS - 1); A.sfx('select'); }
+  if (c === 'Space' || c === 'KeyJ' || c === 'KeyZ') place(cur.x, cur.y);
+  if ((c === 'KeyF' || c === 'Enter' || c === 'KeyX') && !fast) { fast = true; wait = 0; say('FLOW!', 0.8); A.tone(300, 0.3, 'sawtooth', 0.03, 0, 900); }
+});
+cv.addEventListener('pointerdown', e => {
+  if (state !== 'play' || A.demo) return; const r = cv.getBoundingClientRect(), x = Math.floor(((e.clientX - r.left) * W / r.width - BX) / S), y = Math.floor(((e.clientY - r.top) * H / r.height - BY) / S);
+  if (x >= 0 && y >= 0 && x < COLS && y < ROWS) { cur = { x, y }; place(x, y); }
+});
+
+/* ---------- the goo ---------- */
+function exitOf(c, from) { // the way out of a pipe entered from side `from`
+  if (c.kind === 'x') return OPP[from];
+  const o = PIECES[c.kind]; return o.includes(from) ? o.replace(from, '') : null;
+}
+function advance() { // goo reached the end of this pipe: into the next, or spill
+  const nx = flow.x + D[flow.to][0], ny = flow.y + D[flow.to][1], c = at(nx, ny), from = OPP[flow.to];
+  const out = c.kind && c.kind !== 'start' && !c.fill[from] && exitOf(c, from);
+  if (!out || (c.kind !== 'x' && Object.keys(c.fill).length)) return spill();
+  c.fill[from] = true; dist++;
+  const pts = fast ? 100 : 50; add(pts, BX + nx * S + S / 2, BY + ny * S + 6, '#8ad13d');
+  if (c.kind === 'x' && Object.keys(c.fill).length === 2) { add(500, BX + nx * S + S / 2, BY + ny * S - 10, '#5ee7ff'); A.badge('cross'); A.jingle([784, 1047, 1319], 0.05, 'square'); }
+  else A.tone(300 + Math.min(dist, 30) * 18, 0.06, 'triangle', 0.025);
+  if (dist === need) { say('THAT’LL DO IT! KEEP GOING', 1.4); A.jingle([523, 784, 1047], 0.07, 'square'); }
+  flow = { x: nx, y: ny, from, to: out, p: 0, k: c.kind };
+}
+function spill() {
+  state = 'spill'; A.noise(0.5, 0.06); A.tone(180, 0.5, 'sawtooth', 0.04, 0, 60);
+  const sx = BX + (flow.x + 0.5 + D[flow.to][0] * 0.5) * S, sy = BY + (flow.y + 0.5 + D[flow.to][1] * 0.5) * S; A.burst(sx, sy, { n: 26, colors: ['#8ad13d', '#c8ff7a', '#5a9a2a'], speed: 140, life: 0.7 });
+  if (dist >= need) {
+    const extra = (dist - need) * 100, bonus = 1000 + extra + level * 250; add(bonus); say(`PIPES ${dist}/${need} · +${bonus}`, 2.4);
+    if (level >= 5) A.badge('level5');
+    setTimeout(() => { if (state !== 'spill') return; level++; newLevel(); }, 2400);
+  } else {
+    wrenches--; A.shake(5, 0.3); say(`SPILL! ${dist}/${need} PIPES`, 2.4);
+    setTimeout(() => { if (state !== 'spill') return; if (wrenches <= 0) return gameOver(); newLevel(); }, 2400);
+  }
+}
+function gameOver() {
+  if (lost) return; lost = true; state = 'over'; if (daily) A.badge('daily');
+  const rec = A.submit(score, daily);
+  A.overlay({ title: 'GOO EVERYWHERE', big: `SCORE ${score.toLocaleString()} · LEVEL ${level}`, sub: rec ? 'New high score!' : 'Out of wrenches.', daily: true, btn: daily ? 'Retry daily' : 'Play again', onGo: () => startGame(daily), alt: { btn: daily ? 'Endless' : 'Daily', onGo: () => startGame(!daily) } });
+}
+function update(dt) {
+  if (msgT > 0) msgT -= dt;
+  for (const s of swaps) s.t -= dt; swaps = swaps.filter(s => s.t > 0);
+  if (state !== 'play') return;
+  if (lock > 0) lock -= dt;
+  if (wait > 0) { wait -= dt; if (wait <= 0) { say('HERE IT COMES!', 1); A.tone(200, 0.4, 'sawtooth', 0.03, 0, 500); } return; }
+  flow.p += dt / (fast ? 0.14 : flowT);
+  if (flow.p >= 1) { flow.p = 1; advance(); }
+}
+
+/* ---------- drawing ---------- */
+const edge = (d, X, Y) => [X + S / 2 + D[d][0] * S / 2, Y + S / 2 + D[d][1] * S / 2];
+function pipeArms(X, Y, dirs, col, w) {
+  ctx.lineCap = 'butt'; ctx.strokeStyle = col; ctx.lineWidth = w;
+  for (const d of dirs) { const [ex, ey] = edge(d, X, Y); ctx.beginPath(); ctx.moveTo(X + S / 2 - D[d][0] * w / 2, Y + S / 2 - D[d][1] * w / 2); ctx.lineTo(ex, ey); ctx.stroke(); }
+}
+function drawPipe(c, X, Y, ghost) {
+  const dirs = (c.kind === 'start' ? c.open : PIECES[c.kind]).split('');
+  ctx.globalAlpha = ghost ? 0.45 : 1;
+  pipeArms(X, Y, dirs, OUT, 20); pipeArms(X, Y, dirs, '#8a96a8', 16); pipeArms(X, Y, dirs, '#b8c4d4', 6);
+  if (c.kind !== 'x') { ctx.fillStyle = OUT; ctx.fillRect(X + S / 2 - 10, Y + S / 2 - 10, 20, 20); ctx.fillStyle = '#8a96a8'; ctx.fillRect(X + S / 2 - 8, Y + S / 2 - 8, 16, 16); ctx.fillStyle = '#b8c4d4'; ctx.fillRect(X + S / 2 - 8, Y + S / 2 - 8, 16, 4); }
+  else { ctx.fillStyle = '#6a7688'; ctx.fillRect(X + S / 2 - 8, Y + S / 2 - 8, 16, 16); }
+  for (const d of dirs) { const [ex, ey] = edge(d, X, Y), hor = D[d][0] !== 0; ctx.fillStyle = OUT; ctx.fillRect(ex - (hor ? 3 + D[d][0] * 2 : 12), ey - (hor ? 12 : 3 + D[d][1] * 2), hor ? 6 : 24, hor ? 24 : 6); ctx.fillStyle = '#a8b4c4'; ctx.fillRect(ex - (hor ? 2 + D[d][0] * 2 : 11), ey - (hor ? 11 : 2 + D[d][1] * 2), hor ? 4 : 22, hor ? 22 : 4); }
+  if (c.kind === 'start') { ctx.fillStyle = OUT; ctx.beginPath(); ctx.arc(X + S / 2, Y + S / 2, 15, 0, 6.29); ctx.fill(); ctx.fillStyle = '#ff4f3d'; ctx.beginPath(); ctx.arc(X + S / 2, Y + S / 2, 13, 0, 6.29); ctx.fill(); ctx.fillStyle = '#fff'; ctx.fillRect(X + S / 2 - 9, Y + S / 2 - 2, 18, 4); ctx.fillRect(X + S / 2 - 2, Y + S / 2 - 9, 4, 18); }
+  ctx.globalAlpha = 1;
+}
+function goo(X, Y, a, b, p) { // goo from side a (or the middle) through the middle to side b, p of the way
+  const pts = [a ? edge(a, X, Y) : [X + S / 2, Y + S / 2], [X + S / 2, Y + S / 2], edge(b, X, Y)];
+  const len = a ? 2 : 1, want = p * len;
+  ctx.strokeStyle = '#8ad13d'; ctx.lineWidth = 10; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(...pts[a ? 0 : 1]);
+  const segs = a ? [[pts[0], pts[1]], [pts[1], pts[2]]] : [[pts[1], pts[2]]];
+  segs.forEach(([s, e], k) => { const f = A.clamp(want - k, 0, 1); if (f > 0) ctx.lineTo(s[0] + (e[0] - s[0]) * f, s[1] + (e[1] - s[1]) * f); });
+  ctx.stroke(); ctx.strokeStyle = '#c8ff7a'; ctx.lineWidth = 3; ctx.stroke();
+}
+function render(t) {
+  ctx.fillStyle = '#141020'; ctx.fillRect(0, 0, W, H);
+  // the board: riveted tiles
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
+    const X = BX + x * S, Y = BY + y * S, c = board[y][x];
+    ctx.fillStyle = (x + y) % 2 ? '#2a2640' : '#26223a'; ctx.fillRect(X, Y, S, S);
+    ctx.fillStyle = '#34304c'; ctx.fillRect(X + 3, Y + 3, 3, 3); ctx.fillRect(X + S - 6, Y + 3, 3, 3); ctx.fillRect(X + 3, Y + S - 6, 3, 3); ctx.fillRect(X + S - 6, Y + S - 6, 3, 3);
+    if (c.rock) { ctx.fillStyle = OUT; ctx.beginPath(); ctx.ellipse(X + S / 2, Y + S / 2 + 2, 20, 16, 0, 0, 6.29); ctx.fill(); ctx.fillStyle = '#7a6a5a'; ctx.beginPath(); ctx.ellipse(X + S / 2, Y + S / 2 + 2, 18, 14, 0, 0, 6.29); ctx.fill(); ctx.fillStyle = '#a8988a'; ctx.fillRect(X + 16, Y + 14, 8, 4); continue; }
+    if (c.kind) {
+      drawPipe(c, X, Y);
+      if (c.kind === 'x') { for (const f of Object.keys(c.fill)) if (!(flow && flow.x === x && flow.y === y && flow.from === f)) goo(X, Y, f, OPP[f], 1); }
+      else if (Object.keys(c.fill).length && !(flow && flow.x === x && flow.y === y)) { const f = Object.keys(c.fill)[0]; goo(X, Y, f, exitOf(c, f), 1); }
+    }
+  }
+  if (flow && state !== 'title' && (flow.x !== start.x || flow.y !== start.y)) goo(BX + start.x * S, BY + start.y * S, null, start.out, 1);
+  if (flow && state !== 'title') goo(BX + flow.x * S, BY + flow.y * S, flow.from, flow.to, flow.p);
+  for (const s of swaps) { ctx.fillStyle = `rgba(255,79,109,${s.t * 2})`; ctx.fillRect(BX + s.x * S, BY + s.y * S, S, S); }
+  // cursor, with the next piece as a ghost
+  if (state === 'play') {
+    const X = BX + cur.x * S, Y = BY + cur.y * S; if (queue[0] && !at(cur.x, cur.y).kind && !at(cur.x, cur.y).rock) drawPipe({ kind: queue[0] }, X, Y, true);
+    ctx.strokeStyle = Math.floor(t / 200) % 2 ? '#ffd23d' : '#fff'; ctx.lineWidth = 3; ctx.strokeRect(X + 2, Y + 2, S - 4, S - 4);
+  }
+  // the queue, next at the bottom
+  ctx.fillStyle = '#1e1a30'; ctx.fillRect(6, BY, BX - 16, ROWS * S); ctx.font = '10px Silkscreen, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillStyle = '#a39bc4'; ctx.fillText('NEXT', 6 + (BX - 16) / 2, BY + ROWS * S + 6);
+  queue.forEach((k, i) => { const X = 6 + (BX - 16 - S) / 2, Y = BY + ROWS * S - (i + 1) * (S + 14) + 4; ctx.save(); if (i) { ctx.translate(X + S / 2, Y + S / 2); ctx.scale(0.8, 0.8); ctx.translate(-X - S / 2, -Y - S / 2); } drawPipe({ kind: k }, X, Y); ctx.restore(); if (!i) { ctx.strokeStyle = '#ffd23d'; ctx.lineWidth = 2; ctx.strokeRect(X - 3, Y - 3, S + 6, S + 6); } });
+  // HUD
+  ctx.textBaseline = 'middle'; ctx.font = '12px Silkscreen, monospace'; ctx.textAlign = 'left';
+  if (state !== 'title') {
+    ctx.fillStyle = '#8ad13d'; ctx.fillText(`${daily ? 'DAILY ' + A.today().slice(5) + ' · ' : ''}LEVEL ${level}`, 8, 18);
+    ctx.fillStyle = dist >= need ? '#8ad13d' : '#fff'; ctx.fillText(`PIPES ${dist}/${need}`, 200, 18);
+    ctx.fillStyle = '#c8c4d8'; ctx.fillText(`WRENCHES ${wrenches}`, 330, 18);
+    if (wait > 0) { const w = 120, k = wait / waitMax; ctx.fillStyle = '#3a3450'; ctx.fillRect(W - w - 10, 12, w, 12); ctx.fillStyle = k < 0.3 ? '#ff4f6d' : '#8ad13d'; ctx.fillRect(W - w - 10, 12, w * k, 12); ctx.strokeStyle = OUT; ctx.strokeRect(W - w - 10, 12, w, 12); }
+  }
+  if (msgT > 0 && state !== 'title') { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '22px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = OUT; ctx.fillText(msg, BX + COLS * S / 2 + 2, BY + ROWS * S / 2 + 2); ctx.fillStyle = '#c8ff7a'; ctx.fillText(msg, BX + COLS * S / 2, BY + ROWS * S / 2); ctx.globalAlpha = 1; }
+}
+A.loop(update, render);
+
+/* Attract demo: follow the pipe from the valve to its open end; lay the next piece there if it carries on into open
+ * space, otherwise park it out of the way. Hurry the goo once the run is long enough. */
+function frontier() {
+  let x = start.x, y = start.y, to = start.out, n = 0;
+  for (; n < 200; n++) {
+    const nx = x + D[to][0], ny = y + D[to][1], c = at(nx, ny), from = OPP[to];
+    if (c.rock) return null;
+    if (!c.kind) return { x: nx, y: ny, from, n };
+    const out = c.kind !== 'start' && exitOf(c, from); if (!out) return Object.keys(c.fill).length ? null : { x: nx, y: ny, from, n, swap: true };
+    x = nx; y = ny; to = out;
+  }
+  return null;
+}
+let botT = 0, botGoal = null;
+A.attract({
+  start: () => startGame(false),
+  stop: () => { state = 'title'; flow = null; },
+  bot: dt => {
+    if (state !== 'play') return [];
+    const f = frontier();
+    if (!fast && ((!f && dist >= 1) || (f && f.n >= need + 4))) return ['!KeyF'];
+    if ((botT -= dt) > 0) return []; botT = 0.09;
+    if (!botGoal || lock > 0) {
+      const k = queue[0], open = (x, y) => { const c = at(x, y); return !c.rock && !c.kind; };
+      if (f && PIECES[k].includes(f.from)) {
+        const out = k === 'x' ? OPP[f.from] : PIECES[k].replace(f.from, '');
+        const nx = f.x + D[out][0], ny = f.y + D[out][1];
+        if (open(nx, ny)) botGoal = { x: f.x, y: f.y };
+      }
+      if (!botGoal) { // park it in the emptiest corner away from the run
+        let best = -1; for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) if (open(x, y) && (!f || Math.abs(x - f.x) + Math.abs(y - f.y) > 2)) { const v = (f ? Math.abs(x - f.x) + Math.abs(y - f.y) : 0) - (x === 0 || y === 0 || x === COLS - 1 || y === ROWS - 1 ? -3 : 0); if (v > best) { best = v; botGoal = { x, y }; } }
+      }
+      if (!botGoal) return [];
+    }
+    if (cur.x < botGoal.x) return ['!ArrowRight']; if (cur.x > botGoal.x) return ['!ArrowLeft'];
+    if (cur.y < botGoal.y) return ['!ArrowDown']; if (cur.y > botGoal.y) return ['!ArrowUp'];
+    botGoal = null; return ['!Space'];
+  }
+});
+A.overlay({ title: 'PIPE PANIC', sub: 'The goo is coming! Lay pipes from the queue to give it the longest road you can, and run it through enough of them before it spills. Lay over an empty pipe to swap it. Crossovers filled both ways pay big. <b>Daily</b> gives everyone the same pieces today.', btn: 'Endless', scores: true, daily: true, onGo: () => startGame(false), alt: { btn: 'Daily', onGo: () => startGame(true) } });
+})();
+</script>
+</body>
+</html>

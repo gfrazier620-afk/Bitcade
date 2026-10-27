@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Field Day</title>
+<link rel="manifest" href="../../manifest.json">
+<meta name="theme-color" content="#0f0c1f">
+<link rel="icon" type="image/png" href="../../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../../icons/apple-touch-icon.png">
+<link rel="preload" href="../../shared/fonts/bungee-400.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="../../shared/fonts/silkscreen-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../../shared/fonts.css">
+<link rel="stylesheet" href="../../shared/arcade.css">
+</head>
+<body data-game="field-day" style="--game:#ffb23d">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>FIELD DAY</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <div class="pad">
+    <div class="ab"><button data-k="ArrowLeft">RUN</button><button data-k="ArrowRight">RUN</button><button data-k="Space">JUMP</button></div>
+  </div>
+  <p class="help"><b>1 player:</b> tap <kbd>◀</kbd> <kbd>▶</kbd> (or <kbd>Z</kbd> <kbd>X</kbd>) one after the other to run · hold <kbd>Space</kbd> to set the angle, let go to jump or throw · <b>2 players:</b> top lane <kbd>A</kbd> <kbd>D</kbd> + <kbd>W</kbd>, bottom lane <kbd>◀</kbd> <kbd>▶</kbd> + <kbd>▲</kbd> · <kbd>P</kbd> pause</p>
+</main>
+<script src="../../shared/chip.js"></script>
+<script src="../../shared/badges.js"></script>
+<script src="../../shared/arcade.js"></script>
+<script>
+(() => {
+/*
+ * Field Day: four events, two lanes. Run by tapping two keys one after the other (the same key twice does nothing);
+ * hold the action key to set an angle and let go to jump or throw. Beat the qualifying mark in each event to stay in:
+ * 100 metres, 110 metre hurdles (jump each one), long jump and javelin (three tries each, don't cross the line).
+ * Then round two, with tougher marks. Race a CPU rival, or a friend in the other lane.
+ */
+const A = Arcade, cv = document.getElementById('cv');
+const W = 560, H = 420, ctx = A.canvas(cv, W, H), OUT = '#0a0612', PX = 22, PH = 188, GROUND = 150;
+const EVENTS = [
+  { id: 'dash', name: '100 METRES', unit: 's', race: true, len: 100, q: 12.6 },
+  { id: 'hurdles', name: '110 M HURDLES', unit: 's', race: true, len: 110, q: 16.4 },
+  { id: 'long', name: 'LONG JUMP', unit: 'm', board: 45, q: 6.4 },
+  { id: 'jav', name: 'JAVELIN', unit: 'm', board: 30, q: 55 }
+];
+const HURDLES = Array.from({ length: 10 }, (_, k) => 13.72 + k * 9.14);
+let state = 'title', two = false, round = 1, ei = 0, ev = EVENTS[0], lanes = [], score = 0, phase = 'marks', cueT = 0, cue = '', clock = 0, msg = '', msgT = 0, results = null, lost = false;
+const say = (t, s = 1.6) => { msg = t; msgT = s; };
+const qual = e => e.race ? e.q * (1 - (round - 1) * 0.05) + (A.easy ? 1.5 : 0) : e.q * (1 + (round - 1) * 0.07) - (A.easy ? (e.id === 'jav' ? 10 : 1) : 0);
+const KEYS1 = { L: ['ArrowLeft', 'KeyA', 'KeyZ'], R: ['ArrowRight', 'KeyD', 'KeyX'], act: ['Space', 'ArrowUp', 'KeyW', 'KeyJ'] };
+const KEYS2 = [{ L: ['KeyA'], R: ['KeyD'], act: ['KeyW', 'KeyF'] }, { L: ['ArrowLeft'], R: ['ArrowRight'], act: ['ArrowUp', 'KeyL', 'Enter'] }];
+
+function mkLane(k, who) { return { k, who, name: who === 'cpu' ? 'CPU · ROCKET RAY' : two ? `PLAYER ${k + 1}` : 'YOU', c: [k ? '#3dc85a' : '#ff4f6d', '#5a9aff'][who === 'cpu' ? 1 : 0], pts: 0, out: false, fs: 0 }; }
+function resetLane(l, keepTries) {
+  Object.assign(l, { x: 0, v: 0, z: 0, vz: 0, last: null, ph: 'run', t: 0, time: null, ang: 0, leg: 0, hit: new Set(), jav: null, note: '', noteT: 0, foul: false, cpuT: 0 });
+  if (!keepTries) { l.tries = []; l.best = null; }
+}
+function startGame(twoP) { two = twoP; round = 1; ei = 0; score = 0; A.setScore(0); lost = false; lanes = [mkLane(0, 'p1'), mkLane(1, two ? 'p2' : 'cpu')]; startEvent(); state = 'play'; }
+function startEvent() {
+  ev = EVENTS[ei]; results = null; lanes.forEach(l => resetLane(l)); clock = 0;
+  phase = 'marks'; cue = ev.race ? 'ON YOUR MARKS' : 'READY'; cueT = ev.race ? 1.3 : 1.2;
+  say(`${ev.name}${round > 1 ? ' · ROUND ' + round : ''}`, 2); A.jingle([392, 523, 659], 0.09, 'square');
+}
+const keysOf = l => two ? KEYS2[l.k] : KEYS1;
+const human = l => l.who !== 'cpu';
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+A.onHide(pause);
+A.onPress(c => {
+  if (c === 'KeyP' || c === 'Escape') return pause();
+  if (state !== 'play') return;
+  if (phase === 'results' && results && results.t > 1.2 && [...KEYS1.act, 'Enter', 'KeyL', 'KeyF'].includes(c)) { results.t = 99; return; }
+  for (const l of lanes) {
+    if (!human(l) || l.out) continue; const K = keysOf(l), side = K.L.includes(c) ? 'L' : K.R.includes(c) ? 'R' : null;
+    if (side) {
+      if (phase === 'set' && ev.race) { falseStart(l); continue; }
+      if (phase === 'go' && l.ph === 'run' && l.z === 0 && side !== l.last) { l.v += 1.6 * (1 - l.v / 13); l.last = side; }
+      else if (side === l.last) l.last = side;
+    }
+    if (K.act.includes(c) && phase === 'go') action(l);
+  }
+});
+function falseStart(l) {
+  if (l.ph === 'dq') return; l.fs++; A.tone(150, 0.4, 'square', 0.05);
+  if (l.fs >= 2) { l.ph = 'dq'; l.note = 'DISQUALIFIED'; l.noteT = 99; say('FALSE START · DISQUALIFIED', 1.8); }
+  else { say('FALSE START!', 1.4); phase = 'marks'; cue = 'ON YOUR MARKS'; cueT = 1.4; }
+}
+function action(l) {
+  if (ev.id === 'hurdles' && l.ph === 'run' && l.z === 0) { l.vz = 3.3; l.z = 0.001; A.sfx('jump'); }
+  if ((ev.id === 'long' || ev.id === 'jav') && l.ph === 'run' && l.v > 0.5) { l.ph = 'charge'; l.ang = 0; }
+}
+function release(l) { // let go of the angle: take off, or throw
+  if (l.x > ev.board) return foul(l);
+  const th = l.ang * Math.PI / 180;
+  if (ev.id === 'long') { l.ph = 'air'; l.from = l.x; l.vx = l.v * Math.cos(th); l.vz = l.v * Math.sin(th) * 0.92; l.z = 0.001; A.sfx('jump'); }
+  else { const s = l.v * 2.9; l.ph = 'throw'; l.jav = { x: l.x + 0.4, y: 1.9, vx: s * Math.cos(th), vy: s * Math.sin(th) }; l.v *= 0.4; A.tone(400, 0.3, 'triangle', 0.035, 0, 900); }
+}
+function foul(l) { l.ph = 'mark'; l.foul = true; l.note = 'FOUL!'; l.noteT = 1.8; l.v = 0; l.tries.push(null); A.tone(160, 0.35, 'square', 0.04); }
+function mark(l, m) {
+  l.ph = 'mark'; l.tries.push(m); if (l.best === null || m > l.best) l.best = m;
+  l.note = `${m.toFixed(2)} M`; l.noteT = 1.8; A.jingle(m >= qual(ev) ? [659, 784, 1047] : [523, 440], 0.07, 'triangle');
+  if (ev.id === 'jav' && m >= 80 && human(l)) A.badge('jav80');
+}
+
+/* ---------- each lane's runner ---------- */
+function stepLane(l, dt) {
+  if (l.out || l.ph === 'dq' || l.ph === 'done') { if (l.v > 0) { l.v = Math.max(0, l.v - 6 * dt); l.x += l.v * dt; l.leg += l.v * dt * 1.4; } return; }
+  if (l.noteT > 0 && (l.noteT -= dt) <= 0 && l.ph === 'mark') { // next try, or done
+    if (l.tries.length >= 3) { l.ph = 'done'; l.x = 0; l.v = 0; } else { const tries = l.tries, best = l.best; resetLane(l, true); l.tries = tries; l.best = best; }
+    return;
+  }
+  if (l.ph === 'mark') return;
+  l.t += dt;
+  if (l.who === 'cpu') cpu(l, dt);
+  if (l.ph === 'run' || l.ph === 'charge') {
+    if (l.ph === 'run' && l.z === 0 && human(l)) l.v -= l.v * 0.35 * dt;
+    if (l.ph === 'charge') { l.ang = Math.min(70, l.ang + 110 * dt); if (human(l) && !keysOf(l).act.some(c => A.held(c))) release(l); if (l.ph === 'charge' && l.x > ev.board + 0.3) foul(l); }
+    l.x += l.v * dt; l.leg += l.v * dt * 1.4;
+    if (ev.board && l.ph === 'run' && l.x > ev.board + 0.3) foul(l);
+  }
+  if (ev.id === 'hurdles' && l.z > 0) { l.vz -= 12 * dt; l.z += l.vz * dt; if (l.z <= 0) { l.z = 0; l.vz = 0; } }
+  if (ev.id === 'hurdles') for (const [i, hx] of HURDLES.entries()) if (!l.hit.has(i) && Math.abs(l.x - hx) < 0.25 && l.z < 0.3) { l.hit.add(i); l.v *= 0.55; A.tone(120, 0.12, 'square', 0.04); }
+  if (ev.race && l.time === null && l.x >= ev.len) { l.time = l.t; l.ph = 'done'; l.note = `${l.time.toFixed(2)} S`; l.noteT = 99; if (ev.id === 'dash' && l.time < 10.5 && human(l)) A.badge('sprint'); A.tone(880, 0.2, 'triangle', 0.04); }
+  if (l.ph === 'air') { l.vz -= 9.8 * dt; l.z += l.vz * dt; l.x += l.vx * dt; if (l.z <= 0) { l.z = 0; mark(l, Math.max(0, l.x - ev.board)); A.burst(...screen(l, l.x, 0), { n: 10, colors: ['#e8d8a0', '#c8b880'], speed: 70, life: 0.4 }); } }
+  if (l.ph === 'throw') {
+    l.x += l.v * dt; l.v = Math.max(0, l.v - 8 * dt); l.leg += l.v * dt;
+    const j = l.jav; j.vy -= 9.8 * dt; j.x += j.vx * dt; j.y += j.vy * dt;
+    if (j.y <= 0) { j.y = 0; mark(l, Math.max(0, j.x - ev.board)); }
+  }
+}
+function cpu(l, dt) {
+  const target = 9.4 + round * 0.35 + Math.sin(l.t * 1.3 + l.k) * 0.3;
+  if (l.ph === 'run') { if (l.z === 0) l.v += (target - l.v) * dt * 1.4; l.v = Math.min(l.v, 12); }
+  if (ev.id === 'hurdles' && l.z === 0) { const next = HURDLES.find(h => h > l.x); if (next && next - l.x < 1.55 + Math.random() * 0.2) action(l); }
+  const want = 37 + (l.tries.length * 3) % 7;
+  if ((ev.id === 'long' || ev.id === 'jav') && l.ph === 'run' && l.x > ev.board - l.v * want / 110 - 0.5 - Math.random() * 0.4) action(l);
+  if (l.ph === 'charge' && l.ang >= want) release(l);
+}
+
+function update(dt) {
+  if (msgT > 0) msgT -= dt;
+  if (state !== 'play') return;
+  if (phase === 'marks' || phase === 'set') {
+    if ((cueT -= dt) <= 0) {
+      if (phase === 'marks' && ev.race) { phase = 'set'; cue = 'SET'; cueT = A.rand(0.9, 1.8); A.tone(440, 0.12, 'square', 0.03); }
+      else { phase = 'go'; cue = 'GO!'; cueT = 0.8; A.tone(880, 0.3, 'square', 0.05); if (ev.race) A.noise(0.2, 0.08); }
+    }
+    return;
+  }
+  if (phase === 'go') {
+    if (cueT > 0) cueT -= dt;
+    clock += dt; for (const l of lanes) stepLane(l, dt);
+    const busy = lanes.filter(l => !l.out && l.ph !== 'dq' && l.ph !== 'done');
+    if (ev.race && clock > 30) busy.forEach(l => { l.ph = 'done'; l.note = 'TOO SLOW'; });
+    if (!busy.length && !lanes.some(l => l.noteT > 0 && l.ph === 'mark')) showResults();
+  }
+  if (phase === 'results') { results.t += dt; if (results.t > 5.5 || (A.demo && results.t > 2.5)) afterResults(); }
+}
+function showResults() {
+  phase = 'results'; const q = qual(ev);
+  results = { t: 0, rows: lanes.map(l => {
+    const m = ev.race ? l.time : l.best, ok = m !== null && (ev.race ? m <= q : m >= q);
+    const pts = m === null ? 0 : Math.round(ev.id === 'dash' ? Math.max(0, 16 - m) * 300 : ev.id === 'hurdles' ? Math.max(0, 21 - m) * 250 : ev.id === 'long' ? m * 300 : m * 30) * round;
+    if (!l.out) l.pts += ok ? pts : 0;
+    return { l, m, ok: ok && !l.out, pts: ok ? pts : 0, was: l.out };
+  }) };
+  results.rows.forEach(r => { if (human(r.l) && !r.was && !r.ok) r.l.out = true; });
+  score = lanes[0].pts; A.setScore(score);
+  const anyOk = results.rows.some(r => human(r.l) && r.ok);
+  A.jingle(anyOk ? [523, 659, 784, 1047] : [392, 330, 262], 0.1, 'square');
+}
+function afterResults() {
+  if (!lanes.some(l => human(l) && !l.out)) return gameOver();
+  ei++; if (ei >= EVENTS.length) { ei = 0; round++; if (!lanes[0].out) A.badge('gold'); say(`ROUND ${round}!`, 2); }
+  startEvent();
+}
+function gameOver() {
+  if (lost) return; lost = true; state = 'over'; const rec = A.submit(lanes[0].pts);
+  A.overlay({ title: 'DID NOT QUALIFY', big: two ? `P1 ${lanes[0].pts.toLocaleString()} · P2 ${lanes[1].pts.toLocaleString()}` : `SCORE ${lanes[0].pts.toLocaleString()}`, sub: `${ev.name}, round ${round}${rec ? ' · New high score!' : ''}`, btn: two ? 'Again (2P)' : 'Again', onGo: () => startGame(two), alt: { btn: two ? '1 player' : '2 players', onGo: () => startGame(!two) } });
+}
+
+/* ---------- drawing: each lane is its own scrolling strip ---------- */
+const camOf = l => { const fx = l.ph === 'throw' && l.jav ? l.jav.x : l.x; return fx * PX - 150; };
+const screen = (l, x, z) => [x * PX - camOf(l), l.k * (PH + 4) + 26 + GROUND - z * PX];
+function runner(X, Y, l, t) {
+  const c = l.c, ph = l.leg * 2.2, air = l.z > 0, lean = Math.min(0.35, l.v * 0.03);
+  const limb = (x0, y0, a, len, col, w) => { const x1 = x0 + Math.sin(a) * len, y1 = y0 + Math.cos(a) * len; ctx.strokeStyle = OUT; ctx.lineWidth = w + 2; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke(); ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke(); return [x1, y1]; };
+  const hipX = X, hipY = Y - 18, sw = air ? 0.9 : Math.sin(ph) * 0.9, sw2 = air ? -0.5 : -Math.sin(ph) * 0.9;
+  ctx.lineCap = 'round';
+  // far leg and arm darker
+  const k1 = limb(hipX, hipY, sw2, 9, shade(c, -0.45), 4); limb(k1[0], k1[1], sw2 - 0.6 - (air ? 0.6 : Math.max(0, -Math.cos(ph)) * 0.8), 9, '#8a6048', 4);
+  const sh = [hipX + Math.sin(lean) * 14, hipY - Math.cos(lean) * 14];
+  const throwing = l.ph === 'charge' && ev.id === 'jav';
+  limb(sh[0], sh[1], throwing ? 2.6 : -sw * 0.9, 8, '#b0805a', 3);
+  // body
+  ctx.strokeStyle = OUT; ctx.lineWidth = 9; ctx.beginPath(); ctx.moveTo(hipX, hipY); ctx.lineTo(sh[0], sh[1]); ctx.stroke(); ctx.strokeStyle = c; ctx.lineWidth = 7; ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.font = '7px Silkscreen, monospace'; ctx.textAlign = 'center'; ctx.fillText(l.k + 1, (hipX + sh[0]) / 2, (hipY + sh[1]) / 2 + 3);
+  const k2 = limb(hipX, hipY, sw, 9, '#2a2a4a', 4); limb(k2[0], k2[1], sw - 0.6 - (air ? 0.2 : Math.max(0, Math.cos(ph)) * 0.8), 9, '#c8946a', 4);
+  const hand = limb(sh[0], sh[1], throwing ? 2.4 : sw * 0.9, 8, '#c8946a', 3);
+  ctx.fillStyle = OUT; ctx.beginPath(); ctx.arc(sh[0] + Math.sin(lean) * 6, sh[1] - 6, 5.5, 0, 6.29); ctx.fill(); ctx.fillStyle = '#c8946a'; ctx.beginPath(); ctx.arc(sh[0] + Math.sin(lean) * 6, sh[1] - 6, 4.5, 0, 6.29); ctx.fill();
+  ctx.fillStyle = shade(c, -0.2); ctx.fillRect(sh[0] + Math.sin(lean) * 6 - 5, sh[1] - 11, 10, 3);
+  if (ev.id === 'jav' && (l.ph === 'run' || l.ph === 'charge')) { const a = -(l.ph === 'charge' ? l.ang : 12) * Math.PI / 180; ctx.strokeStyle = OUT; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(hand[0] - Math.cos(a) * 18, hand[1] - Math.sin(a) * 18); ctx.lineTo(hand[0] + Math.cos(a) * 18, hand[1] + Math.sin(a) * 18); ctx.stroke(); ctx.strokeStyle = '#e8e8f0'; ctx.lineWidth = 1.5; ctx.stroke(); }
+}
+function shade(hex, k) { let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join(''); const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k)); return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`; }
+function drawLane(l, t) {
+  const Y0 = l.k * (PH + 4) + 26, cam = camOf(l);
+  ctx.save(); ctx.beginPath(); ctx.rect(0, Y0, W, PH); ctx.clip(); ctx.translate(0, Y0);
+  ctx.fillStyle = '#7ac8ff'; ctx.fillRect(0, 0, W, 46);
+  // the stands and crowd, slower
+  ctx.fillStyle = '#4a4a6a'; ctx.fillRect(0, 34, W, 64);
+  const cs = cam * 0.5; for (let k = Math.floor(cs / 10) - 1; k < (cs + W) / 10 + 1; k++) for (let r = 0; r < 4; r++) { const x = k * 10 - cs + (r % 2) * 5, y = 40 + r * 14 + (Math.sin(t / 150 + k * 1.7 + r) > 0.6 && phase === 'go' ? -2 : 0); ctx.fillStyle = ['#ff7ab8', '#ffd23d', '#5ab8ff', '#8ad13d', '#ff9a3d', '#e8e8f0'][(k * 7 + r * 3) % 6]; ctx.fillRect(Math.round(x), y, 7, 6); ctx.fillStyle = '#e8b890'; ctx.fillRect(Math.round(x) + 1, y - 4, 5, 4); }
+  ctx.fillStyle = '#2a2a44'; ctx.fillRect(0, 96, W, 6);
+  // the track or field
+  ctx.fillStyle = '#4a9a3a'; ctx.fillRect(0, 102, W, PH - 102);
+  if (ev.race || ev.id === 'long' || ev.id === 'jav') { ctx.fillStyle = '#c8583a'; ctx.fillRect(0, GROUND - 26, W, 36); ctx.fillStyle = '#f4e8e0'; ctx.fillRect(0, GROUND - 27, W, 2); ctx.fillRect(0, GROUND + 9, W, 2); }
+  if (ev.id === 'jav') { const fx = Math.max(0, ev.board * PX - cam); ctx.fillStyle = '#4a9a3a'; ctx.fillRect(fx, GROUND - 26, W, 36); ctx.fillStyle = '#5aaa4a'; for (let m = 40; m <= 110; m += 10) { const x = (ev.board + m - 30) * PX - cam; ctx.fillRect(x, GROUND - 26, 2, 36); } }
+  for (let m = 0; m <= 120; m += 10) { const x = m * PX - cam; if (x < -40 || x > W + 40) continue; ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.fillRect(x, GROUND - 26, 1, 36); ctx.fillStyle = '#fff'; ctx.font = '9px Silkscreen, monospace'; ctx.textAlign = 'center'; ctx.fillText(ev.id === 'jav' ? (m > ev.board ? m - ev.board + 'M' : '') : m + 'M', x, GROUND + 22); }
+  if (ev.race) { const fx = ev.len * PX - cam; ctx.fillStyle = '#fff'; ctx.fillRect(fx, GROUND - 26, 4, 36); for (let k = 0; k < 6; k++) { ctx.fillStyle = k % 2 ? OUT : '#fff'; ctx.fillRect(fx + 4, GROUND - 26 + k * 6, 4, 6); } ctx.fillStyle = '#fff'; ctx.fillRect(-cam, GROUND - 26, 3, 36); }
+  if (ev.id === 'hurdles') for (const [i, hx] of HURDLES.entries()) { const x = hx * PX - cam; if (x < -20 || x > W + 20) continue; const down = l.hit.has(i); ctx.fillStyle = OUT; ctx.fillRect(x - 1, GROUND - 4 - (down ? 2 : 9), 4, down ? 4 : 11); ctx.fillStyle = '#fff'; if (down) ctx.fillRect(x - 8, GROUND - 4, 16, 3); else { ctx.fillRect(x - 1, GROUND - 12, 2, 12); ctx.fillStyle = OUT; ctx.fillRect(x - 3, GROUND - 14, 7, 4); ctx.fillStyle = '#ff4f3d'; ctx.fillRect(x - 2, GROUND - 13, 5, 2); } }
+  if (ev.id === 'long') { const bx = ev.board * PX - cam; ctx.fillStyle = '#e8d8a0'; ctx.fillRect(bx + 10, GROUND - 22, 11 * PX, 28); ctx.fillStyle = '#fff'; ctx.fillRect(bx - 4, GROUND - 26, 6, 36); ctx.fillStyle = '#c8b880'; for (let m = 1; m <= 10; m++) { ctx.fillRect(bx + m * PX, GROUND + 6, 1, 4); } if (l.best) { const mx = (ev.board + l.best) * PX - cam; ctx.fillStyle = '#ffd23d'; ctx.fillRect(mx, GROUND - 40, 2, 20); ctx.fillRect(mx, GROUND - 40, 10, 6); } const qx = (ev.board + qual(ev)) * PX - cam; ctx.fillStyle = '#ff4f6d'; ctx.fillRect(qx, GROUND - 34, 2, 14); }
+  if (ev.id === 'jav') { const bx = ev.board * PX - cam; ctx.fillStyle = '#fff'; ctx.fillRect(bx - 2, GROUND - 26, 4, 36); const qx = (ev.board + qual(ev)) * PX - cam; ctx.fillStyle = '#ff4f6d'; ctx.fillRect(qx, GROUND - 34, 2, 44); ctx.font = '8px Silkscreen, monospace'; ctx.fillText('Q', qx + 6, GROUND - 28); if (l.best) { const mx = (ev.board + l.best) * PX - cam; ctx.fillStyle = '#ffd23d'; ctx.fillRect(mx, GROUND - 40, 2, 20); ctx.fillRect(mx, GROUND - 40, 10, 6); } }
+  // the athlete
+  const X = l.x * PX - cam, Y = GROUND - l.z * PX + (l.k ? 0 : 0);
+  ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(X, GROUND + 1, 9, 2.5, 0, 0, 6.29); ctx.fill();
+  runner(X, Y, l, t);
+  if (l.jav && l.ph !== 'run') { const j = l.jav, jx = j.x * PX - cam, jy = GROUND - Math.min(j.y * PX * 0.3, 118), a = Math.atan2(-j.vy * 0.3, j.vx); // height squashed so it stays in view
+    ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(jx - 12, GROUND, 24, 2); ctx.strokeStyle = OUT; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(jx - Math.cos(a) * 20, jy - Math.sin(a) * 20); ctx.lineTo(jx + Math.cos(a) * 20, jy + Math.sin(a) * 20); ctx.stroke(); ctx.strokeStyle = '#f4f4ff'; ctx.lineWidth = 1.5; ctx.stroke(); }
+  // the speed meter and angle gauge
+  ctx.fillStyle = 'rgba(10,6,18,.7)'; ctx.fillRect(6, 4, 170, 18); ctx.font = '10px Silkscreen, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = l.c; ctx.fillText(l.name, 10, 13);
+  ctx.fillStyle = '#2a2440'; ctx.fillRect(W - 120, 6, 110, 10); const sp = A.clamp(l.v / 12, 0, 1); ctx.fillStyle = sp > 0.8 ? '#ff4f3d' : sp > 0.55 ? '#ffd23d' : '#3dc85a'; ctx.fillRect(W - 120, 6, 110 * sp, 10); ctx.strokeStyle = OUT; ctx.lineWidth = 1; ctx.strokeRect(W - 120, 6, 110, 10);
+  if (l.ph === 'charge') { const a = l.ang * Math.PI / 180; ctx.strokeStyle = '#ffd23d'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(X + 10, Y - 20); ctx.lineTo(X + 10 + Math.cos(a) * 36, Y - 20 - Math.sin(a) * 36); ctx.stroke(); ctx.fillStyle = '#fff'; ctx.fillText(`${Math.round(l.ang)}°`, X + 14, Y - 50); }
+  if (ev.race && phase === 'go') { ctx.fillStyle = '#fff'; ctx.textAlign = 'right'; ctx.fillText(((l.time ?? clock)).toFixed(2), W - 126, 12); }
+  if (!ev.race) { ctx.fillStyle = '#fff'; ctx.textAlign = 'right'; ctx.fillText(`TRY ${Math.min(3, l.tries.length + (l.ph === 'done' ? 0 : 1))}/3${l.best !== null ? ' · BEST ' + l.best.toFixed(2) : ''}`, W - 126, 12); }
+  if (l.noteT > 0 && l.note) { ctx.font = '18px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = OUT; ctx.fillText(l.note, W / 2 + 2, 72); ctx.fillStyle = l.foul || l.ph === 'dq' ? '#ff4f6d' : '#ffd23d'; ctx.fillText(l.note, W / 2, 70); }
+  if (l.out) { ctx.fillStyle = 'rgba(10,6,18,.55)'; ctx.fillRect(0, 0, W, PH); ctx.font = '14px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#a39bc4'; ctx.fillText('OUT OF THE GAMES', W / 2, PH / 2); }
+  ctx.restore();
+}
+function render(t) {
+  ctx.fillStyle = '#16121f'; ctx.fillRect(0, 0, W, H);
+  if (state === 'title' || !lanes.length) { lanes = lanes.length ? lanes : [mkLane(0, 'p1'), mkLane(1, 'cpu')]; lanes.forEach(l => { if (l.x === undefined) resetLane(l); }); }
+  for (const l of lanes) drawLane(l, t);
+  ctx.font = '12px Bungee, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#ffb23d'; ctx.fillText(`${ev.name}${round > 1 ? ' · R' + round : ''}`, 8, 13);
+  ctx.font = '10px Silkscreen, monospace'; ctx.textAlign = 'right'; ctx.fillStyle = '#fff'; ctx.fillText(`QUALIFY ${ev.race ? '≤ ' + qual(ev).toFixed(1) + ' S' : '≥ ' + qual(ev).toFixed(1) + ' M'}`, W - 8, 13);
+  ctx.fillStyle = '#ffb23d'; ctx.fillRect(0, 26 + PH, W, 4);
+  if (state === 'play' && (phase === 'marks' || phase === 'set' || (phase === 'go' && cueT > 0))) { ctx.font = '30px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = OUT; ctx.fillText(cue, W / 2 + 2, H / 2 + 4); ctx.fillStyle = cue === 'GO!' ? '#8ad13d' : '#fff'; ctx.fillText(cue, W / 2, H / 2 + 2); }
+  if (phase === 'results' && results && state === 'play') {
+    const x = 70, y = 90, w = W - 140, h = 230; ctx.fillStyle = 'rgba(10,6,18,.92)'; ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#ffb23d'; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h);
+    ctx.textAlign = 'center'; ctx.font = '18px Bungee, sans-serif'; ctx.fillStyle = '#ffb23d'; ctx.fillText(ev.name + ' RESULTS', W / 2, y + 26);
+    ctx.font = '11px Silkscreen, monospace'; ctx.fillStyle = '#a39bc4'; ctx.fillText(`QUALIFYING ${ev.race ? qual(ev).toFixed(2) + ' S' : qual(ev).toFixed(2) + ' M'}`, W / 2, y + 50);
+    results.rows.forEach((r, k) => {
+      const yy = y + 90 + k * 46; ctx.textAlign = 'left'; ctx.font = '12px Silkscreen, monospace'; ctx.fillStyle = r.l.c; ctx.fillText(r.l.name, x + 20, yy);
+      ctx.fillStyle = '#fff'; ctx.textAlign = 'right'; ctx.fillText(r.m === null ? (r.l.ph === 'dq' ? 'DQ' : 'NO MARK') : r.m.toFixed(2) + (ev.race ? ' S' : ' M'), x + w - 110, yy);
+      ctx.fillStyle = r.ok ? '#8ad13d' : human(r.l) ? '#ff4f6d' : '#a39bc4'; ctx.fillText(r.ok ? `Q +${r.pts}` : human(r.l) ? (r.was ? '-' : 'OUT') : '', x + w - 20, yy);
+    });
+    if (results.t > 1.2) { ctx.textAlign = 'center'; ctx.fillStyle = Math.floor(results.t * 2) % 2 ? '#ffd23d' : '#a39bc4'; ctx.fillText('JUMP TO CONTINUE', W / 2, y + h - 18); }
+  }
+  if (msgT > 0 && state === 'play' && phase !== 'marks' && phase !== 'set') { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '20px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = OUT; ctx.fillText(msg, W / 2 + 2, 26 + PH + 2); ctx.fillStyle = '#fff'; ctx.fillText(msg, W / 2, 26 + PH); ctx.globalAlpha = 1; }
+}
+A.loop(update, render);
+
+/* Attract demo: tap-tap-tap at a good clip; jump the hurdles a stride out; hold for about forty degrees at the line. */
+let botT = 0, botSide = false;
+A.attract({
+  start: () => startGame(false),
+  stop: () => { state = 'title'; },
+  bot: dt => {
+    if (state !== 'play') return [];
+    if (phase === 'results') return results && results.t > 1.6 ? ['!Space'] : [];
+    const l = lanes[0]; if (phase !== 'go' || l.out) return [];
+    const keys = [];
+    if (l.ph === 'charge') { if (l.ang < 40) keys.push('Space'); return keys; }
+    if ((botT -= dt) <= 0 && l.ph === 'run') { botT = 0.085; botSide = !botSide; keys.push(botSide ? '!ArrowLeft' : '!ArrowRight'); }
+    if (ev.id === 'hurdles' && l.z === 0) { const next = HURDLES.find(h => h > l.x); if (next && next - l.x < 1.7 && next - l.x > 1.3) keys.push('!Space'); }
+    if ((ev.id === 'long' || ev.id === 'jav') && l.ph === 'run' && l.x > ev.board - l.v * 40 / 110 - 0.6) keys.push('Space');
+    return keys;
+  }
+});
+A.overlay({ title: 'FIELD DAY', sub: 'Tap two keys one after the other to run (or the two RUN buttons). Hold JUMP to set the angle and let go to leap or throw. Qualify in the 100 metres, hurdles, long jump and javelin to stay in the games!', btn: '1 player', scores: true, onGo: () => startGame(false), alt: { btn: '2 players', onGo: () => startGame(true) } });
+})();
+</script>
+</body>
+</html>

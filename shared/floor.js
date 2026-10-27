@@ -120,6 +120,7 @@ window.Floor = (() => {
     slots.push([680, 1110], [762, 1110]); // the newest cabinets, by the entrance
     for (let i = 0; i < 5; i++) slots.push([60 + i * 98, 400]); // and below the raceway, if the arcade grows
     slots.push([2012, 116], [2110, 116], [1712, 400], [1806, 400], [1950, 400], [2044, 400]); // then the far end of the shooting gallery
+    slots.push([652, 644], [736, 644], [820, 644], [904, 644], [1626, 650], [1712, 650], [370, 770], [548, 770]); // a row in the entrance hall, two in the prize corner, two in the lounge
     rest.forEach((g, i) => addCab(g, 'upright', ...slots[Math.min(i, slots.length - 1)]));
     FIXED.forEach(o => objs.push({ ...o, base: o.y + o.h }));
   }

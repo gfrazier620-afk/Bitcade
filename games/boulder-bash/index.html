@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Boulder Bash</title>
+<link rel="manifest" href="../../manifest.json">
+<meta name="theme-color" content="#0f0c1f">
+<link rel="icon" type="image/png" href="../../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../../icons/apple-touch-icon.png">
+<link rel="preload" href="../../shared/fonts/bungee-400.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="../../shared/fonts/silkscreen-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../../shared/fonts.css">
+<link rel="stylesheet" href="../../shared/arcade.css">
+</head>
+<body data-game="boulder-bash" style="--game:#5ee7ff">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>BOULDER BASH</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <div class="pad">
+    <div class="dp"><button class="u" data-k="ArrowUp" aria-label="Up">▲</button><button class="l" data-k="ArrowLeft" aria-label="Left">◀</button><button class="r" data-k="ArrowRight" aria-label="Right">▶</button><button class="d" data-k="ArrowDown" aria-label="Down">▼</button></div>
+    <div class="ab"><button data-k="Space">GRAB</button></div>
+  </div>
+  <p class="help">Arrows or WASD dig · walk into a boulder to push it · hold <kbd>Space</kbd> with a direction to grab what's next to you without moving · <kbd>R</kbd> give up the cave · <kbd>P</kbd> pause · gamepad: d-pad and A</p>
+</main>
+<script src="../../shared/chip.js"></script>
+<script src="../../shared/badges.js"></script>
+<script src="../../shared/arcade.js"></script>
+<script>
+(() => {
+/*
+ * Boulder Bash: dig through the cave for diamonds. Boulders and diamonds fall into empty space and roll off anything
+ * round (other boulders, diamonds, brick); one that lands on you is the end of that miner. Push a boulder sideways if
+ * there's room behind it. Fireflies and butterflies patrol their pockets and blow up on contact; drop a boulder on
+ * one and it explodes (a butterfly into diamonds). Collect enough diamonds and the exit opens. Beat the clock.
+ */
+const A = Arcade, cv = document.getElementById('cv');
+const S = 24, VW = 24, VH = 16, TOP = 26, W = VW * S, H = VH * S + TOP, ctx = A.canvas(cv, W, H), OUT = '#0a0612';
+const CW = 40, CH = 22, TICK = 0.125;
+const E = 0, DIRT = 1, BRICK = 2, STEEL = 3, ROCK = 4, GEM = 5, EXIT = 6, FLY = 7, BUG = 8, MAN = 9, BOOM = 10;
+const round = v => v === ROCK || v === GEM || v === BRICK;
+const DX = [0, 1, 0, -1], DY = [-1, 0, 1, 0]; // up right down left
+let state = 'title', cave = 1, score = 0, lives = 3, g = [], fall = [], dir = [], boom = [], px = 2, py = 2, have = 0, need = 10, worth = 25, clock = 150, open = false, tickT = 0, push = 0;
+let camX = 0, camY = 0, msg = '', msgT = 0, deadT = 0, lost = false, face = 1, walkT = 0, bonusT = 0, flash = 0, startT = 0;
+const say = (t, s = 1.6) => { msg = t; msgT = s; };
+const add = (n, x, y, c = '#ffd23d') => { score += n; A.setScore(score); if (x !== undefined) A.pop(x * S + S / 2 - camX, y * S + TOP - camY, '+' + n, c); };
+const I = (x, y) => y * CW + x, get = (x, y) => x < 0 || y < 0 || x >= CW || y >= CH ? STEEL : g[I(x, y)];
+function set(x, y, v) { g[I(x, y)] = v; }
+g = new Array(CW * CH).fill(DIRT);
+
+/* ---------- caves are built from a seed, so a retry is the same cave ---------- */
+function build() {
+  const rnd = A.seeded('boulder-bash:' + cave);
+  g = new Array(CW * CH).fill(DIRT); fall = new Array(CW * CH).fill(false); dir = new Array(CW * CH).fill(0); boom = new Array(CW * CH).fill(null);
+  for (let y = 0; y < CH; y++) for (let x = 0; x < CW; x++) {
+    if (x === 0 || y === 0 || x === CW - 1 || y === CH - 1) { set(x, y, STEEL); continue; }
+    const r = rnd(); set(x, y, r < 0.13 + Math.min(0.06, cave * 0.01) ? ROCK : r < 0.19 ? GEM : r < 0.24 ? E : DIRT);
+  }
+  for (let k = 0; k < 3 + Math.min(4, cave); k++) { // brick walls with gaps
+    const y = 3 + Math.floor(rnd() * (CH - 6)), x0 = 2 + Math.floor(rnd() * (CW - 16)), len = 8 + Math.floor(rnd() * 12);
+    for (let x = x0; x < Math.min(CW - 1, x0 + len); x++) if (rnd() > 0.06) set(x, y, BRICK);
+  }
+  for (let k = 0; k < Math.min(5, 1 + cave); k++) { // a critter in a pocket
+    const w = 4 + Math.floor(rnd() * 3), h = 2 + Math.floor(rnd() * 2), x0 = 8 + Math.floor(rnd() * (CW - 12 - w)), y0 = 2 + Math.floor(rnd() * (CH - 4 - h));
+    for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) set(x, y, E);
+    const bug = cave >= 2 && k % 2 === 1; set(x0, y0, bug ? BUG : FLY); dir[I(x0, y0)] = bug ? 1 : 2;
+  }
+  px = 2; py = 2; // the start: a little dug-out room, nothing overhead
+  for (let y = 1; y <= 3; y++) for (let x = 1; x <= 4; x++) if (get(x, y) !== STEEL) set(x, y, y === 1 ? DIRT : E);
+  for (let x = 1; x <= 4; x++) if (get(x, 1) === ROCK || get(x, 1) === GEM) set(x, 1, DIRT);
+  set(px, py, MAN);
+  let ex, ey; do { ex = CW - 3 - Math.floor(rnd() * 8); ey = 2 + Math.floor(rnd() * (CH - 4)); } while (get(ex, ey) === STEEL);
+  set(ex, ey, EXIT); for (const [dx, dy] of [[0, -1], [-1, 0], [1, 0]]) if (get(ex + dx, ey + dy) === ROCK) set(ex + dx, ey + dy, DIRT);
+  const gems = g.filter(v => v === GEM).length; need = Math.max(8, Math.floor(gems * (0.45 + Math.min(0.2, cave * 0.03)))); worth = 25 + cave * 5;
+  have = 0; open = false; clock = Math.max(90, 160 - cave * 6); tickT = 0; push = 0; deadT = 0; bonusT = 0; startT = 1;
+  camX = A.clamp(px * S - W / 2, 0, CW * S - W); camY = A.clamp(py * S - (H - TOP) / 2, 0, CH * S - (H - TOP));
+}
+function startGame() { cave = 1; score = 0; A.setScore(0); lives = A.easy ? 5 : 3; lost = false; build(); state = 'play'; say('CAVE 1', 1.6); A.jingle([392, 523, 659, 784], 0.08, 'square'); }
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+A.onHide(pause);
+A.onPress(c => { if (c === 'KeyP' || c === 'Escape') pause(); if (c === 'KeyR' && state === 'play' && !deadT) die(); });
+
+/* ---------- explosions ---------- */
+function explode(cx, cy, into) {
+  A.shake(5, 0.3); A.noise(0.4, 0.07); A.tone(80, 0.3, 'sawtooth', 0.04, 0, 40);
+  A.burst(cx * S + S / 2 - camX, cy * S + S / 2 + TOP - camY, { n: 22, colors: into === GEM ? ['#5ee7ff', '#fff', '#b48aff'] : ['#ffd23d', '#ff7a3d', '#fff'], speed: 150, life: 0.6 });
+  for (let y = cy - 1; y <= cy + 1; y++) for (let x = cx - 1; x <= cx + 1; x++) {
+    const v = get(x, y); if (v === STEEL || v === EXIT) continue;
+    if (v === MAN) die(true);
+    set(x, y, BOOM); boom[I(x, y)] = { t: 0, into }; fall[I(x, y)] = false;
+  }
+}
+function die(byBlast) {
+  if (deadT) return; deadT = 2.2; lives--; A.sfx('hurt'); A.flash('#ff4f6d', 0.15);
+  if (!byBlast) explode(px, py, E);
+}
+
+/* ---------- one tick of the cave ---------- */
+function tick() {
+  const moved = new Set();
+  // the miner
+  if (!deadT && startT <= 0) {
+    const want = A.held('ArrowUp') || A.held('KeyW') ? 0 : A.held('ArrowRight') || A.held('KeyD') ? 1 : A.held('ArrowDown') || A.held('KeyS') ? 2 : A.held('ArrowLeft') || A.held('KeyA') ? 3 : -1;
+    const grab = A.held('Space') || A.held('KeyJ') || A.held('KeyZ');
+    if (want >= 0) {
+      if (want === 1) face = 1; if (want === 3) face = -1;
+      const nx = px + DX[want], ny = py + DY[want], v = get(nx, ny);
+      const enter = () => { if (!grab) { set(px, py, E); px = nx; py = ny; set(px, py, MAN); moved.add(I(px, py)); walkT++; } else set(nx, ny, E); };
+      if (v === E || v === DIRT) { if (v === DIRT) A.tone(90 + Math.random() * 30, 0.03, 'square', 0.015); enter(); push = 0; }
+      else if (v === GEM) { have++; add(have > need ? worth * 2 : worth, nx, ny, '#5ee7ff'); A.tone(1200 + (have % 5) * 120, 0.06, 'triangle', 0.035); enter(); if (have === need && !open) { open = true; flash = 0.3; say('EXIT OPEN!', 1.6); A.jingle([784, 988, 1175, 1568], 0.06, 'square'); } }
+      else if (v === EXIT && open) { set(px, py, E); px = nx; py = ny; return caveDone(); }
+      else if (v === ROCK && (want === 1 || want === 3) && !grab && get(nx + DX[want], ny) === E && !fall[I(nx, ny)]) {
+        if (++push >= 2) { set(nx + DX[want], ny, ROCK); moved.add(I(nx + DX[want], ny)); push = 0; set(px, py, E); px = nx; set(px, py, MAN); moved.add(I(px, py)); A.tone(70, 0.08, 'square', 0.03); }
+      } else push = 0;
+    } else push = 0;
+  }
+  // falling and rolling, bottom row up
+  for (let y = CH - 2; y >= 1; y--) for (let x = 1; x < CW - 1; x++) {
+    const i = I(x, y), v = g[i]; if ((v !== ROCK && v !== GEM) || moved.has(i)) continue;
+    const below = get(x, y + 1);
+    const go = (nx, ny) => { set(x, y, E); fall[i] = false; set(nx, ny, v); fall[I(nx, ny)] = true; moved.add(I(nx, ny)); };
+    if (below === E) { go(x, y + 1); continue; }
+    if (fall[i]) {
+      if (below === MAN) { fall[i] = false; die(); continue; }
+      if (below === FLY || below === BUG) { const into = below === BUG ? GEM : E; add(below === BUG ? 250 : 100, x, y + 1); if (below === BUG) A.badge('butterfly'); explode(x, y + 1, into); continue; }
+      A.tone(v === ROCK ? 70 : 1500, 0.05, v === ROCK ? 'square' : 'triangle', 0.025);
+    }
+    if (round(below)) {
+      if (get(x - 1, y) === E && get(x - 1, y + 1) === E) { go(x - 1, y); continue; }
+      if (get(x + 1, y) === E && get(x + 1, y + 1) === E) { go(x + 1, y); continue; }
+    }
+    fall[i] = false;
+  }
+  // critters: fireflies keep a wall on their left, butterflies on their right
+  for (let y = 1; y < CH - 1; y++) for (let x = 1; x < CW - 1; x++) {
+    const i = I(x, y), v = g[i]; if ((v !== FLY && v !== BUG) || moved.has(i)) continue;
+    for (let k = 0; k < 4; k++) if (get(x + DX[k], y + DY[k]) === MAN) { explode(x, y, v === BUG ? GEM : E); break; }
+    if (g[i] !== v) continue;
+    const d = dir[i], turn = v === FLY ? (d + 3) % 4 : (d + 1) % 4;
+    const step = nd => { const nx = x + DX[nd], ny = y + DY[nd]; set(x, y, E); set(nx, ny, v); dir[I(nx, ny)] = nd; moved.add(I(nx, ny)); };
+    if (get(x + DX[turn], y + DY[turn]) === E) step(turn);
+    else if (get(x + DX[d], y + DY[d]) === E) step(d);
+    else dir[i] = v === FLY ? (d + 1) % 4 : (d + 3) % 4;
+  }
+}
+function caveDone() {
+  state = 'bonus'; bonusT = 0; say(`CAVE ${cave} CLEAR!`, 2.6); A.jingle([523, 659, 784, 1047, 1319], 0.09, 'square');
+  if (cave >= 5) A.badge('cave5'); if (clock >= 100) A.badge('speedy');
+}
+function gameOver() {
+  if (lost) return; lost = true; state = 'over'; const rec = A.submit(score);
+  A.overlay({ title: 'CAVE-IN!', big: `SCORE ${score.toLocaleString()} · CAVE ${cave}`, sub: rec ? 'New high score!' : 'Out of miners.', btn: 'Dig again', onGo: startGame });
+}
+
+function update(dt) {
+  if (msgT > 0) msgT -= dt; if (flash > 0) flash -= dt;
+  for (let i = 0; i < boom.length; i++) { const b = boom[i]; if (b && (b.t += dt) > 0.45) { boom[i] = null; if (g[i] === BOOM) g[i] = b.into; } }
+  if (state === 'bonus') { // the clock counts down into points
+    bonusT += dt; if (bonusT > 0.8 && clock > 0) { const n = Math.min(clock, dt * 60); clock -= n; score += Math.round(n * 10); A.setScore(score); if (Math.random() < 0.5) A.tone(1400, 0.02, 'square', 0.015); }
+    if (clock <= 0 && bonusT > 2.4) { clock = 0; cave++; build(); state = 'play'; say(`CAVE ${cave}`, 1.6); A.jingle([392, 523, 659, 784], 0.08, 'square'); }
+    return;
+  }
+  if (state !== 'play') return;
+  if (startT > 0) startT -= dt;
+  if (deadT) { if ((deadT -= dt) <= 0) { deadT = 0; if (lives <= 0) return gameOver(); build(); say(`CAVE ${cave} · TRY AGAIN`, 1.4); } }
+  else if ((clock -= dt) <= 0) { clock = 0; say('OUT OF TIME!', 1.6); die(); }
+  tickT += dt; while (tickT >= TICK) { tickT -= TICK; tick(); if (state !== 'play') return; }
+  const tx = A.clamp(px * S + S / 2 - W / 2, 0, CW * S - W), ty = A.clamp(py * S + S / 2 - (H - TOP) / 2, 0, CH * S - (H - TOP));
+  camX += (tx - camX) * Math.min(1, dt * 6); camY += (ty - camY) * Math.min(1, dt * 6);
+}
+
+/* ---------- drawing ---------- */
+function tile(v, X, Y, i, t) {
+  if (v === DIRT) { ctx.fillStyle = '#7a4a2a'; ctx.fillRect(X, Y, S, S); ctx.fillStyle = '#8a5a34'; ctx.fillRect(X + (i * 7) % 18, Y + (i * 13) % 18, 4, 3); ctx.fillRect(X + (i * 11 + 9) % 19, Y + (i * 5 + 11) % 19, 3, 3); ctx.fillStyle = '#5a3418'; ctx.fillRect(X + (i * 17 + 4) % 20, Y + (i * 3 + 6) % 20, 3, 2); return; }
+  if (v === BRICK) { ctx.fillStyle = '#9a4a3a'; ctx.fillRect(X, Y, S, S); ctx.fillStyle = '#5a2a22'; ctx.fillRect(X, Y + 11, S, 2); ctx.fillRect(X + (i % 2 ? 6 : 16), Y, 2, 11); ctx.fillRect(X + (i % 2 ? 16 : 6), Y + 13, 2, 11); ctx.fillStyle = '#c86a50'; ctx.fillRect(X, Y, S, 2); return; }
+  if (v === STEEL) { ctx.fillStyle = '#5a6478'; ctx.fillRect(X, Y, S, S); ctx.fillStyle = '#8a94a8'; ctx.fillRect(X + 2, Y + 2, S - 4, S - 4); ctx.fillStyle = '#5a6478'; ctx.fillRect(X + 4, Y + 4, 3, 3); ctx.fillRect(X + S - 7, Y + 4, 3, 3); ctx.fillRect(X + 4, Y + S - 7, 3, 3); ctx.fillRect(X + S - 7, Y + S - 7, 3, 3); return; }
+  if (v === ROCK) { ctx.fillStyle = OUT; ctx.beginPath(); ctx.arc(X + 12, Y + 13, 11.5, 0, 6.29); ctx.fill(); ctx.fillStyle = '#8a8a9a'; ctx.beginPath(); ctx.arc(X + 12, Y + 13, 10, 0, 6.29); ctx.fill(); ctx.fillStyle = '#b8b8c8'; ctx.beginPath(); ctx.arc(X + 9, Y + 9, 4, 0, 6.29); ctx.fill(); ctx.fillStyle = '#5a5a6a'; ctx.fillRect(X + 13, Y + 16, 5, 3); return; }
+  if (v === GEM) {
+    const k = Math.floor(t / 100 + i) % 6; ctx.fillStyle = OUT; ctx.beginPath(); ctx.moveTo(X + 12, Y + 1); ctx.lineTo(X + 23, Y + 10); ctx.lineTo(X + 12, Y + 23); ctx.lineTo(X + 1, Y + 10); ctx.fill();
+    ctx.fillStyle = '#3ab8e8'; ctx.beginPath(); ctx.moveTo(X + 12, Y + 3); ctx.lineTo(X + 21, Y + 10); ctx.lineTo(X + 12, Y + 21); ctx.lineTo(X + 3, Y + 10); ctx.fill();
+    ctx.fillStyle = '#9af0ff'; ctx.beginPath(); ctx.moveTo(X + 12, Y + 3); ctx.lineTo(X + 21, Y + 10); ctx.lineTo(X + 12, Y + 10); ctx.fill(); ctx.fillStyle = '#1a7ab8'; ctx.beginPath(); ctx.moveTo(X + 3, Y + 10); ctx.lineTo(X + 12, Y + 21); ctx.lineTo(X + 12, Y + 10); ctx.fill();
+    if (k === 0) { ctx.fillStyle = '#fff'; ctx.fillRect(X + 15, Y + 5, 2, 6); ctx.fillRect(X + 13, Y + 7, 6, 2); }
+    return;
+  }
+  if (v === EXIT) { ctx.fillStyle = open && Math.floor(t / 150) % 2 ? '#8ad13d' : '#5a6478'; ctx.fillRect(X, Y, S, S); ctx.fillStyle = OUT; ctx.fillRect(X + 4, Y + 3, S - 8, S - 3); ctx.fillStyle = open ? '#2a4a1a' : '#8a94a8'; ctx.fillRect(X + 6, Y + 5, S - 12, S - 5); return; }
+  if (v === FLY) { const a = t / 120; ctx.save(); ctx.translate(X + 12, Y + 12); ctx.rotate(a); ctx.fillStyle = OUT; ctx.fillRect(-9, -9, 18, 18); ctx.fillStyle = '#ff9a3d'; ctx.fillRect(-7, -7, 14, 14); ctx.fillStyle = '#ffd23d'; ctx.fillRect(-3, -3, 6, 6); ctx.restore(); return; }
+  if (v === BUG) { const w = 3 + Math.abs(Math.sin(t / 80)) * 8; ctx.fillStyle = OUT; ctx.fillRect(X + 12 - w - 1, Y + 4, w * 2 + 2, 16); ctx.fillStyle = '#5a8aff'; ctx.fillRect(X + 12 - w, Y + 5, w, 14); ctx.fillStyle = '#b48aff'; ctx.fillRect(X + 12, Y + 5, w, 14); ctx.fillStyle = OUT; ctx.fillRect(X + 11, Y + 3, 2, 18); return; }
+  if (v === BOOM) { const b = boom[i], k = b ? b.t / 0.45 : 1; ctx.fillStyle = `rgba(255,${Math.round(240 - k * 140)},80,${1 - k * 0.6})`; ctx.beginPath(); ctx.arc(X + 12, Y + 12, 6 + k * 8, 0, 6.29); ctx.fill(); ctx.fillStyle = '#fff'; ctx.fillRect(X + 10, Y + 10, 4, 4); return; }
+  if (v === MAN) {
+    if (deadT) return;
+    const st = walkT % 2, f = face; ctx.save(); ctx.translate(X + 12, Y); ctx.scale(f, 1); ctx.translate(-12, 0);
+    const list = [[7, 11, 10, 8, '#3d8aff'], [8, 19, 3, 4 - st, '#3a3a5a'], [13, 19, 3, 3 + st, '#3a3a5a'], [7, 3, 10, 8, '#f4c8a0'], [6, 1, 12, 4, '#ffd23d'], [16, 2, 4, 3, '#fff6c2']];
+    ctx.fillStyle = OUT; for (const q of list) ctx.fillRect(q[0] - 1, q[1] - 1, q[2] + 2, q[3] + 2); for (const [x, y, w, h, c] of list) { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); }
+    ctx.fillStyle = OUT; ctx.fillRect(13, 6, 2, 2); ctx.fillStyle = '#c8885a'; ctx.fillRect(16, 12, 4, 3);
+    ctx.restore();
+  }
+}
+function render(t) {
+  ctx.fillStyle = '#0c0a14'; ctx.fillRect(0, 0, W, H);
+  ctx.save(); ctx.beginPath(); ctx.rect(0, TOP, W, H - TOP); ctx.clip(); ctx.translate(-Math.round(camX), TOP - Math.round(camY));
+  const x0 = Math.max(0, Math.floor(camX / S)), y0 = Math.max(0, Math.floor(camY / S));
+  for (let y = y0; y < Math.min(CH, y0 + VH + 2); y++) for (let x = x0; x < Math.min(CW, x0 + VW + 2); x++) { const v = g[I(x, y)]; if (v !== E) tile(v, x * S, y * S, I(x, y), t); }
+  if (deadT === 0 && state === 'play' && startT > 0) { ctx.strokeStyle = `rgba(255,255,255,${startT})`; ctx.lineWidth = 2; ctx.strokeRect(px * S - 4, py * S - 4, S + 8, S + 8); }
+  ctx.restore();
+  if (flash > 0) { ctx.fillStyle = `rgba(255,255,255,${flash})`; ctx.fillRect(0, TOP, W, H - TOP); }
+  // HUD
+  ctx.fillStyle = '#16121f'; ctx.fillRect(0, 0, W, TOP);
+  if (state !== 'title') {
+    ctx.font = '12px Silkscreen, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+    tile(GEM, 6, 1, 0, 1); ctx.fillStyle = open ? '#8ad13d' : '#5ee7ff'; ctx.fillText(`${have}/${need}`, 34, 13); ctx.fillStyle = '#a39bc4'; ctx.fillText(`× ${have >= need ? worth * 2 : worth}`, 100, 13);
+    ctx.fillStyle = '#fff'; ctx.fillText(`CAVE ${cave}`, 200, 13); ctx.fillStyle = '#ffd23d'; ctx.fillText(`MINERS ${Math.max(0, lives)}`, 300, 13);
+    ctx.textAlign = 'right'; ctx.fillStyle = clock < 20 ? '#ff4f6d' : '#fff'; ctx.fillText(`TIME ${Math.ceil(clock)}`, W - 8, 13);
+  }
+  if (msgT > 0 && state !== 'title') { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '22px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = OUT; ctx.fillText(msg, W / 2 + 2, H / 2 + 2); ctx.fillStyle = '#5ee7ff'; ctx.fillText(msg, W / 2, H / 2); ctx.globalAlpha = 1; }
+}
+A.loop(update, render);
+
+/* Attract demo: walk the shortest safe path to the nearest diamond (or the open exit), never stepping out from under
+ * something heavy, never next to a critter. */
+function botPath(goal) {
+  const prev = new Map([[I(px, py), -1]]), q = [[px, py]];
+  const ok = (x, y) => { const v = get(x, y); if (!(v === E || v === DIRT || v === GEM || (v === EXIT && open))) return false; for (let k = 0; k < 4; k++) { const n = get(x + DX[k], y + DY[k]); if (n === FLY || n === BUG) return false; } return true; };
+  while (q.length) {
+    const [x, y] = q.shift(); if (goal(x, y) && (x !== px || y !== py)) { let k = I(x, y), step = k; while (prev.get(k) !== I(px, py)) { step = prev.get(k); k = step; } return step; }
+    for (let d = 0; d < 4; d++) { const nx = x + DX[d], ny = y + DY[d], k = I(nx, ny); if (prev.has(k) || !ok(nx, ny)) continue; if (d === 2 && (get(x, y - 1) === ROCK || get(x, y - 1) === GEM) && x === px && y === py) continue; if ((get(nx, ny - 1) === ROCK || get(nx, ny - 1) === GEM) && fall[I(nx, ny - 1)]) continue; prev.set(k, I(x, y)); q.push([nx, ny]); }
+  }
+  return null;
+}
+A.attract({
+  start: startGame,
+  stop: () => { state = 'title'; },
+  bot: () => {
+    if (state !== 'play' || deadT || startT > 0) return [];
+    let step = open ? botPath((x, y) => get(x, y) === EXIT) : null;
+    if (step === null) step = botPath((x, y) => get(x, y) === GEM);
+    if (step === null) return [['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp'][Math.floor(Date.now() / 900) % 4]];
+    const sx = step % CW, sy = Math.floor(step / CW);
+    return [sx > px ? 'ArrowRight' : sx < px ? 'ArrowLeft' : sy > py ? 'ArrowDown' : 'ArrowUp'];
+  }
+});
+A.overlay({ title: 'BOULDER BASH', sub: 'Dig for diamonds and open the exit before the clock runs out. Boulders and diamonds fall and roll, so don’t step out from under one. Push boulders sideways. Drop one on a butterfly and it bursts into diamonds.', btn: 'Start digging', scores: true, onGo: startGame });
+})();
+</script>
+</body>
+</html>

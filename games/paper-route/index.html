@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Paper Route</title>
+<link rel="manifest" href="../../manifest.json">
+<meta name="theme-color" content="#0f0c1f">
+<link rel="icon" type="image/png" href="../../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../../icons/apple-touch-icon.png">
+<link rel="preload" href="../../shared/fonts/bungee-400.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="../../shared/fonts/silkscreen-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../../shared/fonts.css">
+<link rel="stylesheet" href="../../shared/arcade.css">
+</head>
+<body data-game="paper-route" style="--game:#5ab8ff">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>PAPER ROUTE</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <div class="pad">
+    <div class="dp"><button class="u" data-k="ArrowUp" aria-label="Up">▲</button><button class="l" data-k="ArrowLeft" aria-label="Slow down">◀</button><button class="r" data-k="ArrowRight" aria-label="Speed up">▶</button><button class="d" data-k="ArrowDown" aria-label="Down">▼</button></div>
+    <div class="ab"><button data-k="Space">THROW</button></div>
+  </div>
+  <p class="help"><kbd>▲</kbd><kbd>▼</kbd> change lanes · <kbd>▶</kbd> pedal harder · <kbd>◀</kbd> brake · <kbd>Space</kbd>/<kbd>Z</kbd> throw a paper · <kbd>P</kbd> pause · gamepad: d-pad and A</p>
+</main>
+<script src="../../shared/chip.js"></script>
+<script src="../../shared/badges.js"></script>
+<script src="../../shared/arcade.js"></script>
+<script>
+(() => {
+/*
+ * Paper Route: a week of deliveries down Maple Street. The houses face you; you ride along the sidewalk or the road
+ * and throw papers up into the yards. Bright houses with their mailbox flag up are subscribers: a paper in the
+ * mailbox is worth the most, one on the doorstep still counts, but through their window and they cancel. Grey houses
+ * don't take the paper (their windows are fair game). Miss a subscriber and they cancel too; deliver to everyone for
+ * a perfect day and a neighbour signs up. Cars, dogs, skaters, bins and roadworks end your ride. Monday to Sunday,
+ * then the week starts over, busier. Lose every subscriber, or every bike, and you're off the route.
+ */
+const A = Arcade, cv = document.getElementById('cv');
+const W = 560, H = 420, ctx = A.canvas(cv, W, H), OUT = '#0a0612';
+function shade(hex, k) {
+  let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join('');
+  const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+function paint(x, list) {
+  x.fillStyle = OUT; for (const q of list) x.fillRect(q[0] - 1, q[1] - 1, q[2] + 2, q[3] + 2);
+  for (const [px, py, w, h, c] of list) { x.fillStyle = c; x.fillRect(px, py, w, h); if (w > 2 && h > 2) { x.fillStyle = shade(c, 0.3); x.fillRect(px, py, w, 1); x.fillStyle = shade(c, -0.3); x.fillRect(px, py + h - 1, w, 1); } }
+}
+
+/* depth bands on screen: facade bottom, the mailboxes, the sidewalk, two road lanes */
+const FACE = 168, MAIL = 226, WALK = 272, LANE1 = 324, LANE2 = 374, YMIN = 258, YMAX = 388;
+const DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
+const HOUSES = 16, GAP = 190, START = 420, PAPERS = 10, MAXP = 15;
+const SUBC = ['#ff9ab8', '#ffd27a', '#9ad8ff', '#b8f08a', '#d8b0ff', '#ffb27a'], DRAB = ['#7a7488', '#6a7480', '#80786a'];
+let state = 'title', street = [], bike = null, papers = [], hazards = [], bits = [], day = 0, week = 1, score = 0, lives = 3, bag = PAPERS;
+let cam = 0, msg = '', msgT = 0, report = null, lost = false, dayStats = null;
+const say = (t, s = 1.6) => { msg = t; msgT = s; };
+const PVY = 360, PVX = 0.5; // a paper flies up at PVY and keeps half the bike's speed
+const leadX = () => bike.wx + 4 + bike.sp * PVX * (bike.y - 24 - MAIL) / PVY; // where a paper thrown now crosses the mailboxes
+const add = (n, wx, y, c = '#ffd23d') => { score += n; A.setScore(score); if (wx !== undefined) A.pop(wx - cam, y, '+' + n, c); };
+const routeEnd = () => START + HOUSES * GAP + 160;
+
+function makeStreet() {
+  street = [];
+  for (let i = 0; i < HOUSES; i++) {
+    const w = 132 + Math.floor(Math.random() * 3) * 10, x = START + i * GAP + (GAP - w) / 2, sub = i % 3 !== 2 ? Math.random() < 0.72 : Math.random() < 0.3;
+    street.push({ miss: 0, x, w, sub, c: SUBC[i % SUBC.length], drab: DRAB[i % DRAB.length], roof: ['#a0484a', '#4a5aa0', '#5a7a4a', '#7a5a3a'][i % 4], door: x + (i % 2 ? w - 40 : 22), mail: x + (i % 2 ? 26 : w - 30), two: Math.random() < 0.4 });
+  }
+}
+function newDay() {
+  for (const h of street) Object.assign(h, { done: false, broken: [false, false], angry: false });
+  bike = { wx: 60, y: WALK, sp: 140, tilt: 0, crash: 0, inv: 1.5, throwT: 0, wheel: 0 };
+  papers = []; bits = []; bag = Math.max(bag, PAPERS); dayStats = { mail: 0, door: 0 };
+  spawnHazards(); cam = bike.wx - 130; state = 'play';
+  say(`${DAYS[day]}${week > 1 ? ' · WEEK ' + week : ''}`, 2); A.jingle([523, 659, 784, 659, 1047], 0.08, 'triangle');
+}
+function spawnHazards() {
+  hazards = []; const busy = Math.min(1, 0.25 + (day + (week - 1) * 7) * 0.09), end = routeEnd();
+  for (let x = 500; x < end - 120; x += 150 + Math.random() * 160) {
+    const r = Math.random();
+    if (r < 0.22) hazards.push({ kind: 'bin', wx: x, y: WALK - 2 + Math.random() * 10, w: 18 });
+    else if (r < 0.36) hazards.push({ kind: Math.random() < 0.5 ? 'cone' : 'grate', wx: x, y: Math.random() < 0.5 ? LANE1 : LANE2, w: Math.random() < 0.5 ? 18 : 26 });
+    else if (r < 0.36 + busy * 0.3) hazards.push({ kind: 'car', wx: x + 300, y: LANE2, w: 64, v: -A.rand(60, 110), c: ['#ff4f6d', '#3d8aff', '#ffd23d', '#3dc85a', '#e8e8f0'][Math.floor(Math.random() * 5)] });
+    else if (r < 0.36 + busy * 0.45) hazards.push({ kind: 'car', wx: x - 200, y: LANE1, w: 64, v: A.rand(50, 90), c: ['#ff9a3d', '#b48aff', '#5ad8c8'][Math.floor(Math.random() * 3)] });
+    else if (r < 0.36 + busy * 0.62) hazards.push({ kind: 'dog', wx: x, y: MAIL - 20, w: 22, home: MAIL - 20, wait: true, v: 0 });
+    else if (r < 0.36 + busy * 0.75) hazards.push({ kind: 'skater', wx: x + 260, y: WALK + 4, w: 20, v: -A.rand(70, 110) });
+    if (Math.random() < 0.22) hazards.push({ kind: 'bundle', wx: x + 70, y: [WALK, LANE1][Math.floor(Math.random() * 2)], w: 20 });
+  }
+}
+function startGame() { day = 0; week = 1; score = 0; A.setScore(0); lives = A.easy ? 5 : 3; bag = PAPERS; lost = false; makeStreet(); newDay(); }
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+A.onHide(pause);
+function throwPaper() {
+  if (state !== 'play' || bike.crash > 0 || bike.throwT > 0) return;
+  if (bag <= 0) { A.tone(160, 0.1, 'square', 0.03); say('OUT OF PAPERS!', 0.8); return; }
+  bag--; bike.throwT = 0.28; papers.push({ wx: bike.wx + 4, y: bike.y - 24, h: 24, vy: -PVY, t: 0, spin: 0 }); A.tone(520, 0.06, 'triangle', 0.03, 0, 900);
+}
+A.onPress(c => { if (c === 'KeyP' || c === 'Escape') return pause(); if (['Space', 'KeyZ', 'KeyJ', 'KeyX', 'Enter'].includes(c)) { if (state === 'report' && report && report.t > 1) return nextDay(); throwPaper(); } });
+
+/* ---------- landing a paper ---------- */
+function land(p, how, h, at) {
+  p.dead = true; const sx = p.wx;
+  if (how === 'mail') { h.done = 'mail'; dayStats.mail++; add(250, sx, MAIL - 30, '#8ad13d'); A.jingle([784, 1047, 1319], 0.05, 'square'); A.burst(sx - cam, MAIL - 10, { n: 10, colors: ['#fff', '#8ad13d'], speed: 80, life: 0.4 }); }
+  if (how === 'door') { h.done = 'door'; dayStats.door++; add(100, sx, FACE - 30, '#5ee7ff'); A.tone(660, 0.1, 'triangle', 0.04); }
+  if (how === 'window') {
+    h.broken[at] = true; A.noise(0.25, 0.06); A.tone(1800, 0.12, 'square', 0.02, 0, 600); A.burst(sx - cam, FACE - 60, { n: 14, colors: ['#bfe8ff', '#fff'], speed: 120, life: 0.5 });
+    if (h.sub) { h.angry = true; h.done = false; say('THEY CANCELLED!', 1); A.shake(3, 0.2); } else add(50, sx, FACE - 70, '#ff9a3d');
+  }
+  if (how === 'wall') { A.tone(140, 0.06, 'square', 0.03); A.burst(sx - cam, p.y, { n: 4, colors: ['#e8e0d0'], speed: 50, life: 0.3 }); }
+  if (how === 'lawn') bits.push({ wx: sx, y: p.y, t: 0 });
+}
+function crash(why) {
+  if (bike.crash > 0 || bike.inv > 0) return;
+  bike.crash = 1.6; lives--; A.sfx('hurt'); A.shake(6, 0.35); A.flash('#ff4f6d', 0.15); say(why, 1.2);
+  A.burst(bike.wx - cam, bike.y - 14, { n: 16, colors: ['#fff', '#e8e0d0', '#5ab8ff'], speed: 130, life: 0.6 });
+  for (let k = 0; k < Math.min(3, bag); k++) bits.push({ wx: bike.wx + k * 14 - 14, y: bike.y + 6, t: 0 });
+}
+
+/* ---------- the end of the day ---------- */
+function endDay() {
+  state = 'report';
+  const subs = street.filter(h => h.sub), served = subs.filter(h => h.done && !h.angry), missed = subs.filter(h => !h.done || h.angry);
+  const perfect = subs.length > 0 && !missed.length, bonus = served.length * 50 + (perfect ? 1000 : 0);
+  served.forEach(h => h.miss = 0);
+  const gone = missed.filter(h => h.angry || ++h.miss >= 2); gone.forEach(h => { h.sub = false; h.miss = 0; }); // a first miss is a warning; a broken window cancels at once
+  let signed = null; if (perfect) { const drab = street.filter(h => !h.sub); if (drab.length) { signed = drab[Math.floor(Math.random() * drab.length)]; signed.sub = true; } A.badge('perfect'); }
+  if (dayStats.mail >= 8) A.badge('mailbox');
+  add(bonus);
+  report = { day: DAYS[day], served: served.length, total: subs.length, lost: gone.length, warned: missed.length - gone.length, perfect, signed: !!signed, bonus, left: street.filter(h => h.sub).length, t: 0 };
+  A.jingle(perfect ? [523, 659, 784, 1047, 1319] : [523, 659, 784], 0.09, 'triangle');
+}
+function nextDay() {
+  if (!report) return; const left = report.left; report = null;
+  if (left <= 0) return gameOver('NO SUBSCRIBERS LEFT');
+  day++; if (day >= 7) { day = 0; week++; add(5000); A.badge('week'); say('WEEK COMPLETE! +5000', 2.2); }
+  newDay();
+}
+function gameOver(why) {
+  if (lost) return; lost = true; state = 'over';
+  setTimeout(() => { const rec = A.submit(score); A.overlay({ title: 'OFF THE ROUTE', big: `SCORE ${score.toLocaleString()}`, sub: `${why} · ${DAYS[day]}${week > 1 ? ', week ' + week : ''}${rec ? ' · New high score!' : ''}`, btn: 'Ride again', onGo: startGame }); }, 900);
+}
+
+/* ---------- update ---------- */
+function update(dt) {
+  if (msgT > 0) msgT -= dt;
+  for (const b of bits) b.t += dt;
+  if (state === 'report') { report.t += dt; if (report.t > 6 || (A.demo && report.t > 2.5)) nextDay(); return; }
+  if (state !== 'play') return;
+  const b = bike;
+  if (b.inv > 0) b.inv -= dt; if (b.throwT > 0) b.throwT -= dt;
+  if (b.crash > 0) {
+    b.crash -= dt; b.sp = Math.max(0, b.sp - 300 * dt);
+    if (b.crash <= 0) { if (lives <= 0) return gameOver('ALL BIKES WRECKED'); b.inv = 2; b.sp = 140; }
+  } else {
+    const want = A.held('ArrowRight') || A.held('KeyD') ? 250 : A.held('ArrowLeft') || A.held('KeyA') ? 70 : 140 + Math.min(40, (day + (week - 1) * 7) * 5);
+    b.sp += Math.sign(want - b.sp) * Math.min(Math.abs(want - b.sp), 260 * dt);
+    const dy = (A.held('ArrowDown') || A.held('KeyS') ? 1 : 0) - (A.held('ArrowUp') || A.held('KeyW') ? 1 : 0);
+    b.y = A.clamp(b.y + dy * 150 * dt, YMIN, YMAX); b.tilt += (dy * 0.25 - b.tilt) * Math.min(1, dt * 10);
+  }
+  b.wx += b.sp * dt; b.wheel += b.sp * dt / 9;
+  const target = b.wx - 130 - (b.sp - 140) * 0.35; cam += (target - cam) * Math.min(1, dt * 4);
+  if (b.wx > routeEnd()) return endDay();
+  // hazards
+  for (const z of hazards) {
+    if (z.gone) continue;
+    if (z.kind === 'car' || z.kind === 'skater') z.wx += z.v * dt;
+    if (z.kind === 'dog') {
+      if (z.wait && z.wx - b.wx < 170 && z.wx - b.wx > 40) { z.wait = false; A.tone(700, 0.08, 'square', 0.03); A.tone(620, 0.08, 'square', 0.03, 0.1); }
+      if (!z.wait && !z.flee) { z.y += Math.sign(b.y - z.y) * Math.min(Math.abs(b.y - z.y), 120 * dt); z.wx += Math.sign(b.wx - z.wx) * 60 * dt; }
+      if (z.flee) { z.y -= 160 * dt; if (z.y < FACE) z.gone = true; }
+    }
+    if (z.flee && z.kind === 'skater') { z.y -= 120 * dt; z.wx -= 60 * dt; if (z.y < MAIL) z.gone = true; }
+    if (z.flee) continue;
+    if (Math.abs(z.wx - b.wx) < (z.w + 26) / 2 && Math.abs(z.y - b.y) < (z.kind === 'car' ? 20 : 12)) {
+      if (z.kind === 'bundle') { z.gone = true; bag = Math.min(MAXP, bag + 5); add(100, z.wx, z.y - 30, '#5ee7ff'); A.sfx('pickup'); continue; }
+      crash({ car: 'BEEP BEEP!', dog: 'RUFF!', skater: 'WIPEOUT!', bin: 'CRASH!', cone: 'ROADWORKS!', grate: 'BUMP!' }[z.kind]);
+    }
+  }
+  hazards = hazards.filter(z => !z.gone && z.wx > cam - 400);
+  // papers
+  for (const p of papers) {
+    if (p.dead) continue;
+    const y0 = p.y; p.t += dt; p.wx += b.sp * PVX * dt; p.y += p.vy * dt; p.h = 24 + Math.sin(Math.min(1, p.t / 0.6) * Math.PI) * 26; p.spin += dt * 14;
+    const h = street.find(s => p.wx > s.x - 4 && p.wx < s.x + s.w + 4);
+    if (h && y0 > MAIL && p.y <= MAIL && Math.abs(p.wx - (h.mail + 6)) < 12) { if (h.sub && !h.done && !h.angry) { land(p, 'mail', h); continue; } A.tone(900, 0.04, 'square', 0.02); p.dead = true; bits.push({ wx: p.wx, y: MAIL + 6, t: 0 }); continue; }
+    for (const z of hazards) if (!z.flee && (z.kind === 'dog' || z.kind === 'skater') && Math.abs(z.wx - p.wx) < 16 && Math.abs(z.y - p.y) < 14) { z.flee = true; p.dead = true; add(100, z.wx, z.y - 26); A.tone(400, 0.1, 'square', 0.03, 0, 900); }
+    if (p.dead) continue;
+    if (p.y <= FACE) {
+      if (!h) { land(p, 'lawn'); continue; }
+      const win = [h.x + 14, h.x + h.w - 44].findIndex(wx => p.wx > wx && p.wx < wx + 30 && !h.broken[[h.x + 14, h.x + h.w - 44].indexOf(wx)]);
+      if (Math.abs(p.wx - (h.door + 9)) < 15) { if (h.sub && !h.done && !h.angry) land(p, 'door', h); else land(p, 'wall', h); }
+      else if (win >= 0) land(p, 'window', h, win); else land(p, 'wall', h);
+    }
+    if (p.t > 1) land(p, 'lawn');
+  }
+  papers = papers.filter(p => !p.dead);
+  bits = bits.filter(b2 => b2.wx > cam - 60);
+}
+
+/* ---------- drawing ---------- */
+function drawHouse(h, t) {
+  const X = Math.round(h.x - cam); if (X > W + 20 || X + h.w < -20) return;
+  const wall = h.sub ? h.c : h.drab, top = h.two ? 52 : 82;
+  // yard: lawn, path, hedge
+  ctx.fillStyle = '#4a9a3a'; ctx.fillRect(X - 30, FACE, h.w + 60, WALK - 22 - FACE);
+  ctx.fillStyle = '#d8c8a0'; ctx.fillRect(Math.round(h.door - cam) + 2, FACE, 14, WALK - 22 - FACE);
+  // roof and walls
+  ctx.fillStyle = OUT; ctx.beginPath(); ctx.moveTo(X - 10, top + 2); ctx.lineTo(X + h.w / 2, top - 40); ctx.lineTo(X + h.w + 10, top + 2); ctx.fill();
+  ctx.fillStyle = h.roof; ctx.beginPath(); ctx.moveTo(X - 7, top); ctx.lineTo(X + h.w / 2, top - 36); ctx.lineTo(X + h.w + 7, top); ctx.fill();
+  ctx.fillStyle = shade(h.roof, 0.25); ctx.fillRect(X - 6, top - 2, h.w + 12, 3);
+  paint(ctx, [[X, top, h.w, FACE - top, wall]]);
+  ctx.fillStyle = shade(wall, -0.12); for (let y = top + 8; y < FACE; y += 8) ctx.fillRect(X + 1, y, h.w - 2, 1);
+  // windows (lit at a subscriber's), door, step
+  [h.x + 14, h.x + h.w - 44].forEach((wx, k) => {
+    const x = Math.round(wx - cam), y = FACE - 64;
+    paint(ctx, [[x, y, 30, 26, '#f4f0e8']]);
+    if (h.broken[k]) { ctx.fillStyle = '#1a1a2a'; ctx.fillRect(x + 3, y + 3, 24, 20); ctx.strokeStyle = '#bfe8ff'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x + 6, y + 4); ctx.lineTo(x + 15, y + 13); ctx.lineTo(x + 24, y + 6); ctx.moveTo(x + 15, y + 13); ctx.lineTo(x + 12, y + 22); ctx.stroke(); }
+    else { ctx.fillStyle = h.sub ? '#ffe9a0' : '#9ab8d8'; ctx.fillRect(x + 3, y + 3, 24, 20); ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.fillRect(x + 5, y + 5, 6, 3); ctx.fillStyle = '#f4f0e8'; ctx.fillRect(x + 14, y + 3, 2, 20); ctx.fillRect(x + 3, y + 12, 24, 2); }
+    if (h.two) { paint(ctx, [[x, top + 12, 30, 24, '#f4f0e8']]); ctx.fillStyle = h.sub ? '#ffe9a0' : '#9ab8d8'; ctx.fillRect(x + 3, top + 15, 24, 18); }
+  });
+  const dx = Math.round(h.door - cam);
+  paint(ctx, [[dx, FACE - 46, 18, 46, h.angry ? '#5a2a2a' : '#8a5a3a'], [dx - 4, FACE - 3, 26, 4, '#c8c0b0']]);
+  ctx.fillStyle = '#ffd23d'; ctx.fillRect(dx + 13, FACE - 24, 3, 3);
+  if (h.done === 'door') { paint(ctx, [[dx + 3, FACE - 8, 12, 5, '#f4f4ff']]); }
+  if (h.sub && h.miss && !h.angry) { ctx.font = '11px Silkscreen, monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#ff9a3d'; ctx.fillText('GRR', dx + 9, FACE - 52); }
+  if (h.angry) { ctx.font = '16px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#ff4f6d'; ctx.fillText('!', dx + 9, FACE - 52 + Math.sin(t / 100) * 2); }
+  // hedge and mailbox
+  ctx.fillStyle = '#2f7a2a'; ctx.fillRect(X - 30, WALK - 30, 26, 10); ctx.fillRect(X + h.w + 4, WALK - 30, 26, 10);
+  const mx = Math.round(h.mail - cam);
+  paint(ctx, [[mx + 4, MAIL - 6, 4, 30, '#8a6a4a'], [mx - 2, MAIL - 18, 16, 12, h.sub ? '#3d6aff' : '#6a6a7a']]);
+  if (h.sub && !h.done && !h.angry) paint(ctx, [[mx + 14, MAIL - 26, 3, 12, '#ff4f3d'], [mx + 14, MAIL - 26, 8, 5, '#ff4f3d']]);
+  if (h.done === 'mail') { ctx.fillStyle = '#8ad13d'; ctx.font = '12px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('✓', mx + 6, MAIL - 24); }
+}
+function drawHazard(z, t) {
+  const X = Math.round(z.wx - cam), Y = Math.round(z.y); if (X < -100 || X > W + 100) return;
+  if (z.kind === 'bundle') { paint(ctx, [[X - 10, Y - 10, 20, 12, '#f4f4ff']]); ctx.fillStyle = '#ff4f3d'; ctx.fillRect(X - 1, Y - 10, 2, 12); ctx.fillStyle = '#8a8aa0'; ctx.fillRect(X - 7, Y - 7, 5, 1); ctx.fillRect(X + 3, Y - 5, 5, 1); return; }
+  if (z.kind === 'bin') { paint(ctx, [[X - 9, Y - 24, 18, 24, '#5a8a6a'], [X - 11, Y - 27, 22, 4, '#4a7a5a']]); ctx.fillStyle = '#3a6a4a'; ctx.fillRect(X - 5, Y - 20, 2, 16); ctx.fillRect(X + 3, Y - 20, 2, 16); return; }
+  if (z.kind === 'cone') { ctx.fillStyle = OUT; ctx.beginPath(); ctx.moveTo(X - 10, Y + 1); ctx.lineTo(X, Y - 24); ctx.lineTo(X + 10, Y + 1); ctx.fill(); ctx.fillStyle = '#ff7a3d'; ctx.beginPath(); ctx.moveTo(X - 8, Y); ctx.lineTo(X, Y - 22); ctx.lineTo(X + 8, Y); ctx.fill(); ctx.fillStyle = '#fff'; ctx.fillRect(X - 4, Y - 12, 8, 3); return; }
+  if (z.kind === 'grate') { paint(ctx, [[X - 13, Y - 5, 26, 9, '#3a3a44']]); ctx.fillStyle = '#6a6a78'; for (let k = -10; k < 12; k += 5) ctx.fillRect(X + k, Y - 4, 2, 7); return; }
+  if (z.kind === 'car') {
+    const c = z.c, f = z.v > 0 ? 1 : -1;
+    ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.fillRect(X - 32, Y + 2, 64, 5);
+    paint(ctx, [[X - 32, Y - 20, 64, 18, c], [X - 18 + f * 2, Y - 34, 34, 15, shade(c, -0.1)]]);
+    ctx.fillStyle = '#bfe8ff'; ctx.fillRect(X - 15 + f * 2, Y - 31, 13, 10); ctx.fillRect(X + 1 + f * 2, Y - 31, 13, 10);
+    ctx.fillStyle = '#ffe9a0'; ctx.fillRect(f > 0 ? X + 28 : X - 32, Y - 16, 4, 5); ctx.fillStyle = '#ff4f3d'; ctx.fillRect(f > 0 ? X - 32 : X + 28, Y - 16, 4, 5);
+    for (const wx of [-19, 19]) { ctx.fillStyle = OUT; ctx.beginPath(); ctx.arc(X + wx, Y - 1, 8, 0, 6.29); ctx.fill(); ctx.fillStyle = '#8a8aa0'; ctx.beginPath(); ctx.arc(X + wx, Y - 1, 3, 0, 6.29); ctx.fill(); }
+    return;
+  }
+  if (z.kind === 'dog') {
+    const run = !z.wait && Math.floor(t / 90) % 2, f = z.flee ? 1 : (bike.wx > z.wx ? 1 : -1);
+    paint(ctx, [[X - 11, Y - 14, 22, 9, '#c8884a'], [X + f * 9 - 5, Y - 21, 10, 9, '#c8884a'], [X - 9, Y - 6 - run, 3, 6, '#a8683a'], [X + 6, Y - 6 - (1 - run), 3, 6, '#a8683a']]);
+    ctx.fillStyle = OUT; ctx.fillRect(X + f * 11 - 1, Y - 18, 2, 2); ctx.fillStyle = '#7a4a2a'; ctx.fillRect(X + f * 6 - 2, Y - 22, 4, 4);
+    ctx.fillStyle = '#c8884a'; ctx.fillRect(X - f * 13 - 1, Y - 18 + (run ? 1 : -1), 3, 6);
+    return;
+  }
+  if (z.kind === 'skater') {
+    paint(ctx, [[X - 12, Y - 3, 24, 4, '#ff4f6d'], [X - 5, Y - 28, 10, 18, '#3dc85a'], [X - 4, Y - 38, 8, 9, '#e8b890'], [X - 4, Y - 10, 3, 7, '#3a3a5a'], [X + 1, Y - 10, 3, 7, '#3a3a5a']]);
+    ctx.fillStyle = '#ffd23d'; ctx.fillRect(X - 5, Y - 40, 10, 4); ctx.fillStyle = OUT; ctx.fillRect(X - 9, Y + 1, 3, 3); ctx.fillRect(X + 6, Y + 1, 3, 3);
+  }
+}
+function drawBike(t) {
+  const b = bike; if (b.inv > 0 && b.crash <= 0 && Math.floor(t / 80) % 2) return;
+  const X = Math.round(b.wx - cam), Y = Math.round(b.y);
+  ctx.save(); ctx.translate(X, Y);
+  if (b.crash > 0) { ctx.rotate(Math.min(1.4, (1.6 - b.crash) * 4)); }
+  ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.fillRect(-22, 2, 44, 4);
+  for (const wx of [-14, 14]) { ctx.strokeStyle = OUT; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(wx, -8, 9, 0, 6.29); ctx.stroke(); ctx.strokeStyle = '#d8d8e8'; ctx.lineWidth = 1; for (let k = 0; k < 3; k++) { const a = b.wheel + k * 1.05; ctx.beginPath(); ctx.moveTo(wx + Math.cos(a) * 7, -8 + Math.sin(a) * 7); ctx.lineTo(wx - Math.cos(a) * 7, -8 - Math.sin(a) * 7); ctx.stroke(); } }
+  ctx.strokeStyle = OUT; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(-14, -8); ctx.lineTo(-2, -20); ctx.lineTo(10, -20); ctx.lineTo(14, -8); ctx.moveTo(-2, -20); ctx.lineTo(2, -8); ctx.stroke();
+  ctx.strokeStyle = '#5ab8ff'; ctx.lineWidth = 3; ctx.stroke();
+  const pedal = Math.sin(b.wheel) * 4;
+  paint(ctx, [[-1, -20 + pedal * 0.4 - 3, 4, 14, '#3a3a5a'], [-6, -40, 13, 20, '#ff4f6d'], [-4, -51, 11, 11, '#e8b890'], [-6, -54, 13, 5, '#3d6aff'], [5, -53, 6, 3, '#3d6aff'], [-12, -36, 9, 12, '#f4f0e8']]);
+  ctx.fillStyle = OUT; ctx.fillRect(4, -48, 2, 2);
+  if (b.throwT > 0) paint(ctx, [[3, -52, 4, 12, '#e8b890']]); else paint(ctx, [[4, -36, 10, 4, '#e8b890']]);
+  ctx.restore();
+}
+function render(t) {
+  // sky and far trees
+  ctx.fillStyle = '#7ac8ff'; ctx.fillRect(0, 0, W, FACE);
+  ctx.fillStyle = '#a8dcff'; ctx.fillRect(0, 0, W, 30);
+  ctx.fillStyle = '#3a8a4a'; for (let k = -1; k < 8; k++) { const x = ((k * 90 - cam * 0.3) % 720 + 720) % 720 - 90; ctx.beginPath(); ctx.arc(x, 110, 34, 0, 6.29); ctx.arc(x + 40, 100, 28, 0, 6.29); ctx.fill(); }
+  ctx.fillStyle = '#4a9a3a'; ctx.fillRect(0, FACE, W, WALK - 22 - FACE);
+  // the street
+  ctx.fillStyle = '#c8c4bc'; ctx.fillRect(0, WALK - 22, W, 34); ctx.fillStyle = '#b0aca4'; for (let x = -((cam) % 40); x < W; x += 40) ctx.fillRect(Math.round(x), WALK - 22, 2, 34);
+  ctx.fillStyle = '#8a8680'; ctx.fillRect(0, WALK + 12, W, 6);
+  ctx.fillStyle = '#4a4a54'; ctx.fillRect(0, WALK + 18, W, H - WALK - 18);
+  ctx.fillStyle = '#e8e0a0'; for (let x = -((cam) % 60); x < W; x += 60) ctx.fillRect(Math.round(x), (LANE1 + LANE2) / 2 - 12, 30, 3);
+  ctx.fillStyle = '#8a8680'; ctx.fillRect(0, H - 14, W, 14);
+  for (const h of street) drawHouse(h, t);
+  // the finish
+  const fx = Math.round(routeEnd() - cam);
+  if (fx < W + 40) { ctx.fillStyle = '#fff'; for (let k = 0; k < 12; k++) { ctx.fillStyle = k % 2 ? '#fff' : OUT; ctx.fillRect(fx, WALK - 22 + k * 10, 8, 10); ctx.fillStyle = k % 2 ? OUT : '#fff'; ctx.fillRect(fx + 8, WALK - 22 + k * 10, 8, 10); } ctx.font = '14px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#ffd23d'; ctx.fillText('END OF ROUTE', fx + 8, WALK - 40); }
+  if (state === 'play' && bike && bike.crash <= 0 && bag > 0) { const ax = Math.round(leadX() - cam); ctx.fillStyle = 'rgba(255,255,255,.45)'; ctx.fillRect(ax - 5, MAIL + 10, 10, 2); ctx.fillRect(ax - 1, MAIL + 6, 2, 10); }
+  for (const b2 of bits) { const X = Math.round(b2.wx - cam); ctx.fillStyle = OUT; ctx.fillRect(X - 7, b2.y - 4, 14, 7); ctx.fillStyle = '#f4f4ff'; ctx.fillRect(X - 6, b2.y - 3, 12, 5); }
+  // depth-sorted: hazards and the bike
+  const things = [...hazards.map(z => ({ y: z.y, d: () => drawHazard(z, t) })), ...(bike ? [{ y: bike.y + 0.5, d: () => drawBike(t) }] : [])].sort((a, b) => a.y - b.y);
+  for (const th of things) th.d();
+  for (const p of papers) {
+    const X = Math.round(p.wx - cam), Y = Math.round(p.y - (p.h - 24));
+    ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(X - 5, p.y + 2, 10, 3);
+    ctx.save(); ctx.translate(X, Y); ctx.rotate(p.spin); ctx.fillStyle = OUT; ctx.fillRect(-7, -4, 14, 8); ctx.fillStyle = '#f4f4ff'; ctx.fillRect(-6, -3, 12, 6); ctx.fillStyle = '#8a8aa0'; ctx.fillRect(-4, -1, 8, 1); ctx.restore();
+  }
+  // HUD
+  if (state !== 'title' && bike) {
+    ctx.fillStyle = 'rgba(10,6,18,.72)'; ctx.fillRect(0, 0, W, 26);
+    ctx.font = '11px Silkscreen, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+    ctx.fillStyle = '#5ab8ff'; ctx.fillText(DAYS[day], 8, 13);
+    ctx.fillStyle = '#fff'; ctx.fillText('PAPERS', 110, 13); for (let k = 0; k < bag; k++) { ctx.fillStyle = '#f4f4ff'; ctx.fillRect(170 + k * 8, 8, 6, 10); }
+    ctx.textAlign = 'right'; ctx.fillStyle = '#ffd27a'; ctx.fillText(`SUBSCRIBERS ${street.filter(h => h.sub && !h.angry).length}`, W - 70, 13);
+    ctx.fillStyle = '#ff4f6d'; ctx.fillText('♥'.repeat(Math.max(0, lives)), W - 8, 13);
+    const prog = Math.min(1, bike.wx / routeEnd()); ctx.fillStyle = '#3a3450'; ctx.fillRect(0, 24, W, 2); ctx.fillStyle = '#5ab8ff'; ctx.fillRect(0, 24, W * prog, 2);
+  }
+  if (msgT > 0 && state !== 'title') { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '22px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = OUT; ctx.fillText(msg, W / 2 + 2, 92); ctx.fillStyle = '#fff'; ctx.fillText(msg, W / 2, 90); ctx.globalAlpha = 1; }
+  if (state === 'report' && report) drawReport();
+}
+function drawReport() { // the morning bulletin
+  const r = report, x = 90, y = 50, w = W - 180, h = 312;
+  ctx.fillStyle = 'rgba(10,6,18,.55)'; ctx.fillRect(0, 0, W, H);
+  paint(ctx, [[x, y, w, h, '#f4f0e4']]);
+  ctx.fillStyle = OUT; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.font = '20px Bungee, sans-serif'; ctx.fillText('THE MAPLE ST. BULLETIN', W / 2, y + 14);
+  ctx.fillRect(x + 16, y + 42, w - 32, 2); ctx.fillRect(x + 16, y + 46, w - 32, 1);
+  ctx.font = '11px Silkscreen, monospace'; ctx.fillText(`${r.day} EDITION · WEEK ${week}`, W / 2, y + 52);
+  ctx.font = '17px Bungee, sans-serif'; ctx.fillStyle = r.perfect ? '#2a7a2a' : '#7a2a2a';
+  ctx.fillText(r.perfect ? 'PERFECT DELIVERY!' : r.lost ? `${r.lost} READER${r.lost > 1 ? 'S' : ''} CANCEL${r.lost > 1 ? '' : 'S'}` : `${r.warned} READER${r.warned > 1 ? 'S' : ''} GRUMBLE${r.warned > 1 ? '' : 'S'}`, W / 2, y + 78);
+  ctx.font = '12px Silkscreen, monospace'; ctx.fillStyle = '#2a2a3a'; ctx.textAlign = 'left';
+  const lines = [[`Delivered`, `${r.served} / ${r.total}`], ['In the mailbox', dayStats.mail], ['On the doorstep', dayStats.door], ['Grumbling (one more miss)', r.warned], ['New subscriber', r.signed ? 'YES' : '-'], ['Subscribers now', r.left], ['Bonus', '+' + r.bonus]];
+  lines.forEach(([a, b2], k) => { ctx.fillText(a, x + 30, y + 112 + k * 21); ctx.textAlign = 'right'; ctx.fillText(String(b2), x + w - 30, y + 112 + k * 21); ctx.textAlign = 'left'; });
+  ctx.textAlign = 'center'; ctx.fillStyle = r.t > 1 && Math.floor(r.t * 2) % 2 ? '#3d6aff' : '#8a8aa0'; ctx.fillText(r.left > 0 ? 'THROW TO START THE NEXT DAY' : 'THE ROUTE IS GONE...', W / 2, y + h - 26);
+}
+A.loop(update, render);
+
+/* Attract demo: keep to a clear lane, and throw when a waiting mailbox (or doorstep) is straight above. */
+A.attract({
+  start: startGame,
+  stop: () => { state = 'title'; hazards = []; papers = []; },
+  bot: () => {
+    if (state === 'report') return report && report.t > 1.5 ? ['!Space'] : [];
+    if (state !== 'play' || !bike) return [];
+    const b = bike, keys = [];
+    const risk = y => hazards.filter(z => !z.flee && z.kind !== 'bundle' && z.wx - b.wx > -30 && z.wx - b.wx < 160 + Math.max(0, -(z.v || 0)) && Math.abs(z.y - y) < (z.kind === 'car' ? 26 : 18)).length;
+    const lanes = [WALK, LANE1, LANE2], best = lanes.reduce((m, y) => risk(y) < risk(m) || (risk(y) === risk(m) && Math.abs(y - b.y) < Math.abs(m - b.y)) ? y : m, lanes[0]);
+    if (best < b.y - 4) keys.push('ArrowUp'); else if (best > b.y + 4) keys.push('ArrowDown');
+    if (risk(b.y) && b.sp > 90) keys.push('ArrowLeft');
+    const h = street.find(s => s.sub && !s.done && !s.angry && leadX() > s.x - 20 && leadX() < s.x + s.w);
+    if (h && Math.abs(leadX() - (h.mail + 6)) < 7 && !papers.length) keys.push('!Space');
+    return keys;
+  }
+});
+A.overlay({ title: 'PAPER ROUTE', sub: 'A week of deliveries on Maple Street. Bright houses with the red flag up take the paper: <b>mailbox</b> is worth the most, the <b>doorstep</b> counts too, but break their window and they cancel. Dodge cars, dogs, skaters and bins. Grab paper bundles to restock.', btn: 'Start the route', scores: true, onGo: startGame });
+})();
+</script>
+</body>
+</html>
