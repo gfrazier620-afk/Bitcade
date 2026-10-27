@@ -274,7 +274,9 @@ body{display:block;overflow-x:hidden;
 .fl-card small{font-family:var(--f-pixel);font-size:11px;color:var(--muted)}
 .fl-card button{flex:none;font-family:var(--f-pixel);font-size:13px;color:#120a1c;background:var(--c);border:0;border-radius:8px;padding:9px 16px;cursor:pointer}
 .fl-tip,.fl-help{font-family:var(--f-pixel);font-size:11px;color:var(--muted)}
-.fl-help{text-align:center;margin:8px 0 0}
+.fl-help{text-align:center;margin:8px 0 0;font-size:10px;opacity:.8}
+.fl-help kbd{font-family:var(--f-pixel);font-size:9px;padding:1px 5px;margin:0 2px;border:1px solid rgba(255,255,255,.25);border-radius:3px;background:rgba(255,255,255,.06);color:#e8e4f0}
+.fl-help .touch{display:none}@media (pointer:coarse){.fl-help .keys{display:none}.fl-help .touch{display:inline}}
 .pc{position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(5,3,12,.78);backdrop-filter:blur(3px)}
 .pc-open body{overflow:hidden}
 .pc-panel{width:min(980px,100%);max-height:calc(100dvh - 32px);display:flex;flex-direction:column;border-radius:16px;border:2px solid #ffd23d;background:var(--bg2);box-shadow:0 0 40px rgba(255,210,61,.25)}
@@ -526,7 +528,7 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
   <section class="arcadefloor" id="arcadeFloor" hidden>
     <canvas id="floorCv" tabindex="0" aria-label="The arcade floor: walk to a cabinet to play it"></canvas>
     <div class="fl-card" id="floorCard"></div>
-    <p class="fl-help">←↑↓→ or WASD to walk · hold SHIFT to run · Enter to play or use · E to emote · tap where to go, or the map · controllers work too (B runs, Y emotes)</p>
+    <p class="fl-help"><span class="keys"><kbd>WASD</kbd> walk · <kbd>SHIFT</kbd> run · <kbd>ENTER</kbd> play · <kbd>E</kbd> emote · click to walk</span><span class="touch">Tap to walk · tap a cabinet to play · tap the map to jump</span></p>
   </section>
   <section class="profile" id="profileView" hidden></section>
   <section class="cabs" id="cabs" aria-label="Cabinets">
