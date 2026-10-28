@@ -132,6 +132,11 @@ service cloud.firestore {
       }
     }
 
+    // The admin page's own settings (admin.html): the players to leave out of the numbers (the admin's own devices).
+    match /admin/{doc} {
+      allow read, write: if isAdmin();
+    }
+
     // Everything else stays locked.
     match /{document=**} {
       allow read, write: if false;

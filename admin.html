@@ -10,6 +10,8 @@
 <!--
   The admin page: play activity from shared/activity.js (act/{uid} and act/{uid}/ev in Firestore). Not linked from
   anywhere. Sign in with Google; firestore.rules only lets the admin's account read, so anyone else sees nothing.
+  The admin's own play is left out (admin/settings { hide: [uid] }): this browser's player is added by itself, and any
+  other player can be marked as "me" from their panel. SHOW MY PLAY puts them back in.
 -->
 <style>
 :root{--bg:#0f0c1f;--bg2:#181331;--panel:#1f1940;--line:#342b5e;--ink:#f4effd;--muted:#a39bc4;--hi:#5ee7ff;--pink:#ff4fa3;--gold:#ffd23d;--green:#3dff8f;
@@ -56,13 +58,17 @@ tbody tr.pick{cursor:pointer}tbody tr.pick:hover{background:rgba(94,231,255,.06)
 .detail-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:10px}
 .detail-head b{font-family:var(--f-marquee);font-weight:400;font-size:22px}
 .note{font-size:12.5px;color:var(--muted);margin:14px 0 0}
+.me-tog{display:flex;align-items:center;gap:6px;cursor:pointer}.me-tog input{accent-color:var(--hi)}
+.pill.you{color:var(--gold);margin-left:6px}
+tr.mine td{opacity:.55}
+.detail-head .btn{margin-left:auto}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
     <span class="logo">BITCADE</span><span class="tag">ADMIN</span>
-    <div class="who" id="who" hidden><span id="whoName"></span><select class="btn" id="range" aria-label="Time range"><option value="1">LAST 24 HOURS</option><option value="7" selected>LAST 7 DAYS</option><option value="30">LAST 30 DAYS</option><option value="0">ALL TIME</option></select><button class="btn" id="refresh">↻ REFRESH</button><button class="btn" id="out">SIGN OUT</button></div>
+    <div class="who" id="who" hidden><span id="whoName"></span><label class="me-tog"><input type="checkbox" id="showMe"> SHOW MY PLAY <span id="meN"></span></label><select class="btn" id="range" aria-label="Time range"><option value="1">LAST 24 HOURS</option><option value="7" selected>LAST 7 DAYS</option><option value="30">LAST 30 DAYS</option><option value="0">ALL TIME</option></select><button class="btn" id="refresh">↻ REFRESH</button><button class="btn" id="out">SIGN OUT</button></div>
   </header>
   <section class="gate card" id="gate">
     <h2>PLAY ACTIVITY</h2>
@@ -84,11 +90,15 @@ tbody tr.pick{cursor:pointer}tbody tr.pick:hover{background:rgba(94,231,255,.06)
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
-import { getFirestore, collection, query, orderBy, limit, getDocs } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-lite.js';
+import { getFirestore, collection, query, orderBy, limit, getDocs, getDoc, setDoc, doc } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-lite.js';
 
-// the same project as shared/world.js
-const app = initializeApp({ apiKey: 'AIzaSyAPy1xQoxSHA64Efns07QCNw7ASNIWQpOQ', authDomain: 'bitcade-4fa25.firebaseapp.com', projectId: 'bitcade-4fa25', storageBucket: 'bitcade-4fa25.firebasestorage.app', messagingSenderId: '543242117072', appId: '1:543242117072:web:d95c092bebfd02333ba3d5' });
+// the same project as shared/world.js. The admin signs in on an app of its own ('admin'), so the Google sign-in never
+// replaces the anonymous player the games use on this browser; that player (the default app's) is read to spot "me".
+const CFG = { apiKey: 'AIzaSyAPy1xQoxSHA64Efns07QCNw7ASNIWQpOQ', authDomain: 'bitcade-4fa25.firebaseapp.com', projectId: 'bitcade-4fa25', storageBucket: 'bitcade-4fa25.firebasestorage.app', messagingSenderId: '543242117072', appId: '1:543242117072:web:d95c092bebfd02333ba3d5' };
+const app = initializeApp(CFG, 'admin');
 const auth = getAuth(app), db = getFirestore(app);
+const gameAuth = getAuth(initializeApp(CFG));
+const here = new Promise(ok => { const off = onAuthStateChanged(gameAuth, u => { off(); ok(u && u.isAnonymous ? u.uid : null); }); }); // this browser's player, if it has played
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const name = g => !g ? '—' : g === 'lobby' ? 'Lobby' : String(g).split('-').map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
@@ -96,7 +106,10 @@ const dur = ms => { const m = Math.round((ms || 0) / 60000); return m < 1 ? `${M
 const when = ms => { if (!ms) return '—'; const d = new Date(ms), diff = Date.now() - ms; if (diff < 6e4) return 'just now'; if (diff < 36e5) return `${Math.round(diff / 6e4)}m ago`; if (diff < 864e5) return `${Math.round(diff / 36e5)}h ago`; return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }); };
 const ms = ts => ts && ts.toMillis ? ts.toMillis() : +ts || 0;
 
-let players = [], pick = null;
+let players = [], pick = null, hide = new Set();
+const showMe = () => $('showMe').checked;
+$('showMe').addEventListener('change', render);
+async function saveHide() { try { await setDoc(doc(db, 'admin', 'settings'), { hide: [...hide] }); } catch (e) {} }
 
 $('in').addEventListener('click', async () => {
   $('gateErr').hidden = true;
@@ -121,6 +134,9 @@ onAuthStateChanged(auth, u => {
 async function load() {
   $('tiles').innerHTML = '<div class="card tile"><small>LOADING…</small></div>'; $('dash').hidden = false;
   try {
+    const st = await getDoc(doc(db, 'admin', 'settings')).catch(() => null);
+    hide = new Set(st && st.exists() && Array.isArray(st.get('hide')) ? st.get('hide') : []);
+    const mine = await here; if (mine && !hide.has(mine)) { hide.add(mine); saveHide(); }
     const snap = await getDocs(query(collection(db, 'act'), orderBy('last', 'desc'), limit(500)));
     players = await Promise.all(snap.docs.map(async d => {
       const ev = await getDocs(query(collection(db, 'act', d.id, 'ev'), orderBy('t', 'desc'), limit(2000)));
@@ -135,7 +151,8 @@ async function load() {
 
 function render() {
   const days = +$('range').value, from = days ? Date.now() - days * 864e5 : 0;
-  const ps = players.map(p => {
+  $('meN').textContent = hide.size ? `(${hide.size})` : '';
+  const ps = players.filter(p => showMe() || !hide.has(p.id)).map(p => {
     const ev = p.ev.filter(e => e.t >= from), pages = ev.filter(e => e.k === 'page'), runs = ev.filter(e => e.k === 'run');
     const play = pages.reduce((n, e) => n + (e.play || 0), 0), site = pages.reduce((n, e) => n + (e.ms || 0), 0), floor = pages.reduce((n, e) => n + (e.floor || 0), 0);
     const byGame = {};
@@ -145,7 +162,7 @@ function render() {
   });
   const act = ps.filter(p => p.active), sum = k => act.reduce((n, p) => n + p[k], 0);
   const tile = (l, v, sub) => `<div class="card tile"><small>${l}</small><b>${v}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
-  $('tiles').innerHTML = tile('PLAYERS ACTIVE', act.length, `${players.length} ALL TIME`) + tile('PLAY TIME', dur(sum('play'))) + tile('TIME ON SITE', dur(sum('site'))) + tile('GAMES PLAYED', sum('runs').toLocaleString(), 'RUNS TO GAME OVER') + tile('LOBBY VISITS', sum('visits')) + tile('ON THE ARCADE FLOOR', dur(sum('floor')));
+  $('tiles').innerHTML = tile('PLAYERS ACTIVE', act.length, `${ps.length} ALL TIME${!showMe() && hide.size ? ' · NOT COUNTING YOU' : ''}`) + tile('PLAY TIME', dur(sum('play'))) + tile('TIME ON SITE', dur(sum('site'))) + tile('GAMES PLAYED', sum('runs').toLocaleString(), 'RUNS TO GAME OVER') + tile('LOBBY VISITS', sum('visits')) + tile('ON THE ARCADE FLOOR', dur(sum('floor')));
 
   // play time per day
   const n = days || Math.min(30, Math.max(7, Math.ceil((Date.now() - Math.min(...players.flatMap(p => p.ev.map(e => e.t)), Date.now())) / 864e5)));
@@ -164,10 +181,10 @@ function render() {
     (gl.length ? gl.map(([g, x]) => `<tr><td>${esc(name(g))}</td><td class="num">${x.who}</td><td class="num">${x.runs}</td><td class="num">${x.best ? x.best.toLocaleString() : '—'}</td><td><span class="bar" style="width:${Math.max(2, Math.round(x.play / gTop * 90))}px"></span>${dur(x.play)}</td></tr>`).join('') : '<tr><td colspan="5" class="dim">No games played in this range.</td></tr>') + '</tbody>';
 
   // players
-  const label = p => p.n ? `<span class="ini">${esc(p.n)}</span>` : `<span class="dim">Player ${esc(p.id.slice(0, 5))}</span>`;
+  const label = p => (p.n ? `<span class="ini">${esc(p.n)}</span>` : `<span class="dim">Player ${esc(p.id.slice(0, 5))}</span>`) + (hide.has(p.id) ? '<span class="pill you">YOU</span>' : '');
   const list = ps.slice().sort((a, b) => b.last - a.last);
   $('players').innerHTML = `<thead><tr><th>PLAYER</th><th>DEVICE</th><th class="num">LEVEL</th><th class="num">TICKETS</th><th>FIRST SEEN</th><th>LAST SEEN</th><th class="num">VISITS</th><th class="num">PLAY TIME</th><th class="num">RUNS</th><th>MOST PLAYED</th></tr></thead><tbody>` +
-    (list.length ? list.map(p => `<tr class="pick${pick === p.id ? ' on' : ''}" data-id="${esc(p.id)}"><td>${label(p)}</td><td>${esc(p.dev || '—')}</td><td class="num">${p.lv || '—'}</td><td class="num">${p.tix != null ? p.tix.toLocaleString() : '—'}</td><td>${when(p.first)}</td><td>${when(p.last)}</td><td class="num">${p.visits}</td><td class="num">${dur(p.play)}</td><td class="num">${p.runs}</td><td>${p.fav ? esc(name(p.fav)) : '<span class="dim">—</span>'}</td></tr>`).join('') : '<tr><td colspan="10" class="dim">Nobody yet. Activity shows up a few seconds after someone plays.</td></tr>') + '</tbody>';
+    (list.length ? list.map(p => `<tr class="pick${pick === p.id ? ' on' : ''}${hide.has(p.id) ? ' mine' : ''}" data-id="${esc(p.id)}"><td>${label(p)}</td><td>${esc(p.dev || '—')}</td><td class="num">${p.lv || '—'}</td><td class="num">${p.tix != null ? p.tix.toLocaleString() : '—'}</td><td>${when(p.first)}</td><td>${when(p.last)}</td><td class="num">${p.visits}</td><td class="num">${dur(p.play)}</td><td class="num">${p.runs}</td><td>${p.fav ? esc(name(p.fav)) : '<span class="dim">—</span>'}</td></tr>`).join('') : '<tr><td colspan="10" class="dim">Nobody yet. Activity shows up a few seconds after someone plays.</td></tr>') + '</tbody>';
   $('players').querySelectorAll('tr.pick').forEach(r => r.addEventListener('click', () => { pick = pick === r.dataset.id ? null : r.dataset.id; render(); if (pick) $('detail').scrollIntoView({ behavior: 'smooth', block: 'start' }); }));
 
   // one player
@@ -176,9 +193,10 @@ function render() {
   if (p) {
     const rows = Object.entries(p.byGame).sort((a, b) => b[1].play - a[1].play || b[1].runs - a[1].runs);
     const evs = p.evR.slice(0, 150);
-    $('detail').innerHTML = `<div class="detail-head"><b>${p.n ? esc(p.n) : 'Player ' + esc(p.id.slice(0, 5))}</b><span class="dim">${esc(p.dev || '')} · level ${p.lv || '—'} · ${p.tix != null ? p.tix + ' tickets' : ''} · first seen ${when(p.first)} · id ${esc(p.id)}</span></div>
+    $('detail').innerHTML = `<div class="detail-head"><b>${p.n ? esc(p.n) : 'Player ' + esc(p.id.slice(0, 5))}</b><span class="dim">${esc(p.dev || '')} · level ${p.lv || '—'} · ${p.tix != null ? p.tix + ' tickets' : ''} · first seen ${when(p.first)} · id ${esc(p.id)}</span><button class="btn" id="meBtn">${hide.has(p.id) ? 'NOT ME · COUNT THEM AGAIN' : 'THIS IS ME · HIDE'}</button></div>
       <div class="grid2"><div><h2>GAMES<small>IN THIS RANGE</small></h2><div class="scroll"><table><thead><tr><th>GAME</th><th class="num">PLAY TIME</th><th class="num">RUNS</th><th class="num">BEST</th><th>LAST PLAYED</th></tr></thead><tbody>${rows.length ? rows.map(([g, b]) => `<tr><td>${esc(name(g))}</td><td class="num">${dur(b.play)}</td><td class="num">${b.runs}</td><td class="num">${b.best ? b.best.toLocaleString() : '—'}</td><td>${when(b.last)}</td></tr>`).join('') : '<tr><td colspan="5" class="dim">No games in this range.</td></tr>'}</tbody></table></div></div>
       <div><h2>TIMELINE<small>NEWEST FIRST</small></h2><div class="scroll" style="max-height:420px;overflow-y:auto"><table><tbody>${evs.length ? evs.map(e => `<tr><td class="dim">${when(e.t)}</td><td><span class="pill k-${e.k}">${e.k === 'run' ? 'GAME OVER' : 'VISIT'}</span></td><td>${esc(name(e.g))}</td><td class="dim">${e.k === 'run' ? `score ${(e.s || 0).toLocaleString()} · ${dur(e.ms)}${e.d ? ' · daily' : ''}${e.e ? ' · easy' : ''}` : `${dur(e.ms)} on page${e.play ? ` · ${dur(e.play)} playing` : ''}${e.runs ? ` · ${e.runs} run${e.runs > 1 ? 's' : ''}` : ''}${e.floor ? ` · ${dur(e.floor)} on the floor` : ''}`}</td></tr>`).join('') : '<tr><td class="dim">Nothing in this range.</td></tr>'}</tbody></table></div></div></div>`;
+    $('meBtn').addEventListener('click', () => { if (hide.has(p.id)) hide.delete(p.id); else { hide.add(p.id); if (!showMe()) pick = null; } saveHide(); render(); });
   }
 }
 </script>
