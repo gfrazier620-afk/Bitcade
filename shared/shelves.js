@@ -176,8 +176,8 @@
     }, true);
     // "/" jumps to the search box
     addEventListener('keydown', e => {
-      if (e.key !== '/' || root.hidden || e.ctrlKey || e.metaKey || e.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || '')) return;
-      e.preventDefault(); qIn.focus();
+      if (e.key !== '/' || (root.hidden && !window.Lobby) || e.ctrlKey || e.metaKey || e.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || '')) return;
+      e.preventDefault(); if (window.Lobby) Lobby.openSearch(); else qIn.focus();
     });
     render(false);
   }

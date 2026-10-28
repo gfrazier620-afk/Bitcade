@@ -19,9 +19,8 @@ body{display:block;overflow-x:hidden;
     radial-gradient(ellipse at 20% -10%,#3a1450 0%,transparent 50%),
     radial-gradient(ellipse at 90% 10%,#0e3350 0%,transparent 45%),
     var(--bg)}
-.lobby{max-width:1120px;margin:0 auto;padding-inline:16px;padding-block:36px 64px}
-@media (max-width:760px){.lobby{padding-top:58px}} /* room for the ♪ MUSIC button above the logo */
-@media (min-width:1500px){.lobby{max-width:min(1680px,94vw)}.hero{max-width:1240px!important}.today,.missions,.lvl,.pstrip,.finder,.gchips{max-width:1140px!important}} /* big monitors: more cabinets across, a bigger floor */
+.lobby{max-width:1120px;margin:0 auto;padding-inline:16px;padding-block:18px 64px}
+@media (min-width:1500px){.lobby{max-width:min(1680px,94vw)}.hero,.todaycard,.scores,.rewards{max-width:1240px!important}.today,.missions,.lvl,.pstrip,.finder,.rw-prize{max-width:1140px!important}} /* big monitors: more cabinets across, a bigger floor */
 .marquee{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;margin-bottom:36px}
 .logo{font-family:"Bungee Shade","Bungee",system-ui,sans-serif;font-weight:400;font-size:clamp(52px,13vw,112px);line-height:.95;margin:0;letter-spacing:.02em;
   background:linear-gradient(180deg,#ffe36a 0%,#ff7a3d 45%,#ff3d9a 100%);-webkit-background-clip:text;background-clip:text;color:transparent;
@@ -56,7 +55,7 @@ body{display:block;overflow-x:hidden;
 .play{background:var(--c);color:#120a1c;border-radius:7px;padding:5px 10px;font-size:11px}
 /* the cabinets page (shared/shelves.js): search, sort, size, genre chips, shelves and favorites */
 .cabs{--hi:#5ee7ff}
-.finder{display:flex;gap:10px;align-items:center;max-width:900px;margin:0 auto 12px}
+.finder{position:relative;display:flex;flex-wrap:wrap;gap:10px;align-items:center;max-width:1000px;margin:0 auto 18px}
 .finder .q{flex:1;display:flex;align-items:center;gap:8px;background:var(--bg2);border:1px solid var(--line);border-radius:999px;padding:0 14px;min-width:0}
 .finder .q:focus-within{border-color:var(--hi);box-shadow:0 0 0 3px color-mix(in srgb,var(--hi) 22%,transparent)}
 .finder .q span{color:var(--muted);font-size:18px}
@@ -267,10 +266,11 @@ body{display:block;overflow-x:hidden;
 .viewbar .prize{color:#1a0f00;background:linear-gradient(90deg,#ffd23d,#ff9a3d);border-color:#ffd23d}
 .viewbar .prize b{font-weight:400}
 .arcadefloor{position:relative;margin:0 auto 26px}
+@media (max-width:760px){.arcadefloor canvas{height:clamp(240px,calc(100dvh - 210px),1100px)}}
 .arcadefloor canvas:focus{outline:none}
 .arcadefloor{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 /* the floor fills the window's height (the view grows to fit, see fit() in floor.js) */
-.arcadefloor canvas{display:block;width:100%;height:clamp(240px,calc(100dvh - 130px),1100px);border-radius:14px;border:2px solid #2d2556;background:#140c24;touch-action:none;cursor:pointer;image-rendering:pixelated}
+.arcadefloor canvas{display:block;width:100%;height:clamp(240px,calc(100dvh - 150px),1100px);border-radius:14px;border:2px solid #2d2556;background:#140c24;touch-action:none;cursor:pointer;image-rendering:pixelated}
 .fl-full{position:absolute;left:10px;top:10px;z-index:2;font-family:var(--f-pixel);font-size:11px;color:#e8e4f0;background:rgba(10,6,18,.75);border:1px solid rgba(255,255,255,.3);border-radius:6px;padding:5px 9px;cursor:pointer}
 .fl-full:hover{border-color:#5ee7ff;color:#5ee7ff}
 /* full screen: the floor takes the whole window (browser full screen where there is one) */
@@ -474,19 +474,130 @@ footer p{margin:4px 0}
 .boot-hof li.world b{color:#ffe36a}
 .boot-hof li.world b::before{content:"★ "}
 .boot-hof p{margin:12px 0 0;font-size:10px;color:rgba(255,255,255,.6);letter-spacing:.1em}
-.music-btn{position:fixed;top:12px;right:12px;z-index:50;border:1px solid var(--line);background:rgba(15,12,31,.85);border-radius:8px;padding:6px 10px;font-family:var(--f-pixel);font-size:11px;color:var(--muted)}
-.music-btn[aria-pressed="true"]{color:#ffe36a;border-color:#ffe36a}
 .upd{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap:10px;max-width:calc(100% - 24px);padding:8px 8px 8px 14px;border-radius:12px;
   background:#1f1940;border:1px solid #5ee7ff;box-shadow:0 8px 30px rgba(0,0,0,.6),0 0 18px rgba(94,231,255,.25);font-family:var(--f-pixel);font-size:11px;color:#5ee7ff;animation:upd-in .35s ease}
 .upd button{font-family:var(--f-pixel);font-size:11px;border:0;border-radius:8px;padding:7px 12px;cursor:pointer;color:#120a1c;background:#5ee7ff}
 .upd .upd-x{background:none;color:var(--muted);padding:6px}
 @keyframes upd-in{from{opacity:0;transform:translate(-50%,12px)}}
-.music-btn.set-lb{right:auto;left:12px;color:#5ee7ff;border-color:color-mix(in srgb,#5ee7ff 45%,var(--line));font-size:14px;padding:4px 10px;cursor:pointer}
 .boot-skip{position:absolute;left:0;right:0;bottom:max(14px,3vh);text-align:center;z-index:6;font-size:10px;color:rgba(255,255,255,.45);letter-spacing:.12em}
 .boot.out{animation:boot-out .45s ease-in forwards}
 .boot.out.fast{animation-duration:.25s}
 @keyframes boot-out{to{opacity:0;transform:scale(1.12);filter:brightness(2.5) blur(2px)}}
 .reboot{color:var(--muted);font-size:12px}
+
+/* ---------- the top bar: logo, sections, tickets, search, music, settings (sections drop to a bottom tab bar on phones) ---------- */
+.topbar{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:14px;padding:8px max(16px,env(safe-area-inset-right)) 8px max(16px,env(safe-area-inset-left));
+  background:rgba(12,9,26,.86);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.topbar .logo{font-size:26px;line-height:1;border:0;padding:2px 0;cursor:pointer;flex:none;filter:drop-shadow(0 0 10px rgba(255,90,140,.35))}
+.tabs{display:flex;gap:4px;margin:0 auto}
+.tabs button{position:relative;display:flex;align-items:center;gap:7px;font-family:var(--f-pixel);font-size:12px;letter-spacing:.06em;color:var(--muted);background:none;border:1px solid transparent;border-radius:999px;padding:8px 14px;cursor:pointer}
+.tabs button:hover{color:var(--ink)}
+.tabs button[aria-pressed="true"]{color:#120a1c;background:#5ee7ff;border-color:#5ee7ff}
+.tabs .ti{font-size:14px;line-height:1}
+.tabs .dot,.tb-dot{position:absolute;top:4px;right:6px;width:8px;height:8px;border-radius:50%;background:#ffd23d;box-shadow:0 0 8px #ffd23d}
+.tb-right{display:flex;align-items:center;gap:6px;flex:none}
+.tb-chip{font-family:var(--f-pixel);font-size:11px;letter-spacing:.04em;color:var(--ink);background:var(--bg2);border:1px solid var(--line);border-radius:999px;padding:6px 11px;cursor:pointer;white-space:nowrap}
+.tb-chip b{font-weight:400}
+.tb-lv b{color:#5ee7ff}
+.tb-tix{color:#1a0f00;background:linear-gradient(90deg,#ffd23d,#ff9a3d);border-color:#ffd23d}
+.tb-icon{width:34px;height:34px;display:grid;place-items:center;font-size:16px;line-height:1;color:var(--muted);background:var(--bg2);border:1px solid var(--line);border-radius:10px;cursor:pointer;padding:0}
+.tb-icon:hover{color:var(--ink);border-color:#5ee7ff}
+#musicBtn[aria-pressed="true"]{color:#ffe36a;border-color:#ffe36a}
+#musicBtn[aria-pressed="false"]{text-decoration:line-through}
+#setBtn{color:#5ee7ff}
+.vh{font-family:var(--f-marquee);font-weight:400;font-size:clamp(24px,4vw,34px);margin:0;color:#fff;letter-spacing:.03em;text-shadow:0 0 18px rgba(94,231,255,.35)}
+@media (max-width:1000px){.tabs .tl{font-size:11px}.tabs button{padding:8px 10px}.tb-lv{display:none}}
+@media (max-width:760px){
+  /* no blur here: a backdrop-filter would make the top bar the box the fixed tab bar is placed in */
+  .topbar{gap:8px;padding-top:max(8px,env(safe-area-inset-top));backdrop-filter:none;-webkit-backdrop-filter:none;background:rgba(12,9,26,.97)}
+  .topbar .logo{font-size:22px;margin-right:auto}
+  .tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;margin:0;gap:0;display:grid;grid-template-columns:repeat(5,1fr);padding:4px 4px max(6px,env(safe-area-inset-bottom));
+    background:rgba(12,9,26,.94);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-top:1px solid var(--line)}
+  .tabs button{flex-direction:column;gap:3px;border-radius:12px;padding:7px 2px 6px;font-size:9px}
+  .tabs .tl{font-size:9px}.tabs .ti{font-size:18px}
+  .tabs button[aria-pressed="true"]{color:#5ee7ff;background:rgba(94,231,255,.12);border-color:transparent}
+  .tabs .dot{right:calc(50% - 16px)}
+  .tb-tix span{display:none}
+  .lobby{padding-bottom:96px}
+  .upd{bottom:calc(76px + env(safe-area-inset-bottom))}
+}
+/* the Today card on PLAY: level, pass and missions in one line; it opens REWARDS */
+.todaycard{--c:#5ee7ff;display:flex;align-items:center;gap:10px 18px;flex-wrap:wrap;width:100%;max-width:1000px;margin:0 auto 18px;padding:10px 16px;border-radius:14px;cursor:pointer;
+  background:var(--bg2);border:1px solid var(--line);color:var(--ink);font-family:var(--f-pixel);font-size:11px;letter-spacing:.04em;text-align:left}
+.todaycard:hover,.todaycard:focus-visible{border-color:#5ee7ff;outline:none}
+.todaycard .tc{display:flex;align-items:center;gap:8px;color:var(--muted)}
+.todaycard .tc b{font-weight:400;color:var(--ink)}
+.todaycard .tc-lv b{font-family:var(--f-marquee);font-size:18px;color:#5ee7ff}
+.todaycard .tc-bar{width:70px;height:6px;border-radius:3px;background:rgba(255,255,255,.1);overflow:hidden}.todaycard .tc-bar i{display:block;height:100%;background:linear-gradient(90deg,#3dd6ff,#b86bff)}
+.todaycard .tc-pass b{color:#ff4fd1}.todaycard .tc-ms b{color:#3dff8f}
+.todaycard .tc-claim{color:#120a1c;background:#ffd23d;border-radius:999px;padding:3px 9px;animation:ps-pulse 1.4s ease-in-out infinite}
+.todaycard .tc-go{margin-left:auto;color:#5ee7ff}
+@media (max-width:640px){.todaycard{gap:8px 14px;padding:10px 12px}.todaycard .tc-bar{width:44px}.todaycard .tc-go{display:none}}
+/* REWARDS */
+.rewards{max-width:1000px;margin:0 auto}
+.rewards > .vh{margin:4px 0 14px;text-align:center}
+.rw-prize{display:flex;align-items:center;gap:14px;width:100%;max-width:900px;margin:0 auto 12px;padding:14px 16px;border-radius:14px;cursor:pointer;text-align:left;color:var(--ink);
+  background:linear-gradient(100deg,rgba(255,210,61,.16),rgba(255,154,61,.06) 60%,transparent),var(--bg2);border:1px solid #ffd23d}
+.rw-prize:hover,.rw-prize:focus-visible{outline:none;box-shadow:0 0 22px rgba(255,210,61,.3)}
+.rw-prize .ic{font-size:26px}.rw-prize div{flex:1;display:flex;flex-direction:column;gap:3px}
+.rw-prize b{font-family:var(--f-marquee);font-weight:400;font-size:17px;color:#ffd23d}.rw-prize small{font-size:13px;color:var(--muted)}
+.rw-prize em{font-style:normal;font-family:var(--f-pixel);font-size:12px;color:#120a1c;background:#ffd23d;border-radius:999px;padding:7px 12px;white-space:nowrap}
+/* HIGH SCORES (shared/scores.js) */
+.scores{max-width:1000px;margin:0 auto}
+.sv-head{display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px;margin:4px 0 12px}
+.sv-sum{flex:1 1 300px;margin:0;font-family:var(--f-pixel);font-size:11px;color:var(--muted);letter-spacing:.04em}
+.sv-sum b{font-weight:400;color:var(--ink)}.sv-sum .me{color:#ffd23d}
+.sv-q{display:flex;align-items:center;gap:8px;background:var(--bg2);border:1px solid var(--line);border-radius:999px;padding:0 12px;flex:0 1 240px}
+.sv-q:focus-within{border-color:#5ee7ff}
+.sv-q span{color:var(--muted)}
+.sv-q input{flex:1;min-width:0;background:none;border:0;outline:0;color:var(--ink);font-family:var(--f-pixel);font-size:12px;padding:8px 0;user-select:text}
+.sv-cols,.sv-top{display:grid;grid-template-columns:36px minmax(0,1.6fr) minmax(0,1fr) minmax(0,1.2fr) 16px;gap:12px;align-items:center}
+.sv-cols{padding:0 14px 6px;font-family:var(--f-pixel);font-size:9px;letter-spacing:.1em;color:var(--muted)}
+.sv-cols span:first-child{grid-column:1 / 3}
+.sv-list{display:flex;flex-direction:column;gap:6px}
+.sv-row{--c:#5ee7ff;border-radius:12px;background:var(--bg2);border:1px solid var(--line);overflow:hidden}
+.sv-row.open{border-color:var(--c);box-shadow:0 0 18px color-mix(in srgb,var(--c) 22%,transparent)}
+.sv-top{width:100%;padding:9px 14px;background:none;border:0;color:var(--ink);cursor:pointer;text-align:left;font:inherit}
+.sv-top:hover{background:rgba(255,255,255,.03)}
+.sv-top canvas{width:36px;height:24px;image-rendering:pixelated;border-radius:4px;background:#05040c}
+.sv-name{font-family:var(--f-marquee);font-size:15px;color:var(--c);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sv-name em{font-style:normal;font-family:var(--f-pixel);font-size:9px;letter-spacing:.08em;color:#3dff8f;border:1px solid currentColor;border-radius:4px;padding:1px 4px;margin-left:8px;vertical-align:3px}
+.sv-name em.wk{color:#ffd23d}
+.sv-mine,.sv-world{font-family:var(--f-pixel);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sv-world b{font-weight:400}.sv-world b.me{color:#ffd23d}
+.sv-mine i,.sv-world i{font-style:normal;font-size:10px;color:var(--muted)}
+.sv-arrow{color:var(--muted);transition:transform .2s}
+.sv-row.open .sv-arrow{transform:rotate(90deg);color:var(--c)}
+.sv-detail{padding:4px 14px 14px;display:flex;flex-direction:column;align-items:center;gap:10px}
+.sv-tabs{display:flex;gap:4px;flex-wrap:wrap;justify-content:center}
+.sv-tabs button{font-family:var(--f-pixel);font-size:10px;color:var(--muted);background:none;border:1px solid var(--line);border-radius:6px;padding:4px 9px;cursor:pointer}
+.sv-tabs button[aria-pressed="true"]{color:var(--c);border-color:var(--c)}
+.sv-ol{list-style:none;margin:0;padding:0;display:grid;grid-template-rows:repeat(5,auto);grid-auto-flow:column;gap:3px 30px;font-family:var(--f-pixel);font-size:12px;color:var(--muted)}
+.sv-ol li{display:grid;grid-template-columns:4.4ch 3.6ch 9ch;gap:6px}
+.sv-ol b{font-weight:400;text-align:right;color:var(--ink)}
+.sv-ol .r1 span{color:#ffd23d}.sv-ol .r2 span{color:#d6dbe6}.sv-ol .r3 span{color:#e0915a}
+.sv-ol .me,.sv-ol .me b{color:var(--c)}
+.sv-note{margin:0;font-family:var(--f-pixel);font-size:11px;color:var(--muted);text-align:center}
+.sv-play{font-family:var(--f-pixel);font-size:11px;color:#120a1c;background:var(--c);border-radius:8px;padding:7px 14px;text-decoration:none}
+@media (max-width:640px){
+  .sv-cols{display:none}
+  .sv-top{grid-template-columns:36px minmax(0,1fr) auto 12px;grid-template-areas:"ic nm mn ar" "ic wd wd ar";gap:2px 10px}
+  .sv-top canvas{grid-area:ic}.sv-name{grid-area:nm}.sv-mine{grid-area:mn}.sv-world{grid-area:wd;font-size:10px;color:var(--muted)}.sv-arrow{grid-area:ar}
+  .sv-world b::before{content:"WORLD #1 ";color:var(--muted)}
+  .sv-ol{grid-auto-flow:row;grid-template-rows:none}
+}
+/* the filter row: genre chips that scroll sideways, and FILTER for sort and size; search opens from the top bar */
+.finder .q{display:none}
+.finder input::-webkit-search-cancel-button{display:none}
+.finder.searching .q{display:flex;flex:1 1 100%;order:-1}
+.finder .q-x{border:0;background:none;color:var(--muted);font-size:14px;cursor:pointer;padding:4px}
+.finder .gchips{flex:1 1 0;min-width:0;margin:0;flex-wrap:nowrap;justify-content:flex-start;overflow-x:auto;scrollbar-width:none;padding:2px;
+  -webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 30px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 30px),transparent)}
+.finder .gchips::-webkit-scrollbar{display:none}
+.fbtn{flex:none;font-family:var(--f-pixel);font-size:11px;letter-spacing:.06em;color:var(--muted);background:var(--bg2);border:1px solid var(--line);border-radius:999px;padding:7px 12px;cursor:pointer;white-space:nowrap}
+.fbtn[aria-expanded="true"],.fbtn:hover{color:var(--ink);border-color:var(--hi)}
+.fpop{position:absolute;right:0;top:calc(100% + 6px);z-index:20;display:flex;flex-direction:column;gap:10px;padding:12px 14px;border-radius:12px;background:#1a1438;border:1px solid var(--line);box-shadow:0 12px 30px rgba(0,0,0,.55);font-family:var(--f-pixel);font-size:10px;color:var(--muted);letter-spacing:.08em}
+.fpop label,.fpop .fp-row{display:flex;align-items:center;justify-content:space-between;gap:14px}
 </style>
 </head>
 <body>
@@ -509,28 +620,40 @@ footer p{margin:4px 0}
 // The boot sequence plays once per visit (or with ?boot). Decided before the first paint, so there's no flash of either.
 try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(location.search)) document.getElementById('boot').hidden = true; else document.documentElement.classList.add('booting'); } catch (e) { document.getElementById('boot').hidden = true; }
 </script>
-<button class="music-btn" id="musicBtn">♪ MUSIC ON</button>
-<button class="music-btn set-lb" id="setBtn" aria-haspopup="dialog" aria-label="Settings">⚙</button>
+<header class="topbar" id="topbar">
+  <h1 style="margin:0;display:contents"><button class="logo" id="tbLogo" type="button" aria-label="Bitcade: back to the games">BITCADE</button></h1>
+  <nav class="tabs" aria-label="Sections">
+    <button id="vGrid" type="button" aria-pressed="true"><span class="ti" aria-hidden="true">▶</span><span class="tl">PLAY</span></button>
+    <button id="vFloor" type="button" aria-pressed="false"><span class="ti" aria-hidden="true">⌂</span><span class="tl">ARCADE</span></button>
+    <button id="vScores" type="button" aria-pressed="false"><span class="ti" aria-hidden="true">♛</span><span class="tl">SCORES</span></button>
+    <button id="vRewards" type="button" aria-pressed="false"><span class="ti" aria-hidden="true">✦</span><span class="tl">REWARDS</span><i class="dot" id="rwDot" hidden></i></button>
+    <button id="vProfile" type="button" aria-pressed="false"><span class="ti" aria-hidden="true">☺</span><span class="tl">PROFILE</span></button>
+  </nav>
+  <div class="tb-right">
+    <button class="tb-chip tb-lv" id="tbLv" type="button" title="Your level">LV <b id="tbLvN">1</b></button>
+    <button class="tb-chip tb-tix" id="vPrize" type="button" title="Prize counter">◈ <b id="tixN">0</b><span> TICKETS</span></button>
+    <button class="tb-icon" id="tbSearch" type="button" aria-label="Search cabinets" title="Search ( / )">⌕</button>
+    <button class="tb-icon" id="musicBtn" type="button" aria-label="Music" title="Music">♪</button>
+    <button class="tb-icon" id="setBtn" type="button" aria-haspopup="dialog" aria-label="Settings" title="Settings">⚙</button>
+  </div>
+</header>
 <div class="lobby">
-  <header class="marquee">
-    <h1 class="logo">BITCADE</h1>
-    <p class="tag">FORTY-FOUR CLASSIC-STYLE GAMES · NO QUARTERS REQUIRED</p>
-    <div class="coin" aria-hidden="true">▶ PICK A CABINET ◀</div>
-    <div class="stats" id="stats"></div>
-  </header>
   <section class="hero" id="hero" aria-roledescription="carousel" aria-label="Featured">
     <div class="hero-track" id="heroTrack"></div>
     <button type="button" class="hero-nav prev" aria-label="Previous">‹</button><button type="button" class="hero-nav next" aria-label="Next">›</button>
     <div class="hero-dots" role="tablist" aria-label="Featured slides"></div>
   </section>
-  <div class="today">
-  <section class="lvl" id="lvl" aria-label="Your level"></section>
-  <section class="pstrip" id="passStrip" role="button" tabindex="0" aria-label="Arcade Pass" hidden></section>
-  </div>
-  <section class="missions" id="missions" aria-label="Daily missions"></section>
-  <div class="viewbar" role="group" aria-label="View">
-    <button id="vGrid" aria-pressed="true">▦ CABINETS</button><button id="vFloor" aria-pressed="false">⌂ WALK THE ARCADE</button><button id="vProfile" aria-pressed="false">★ PROFILE</button><button class="prize" id="vPrize">PRIZE COUNTER · <b id="tixN">0</b> TICKETS</button>
-  </div>
+  <button class="todaycard" id="todayCard" type="button" aria-label="Your level, pass and missions: open Rewards"></button>
+  <section class="rewards" id="rewardsView" aria-label="Rewards" hidden>
+    <h2 class="vh">REWARDS</h2>
+    <div class="today">
+    <section class="lvl" id="lvl" aria-label="Your level"></section>
+    <section class="pstrip" id="passStrip" role="button" tabindex="0" aria-label="Arcade Pass" hidden></section>
+    </div>
+    <section class="missions" id="missions" aria-label="Daily missions"></section>
+    <button class="rw-prize" id="rwPrize" type="button"><span class="ic" aria-hidden="true">◈</span><div><b>PRIZE COUNTER</b><small>Spend tickets on outfits, pets, emotes, carpets, screen tints and cabinet finishes.</small></div><em id="rwTix">0 TICKETS</em></button>
+  </section>
+  <section class="scores" id="scoresView" aria-label="High scores" hidden></section>
   <a class="tourney hero-slide" id="tourney" hidden>
     <canvas width="12" height="8"></canvas>
     <div><div class="t-head">★ WEEKLY TOURNAMENT</div><h2></h2><div class="t-meta"><span>ENDS IN <b class="t-left"></b></span><span>YOUR BEST <b class="t-mine">—</b></span></div></div>
@@ -545,17 +668,21 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
   </section>
   <section class="profile" id="profileView" hidden></section>
   <section class="cabs" id="cabs" aria-label="Cabinets">
-    <div class="finder">
-      <label class="q"><span aria-hidden="true">⌕</span><input type="search" id="cabQ" placeholder="SEARCH CABINETS" aria-label="Search cabinets" autocomplete="off" spellcheck="false" enterkeyhint="search"></label>
-      <select id="cabSort" aria-label="Sort cabinets"></select>
-      <div class="sizes" role="group" aria-label="Cabinet size"><button type="button" data-size="big" aria-label="Big cabinets" title="Big cabinets">▣</button><button type="button" data-size="small" aria-label="Small cabinets" title="Small cabinets">▦</button></div>
+    <div class="finder" id="finder">
+      <label class="q"><span aria-hidden="true">⌕</span><input type="search" id="cabQ" placeholder="SEARCH CABINETS" aria-label="Search cabinets" autocomplete="off" spellcheck="false" enterkeyhint="search"><button type="button" class="q-x" id="qX" aria-label="Close search">✕</button></label>
+      <div class="gchips" id="cabChips" role="group" aria-label="Genres"></div>
+      <button type="button" class="fbtn" id="filterBtn" aria-expanded="false" aria-controls="filterPop">⚙ FILTER</button>
+      <div class="fpop" id="filterPop" hidden>
+        <label>SORT <select id="cabSort" aria-label="Sort cabinets"></select></label>
+        <div class="fp-row">SIZE <div class="sizes" role="group" aria-label="Cabinet size"><button type="button" data-size="big" aria-label="Big cabinets" title="Big cabinets">▣</button><button type="button" data-size="small" aria-label="Small cabinets" title="Small cabinets">▦</button></div></div>
+      </div>
     </div>
-    <div class="gchips" id="cabChips" role="group" aria-label="Genres"></div>
     <div class="shelves" id="shelves"></div>
     <div class="gridhead" id="gridHead" hidden></div>
     <main class="floor" id="floor"></main>
   </section>
   <footer>
+    <p class="tag">FORTY-FOUR CLASSIC-STYLE GAMES · NO QUARTERS REQUIRED</p>
     <p>Works with a keyboard or touch, and most games with a game controller. High scores are saved in this browser.</p>
     <button class="install" id="install" hidden>Install Bitcade · plays offline</button>
     <p class="ios-hint" id="iosHint" hidden>On iPhone or iPad: tap Share, then <b>Add to Home Screen</b> to install. It plays offline.</p>
@@ -572,6 +699,7 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
 <script src="shared/pass.js"></script>
 <script src="shared/settings.js"></script>
 <script src="shared/couch.js"></script>
+<script src="shared/scores.js"></script>
 <script>
 (() => {
 const GAMES = [
@@ -860,7 +988,7 @@ function topOffline() { if (feat) tourney.querySelector('.t-top').innerHTML = '<
 // World #1 for each cabinet from the online leaderboard, plus today's #1 for daily-challenge games.
 // The lobby works the same without it.
 const d = new Date(), today = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-const worldTop = {}; // world #1 per cabinet, for the floor's high-score wall and chatter
+const worldTop = {}, worldSeen = {}; // world #1 per cabinet, for the floor's high-score wall and chatter, and the SCORES view (null: no scores yet)
 const leaderRow = (g, label, e, unit = '') => {
   if (!e || !/^[A-Z]{3}$/.test(e.n)) return;
   if (label === 'WORLD #1' && !unit) worldTop[g.slug] = e;
@@ -868,16 +996,18 @@ const leaderRow = (g, label, e, unit = '') => {
   const b = document.createElement('b'); b.textContent = `${e.n} ${(+e.s || 0).toLocaleString()}${unit}`; row.append(b);
   g.el.querySelector('.cab-foot').before(row);
 };
-import('./shared/world.js').then(w => {
+const worldP = import('./shared/world.js');
+const seen = (g, e) => { worldSeen[g.slug] = e && /^[A-Z]{3}$/.test(e.n) ? e : null; ScoresView.world(g.slug); };
+worldP.then(w => {
   GAMES.forEach(g => {
     if (g.label) return; // Blip Sports counts wins, below
-    w.top(g.slug, 1).then(([e]) => leaderRow(g, 'WORLD #1', e), () => {});
+    w.top(g.slug, 1).then(([e]) => { leaderRow(g, 'WORLD #1', e); seen(g, e); }, () => ScoresView.world(g.slug, true));
     if (g.daily) w.top(g.slug, 1, today).then(([e]) => leaderRow(g, 'TODAY #1', e), () => {});
   });
   if (feat) w.top(feat.slug, 3, null, WEEKLY.key()).then(showTop3, topOffline);
   const blip = GAMES.find(g => g.slug === 'blip-sports');
-  w.topWins(1).then(([e]) => leaderRow(blip, 'WORLD #1', e, e && e.s === 1 ? ' win' : ' wins'), () => {});
-}, topOffline);
+  w.topWins(1).then(([e]) => { leaderRow(blip, 'WORLD #1', e, e && e.s === 1 ? ' win' : ' wins'); seen(blip, e); }, () => ScoresView.world(blip.slug, true));
+}, () => { topOffline(); GAMES.forEach(g => ScoresView.world(g.slug, true)); });
 // Attract mode: each cabinet flips between its two frames, out of step with its neighbours.
 if (!matchMedia('(prefers-reduced-motion: reduce)').matches) setInterval(() => {
   if (document.hidden) return;
@@ -887,11 +1017,11 @@ if (!matchMedia('(prefers-reduced-motion: reduce)').matches) setInterval(() => {
     const f2 = Math.floor((now + i * 290) / 1700) % 2; if (f2 !== s.f2) { s.f2 = f2; s.scr.classList.toggle('f2', !!f2); }
   });
 }, 60);
-document.getElementById('stats').innerHTML = `<span>CABINETS <b>${GAMES.length}</b></span><span>TRIED <b>${played}</b></span><span>GAMES PLAYED <b>${total}</b></span><span>BADGES <b>${badgesGot}/${badgesAll}</b></span><span>TICKETS <b id="tixStat"></b></span>`;
 // Tickets and the prize counter (shared/prizes.js), and the walkable arcade floor (shared/floor.js).
-const tixShow = () => { const n = TICKETS.balance().toLocaleString(); document.getElementById('tixN').textContent = n; document.getElementById('tixStat').textContent = n; };
+const tixShow = () => { const n = TICKETS.balance().toLocaleString(); document.getElementById('tixN').textContent = n; document.getElementById('rwTix').textContent = n + ' TICKETS'; };
 tixShow(); Prizes.onChange(tixShow);
-document.getElementById('vPrize').addEventListener('click', () => loadFloor().catch(() => {}).then(() => Prizes.open())); // the floor draws the outfit and carpet previews
+const openPrizes = () => loadFloor().catch(() => {}).then(() => Prizes.open()); // the floor draws the outfit and carpet previews
+document.getElementById('vPrize').addEventListener('click', openPrizes); document.getElementById('rwPrize').addEventListener('click', openPrizes);
 /*
  * The walkable floor (shared/floor-play.js and shared/floor.js, about 200 KB) loads when it's first needed: walking
  * the arcade, the prize counter or the pass, or quietly a moment after the lobby appears.
@@ -915,7 +1045,7 @@ function initFloor() { Floor.init({
   onTickets: () => tixShow(),
   onMissions: () => { renderMissions(); renderLevel(); },
   onLevel: () => { renderLevel(); tixShow(); },
-  onJukebox: slug => { try { localStorage.setItem('bitcade:jukebox', slug); } catch (e) {} if (window.Chip) { Chip.enabled = true; Chip.play(slug ? Chip.theme(slug) : Chip.lobby); } document.getElementById('musicBtn').textContent = '♪ MUSIC ON'; }
+  onJukebox: slug => { try { localStorage.setItem('bitcade:jukebox', slug); } catch (e) {} if (window.Chip) { Chip.enabled = true; Chip.play(slug ? Chip.theme(slug) : Chip.lobby); } document.getElementById('musicBtn').setAttribute('aria-pressed', 'true'); }
 }); }
 // The player profile and cloud save (shared/profile.js, shared/save.js).
 const profileView = document.getElementById('profileView'), vProfile = document.getElementById('vProfile');
@@ -945,6 +1075,7 @@ function renderMissions() {
     });
     box.append(b);
   });
+  renderToday();
 }
 renderMissions(); setInterval(renderMissions, 60000);
 /* Your level (XP in shared/badges.js): the bar, your title and the next level reward. */
@@ -956,25 +1087,67 @@ function renderLevel() {
     (nr ? `<div class="lv-next">NEXT REWARD · LEVEL ${nr.level}: <b></b></div>` : '');
   lvlEl.querySelector('.lv-t').textContent = v.title;
   if (nr) lvlEl.querySelector('.lv-next b').textContent = nr.id === 'nameplate' ? 'A nameplate on the arcade floor' : prize ? prize.name : nr.id;
+  renderToday();
+}
+/* The Today card on PLAY (level, pass tier, missions and anything to claim, in one line), the LV chip in the top bar
+   and the dot on REWARDS. */
+function renderToday() {
+  const todayEl = document.getElementById('todayCard'), rwDot = document.getElementById('rwDot');
+  const v = window.XP ? XP.info() : null, se = window.PASS && PASS.season(), claim = se ? PASS.ready().length : 0;
+  const ms = window.MISSIONS ? MISSIONS.list() : [], done = ms.filter(m => m.done).length;
+  todayEl.innerHTML = (v ? `<span class="tc tc-lv">LV <b>${v.level}</b> <span class="tc-bar"><i style="width:${Math.round(v.pct * 100)}%"></i></span></span>` : '') +
+    (se ? `<span class="tc tc-pass">PASS TIER <b>${PASS.tier()}</b>/${PASS.TIERS}</span>` : '') +
+    (ms.length ? `<span class="tc tc-ms">MISSIONS <b>${done}/${ms.length}</b></span>` : '') +
+    (claim ? `<span class="tc-claim">${claim} TO CLAIM</span>` : '') + '<span class="tc tc-go">REWARDS ›</span>';
+  if (v) document.getElementById('tbLvN').textContent = v.level;
+  rwDot.hidden = !claim;
 }
 renderLevel();
 const passEl = document.getElementById('passStrip');
 PassView.init(passEl, { onChange: () => { tixShow(); renderLevel(); }, before: () => loadFloor() });
+ScoresView.init({ el: document.getElementById('scoresView'), games: GAMES, paint, world: () => worldP, worldTop: slug => slug in worldSeen ? worldSeen[slug] : worldTop[slug] });
 // couch mode (shared/couch.js): arrows and controllers get round the lobby; the walkable floor has its own controls
 Couch.init({
   active: () => !document.documentElement.classList.contains('booting') && document.getElementById('boot').hidden && (!!document.querySelector('.set:not([hidden]),.ps:not([hidden]),.pc:not([hidden])') || floorView.hidden),
-  views: [vGrid, vFloor, vProfile], onSettings: () => Settings.open()
+  views: [vGrid, vFloor, document.getElementById('vScores'), document.getElementById('vRewards'), vProfile], onSettings: () => Settings.open()
 });
+/* The five sections: PLAY (banner, Today card, cabinets), ARCADE (the walkable floor), SCORES, REWARDS (level, pass,
+   missions, prize counter) and PROFILE. */
+const rewardsView = document.getElementById('rewardsView'), scoresView = document.getElementById('scoresView');
+const vScores = document.getElementById('vScores'), vRewards = document.getElementById('vRewards');
 function setView(v) {
-  const walk = v === 'floor', prof = v === 'profile';
+  if (!['grid', 'floor', 'scores', 'rewards', 'profile'].includes(v)) v = 'grid';
+  const walk = v === 'floor', prof = v === 'profile', play = v === 'grid', rw = v === 'rewards', sc = v === 'scores';
   if (!walk && floorView.classList.contains('fl-max')) floorFull(false);
-  floorView.hidden = !walk; document.getElementById('cabs').hidden = walk || prof; profileView.hidden = !prof; missionsEl.hidden = prof || !window.MISSIONS; lvlEl.hidden = prof || !window.XP; if (!prof) renderLevel(); passEl.hidden = prof || !(window.PASS && PASS.season()); if (!prof) PassView.render();
-  document.getElementById('hero').hidden = prof || !heroCount;
-  vGrid.setAttribute('aria-pressed', String(!walk && !prof)); vFloor.setAttribute('aria-pressed', String(walk)); vProfile.setAttribute('aria-pressed', String(prof));
+  floorView.hidden = !walk; document.getElementById('cabs').hidden = !play; profileView.hidden = !prof; rewardsView.hidden = !rw; scoresView.hidden = !sc;
+  missionsEl.hidden = !window.MISSIONS; lvlEl.hidden = !window.XP; passEl.hidden = !(window.PASS && PASS.season());
+  if (rw) { renderMissions(); renderLevel(); PassView.render(); } else renderToday();
+  document.getElementById('hero').hidden = !play || !heroCount; document.getElementById('todayCard').hidden = !play;
+  [[vGrid, play], [vFloor, walk], [vScores, sc], [vRewards, rw], [vProfile, prof]].forEach(([b, on]) => b.setAttribute('aria-pressed', String(on)));
   if (walk) loadFloor().then(() => { if (!floorView.hidden) Floor.start(); }, () => {}); else if (window.Floor && floorP) floorP.then(() => { if (floorView.hidden) Floor.stop(); }, () => {});
   if (prof) Profile.render();
-  try { if (!prof) localStorage.setItem('bitcade:view', v); } catch (e) {}
+  if (sc) ScoresView.render();
+  if (scrollY > 0) scrollTo({ top: 0 });
+  try { if (play || walk) localStorage.setItem('bitcade:view', v); } catch (e) {}
 }
+vScores.addEventListener('click', () => setView('scores'));
+vRewards.addEventListener('click', () => setView('rewards'));
+document.getElementById('todayCard').addEventListener('click', () => setView('rewards'));
+document.getElementById('tbLv').addEventListener('click', () => setView('rewards'));
+document.getElementById('tbLogo').addEventListener('click', () => setView('grid'));
+/* Search opens from the top bar (or "/"); FILTER holds the sort and the cabinet size. */
+const finder = document.getElementById('finder'), cabQ = document.getElementById('cabQ'), filterBtn = document.getElementById('filterBtn'), filterPop = document.getElementById('filterPop');
+function openSearch() { setView('grid'); finder.classList.add('searching'); cabQ.focus({ preventScroll: true }); finder.scrollIntoView({ block: 'center' }); }
+function closeSearch() { finder.classList.remove('searching'); if (cabQ.value) { cabQ.value = ''; cabQ.dispatchEvent(new Event('input', { bubbles: true })); } }
+document.getElementById('tbSearch').addEventListener('click', () => finder.classList.contains('searching') && document.activeElement === cabQ ? closeSearch() : openSearch());
+document.getElementById('qX').addEventListener('click', e => { e.preventDefault(); closeSearch(); });
+cabQ.addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); closeSearch(); cabQ.blur(); } });
+if (cabQ.value) finder.classList.add('searching'); // a search kept from earlier in the visit
+const filterSet = on => { filterPop.hidden = !on; filterBtn.setAttribute('aria-expanded', String(on)); };
+filterBtn.addEventListener('click', () => filterSet(filterPop.hidden));
+document.addEventListener('click', e => { if (!filterPop.hidden && !e.target.closest('#filterPop,#filterBtn')) filterSet(false); });
+addEventListener('keydown', e => { if (e.key === 'Escape' && !filterPop.hidden) filterSet(false); });
+window.Lobby = { openSearch };
 vProfile.addEventListener('click', () => setView('profile'));
 // Cloud save: sync quietly on every visit; anything new from another device shows on the next visit (or right away on the profile).
 Profile.autoSync().then(r => { if (r.state === 'ok' && r.changed) { tixShow(); if (!profileView.hidden) Profile.render(); } });
@@ -993,7 +1166,7 @@ flFull.addEventListener('click', () => floorFull(!floorView.classList.contains('
 document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && floorView.classList.contains('fl-max')) floorFull(false); });
 addEventListener('keydown', e => { if (e.code === 'Escape' && floorView.classList.contains('fl-max') && !(window.Floor && Floor.state().mode)) floorFull(false); });
 vFloor.addEventListener('click', () => { setView('floor'); document.getElementById('floorCv').focus({ preventScroll: true }); }); // so Enter plays, not re-presses this button
-setView(/[?&]view=profile\b/.test(location.search) ? 'profile' : get('bitcade:view') === 'floor' ? 'floor' : 'grid');
+{ const m = /[?&]view=(\w+)/.exec(location.search); setView(m ? m[1] : get('bitcade:view') === 'floor' ? 'floor' : 'grid'); }
 /* Install: the service worker caches the lobby and every game. Browsers that support an install prompt get a button;
    iPhones and iPads install from the Share menu, so they get a hint instead. */
 /*
@@ -1057,7 +1230,7 @@ reset.addEventListener('click', () => {
 
   /* ---------- music: the Bitcade theme, once the doors open ---------- */
   const musicBtn = document.getElementById('musicBtn');
-  const musicLabel = () => { musicBtn.textContent = `♪ MUSIC ${chip && chip.enabled ? 'ON' : 'OFF'}`; musicBtn.setAttribute('aria-pressed', String(!!(chip && chip.enabled))); };
+  const musicLabel = () => { const on = !!(chip && chip.enabled); musicBtn.title = musicBtn.ariaLabel = `Music ${on ? 'on' : 'off'}`; musicBtn.setAttribute('aria-pressed', String(on)); };
   const music = () => { if (!chip) return; const j = get('bitcade:jukebox'); chip.play(j && document.querySelector(`.cab[href="games/${j}/"]`) ? chip.theme(j) : chip.lobby); }; // the floor's jukebox picks the tune
   if (chip) { if (mode === 'lobby') music(); musicLabel(); musicBtn.addEventListener('click', () => { chip.enabled = !chip.enabled; if (chip.enabled) music(); musicLabel(); }); }
   else musicBtn.hidden = true;
