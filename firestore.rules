@@ -17,7 +17,8 @@ service cloud.firestore {
         'blast-brigade': 3000000, 'dungeon-delve': 2000000, 'lucky-line': 200000, 'rampart-rush': 2000000,
         'sky-squadron': 5000000, 'street-sweepers': 2000000, 'gem-cascade': 2000000, 'knockout-kings': 2000000,
         'tank-tactics': 2000000, 'bomb-squad': 2000000, 'paper-route': 3000000, 'soda-slinger': 3000000,
-        'pipe-panic': 2000000, 'boulder-bash': 2000000, 'ten-pin-blitz': 300, 'field-day': 2000000
+        'pipe-panic': 2000000, 'boulder-bash': 2000000, 'ten-pin-blitz': 300, 'field-day': 2000000,
+        'comet-courier': 3000000, 'fence-line': 1000000, 'crate-crew': 200000, 'hilo-hustle': 500000
       };
     }
 
@@ -46,7 +47,7 @@ service cloud.firestore {
     function dayStart(day) { return timestamp.date(int(day[0:4]), int(day[5:7]), int(day[8:10])); }
     match /daily/{game}/days/{day}/scores/{id} {
       allow read: if true;
-      allow create: if game in ['stackdown', 'wallbuster', 'twin-blast', 'mole-patrol', 'wing-duel', 'gem-cascade', 'pipe-panic']
+      allow create: if game in ['stackdown', 'wallbuster', 'twin-blast', 'mole-patrol', 'wing-duel', 'gem-cascade', 'pipe-panic', 'hilo-hustle']
         && day.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
         && request.time > dayStart(day) - duration.value(14, 'h')
         && request.time < dayStart(day) + duration.value(36, 'h')

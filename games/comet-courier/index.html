@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Comet Courier</title>
+<link rel="manifest" href="../../manifest.json">
+<meta name="theme-color" content="#0f0c1f">
+<link rel="icon" type="image/png" href="../../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../../icons/apple-touch-icon.png">
+<link rel="preload" href="../../shared/fonts/bungee-400.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="../../shared/fonts/silkscreen-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../../shared/fonts.css">
+<link rel="stylesheet" href="../../shared/arcade.css">
+</head>
+<body data-game="comet-courier" style="--game:#3dd6ff">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>COMET COURIER</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <div class="pad">
+    <div class="dp"><button class="u" data-k="ArrowUp" aria-label="Up">▲</button><button class="l" data-k="ArrowLeft" aria-label="Left">◀</button><button class="r" data-k="ArrowRight" aria-label="Right">▶</button><button class="d" data-k="ArrowDown" aria-label="Down">▼</button></div>
+    <div class="ab"><button data-k="Space">FIRE</button></div>
+  </div>
+  <p class="help"><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> or WASD fly · hold <kbd>Space</kbd> or <kbd>Z</kbd> to fire · <kbd>P</kbd> pause · on touch, drag to fly (it fires by itself) · gamepad: stick and A</p>
+</main>
+<script src="../../shared/chip.js"></script>
+<script src="../../shared/badges.js"></script>
+<script src="../../shared/arcade.js"></script>
+<script>
+(() => {
+/*
+ * Comet Courier: a side-scrolling shooter. Fly the parcel ship through waves of drones (they weave), darts (they line
+ * up on you, then rush), pods (they stop and shoot at you) and mines (they drift and burst). Gun capsules (P) widen
+ * your shot up to three levels; shield capsules (S) take one hit. Every fifth wave a cruiser blocks the lane: wear down
+ * its hull while it sprays aimed shots and rings. Losing a ship costs a gun level.
+ */
+const A = Arcade, cv = document.getElementById('cv'), W = 640, H = 360, ctx = A.canvas(cv, W, H), OUT = '#0a0612';
+function shade(hex, k) {
+  let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join('');
+  const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+const rnd = (a, b) => a + Math.random() * (b - a);
+
+/* ---------- the backdrop, drawn once: far stars and a nebula, nearer stars, and a ringed planet ---------- */
+const layer = (w, h, f) => { const c = document.createElement('canvas'); c.width = w; c.height = h; f(c.getContext('2d')); return c; };
+const far = layer(W, H, x => {
+  const g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#07051a'); g.addColorStop(1, '#120826'); x.fillStyle = g; x.fillRect(0, 0, W, H);
+  for (const [cx, cy, r, c] of [[160, 120, 180, 'rgba(160,60,255,.16)'], [480, 260, 220, 'rgba(40,180,255,.12)'], [600, 60, 140, 'rgba(255,80,160,.10)']]) { for (const ox of [-W, 0, W]) { const n = x.createRadialGradient(cx + ox, cy, 0, cx + ox, cy, r); n.addColorStop(0, c); n.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = n; x.fillRect(0, 0, W, H); } } // drawn either side too, so the scroll has no seam
+  for (let i = 0; i < 160; i++) { x.fillStyle = `rgba(255,255,255,${rnd(0.2, 0.7)})`; x.fillRect(Math.random() * W | 0, Math.random() * H | 0, 1, 1); }
+});
+const near = layer(W, H, x => { for (let i = 0; i < 60; i++) { const s = Math.random() < 0.2 ? 2 : 1; x.fillStyle = ['#fff', '#9ae8ff', '#ffd8f0'][i % 3]; x.fillRect(Math.random() * W | 0, Math.random() * H | 0, s, s); } });
+const planet = layer(240, 160, x => {
+  x.save(); x.translate(120, 80); x.rotate(-0.25);
+  x.strokeStyle = OUT; x.lineWidth = 9; x.beginPath(); x.ellipse(0, 0, 108, 22, 0, Math.PI, 0); x.stroke();
+  x.fillStyle = OUT; x.beginPath(); x.arc(0, 0, 54, 0, 6.29); x.fill();
+  const g = x.createRadialGradient(-18, -22, 6, 0, 0, 54); g.addColorStop(0, '#ffb48a'); g.addColorStop(0.6, '#c8506a'); g.addColorStop(1, '#4a1a4a'); x.fillStyle = g; x.beginPath(); x.arc(0, 0, 51, 0, 6.29); x.fill();
+  x.globalAlpha = 0.25; x.fillStyle = '#fff'; for (const y of [-24, -6, 12, 28]) x.fillRect(-50, y, 100, 3); x.globalAlpha = 1;
+  x.strokeStyle = '#ffd8a8'; x.lineWidth = 5; x.beginPath(); x.ellipse(0, 0, 106, 20, 0, 0, Math.PI); x.stroke();
+  x.restore();
+});
+
+/* ---------- state ---------- */
+let state = 'title', score = 0, lives = 3, wave = 0, gun = 1, shield = 0, scroll = 0, fireT = 0, lost = false;
+let ship = { x: 110, y: H / 2, inv: 0, vy: 0 }, bullets = [], foes = [], shots = [], caps = [], queue = [], boss = null, waveT = 0, msg = '', msgT = 0, hitThisRun = 0, touch = null;
+const say = (t, s = 1.8) => { msg = t; msgT = s; };
+const add = (n, x, y, c = '#ffd23d') => { score += n; A.setScore(score); if (x !== undefined) A.pop(x, y, '+' + n, c); };
+const FOE = {
+  drone: { r: 12, hp: 1, pts: 100, c: '#3dff8f' },
+  dart: { r: 11, hp: 2, pts: 150, c: '#ff4f6d' },
+  pod: { r: 16, hp: 5, pts: 300, c: '#ffb03d' },
+  mine: { r: 12, hp: 3, pts: 50, c: '#b48cff' }
+};
+
+function startGame() {
+  score = 0; A.setScore(0); lives = A.easy ? 5 : 3; wave = 0; gun = 1; shield = 0; lost = false; hitThisRun = 0;
+  ship = { x: 110, y: H / 2, inv: 1.5, vy: 0 }; bullets = []; foes = []; shots = []; caps = []; boss = null; queue = [];
+  state = 'play'; nextWave();
+}
+function nextWave() {
+  wave++; queue = []; waveT = 1.6;
+  if (wave >= 10) A.badge('wave10');
+  if (wave % 5 === 0) { say(`WAVE ${wave} · CRUISER AHEAD!`, 2.2); A.jingle([196, 247, 196, 147], 0.14, 'sawtooth'); queue.push({ t: 1.8, f: 'boss' }); return; }
+  say(`WAVE ${wave}`, 1.6); A.jingle([523, 659, 784], 0.07, 'square');
+  const kinds = ['line', 'line', 'darts', ...(wave > 1 ? ['pods'] : []), ...(wave > 2 ? ['mines', 'darts'] : [])];
+  let t = 1.2; for (let i = 0; i < 4 + Math.floor(wave / 2); i++) { queue.push({ t, f: kinds[Math.floor(Math.random() * kinds.length)], y: rnd(60, H - 60) }); t += Math.max(1.3, 3 - wave * 0.12); }
+}
+function spawn(q) {
+  const sp = 1 + Math.min(0.8, wave * 0.05);
+  if (q.f === 'line') { const g = { left: 5, all: 5 }; for (let i = 0; i < 5; i++) foes.push({ k: 'drone', x: W + 30 + i * 34, y: q.y, y0: q.y, ph: i * 0.6, vx: -110 * sp, hp: 1, g }); }
+  if (q.f === 'darts') for (let i = 0; i < 3; i++) foes.push({ k: 'dart', x: W + 30 + i * 50, y: i % 2 ? 40 : H - 40, vx: -60, vy: 0, t: 0, hp: 2, sp });
+  if (q.f === 'pods') for (let i = 0; i < 2; i++) foes.push({ k: 'pod', x: W + 40 + i * 70, y: 70 + i * (H - 140), stopX: W - 90 - i * 70, vx: -90, t: 0, n: 0, hp: 5 + Math.floor(wave / 3) });
+  if (q.f === 'mines') for (let i = 0; i < 4; i++) foes.push({ k: 'mine', x: W + 20 + i * 60, y: rnd(40, H - 40), vx: -50 * sp, vy: rnd(-30, 30), hp: 3, spin: rnd(0, 6) });
+  if (q.f === 'boss') boss = { x: W + 140, y: H / 2, hp: 70 + wave * 10, max: 70 + wave * 10, t: 0, at: 0, flash: 0, ph: 0 };
+}
+function aim(x, y, sp, spread = 0, n = 1) { const a = Math.atan2(ship.y - y, ship.x - x); for (let i = 0; i < n; i++) { const b = a + (i - (n - 1) / 2) * spread; shots.push({ x, y, vx: Math.cos(b) * sp, vy: Math.sin(b) * sp }); } }
+function fire() {
+  const pew = (vy, dx = 0) => bullets.push({ x: ship.x + 22 + dx, y: ship.y + vy * 0.02, vx: 560, vy });
+  if (gun === 1) pew(0);
+  else if (gun === 2) { pew(-20); pew(20); }
+  else { pew(0, 4); pew(-120); pew(120); }
+  fireT = gun === 3 ? 0.11 : 0.15; A.tone(gun === 3 ? 1100 : 900, 0.04, 'square', 0.018, 0, 500);
+}
+function die() {
+  if (ship.inv > 0) return;
+  if (shield) { shield = 0; ship.inv = 1; A.ring(ship.x, ship.y, '#5ee7ff', 36); A.tone(400, 0.2, 'triangle', 0.04, 0, 200); return; }
+  lives--; hitThisRun++; gun = Math.max(1, gun - 1); A.shake(8, 0.4); A.hitstop(0.08); A.flash('#ff4f6d', 0.2);
+  A.burst(ship.x, ship.y, { n: 40, colors: ['#3dd6ff', '#fff', '#ffb03d'], speed: 220, life: 0.9 }); A.sfx('boom');
+  if (lives <= 0) return gameOver();
+  ship = { x: 110, y: H / 2, inv: 2.2, vy: 0 }; shots = [];
+}
+function kill(f) {
+  const d = FOE[f.k]; add(d.pts, f.x, f.y - 14, d.c); f.dead = true;
+  A.burst(f.x, f.y, { n: 16, colors: [d.c, '#fff', shade(d.c, -0.3)], speed: 150, life: 0.5 }); A.tone(160 + Math.random() * 80, 0.12, 'square', 0.03, 0, 60);
+  if (f.k === 'mine') for (let i = 0; i < 8; i++) { const a = i / 8 * 6.28; shots.push({ x: f.x, y: f.y, vx: Math.cos(a) * 130, vy: Math.sin(a) * 130 }); } // it bursts
+  if (f.g && --f.g.left === 0 && f.g.all === 5) caps.push({ x: f.x, y: f.y, k: gun < 3 ? 'P' : 'S', vx: -60, t: 0 }); // a whole line: a capsule
+  else if (Math.random() < 0.05) caps.push({ x: f.x, y: f.y, k: gun < 3 && Math.random() < 0.6 ? 'P' : 'S', vx: -60, t: 0 });
+}
+function gameOver() {
+  if (lost) return; lost = true; state = 'over';
+  const rec = A.submit(score);
+  A.overlay({ title: 'PARCEL LOST', big: `SCORE ${score.toLocaleString()} · WAVE ${wave}`, sub: rec ? 'New high score!' : 'The comet lanes got you this time.', btn: 'Fly again', onGo: startGame });
+}
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+A.onHide(pause);
+A.onPress(c => { if (c === 'KeyP' || c === 'Escape') pause(); });
+// touch: drag anywhere to fly (the ship keeps its offset from your finger) and it fires by itself
+cv.addEventListener('pointerdown', e => { if (state !== 'play' || A.demo) return; const p = pt(e); touch = { id: e.pointerId, dx: ship.x - p.x, dy: ship.y - p.y }; cv.setPointerCapture(e.pointerId); });
+cv.addEventListener('pointermove', e => { if (!touch || touch.id !== e.pointerId) return; const p = pt(e); touch.tx = p.x + touch.dx; touch.ty = p.y + touch.dy; });
+['pointerup', 'pointercancel'].forEach(ev => cv.addEventListener(ev, e => { if (touch && touch.id === e.pointerId) touch = null; }));
+const pt = e => { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height }; };
+
+/* ---------- update ---------- */
+function update(dt) {
+  scroll += dt * (state === 'play' ? 60 : 30);
+  if (msgT > 0) msgT -= dt;
+  if (state !== 'play') return;
+  // the ship
+  const sp = 230;
+  let mx = (A.held('ArrowRight', 'KeyD') ? 1 : 0) - (A.held('ArrowLeft', 'KeyA') ? 1 : 0), my = (A.held('ArrowDown', 'KeyS') ? 1 : 0) - (A.held('ArrowUp', 'KeyW') ? 1 : 0);
+  if (touch && touch.tx != null) { const dx = touch.tx - ship.x, dy = touch.ty - ship.y, d = Math.hypot(dx, dy); if (d > 2) { mx = dx / Math.max(d, 18); my = dy / Math.max(d, 18); } }
+  ship.x = A.clamp(ship.x + mx * sp * dt, 24, W * 0.62); ship.y = A.clamp(ship.y + my * sp * dt, 18, H - 18); ship.vy = my;
+  if (ship.inv > 0) ship.inv -= dt;
+  fireT -= dt; if ((A.held('Space', 'KeyZ', 'KeyJ') || touch) && fireT <= 0) fire();
+  // waves
+  waveT -= dt;
+  while (queue.length && queue[0].t <= 0) spawn(queue.shift());
+  for (const q of queue) q.t -= dt;
+  if (!queue.length && !foes.length && !boss && waveT < 0) { add(500 * wave); nextWave(); }
+  // player bullets
+  for (const b of bullets) { b.x += b.vx * dt; b.y += b.vy * dt; }
+  bullets = bullets.filter(b => b.x < W + 20 && b.y > -20 && b.y < H + 20 && !b.hit);
+  // foes
+  for (const f of foes) {
+    if (f.k === 'drone') { f.x += f.vx * dt; f.ph += dt * 3; f.y = f.y0 + Math.sin(f.ph) * 40; }
+    if (f.k === 'dart') { f.t += dt; if (f.t < 1.1) { f.x += f.vx * dt; f.y += (ship.y - f.y) * Math.min(1, dt * 2.5); } else { f.vx = Math.max(-520 * f.sp, f.vx - 900 * dt); f.x += f.vx * dt; } }
+    if (f.k === 'pod') { if (f.x > f.stopX && f.n < 3) f.x += f.vx * dt; else { f.t += dt; if (f.t > 1.1 && f.n < 3) { f.t = 0; f.n++; aim(f.x - 16, f.y, 170 + wave * 6, 0.18, wave > 3 ? 3 : 1); A.tone(260, 0.08, 'square', 0.02); } if (f.n >= 3) f.x -= 120 * dt; } }
+    if (f.k === 'mine') { f.x += f.vx * dt; f.y += f.vy * dt; f.spin += dt * 2; if (f.y < 20 || f.y > H - 20) f.vy *= -1; }
+    for (const b of bullets) if (!b.hit && Math.hypot(b.x - f.x, b.y - f.y) < FOE[f.k].r + 4) { b.hit = true; f.hp--; f.flash = 0.08; if (f.hp <= 0) { kill(f); break; } else A.tone(700, 0.03, 'square', 0.015); }
+    if (f.flash > 0) f.flash -= dt;
+    if (!f.dead && Math.hypot(f.x - ship.x, f.y - ship.y) < FOE[f.k].r + 9) { kill(f); die(); }
+  }
+  foes = foes.filter(f => !f.dead && f.x > -60);
+  // the cruiser
+  if (boss) {
+    const b = boss; b.t += dt; b.ph += dt; b.flash = Math.max(0, b.flash - dt);
+    if (b.x > W - 130) b.x -= 70 * dt; else { b.y = H / 2 + Math.sin(b.ph * 0.7) * (H / 2 - 80); b.at += dt;
+      const rate = Math.max(0.55, 1.2 - wave * 0.04);
+      if (b.at > rate) { b.at = 0; const k = Math.floor(b.t / rate) % 4; if (k === 3) { for (let i = 0; i < 14; i++) { const a = i / 14 * 6.28 + b.t; shots.push({ x: b.x - 30, y: b.y, vx: Math.cos(a) * 140, vy: Math.sin(a) * 140 }); } A.tone(180, 0.25, 'sawtooth', 0.03, 0, 90); } else { aim(b.x - 60, b.y + (k - 1) * 30, 220, 0.2, 3); A.tone(300, 0.08, 'square', 0.02); } } }
+    for (const bl of bullets) if (!bl.hit && Math.abs(bl.x - b.x) < 80 && Math.abs(bl.y - b.y) < 34) { bl.hit = true; b.hp--; b.flash = 0.06; if (b.hp % 10 === 0) A.tone(120, 0.08, 'square', 0.03); }
+    if (Math.abs(ship.x - b.x) < 84 && Math.abs(ship.y - b.y) < 36) die();
+    if (b.hp <= 0) {
+      add(5000 + wave * 500, b.x, b.y - 40, '#ffd23d'); A.badge('boss'); A.shake(12, 0.6); A.flash('#fff', 0.3); A.hitstop(0.12); A.sfx('boom');
+      for (let i = 0; i < 5; i++) setTimeout(() => A.burst(b.x + rnd(-70, 70), b.y + rnd(-30, 30), { n: 30, colors: ['#ffb03d', '#fff', '#ff4f6d'], speed: 240, life: 0.9 }), i * 120);
+      caps.push({ x: b.x, y: b.y, k: gun < 3 ? 'P' : 'S', vx: -60, t: 0 }); shots = []; boss = null; waveT = 2.5;
+    }
+  }
+  // enemy shots
+  for (const s of shots) { s.x += s.vx * dt; s.y += s.vy * dt; if (Math.hypot(s.x - ship.x, s.y - ship.y) < 8) { s.hit = true; die(); } }
+  shots = shots.filter(s => !s.hit && s.x > -20 && s.x < W + 20 && s.y > -20 && s.y < H + 20);
+  // capsules
+  for (const c of caps) { c.x += c.vx * dt; c.t += dt; c.y += Math.sin(c.t * 4) * 0.6;
+    if (Math.hypot(c.x - ship.x, c.y - ship.y) < 20) { c.got = true; A.sfx('powerup');
+      if (c.k === 'P' && gun < 3) { gun++; say(gun === 3 ? 'MAX GUNS!' : 'GUNS UP!', 1.2); if (gun === 3) A.badge('maxgun'); } else if (c.k === 'S' && !shield) { shield = 1; say('SHIELD!', 1.2); } else add(500, c.x, c.y - 16); } }
+  caps = caps.filter(c => !c.got && c.x > -20);
+}
+
+/* ---------- drawing ---------- */
+function drawShip(x, y, t) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(ship.vy * 0.12);
+  const fl = 8 + Math.sin(t / 40) * 3; ctx.fillStyle = '#ffb03d'; ctx.beginPath(); ctx.moveTo(-18, -5); ctx.lineTo(-18 - fl, 0); ctx.lineTo(-18, 5); ctx.fill(); ctx.fillStyle = '#fff6c2'; ctx.beginPath(); ctx.moveTo(-18, -2); ctx.lineTo(-18 - fl * 0.5, 0); ctx.lineTo(-18, 2); ctx.fill();
+  const hull = (k, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(22 + k, 0); ctx.lineTo(4, -9 - k); ctx.lineTo(-14 - k, -12 - k); ctx.lineTo(-19 - k, -4); ctx.lineTo(-19 - k, 4); ctx.lineTo(-14 - k, 12 + k); ctx.lineTo(4, 9 + k); ctx.closePath(); ctx.fill(); };
+  hull(2, OUT); hull(0, '#3dd6ff'); ctx.fillStyle = shade('#3dd6ff', 0.45); ctx.beginPath(); ctx.moveTo(20, -1); ctx.lineTo(4, -8); ctx.lineTo(-13, -10); ctx.lineTo(-12, -3); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = shade('#3dd6ff', -0.4); ctx.fillRect(-16, 3, 18, 5);
+  ctx.fillStyle = OUT; ctx.beginPath(); ctx.ellipse(4, -2, 7, 4, 0, 0, 6.29); ctx.fill(); ctx.fillStyle = '#fff6c2'; ctx.beginPath(); ctx.ellipse(5, -3, 5, 2.5, 0, 0, 6.29); ctx.fill();
+  ctx.fillStyle = '#ffd23d'; ctx.fillRect(-8, 6, 8, 3); // the parcel stripe
+  ctx.restore();
+  if (shield) { ctx.strokeStyle = `rgba(94,231,255,${0.5 + Math.sin(t / 120) * 0.25})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, 26, 0, 6.29); ctx.stroke(); }
+}
+function drawFoe(f, t) {
+  const d = FOE[f.k], c = f.flash > 0 ? '#ffffff' : d.c;
+  ctx.save(); ctx.translate(f.x, f.y);
+  if (f.k === 'drone') { ctx.fillStyle = OUT; ctx.beginPath(); ctx.arc(0, 0, 13, 0, 6.29); ctx.fill(); ctx.fillStyle = c; ctx.beginPath(); ctx.arc(0, 0, 11, 0, 6.29); ctx.fill(); ctx.fillStyle = shade(d.c, 0.4); ctx.beginPath(); ctx.arc(-2, -4, 5, 0, 6.29); ctx.fill(); ctx.fillStyle = OUT; ctx.fillRect(-9, -1, 6, 3); ctx.fillStyle = '#ff4f6d'; ctx.fillRect(-8, 0, 4, 1.5); ctx.fillStyle = shade(d.c, -0.35); ctx.fillRect(3, -14 + Math.sin(t / 60) * 2, 3, 6); ctx.fillRect(3, 8 - Math.sin(t / 60) * 2, 3, 6); }
+  if (f.k === 'dart') { const tri = (k, col) => { ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(-16 - k, 0); ctx.lineTo(10 + k, -10 - k); ctx.lineTo(4, 0); ctx.lineTo(10 + k, 10 + k); ctx.closePath(); ctx.fill(); }; tri(2, OUT); tri(0, c); ctx.fillStyle = shade(d.c, 0.4); ctx.beginPath(); ctx.moveTo(-12, -1); ctx.lineTo(8, -8); ctx.lineTo(3, -1); ctx.fill(); if (f.t > 1.1) { ctx.fillStyle = '#ffd23d'; ctx.fillRect(6, -2, 10, 4); } }
+  if (f.k === 'pod') { ctx.fillStyle = OUT; ctx.beginPath(); ctx.ellipse(0, 0, 18, 15, 0, 0, 6.29); ctx.fill(); const g = ctx.createLinearGradient(0, -14, 0, 14); g.addColorStop(0, shade(c, 0.35)); g.addColorStop(1, shade(c, -0.35)); ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(0, 0, 16, 13, 0, 0, 6.29); ctx.fill(); ctx.fillStyle = OUT; ctx.fillRect(-24, -3, 10, 6); ctx.fillStyle = '#3a3450'; ctx.fillRect(-23, -2, 9, 4); ctx.fillStyle = f.t > 0.8 && f.n < 3 ? '#fff' : '#ff4f6d'; ctx.beginPath(); ctx.arc(2, -2, 4, 0, 6.29); ctx.fill(); }
+  if (f.k === 'mine') { ctx.rotate(f.spin); ctx.fillStyle = OUT; for (let i = 0; i < 6; i++) { ctx.save(); ctx.rotate(i * 1.047); ctx.fillRect(-2, -17, 4, 8); ctx.restore(); } ctx.beginPath(); ctx.arc(0, 0, 12, 0, 6.29); ctx.fill(); ctx.fillStyle = c; ctx.beginPath(); ctx.arc(0, 0, 10, 0, 6.29); ctx.fill(); ctx.fillStyle = shade(d.c, 0.4); ctx.beginPath(); ctx.arc(-3, -3, 4, 0, 6.29); ctx.fill(); ctx.fillStyle = Math.floor(t / 200) % 2 ? '#ff4f6d' : '#fff'; ctx.fillRect(-2, -2, 4, 4); }
+  ctx.restore();
+}
+function drawBoss(b, t) {
+  ctx.save(); ctx.translate(b.x, b.y);
+  const body = (k, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(-96 - k, 0); ctx.lineTo(-60, -28 - k); ctx.lineTo(70 + k, -34 - k); ctx.lineTo(84 + k, -12); ctx.lineTo(84 + k, 12); ctx.lineTo(70 + k, 34 + k); ctx.lineTo(-60, 28 + k); ctx.closePath(); ctx.fill(); };
+  body(3, OUT); const g = ctx.createLinearGradient(0, -34, 0, 34); g.addColorStop(0, b.flash > 0 ? '#fff' : '#8a90a8'); g.addColorStop(0.5, b.flash > 0 ? '#fff' : '#5a6078'); g.addColorStop(1, '#2a2e40'); body(0, g);
+  ctx.fillStyle = '#c8203a'; ctx.fillRect(-40, -6, 100, 4); ctx.fillStyle = '#ffd23d'; for (let i = 0; i < 6; i++) ctx.fillRect(-30 + i * 16, 10, 8, 4);
+  for (const ty of [-26, 26]) { ctx.fillStyle = OUT; ctx.beginPath(); ctx.arc(-40, ty, 9, 0, 6.29); ctx.fill(); ctx.fillStyle = '#3a3450'; ctx.beginPath(); ctx.arc(-40, ty, 7, 0, 6.29); ctx.fill(); ctx.fillStyle = OUT; ctx.fillRect(-58, ty - 2, 16, 4); }
+  ctx.fillStyle = OUT; ctx.beginPath(); ctx.arc(-70, 0, 12, 0, 6.29); ctx.fill(); ctx.fillStyle = `rgb(255,${80 + Math.sin(t / 100) * 60 | 0},${80})`; ctx.beginPath(); ctx.arc(-70, 0, 9, 0, 6.29); ctx.fill();
+  for (let i = 0; i < 3; i++) { ctx.fillStyle = '#ffb03d'; const f = 10 + Math.sin(t / 50 + i) * 4; ctx.fillRect(84, -14 + i * 12, f, 5); }
+  ctx.restore();
+  const w = 220; ctx.fillStyle = OUT; ctx.fillRect(W / 2 - w / 2 - 2, 10, w + 4, 12); ctx.fillStyle = '#3a3450'; ctx.fillRect(W / 2 - w / 2, 12, w, 8); ctx.fillStyle = '#ff4f6d'; ctx.fillRect(W / 2 - w / 2, 12, w * b.hp / b.max, 8);
+  ctx.font = '9px Silkscreen, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillStyle = '#fff'; ctx.fillText('CRUISER', W / 2, 24);
+}
+function render(t) {
+  const s1 = (scroll * 0.25) % W, s2 = scroll % W, sp = (scroll * 0.12) % (W + 260);
+  ctx.drawImage(far, -s1, 0); ctx.drawImage(far, W - s1, 0);
+  ctx.drawImage(planet, W + 20 - sp, 60);
+  ctx.drawImage(near, -s2, 0); ctx.drawImage(near, W - s2, 0);
+  for (const c of caps) { ctx.fillStyle = OUT; ctx.beginPath(); ctx.arc(c.x, c.y, 12, 0, 6.29); ctx.fill(); ctx.fillStyle = c.k === 'P' ? '#ff4fd1' : '#5ee7ff'; ctx.beginPath(); ctx.arc(c.x, c.y, 10, 0, 6.29); ctx.fill(); ctx.fillStyle = '#fff'; ctx.font = '12px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(c.k, c.x, c.y + 1); }
+  for (const f of foes) drawFoe(f, t);
+  if (boss) drawBoss(boss, t);
+  for (const b of bullets) { ctx.fillStyle = OUT; ctx.fillRect(b.x - 7, b.y - 3, 16, 6); ctx.fillStyle = '#fff6c2'; ctx.fillRect(b.x - 6, b.y - 2, 14, 4); ctx.fillStyle = '#ffd23d'; ctx.fillRect(b.x - 6, b.y - 2, 6, 4); }
+  for (const s of shots) { ctx.fillStyle = OUT; ctx.beginPath(); ctx.arc(s.x, s.y, 5.5, 0, 6.29); ctx.fill(); ctx.fillStyle = '#ff5a8a'; ctx.beginPath(); ctx.arc(s.x, s.y, 4, 0, 6.29); ctx.fill(); ctx.fillStyle = '#fff'; ctx.fillRect(s.x - 1, s.y - 1, 2, 2); }
+  if (state !== 'title' && !(ship.inv > 0 && Math.floor(t / 80) % 2)) drawShip(ship.x, ship.y, t);
+  if (state !== 'title') {
+    ctx.font = '12px Silkscreen, monospace'; ctx.textBaseline = 'top'; ctx.textAlign = 'left'; ctx.fillStyle = '#fff'; ctx.fillText(`WAVE ${wave}`, 10, H - 20);
+    for (let i = 0; i < lives - 1; i++) { ctx.save(); ctx.translate(90 + i * 22, H - 13); ctx.scale(0.45, 0.45); ctx.fillStyle = '#3dd6ff'; ctx.beginPath(); ctx.moveTo(22, 0); ctx.lineTo(-14, -12); ctx.lineTo(-14, 12); ctx.fill(); ctx.restore(); }
+    ctx.textAlign = 'right'; ctx.fillStyle = '#ff4fd1'; ctx.fillText(`GUN ${'▮'.repeat(gun)}${'▯'.repeat(3 - gun)}`, W - 10, H - 20);
+  }
+  if (msgT > 0 && state === 'play') { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '26px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = OUT; ctx.fillText(msg, W / 2 + 2, H / 2 + 2); ctx.fillStyle = '#9ae8ff'; ctx.fillText(msg, W / 2, H / 2); ctx.globalAlpha = 1; }
+}
+A.loop(update, render);
+
+/* Attract demo: hold fire, keep near the left, and pick the height with the least danger ahead of the ship, leaning
+ * towards lining up with the nearest target. */
+A.attract({
+  start: startGame,
+  stop: () => { state = 'title'; foes = []; shots = []; bullets = []; caps = []; boss = null; },
+  bot: () => {
+    if (state !== 'play') return [];
+    const keys = ['Space'], target = [...foes].filter(f => f.x > ship.x).sort((a, b) => a.x - b.x)[0] || boss;
+    let best = ship.y, bestV = Infinity;
+    for (let y = 30; y < H - 20; y += 15) {
+      let v = Math.abs(y - ship.y) * 0.02 + (target ? Math.abs(y - target.y) * 0.03 : 0);
+      for (const s of shots) { const dx = s.x - ship.x; if (dx > -10 && dx < 160) v += 2000 / (1 + Math.abs(s.y + s.vy * Math.max(0, dx) / 300 - y) ** 2); }
+      for (const f of foes) { const dx = f.x - ship.x; if (dx > -10 && dx < 120) v += 1500 / (1 + Math.abs(f.y - y) ** 2); }
+      if (boss && Math.abs(boss.y - y) < 40 && boss.x - ship.x < 140) v += 50;
+      if (v < bestV) { bestV = v; best = y; }
+    }
+    if (best < ship.y - 6) keys.push('ArrowUp'); else if (best > ship.y + 6) keys.push('ArrowDown');
+    if (ship.x > 130) keys.push('ArrowLeft'); else if (ship.x < 90) keys.push('ArrowRight');
+    return keys;
+  }
+});
+A.overlay({ title: 'COMET COURIER', sub: 'Fly the parcel through the comet lanes. Drones weave, darts line up and rush, pods stop and shoot, mines burst when hit. Grab <b>P</b> for wider guns and <b>S</b> for a shield, and sink the cruiser every fifth wave.', btn: 'Launch', scores: true, onGo: startGame });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Crate Crew</title>
+<link rel="manifest" href="../../manifest.json">
+<meta name="theme-color" content="#0f0c1f">
+<link rel="icon" type="image/png" href="../../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../../icons/apple-touch-icon.png">
+<link rel="preload" href="../../shared/fonts/bungee-400.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="../../shared/fonts/silkscreen-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../../shared/fonts.css">
+<link rel="stylesheet" href="../../shared/arcade.css">
+</head>
+<body data-game="crate-crew" data-pad="2:KeyZ 3:KeyR" style="--game:#ffb03d">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>CRATE CREW</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <div class="pad">
+    <div class="dp"><button class="u" data-k="ArrowUp" aria-label="Up">▲</button><button class="l" data-k="ArrowLeft" aria-label="Left">◀</button><button class="r" data-k="ArrowRight" aria-label="Right">▶</button><button class="d" data-k="ArrowDown" aria-label="Down">▼</button></div>
+    <div class="ab"><button class="sm" data-k="KeyR">RESET</button><button data-k="KeyZ">UNDO</button></div>
+  </div>
+  <p class="help">Arrows or WASD walk and push · <kbd>Z</kbd> or <kbd>Backspace</kbd> undo · <kbd>R</kbd> start the room again · <kbd>P</kbd> pause · gamepad: d-pad, X undo, Y reset</p>
+</main>
+<script src="../../shared/chip.js"></script>
+<script src="../../shared/badges.js"></script>
+<script src="../../shared/arcade.js"></script>
+<script>
+(() => {
+/*
+ * Crate Crew: a warehouse shift. Push every crate onto a glowing pad to clear the room; you can push but never pull,
+ * and only one crate at a time. Fifteen rooms, easiest first, and an eight-minute shift to clear as many as you can.
+ * Each room pays more the further in it is, plus a bonus for using no more moves than par (the solver's solution).
+ * Undo and reset are free; the clock is what costs you.
+ */
+const LEVELS = [["########", "#      #", "# .$ @ #", "#      #", "########"], ["########", "#  .   #", "#  $   #", "# @$ . #", "#      #", "########"], ["  ######", "  #    #", "### $$ #", "#  .#. #", "# @    #", "########"], ["#########", "#   #   #", "# $ # . #", "# @   $ #", "#.  #   #", "#########"], [" ########", " #  #   #", " # $  $ #", "##.##.###", "#  $  . #", "# @ #   #", "#########"], [" #######", " #  .  #", "## $#$ #", "#  @ . #", "# $#   #", "#  .   #", "########"], ["  #####", "  #   #", "### # ###", "#  $ $  #", "# #.@.# #", "#  $ $  #", "### # ###", "  #. .#", "  #####"], ["#######", "#  .  #", "# $#$ #", "#. @ .#", "# $#$ #", "#  .  #", "#######"], ["#########", "#   #   #", "# $ $ $ #", "#.#.#.# #", "#   @   #", "#########"], ["#########", "#  ..   #", "# $##$  #", "#   @   #", "# $  $  #", "#  ..   #", "#########"], [" #######", "##  .  ##", "#  $#$  #", "# . @ . #", "#  $#$  #", "##  .  ##", " #######"], ["########", "#  #   #", "#  $ $ #", "## # # #", "#. . @ #", "########"], ["#########", "#.  #  .#", "# $   $ #", "## # # ##", "#   @   #", "## # # ##", "# $   $ #", "#.  #  .#", "#########"], ["##########", "#    #   #", "# $$   . #", "# #  ##. #", "# @ $  . #", "##########"], ["##########", "#   ..   #", "# $#  #$ #", "#  $  $  #", "## #  # ##", "#   @..  #", "##########"]];
+const SOLUTIONS = ["ll", "rudr", "uruurrdluld", "luurdrdrrdrullluldrdl", "urrruullrrurrdluldlluld", "udrrruuldrddllullduuurddldldr", "ulddurrdululuurrddlddllluurlddrrdurrduluuruulldd", "ludlddruluuurdldddrrrruulllrrruuldrdddllluurrdrdl", "ruulrurrdlrddlllllluuurrdulldddrrrrrruuulldllluld", "lludrrrudllldurrrdulllulurddrrruruldddlllldrurrrrdl", "ludrrruuldrdddlllluuuurddrrlllddrudrrruruullddullrrdrdl", "llluurlddrrrruuulldduurrdlrddllrruuulldrrddlllluurrdurrddll", "lluuddrrrruuddlllldduurrrrdduuuullluldrrrurdddddllldlurrrdr", "luuurrdulldrlddrrruuulldrllddrrrrlllluurrrddludrrrlluurrurdlllulldrrrr", "lluuudddrrrrruuudddllllluurlulurddddrrrrruuurulddddlluuuldrddrruulrddllllluuuurlddddrrrrruuuulrddddllllluurrduurdlllddrrrluurd"]; // from a solver: shortest in pushes; the demo plays them, and their length is par
+const A = Arcade, cv = document.getElementById('cv'), W = 600, H = 440, ctx = A.canvas(cv, W, H), OUT = '#0a0612', SHIFT = 480;
+function shade(hex, k) {
+  let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join('');
+  const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+const D = { u: [0, -1], d: [0, 1], l: [-1, 0], r: [1, 0] }, KEYD = { ArrowUp: 'u', KeyW: 'u', ArrowDown: 'd', KeyS: 'd', ArrowLeft: 'l', KeyA: 'l', ArrowRight: 'r', KeyD: 'r' };
+let state = 'title', room = 0, score = 0, time = SHIFT, cleared = 0, lost = false, msg = '', msgT = 0;
+let cols = 0, rows = 0, S = 48, OX = 0, OY = 0, walls = new Set(), goals = new Set(), boxes = new Set(), me = { x: 0, y: 0 }, moves = 0, hist = [], face = 'd', anim = null, winT = 0, bump = 0;
+const say = (t, s = 1.8) => { msg = t; msgT = s; };
+const add = (n, x, y, c = '#ffd23d') => { score += n; A.setScore(score); if (x !== undefined) A.pop(x, y, '+' + n.toLocaleString(), c); };
+const k = (x, y) => y * 64 + x;
+
+function load(i) {
+  const L = LEVELS[i]; rows = L.length; cols = Math.max(...L.map(r => r.length));
+  walls = new Set(); goals = new Set(); boxes = new Set();
+  L.forEach((r, y) => [...r].forEach((c, x) => { if (c === '#') walls.add(k(x, y)); if ('.*+'.includes(c)) goals.add(k(x, y)); if ('$*'.includes(c)) boxes.add(k(x, y)); if ('@+'.includes(c)) me = { x, y }; }));
+  S = Math.min(54, Math.floor((W - 40) / cols), Math.floor((H - 90) / rows)); OX = Math.floor((W - cols * S) / 2); OY = 56 + Math.floor((H - 70 - rows * S) / 2);
+  moves = 0; hist = []; anim = null; winT = 0; face = 'd';
+}
+function startGame() { room = 0; score = 0; A.setScore(0); time = SHIFT; cleared = 0; lost = false; load(0); state = 'play'; say('ROOM 1', 1.4); }
+function move(d) {
+  if (state !== 'play' || winT > 0) return;
+  const [dx, dy] = D[d], nx = me.x + dx, ny = me.y + dy; face = d;
+  if (walls.has(k(nx, ny))) { bump = 0.15; A.tone(110, 0.05, 'square', 0.02); return; }
+  let pushed = null;
+  if (boxes.has(k(nx, ny))) {
+    const bx = nx + dx, by = ny + dy; if (walls.has(k(bx, by)) || boxes.has(k(bx, by))) { bump = 0.15; A.tone(110, 0.05, 'square', 0.02); return; }
+    boxes.delete(k(nx, ny)); boxes.add(k(bx, by)); pushed = [nx, ny, bx, by];
+    if (goals.has(k(bx, by))) { A.tone(880, 0.08, 'triangle', 0.04); A.tone(1320, 0.1, 'triangle', 0.03, 0.06); A.burst(OX + bx * S + S / 2, OY + by * S + S / 2, { n: 10, colors: ['#3dff8f', '#fff'], speed: 90, life: 0.4 }); }
+    else A.noise(0.06, 0.03);
+  } else A.tone(300 + (moves % 2) * 40, 0.025, 'square', 0.012);
+  hist.push({ me: { ...me }, box: pushed }); me = { x: nx, y: ny }; moves++;
+  anim = { dx, dy, t: 0.09, box: pushed };
+  if ([...boxes].every(b => goals.has(b))) win();
+}
+function undo() {
+  if (state !== 'play' || winT > 0 || !hist.length) return;
+  const h = hist.pop(); me = h.me; if (h.box) { boxes.delete(k(h.box[2], h.box[3])); boxes.add(k(h.box[0], h.box[1])); } moves = Math.max(0, moves - 1); anim = null; A.tone(500, 0.04, 'triangle', 0.02, 0, 300);
+}
+function win() {
+  winT = 1.6; cleared++;
+  const par = SOLUTIONS[room].length, base = 500 + room * 250, parBonus = moves <= par ? 1000 + room * 100 : Math.max(0, Math.round((par * 1.6 - moves) * 10));
+  add(base + parBonus, OX + me.x * S + S / 2, OY + me.y * S - 10); say(moves <= par ? `ROOM CLEAR · PAR! +${(base + parBonus).toLocaleString()}` : `ROOM CLEAR · +${(base + parBonus).toLocaleString()}`, 1.6);
+  if (moves <= par) A.badge('par'); if (cleared >= 8) A.badge('clear8');
+  A.jingle([523, 659, 784, 1047], 0.08, 'square'); A.flash('#ffb03d', 0.15);
+}
+function nextRoom() {
+  if (room + 1 >= LEVELS.length) { A.badge('all'); const bonus = Math.round(time) * 20; add(bonus); say(`EVERY ROOM DONE! +${bonus.toLocaleString()}`, 2.5); return endShift(true); }
+  room++; load(room); say(`ROOM ${room + 1}`, 1.4);
+}
+function endShift(all) {
+  if (lost) return; lost = true; state = 'over';
+  setTimeout(() => {
+    const rec = A.submit(score);
+    A.overlay({ title: all ? 'SHIFT COMPLETE' : 'END OF SHIFT', big: `SCORE ${score.toLocaleString()} · ${cleared} ROOM${cleared === 1 ? '' : 'S'}`, sub: rec ? 'New high score!' : all ? 'Every crate in its place. The boss is speechless.' : 'The whistle blew. Same time tomorrow?', btn: 'New shift', onGo: startGame });
+  }, all ? 1600 : 400);
+}
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+A.onHide(pause);
+A.onPress(c => {
+  if (c === 'KeyP' || c === 'Escape') return pause();
+  if (state !== 'play') return;
+  if (KEYD[c]) move(KEYD[c]);
+  if (c === 'KeyZ' || c === 'Backspace' || c === 'KeyU') undo();
+  if (c === 'KeyR' && winT <= 0) { load(room); A.tone(250, 0.12, 'triangle', 0.03, 0, 150); say('ROOM RESET', 0.8); }
+});
+// swipes move one square on touch screens
+let sw = null;
+cv.addEventListener('pointerdown', e => { if (state === 'play' && !A.demo) sw = { x: e.clientX, y: e.clientY }; });
+cv.addEventListener('pointerup', e => { if (!sw) return; const dx = e.clientX - sw.x, dy = e.clientY - sw.y; sw = null; if (Math.max(Math.abs(dx), Math.abs(dy)) < 18) return; move(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'r' : 'l') : (dy > 0 ? 'd' : 'u')); });
+
+function update(dt) {
+  if (msgT > 0) msgT -= dt; if (bump > 0) bump -= dt; if (anim) { anim.t -= dt; if (anim.t <= 0) anim = null; }
+  if (state !== 'play') return;
+  if (winT > 0) { winT -= dt; if (winT <= 0) nextRoom(); return; }
+  time -= dt; if (time <= 0) { time = 0; A.tone(220, 0.6, 'sawtooth', 0.04, 0, 110); endShift(false); }
+  else if (time < 10 && Math.floor(time + dt) !== Math.floor(time)) A.tone(880, 0.05, 'square', 0.02);
+}
+
+/* ---------- drawing ---------- */
+let floorCv = null, floorFor = -1;
+function bakeFloor() { // the room's floor and walls, drawn once per room
+  floorCv = document.createElement('canvas'); floorCv.width = W; floorCv.height = H; const x = floorCv.getContext('2d'); floorFor = room;
+  x.fillStyle = '#16121e'; x.fillRect(0, 0, W, H);
+  for (let i = 0; i < W; i += 40) { x.fillStyle = 'rgba(255,176,61,.05)'; x.fillRect(i, 0, 20, H); }
+  // the floor inside: reachable squares from the worker
+  const inside = new Set(), q = [k(me.x, me.y)]; inside.add(q[0]);
+  while (q.length) { const c = q.pop(), cx0 = c % 64, cy0 = (c / 64) | 0; for (const [dx, dy] of Object.values(D)) { const n = k(cx0 + dx, cy0 + dy); if (!walls.has(n) && !inside.has(n) && cx0 + dx >= 0 && cy0 + dy >= 0 && cx0 + dx < cols && cy0 + dy < rows) { inside.add(n); q.push(n); } } }
+  for (const c of inside) { const X = OX + (c % 64) * S, Y = OY + ((c / 64) | 0) * S; x.fillStyle = ((c % 64) + ((c / 64) | 0)) % 2 ? '#5a5464' : '#544e5e'; x.fillRect(X, Y, S, S); x.fillStyle = 'rgba(255,255,255,.05)'; x.fillRect(X, Y, S, 2); x.fillStyle = 'rgba(0,0,0,.18)'; x.fillRect(X, Y + S - 2, S, 2); }
+  for (const c of goals) { const X = OX + (c % 64) * S + S / 2, Y = OY + ((c / 64) | 0) * S + S / 2; x.fillStyle = OUT; x.beginPath(); x.arc(X, Y, S * 0.3, 0, 6.29); x.fill(); x.fillStyle = '#3a5a2a'; x.beginPath(); x.arc(X, Y, S * 0.26, 0, 6.29); x.fill(); x.strokeStyle = '#3dff8f'; x.lineWidth = 2; x.beginPath(); x.arc(X, Y, S * 0.2, 0, 6.29); x.stroke(); }
+  for (const c of walls) {
+    const X = OX + (c % 64) * S, Y = OY + ((c / 64) | 0) * S;
+    x.fillStyle = OUT; x.fillRect(X, Y, S, S); x.fillStyle = '#7a3a2a'; x.fillRect(X + 1, Y + 1, S - 2, S - 2);
+    x.save(); x.beginPath(); x.rect(X + 2, Y + 2, S - 4, S - 4); x.clip(); x.fillStyle = '#9a4a34'; for (let r = 0; r < 4; r++) for (let b = -1; b < 3; b++) x.fillRect(X + 2 + b * (S / 2) + (r % 2 ? S / 4 : 0), Y + 2 + r * (S / 4), S / 2 - 3, S / 4 - 3); x.restore(); // bricks, kept inside the tile
+    x.fillStyle = 'rgba(255,255,255,.12)'; x.fillRect(X + 1, Y + 1, S - 2, 3);
+  }
+}
+function crate(X, Y, on) {
+  const p = S * 0.08, s = S - p * 2;
+  ctx.fillStyle = OUT; ctx.fillRect(X + p - 2, Y + p - 2, s + 4, s + 4);
+  const c = on ? '#5ac85a' : '#c8843a'; ctx.fillStyle = c; ctx.fillRect(X + p, Y + p, s, s);
+  ctx.fillStyle = shade(c, 0.3); ctx.fillRect(X + p, Y + p, s, s * 0.18);
+  ctx.fillStyle = shade(c, -0.3); ctx.fillRect(X + p, Y + p + s * 0.82, s, s * 0.18);
+  ctx.strokeStyle = shade(c, -0.45); ctx.lineWidth = Math.max(2, S * 0.07); ctx.strokeRect(X + p + s * 0.12, Y + p + s * 0.12, s * 0.76, s * 0.76);
+  ctx.beginPath(); ctx.moveTo(X + p + s * 0.12, Y + p + s * 0.12); ctx.lineTo(X + p + s * 0.88, Y + p + s * 0.88); ctx.stroke();
+  if (on) { ctx.fillStyle = 'rgba(200,255,200,.35)'; ctx.fillRect(X + p, Y + p, s, s * 0.18); }
+}
+function worker(X, Y, t) {
+  const cx = X + S / 2, by = Y + S * 0.86, s = S / 48, walk = anim ? Math.sin(t / 30) * 2 * s : 0;
+  ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.ellipse(cx, by, 13 * s, 4 * s, 0, 0, 6.29); ctx.fill();
+  const r = (x, y, w, h, c) => { ctx.fillStyle = OUT; ctx.fillRect(cx + (x - 1) * s, by + (y - 1) * s, (w + 2) * s, (h + 2) * s); ctx.fillStyle = c; ctx.fillRect(cx + x * s, by + y * s, w * s, h * s); };
+  r(-8, -12 + walk / s, 6, 12, '#2a3a6a'); r(2, -12 - walk / s, 6, 12, '#2a3a6a');
+  r(-11, -27, 22, 16, '#ff8a2a'); ctx.fillStyle = '#ffe36a'; ctx.fillRect(cx - 11 * s, by - 20 * s, 22 * s, 3 * s); // the hi-vis vest
+  r(-8, -39, 16, 12, '#e8b48a');
+  r(-10, -44, 20, 7, '#ffd23d'); ctx.fillStyle = shade('#ffd23d', 0.4); ctx.fillRect(cx - 9 * s, by - 44 * s, 18 * s, 2 * s); // hard hat
+  ctx.fillStyle = OUT; if (face !== 'u') { const ex = face === 'l' ? -5 : face === 'r' ? 1 : -4; ctx.fillRect(cx + ex * s, by - 34 * s, 2 * s, 3 * s); if (face === 'd') ctx.fillRect(cx + 2 * s, by - 34 * s, 2 * s, 3 * s); }
+}
+function render(t) {
+  if (state === 'title' && floorFor !== -2) { ctx.fillStyle = '#16121e'; ctx.fillRect(0, 0, W, H); }
+  if (state !== 'title') {
+    if (floorFor !== room || !floorCv) bakeFloor();
+    const shake = bump > 0 ? Math.sin(t / 10) * 2 : 0;
+    ctx.drawImage(floorCv, shake, 0);
+    const a = anim ? anim.t / 0.09 : 0;
+    for (const b of boxes) { let bx = b % 64, by = (b / 64) | 0; if (anim && anim.box && anim.box[2] === bx && anim.box[3] === by) { bx -= anim.dx * a; by -= anim.dy * a; } crate(OX + bx * S + shake, OY + by * S, goals.has(b) && !(anim && anim.box && anim.box[2] === (b % 64) && a > 0.3)); }
+    worker(OX + (me.x - (anim ? anim.dx * a : 0)) * S + shake, OY + (me.y - (anim ? anim.dy * a : 0)) * S, t);
+    // HUD
+    ctx.font = '12px Silkscreen, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.fillStyle = '#fff'; ctx.fillText(`ROOM ${room + 1}/${LEVELS.length}`, 16, 22);
+    ctx.fillStyle = moves <= SOLUTIONS[room].length ? '#3dff8f' : '#c8c4d8'; ctx.fillText(`MOVES ${moves} · PAR ${SOLUTIONS[room].length}`, 150, 22);
+    const m = Math.floor(time / 60), s2 = Math.floor(time % 60); ctx.textAlign = 'right'; ctx.fillStyle = time < 30 ? (Math.floor(t / 250) % 2 ? '#ff4f6d' : '#fff') : '#ffb03d'; ctx.font = '18px Bungee, sans-serif'; ctx.fillText(`${m}:${String(s2).padStart(2, '0')}`, W - 16, 23);
+  } else {
+    // the title: a crate stack under a work light
+    ctx.fillStyle = '#16121e'; ctx.fillRect(0, 0, W, H);
+    const g = ctx.createRadialGradient(W / 2, 0, 20, W / 2, 0, 400); g.addColorStop(0, 'rgba(255,200,120,.25)'); g.addColorStop(1, 'rgba(255,200,120,0)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    S = 52; [[0, 0], [1, 0], [2, 0], [0.5, -1], [1.5, -1], [1, -2]].forEach(([cx0, cy0], i) => crate(W / 2 - 78 + cx0 * 52, H - 90 + cy0 * 52, i === 5));
+    floorFor = -2;
+  }
+  if (msgT > 0 && state === 'play') { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '24px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = OUT; ctx.fillText(msg, W / 2 + 2, H - 22 + 2); ctx.fillStyle = '#ffe0b0'; ctx.fillText(msg, W / 2, H - 22); ctx.globalAlpha = 1; }
+}
+A.loop(update, render);
+
+/* Attract demo: play each room's stored solution, one step every tenth of a second. */
+let botStep = 0, botT = 0, botRoom = -1;
+A.attract({
+  start: startGame,
+  stop: () => { state = 'title'; },
+  bot: dt => {
+    if (state !== 'play' || winT > 0) return [];
+    if (botRoom !== room) { botRoom = room; botStep = 0; }
+    if ((botT -= dt) > 0) return []; botT = 0.11;
+    const m = SOLUTIONS[room][botStep++]; if (!m) return [];
+    return ['!' + { u: 'ArrowUp', d: 'ArrowDown', l: 'ArrowLeft', r: 'ArrowRight' }[m]];
+  }
+});
+A.overlay({ title: 'CRATE CREW', sub: 'Push every crate onto a glowing pad to clear the room. You can only push, one crate at a time. Clear as many of the fifteen rooms as you can in an eight-minute shift; match par for a bonus. <b>Z</b> undoes, <b>R</b> starts the room again.', btn: 'Clock in', scores: true, onGo: startGame });
+})();
+</script>
+</body>
+</html>

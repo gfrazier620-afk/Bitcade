@@ -176,6 +176,22 @@ window.BADGES = {
     { id: 'gold', name: 'Golden Games', desc: 'Qualify in all four events' },
     { id: 'sprint', name: 'Lightning', desc: 'Run the 100 metres in under 10.5 seconds' },
     { id: 'jav80', name: 'Long Throw', desc: 'Throw the javelin 80 metres' }],
+  'comet-courier': [
+    { id: 'boss', name: 'Cruiser Sunk', desc: 'Sink a cruiser' },
+    { id: 'maxgun', name: 'Full Firepower', desc: 'Max out your guns' },
+    { id: 'wave10', name: 'Long Haul', desc: 'Reach wave 10' }],
+  'fence-line': [
+    { id: 'bigcut', name: 'Land Grab', desc: 'Claim 30% of a field with one fence' },
+    { id: 'claim90', name: 'Ninety Percent', desc: 'Claim 90% of a field' },
+    { id: 'level5', name: 'Rancher', desc: 'Clear field 5' }],
+  'crate-crew': [
+    { id: 'par', name: 'On Par', desc: 'Clear a room in par moves or fewer' },
+    { id: 'clear8', name: 'Productive Shift', desc: 'Clear 8 rooms in one shift' },
+    { id: 'all', name: 'Employee of the Month', desc: 'Clear all 15 rooms in one shift' }],
+  'hilo-hustle': [
+    { id: 'clear', name: 'Clean Table', desc: 'Clear the table' },
+    { id: 'chain10', name: 'Chain Gang', desc: 'Play 10 cards in a row' },
+    { id: 'daily', name: 'Daily Dealer', desc: 'Play a daily deal' }],
   'blip-sports': [
     { id: 'fbwin', name: 'Gridiron Win', desc: 'Win a football game' },
     { id: 'bbwin', name: 'Ballpark Win', desc: 'Win a baseball game' },
@@ -195,7 +211,7 @@ window.WEEKLY = (() => {
     'scaffold-scramble', 'back-alley-brawl', 'swarm-strike', 'highrise-handyman', 'volley-duel', 'turbo-tour', 'raptor-ridge', 'marsh-marksman',
     'pixel-peaks', 'pop-lagoon', 'neon-steps', 'twin-blast', 'stackdown', 'hedge-hop', 'wing-duel', 'neon-noodle', 'sky-shield', 'mole-patrol',
     'star-siege', 'nitro-lane', 'cube-hopper', 'blast-brigade', 'dungeon-delve', 'lucky-line', 'rampart-rush', 'sky-squadron', 'street-sweepers', 'gem-cascade', 'knockout-kings',
-    'tank-tactics', 'bomb-squad', 'paper-route', 'soda-slinger', 'pipe-panic', 'boulder-bash', 'ten-pin-blitz', 'field-day'];
+    'tank-tactics', 'bomb-squad', 'paper-route', 'soda-slinger', 'pipe-panic', 'boulder-bash', 'ten-pin-blitz', 'field-day', 'comet-courier', 'fence-line', 'crate-crew', 'hilo-hustle'];
   const DAY = 864e5, EPOCH = Date.UTC(2024, 0, 1), FIRST = 145; // EPOCH is a Monday; week 145 is the one starting 2026-10-12
   const index = (now = Date.now()) => Math.floor((now - EPOCH) / (7 * DAY));
   const start = (now = Date.now()) => EPOCH + index(now) * 7 * DAY;
@@ -289,10 +305,10 @@ window.MISSIONS = (() => {
     'pixel-peaks': 3000, 'pop-lagoon': 3000, 'neon-steps': 25000,
     'blast-brigade': 3000, 'dungeon-delve': 800, 'lucky-line': 300, 'rampart-rush': 2500,
     'sky-squadron': 12000, 'street-sweepers': 2500, 'gem-cascade': 3500, 'knockout-kings': 4000,
-    'tank-tactics': 2000, 'bomb-squad': 1000, 'paper-route': 5000, 'soda-slinger': 6000, 'pipe-panic': 1500, 'boulder-bash': 3000, 'ten-pin-blitz': 120, 'field-day': 4000
+    'tank-tactics': 2000, 'bomb-squad': 1000, 'paper-route': 5000, 'soda-slinger': 6000, 'pipe-panic': 1500, 'boulder-bash': 3000, 'ten-pin-blitz': 120, 'field-day': 4000, 'comet-courier': 6000, 'fence-line': 6000, 'crate-crew': 8000, 'hilo-hustle': 12000
   };
   const AREAS = { RACEWAY: ['turbo-tour', 'nitro-lane', 'light-trail'], 'SHOOTING GALLERY': ['raptor-ridge', 'marsh-marksman'] };
-  const DAILY = ['stackdown', 'wallbuster', 'twin-blast', 'mole-patrol', 'wing-duel', 'gem-cascade', 'pipe-panic'];
+  const DAILY = ['stackdown', 'wallbuster', 'twin-blast', 'mole-patrol', 'wing-duel', 'gem-cascade', 'pipe-panic', 'hilo-hustle'];
   const name = slug => slug.split('-').map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
   const REWARD = 10, BONUS = 20;
   function rng(seed) { let h = 2166136261; for (const ch of seed) h = Math.imul(h ^ ch.charCodeAt(0), 16777619); return () => { h += 0x6d2b79f5; let t = h; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }

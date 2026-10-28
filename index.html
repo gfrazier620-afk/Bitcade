@@ -740,7 +740,7 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
     <main class="floor" id="floor"></main>
   </section>
   <footer>
-    <p class="tag">FORTY-FOUR CLASSIC-STYLE GAMES · NO QUARTERS REQUIRED</p>
+    <p class="tag">FORTY-EIGHT CLASSIC-STYLE GAMES · NO QUARTERS REQUIRED</p>
     <p class="privacy">Bitcade logs anonymous play activity (which games are played, for how long, and scores) to help improve the games. Turn it off in ⚙ Settings.</p>
     <p>Works with a keyboard or touch, and most games with a game controller. High scores are saved in this browser.</p>
     <button class="install" id="install" hidden>Install Bitcade · plays offline</button>
@@ -891,6 +891,18 @@ const GAMES = [
   { slug: 'field-day', genre: 'sports 2p', added: '2026-10-26', name: 'Field Day', kind: 'Track & field · 2P', c: '#ffb23d', blurb: 'Tap to sprint. Dash, hurdles, long jump and javelin. Qualify or go home.',
     px: ['....S.......', '...RRR......', '..R.R.R.....', '....R...W.W.', '...B.B..WWW.', '..B...B.W.W.', '............', 'OOOOOOOOOOOO'],
     px2: ['.....S......', '....RRR.....', '...RRR......', '....R...W.W.', '....BB..WWW.', '...B..B.W.W.', '............', 'OOOOOOOOOOOO'] },
+  { slug: 'comet-courier', genre: 'shooter action', added: '2026-10-27', name: 'Comet Courier', kind: 'Side-scrolling shooter', c: '#3dd6ff', blurb: 'Deliver the parcel through the comet lanes. Guns up, shields on.',
+    px: ['............', '..W.....W...', '.....ZZ.....', '.OZZZZZZ..R.', '.OZZZZZZZ.RR', '.....ZZ...R.', '.W.......W..', '............'],
+    px2: ['....W.......', '..........W.', '.....ZZ.....', 'OOZZZZZZ.Y.R', 'OOZZZZZZZ.RR', '.....ZZ...R.', '...W........', '............'] },
+  { slug: 'fence-line', genre: 'action puzzle', added: '2026-10-27', name: 'Fence Line', kind: 'Claim the field', c: '#ff5ac8', blurb: 'Draw fences to claim the field. Keep your new line away from the sparks.',
+    px: ['XXXXXXXXXXXX', 'XMMMMX.....X', 'XMMMMX..C..X', 'XMMMMXXXX..X', 'XMMMMMMMX..X', 'XMMMMMMMXW.X', 'XMMMMMMMX..X', 'XXXXXXXXXXXX'],
+    px2: ['XXXXXXXXXXXX', 'XMMMMX.....X', 'XMMMMX.C...X', 'XMMMMXXXX..X', 'XMMMMMMMX..X', 'XMMMMMMMX.WX', 'XMMMMMMMX..X', 'XXXXXXXXXXXX'] },
+  { slug: 'crate-crew', genre: 'puzzle', added: '2026-10-27', name: 'Crate Crew', kind: 'Crate-pushing puzzle', c: '#ffb03d', blurb: 'Push every crate onto its pad before the shift ends.',
+    px: ['TTTTTTTTTTTT', 'T..........T', 'T..Y...DD..T', 'T..O...DD..T', 'T..B.......T', 'T......G...T', 'T..........T', 'TTTTTTTTTTTT'],
+    px2: ['TTTTTTTTTTTT', 'T..........T', 'T...Y..DD..T', 'T...O..DD..T', 'T...B......T', 'T......G...T', 'T..........T', 'TTTTTTTTTTTT'] },
+  { slug: 'hilo-hustle', daily: true, genre: 'puzzle strategy', added: '2026-10-27', name: 'Hi-Lo Hustle', kind: 'Card chain solitaire', c: '#3dff8f', blurb: 'One up, one down. Chain the cards and clear the table.',
+    px: ['............', '.WWWW..WWWW.', '.WR.W..WK.W.', '.WRRW..WKKW.', '.W.RW..W.KW.', '.WWWW..WWWW.', '............', 'GGGGGGGGGGGG'],
+    px2: ['............', '.WWWW...WWWW', '.WR.W...WK.W', '.WRRW...WKKW', '.W.RW...W.KW', '.WWWW...WWWW', '............', 'GGGGGGGGGGGG'] },
   { slug: 'blip-sports', genre: 'sports', added: '2026-10-11', name: 'Blip Sports', kind: 'LED football + baseball', c: '#ff3a22', blurb: 'The 1978 handheld feel. Pick your team, beat the CPU.', label: 'WINS',
     px: ['............', '.RR..RR..RR.', '............', '.RR..WW..RR.', '............', '.RR..RR..RR.', '............', '............'],
     px2: ['............', '.RR..RR..RR.', '............', '.RR..RWW.RR.', '............', '.RR..RR..RR.', '............', '............'] }

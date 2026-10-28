@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Fence Line</title>
+<link rel="manifest" href="../../manifest.json">
+<meta name="theme-color" content="#0f0c1f">
+<link rel="icon" type="image/png" href="../../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../../icons/apple-touch-icon.png">
+<link rel="preload" href="../../shared/fonts/bungee-400.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="../../shared/fonts/silkscreen-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../../shared/fonts.css">
+<link rel="stylesheet" href="../../shared/arcade.css">
+</head>
+<body data-game="fence-line" data-pad="0:Space" style="--game:#ff5ac8">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>FENCE LINE</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <div class="pad">
+    <div class="dp"><button class="u" data-k="ArrowUp" aria-label="Up">▲</button><button class="l" data-k="ArrowLeft" aria-label="Left">◀</button><button class="r" data-k="ArrowRight" aria-label="Right">▶</button><button class="d" data-k="ArrowDown" aria-label="Down">▼</button></div>
+    <div class="ab"><button data-k="Space">DRAW</button></div>
+  </div>
+  <p class="help">Arrows or WASD run along the fence · hold <kbd>Space</kbd> (or <kbd>Z</kbd>) and steer into the field to draw a new fence · <kbd>P</kbd> pause · gamepad: d-pad or stick, hold A to draw</p>
+</main>
+<script src="../../shared/chip.js"></script>
+<script src="../../shared/badges.js"></script>
+<script src="../../shared/arcade.js"></script>
+<script>
+(() => {
+/*
+ * Fence Line: claim the field. You run along the fence; hold DRAW and steer into the open field to lay a new fence
+ * behind you, and close it off back on the old fence to claim the side the sparks aren't on. The sparks bounce round the
+ * open field: if one touches your new fence while you're drawing, you lose a life. From level 2 crawlers run along the
+ * fence too. Stop drawing out in the field and a fuse burns along your line towards you. Claim 75% to clear the field,
+ * which reveals a neon picture underneath.
+ */
+const A = Arcade, cv = document.getElementById('cv');
+const GW = 96, GH = 60, CS = 6, FX = 32, FY = 38, W = FX * 2 + GW * CS, H = FY + GH * CS + 14, ctx = A.canvas(cv, W, H), OUT = '#0a0612';
+const TARGET = 0.75;
+function shade(hex, k) {
+  let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join('');
+  const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+const rnd = (a, b) => a + Math.random() * (b - a);
+const D = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
+
+/* ---------- the pictures under the field, one per level (drawn once each) ---------- */
+const FW = GW * CS, FH = GH * CS;
+const PICS = [
+  x => { // a city at sunset
+    const g = x.createLinearGradient(0, 0, 0, FH); g.addColorStop(0, '#2a0a4a'); g.addColorStop(0.55, '#ff4fa3'); g.addColorStop(1, '#ffb03d'); x.fillStyle = g; x.fillRect(0, 0, FW, FH);
+    x.fillStyle = '#ffe36a'; x.beginPath(); x.arc(FW / 2, FH * 0.62, 70, 0, 6.29); x.fill(); x.fillStyle = '#ff4fa3'; for (let i = 0; i < 6; i++) x.fillRect(FW / 2 - 80, FH * 0.62 + i * 10 - 10, 160, 3 + i);
+    for (let i = 0; i < 18; i++) { const w = rnd(20, 44), h = rnd(60, 190), bx = i * 34 - 10; x.fillStyle = OUT; x.fillRect(bx, FH - h, w, h); x.fillStyle = '#ffe36a'; for (let j = 0; j < h / 14; j++) for (let k = 0; k < w / 10 - 1; k++) if (Math.random() < 0.35) x.fillRect(bx + 4 + k * 10, FH - h + 8 + j * 14, 4, 5); }
+  },
+  x => { // an ocean under a big moon
+    const g = x.createLinearGradient(0, 0, 0, FH); g.addColorStop(0, '#04103a'); g.addColorStop(0.5, '#1a3a8a'); g.addColorStop(1, '#0a1a3a'); x.fillStyle = g; x.fillRect(0, 0, FW, FH);
+    for (let i = 0; i < 90; i++) { x.fillStyle = '#fff'; x.fillRect(Math.random() * FW, Math.random() * FH * 0.5, 1.5, 1.5); }
+    x.fillStyle = '#f4f0ff'; x.beginPath(); x.arc(FW * 0.7, FH * 0.3, 54, 0, 6.29); x.fill(); x.fillStyle = 'rgba(160,170,220,.6)'; x.beginPath(); x.arc(FW * 0.68, FH * 0.27, 10, 0, 6.29); x.arc(FW * 0.74, FH * 0.35, 7, 0, 6.29); x.fill();
+    for (let y = FH * 0.55; y < FH; y += 8) { x.fillStyle = `rgba(94,231,255,${0.15 + (y / FH) * 0.3})`; for (let k = 0; k < FW; k += 40) x.fillRect(k + (y % 16), y, 24, 2); }
+    x.fillStyle = 'rgba(255,255,240,.5)'; for (let i = 0; i < 10; i++) x.fillRect(FW * 0.7 - 30 + Math.random() * 60, FH * 0.56 + i * 12, 30 - i * 2, 3);
+  },
+  x => { // mountains under an aurora
+    x.fillStyle = '#060a1e'; x.fillRect(0, 0, FW, FH);
+    for (let b = 0; b < 4; b++) { x.strokeStyle = ['rgba(61,255,143,.5)', 'rgba(94,231,255,.4)', 'rgba(180,140,255,.35)', 'rgba(61,255,143,.25)'][b]; x.lineWidth = 18 - b * 3; x.beginPath(); for (let i = 0; i <= FW; i += 20) x.lineTo(i, 80 + b * 26 + Math.sin(i / 70 + b) * 30); x.stroke(); }
+    const ridge = (y0, amp, c) => { x.fillStyle = c; x.beginPath(); x.moveTo(0, FH); for (let i = 0; i <= FW; i += 24) x.lineTo(i, y0 - Math.abs(Math.sin(i / 90 + y0)) * amp - (i % 48 ? 0 : 20)); x.lineTo(FW, FH); x.fill(); };
+    ridge(260, 120, '#2a3a6a'); ridge(300, 90, '#1a2448'); ridge(340, 60, '#0e1430');
+    x.fillStyle = '#f4f8ff'; for (let i = 0; i < 6; i++) { const px = 60 + i * 100; x.beginPath(); x.moveTo(px - 18, 160 + (i % 2) * 20); x.lineTo(px, 140 + (i % 2) * 20); x.lineTo(px + 18, 160 + (i % 2) * 20); x.fill(); }
+  },
+  x => { // a giant arcade cabinet
+    const g = x.createRadialGradient(FW / 2, FH / 2, 20, FW / 2, FH / 2, FW * 0.7); g.addColorStop(0, '#3a0a5a'); g.addColorStop(1, '#0a0418'); x.fillStyle = g; x.fillRect(0, 0, FW, FH);
+    x.strokeStyle = 'rgba(94,231,255,.25)'; x.lineWidth = 1; for (let i = 0; i < FW; i += 24) { x.beginPath(); x.moveTo(i, FH); x.lineTo(FW / 2 + (i - FW / 2) * 0.3, FH * 0.6); x.stroke(); }
+    const cx = FW / 2; x.fillStyle = OUT; x.fillRect(cx - 92, 20, 184, FH - 20); x.fillStyle = '#ff5ac8'; x.fillRect(cx - 86, 26, 172, FH - 26);
+    x.fillStyle = '#ffe36a'; x.fillRect(cx - 80, 32, 160, 38); x.fillStyle = OUT; x.font = '22px Bungee, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('BITCADE', cx, 52);
+    x.fillStyle = OUT; x.fillRect(cx - 74, 80, 148, 120); x.fillStyle = '#0a1a2a'; x.fillRect(cx - 68, 86, 136, 108);
+    x.fillStyle = '#3dff8f'; for (let i = 0; i < 6; i++) x.fillRect(cx - 50 + i * 18, 120, 10, 8); x.fillStyle = '#ffd23d'; x.fillRect(cx - 6, 170, 12, 10);
+    x.fillStyle = '#2a1a4a'; x.fillRect(cx - 86, 210, 172, 40); x.fillStyle = '#ff4f6d'; x.beginPath(); x.arc(cx - 40, 230, 9, 0, 6.29); x.fill(); x.fillStyle = '#3dd6ff'; x.beginPath(); x.arc(cx + 20, 230, 9, 0, 6.29); x.arc(cx + 46, 230, 9, 0, 6.29); x.fill();
+  }
+];
+const pic = document.createElement('canvas'); pic.width = FW; pic.height = FH; const px = pic.getContext('2d');
+const mask = document.createElement('canvas'); mask.width = FW; mask.height = FH; const mx = mask.getContext('2d');
+const shown = document.createElement('canvas'); shown.width = FW; shown.height = FH; const sx = shown.getContext('2d');
+
+/* ---------- state ---------- */
+let g = new Uint8Array(GW * GH), state = 'title', level = 1, score = 0, lives = 3, pct = 0, lost = false;
+let me = { x: GW >> 1, y: GH - 1 }, trail = [], drawing = false, moveT = 0, idleT = 0, fuse = -1, fuseT = 0, inv = 0, sparks = [], crawlers = [], msg = '', msgT = 0, clearT = 0;
+const at = (x, y) => x < 0 || y < 0 || x >= GW || y >= GH ? 1 : g[y * GW + x];
+const set = (x, y, v) => { g[y * GW + x] = v; };
+const edge = (x, y) => { if (at(x, y) !== 1 || x < 0 || y < 0 || x >= GW || y >= GH) return false; for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) if (at(x + i, y + j) === 0) return true; return false; };
+const say = (t, s = 1.6) => { msg = t; msgT = s; };
+const add = (n, x, y, c = '#ffd23d') => { score += n; A.setScore(score); if (x !== undefined) A.pop(x, y, '+' + n, c); };
+const cx = x => FX + x * CS + CS / 2, cy = y => FY + y * CS + CS / 2;
+
+function paintMask() {
+  mx.clearRect(0, 0, FW, FH); mx.fillStyle = '#fff';
+  for (let y = 0; y < GH; y++) { let run = -1; for (let x = 0; x <= GW; x++) { const on = x < GW && g[y * GW + x] === 1; if (on && run < 0) run = x; if (!on && run >= 0) { mx.fillRect(run * CS, y * CS, (x - run) * CS, CS); run = -1; } } }
+  sx.globalCompositeOperation = 'source-over'; sx.clearRect(0, 0, FW, FH); sx.drawImage(pic, 0, 0); sx.globalCompositeOperation = 'destination-in'; sx.drawImage(mask, 0, 0); sx.globalCompositeOperation = 'source-over';
+}
+function newField() {
+  g = new Uint8Array(GW * GH);
+  for (let x = 0; x < GW; x++) { set(x, 0, 1); set(x, GH - 1, 1); } for (let y = 0; y < GH; y++) { set(0, y, 1); set(GW - 1, y, 1); }
+  px.clearRect(0, 0, FW, FH); PICS[(level - 1) % PICS.length](px);
+  me = { x: GW >> 1, y: GH - 1 }; trail = []; drawing = false; fuse = -1; idleT = 0; inv = 1.5; pct = 0; clearT = 0;
+  const sp = 70 + level * 9;
+  sparks = Array.from({ length: Math.min(4, 1 + Math.floor((level - 1) / 2)) }, () => { const a = rnd(0.4, 1.2) + (Math.random() < 0.5 ? 0 : Math.PI); return { x: FW / 2 + rnd(-80, 80), y: FH / 2 + rnd(-40, 40), vx: Math.cos(a) * sp * (Math.random() < 0.5 ? 1 : -1), vy: Math.sin(a) * sp, t: Math.random() * 6 }; });
+  crawlers = Array.from({ length: Math.min(3, Math.floor(level / 2)) }, (_, i) => ({ x: i % 2 ? GW - 1 : 0, y: 0, d: i % 2 ? [-1, 0] : [1, 0], t: 0 }));
+  paintMask(); state = 'play'; say(`FIELD ${level} · CLAIM 75%`, 2); A.jingle([392, 523, 659, 784], 0.08, 'square');
+}
+function startGame() { level = 1; score = 0; A.setScore(0); lives = A.easy ? 5 : 3; lost = false; newField(); }
+
+/* ---------- claiming ---------- */
+function close() {
+  for (const [x, y] of trail) set(x, y, 1);
+  // flood the open field from every spark; whatever they can't reach is claimed
+  const seen = new Uint8Array(GW * GH), st = [];
+  for (const s of sparks) { const k = Math.floor(s.y / CS) * GW + Math.floor(s.x / CS); if (g[k] === 0 && !seen[k]) { seen[k] = 1; st.push(k); } }
+  while (st.length) { const k = st.pop(), x = k % GW, y = (k / GW) | 0; for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= GW || ny >= GH) continue; const n = ny * GW + nx; if (!seen[n] && g[n] === 0) { seen[n] = 1; st.push(n); } } }
+  let got = trail.length; for (let k = 0; k < g.length; k++) if (g[k] === 0 && !seen[k]) { g[k] = 1; got++; }
+  const inner = (GW - 2) * (GH - 2); let claimed = 0; for (let y = 1; y < GH - 1; y++) for (let x = 1; x < GW - 1; x++) if (g[y * GW + x] === 1) claimed++;
+  const before = pct; pct = claimed / inner;
+  const pts = Math.round(got * (2 + level * 0.5)); add(pts, cx(me.x), cy(me.y) - 10);
+  if (pct - before >= 0.3) { A.badge('bigcut'); say('HUGE CLAIM!', 1.2); }
+  trail = []; drawing = false; fuse = -1; idleT = 0; paintMask();
+  A.jingle([523, 659, 784, 1047], 0.05, 'square'); A.ring(cx(me.x), cy(me.y), '#ff5ac8', 30);
+  for (const c of crawlers) if (!edge(c.x, c.y)) { const e = nearestEdge(c.x, c.y); c.x = e[0]; c.y = e[1]; }
+  if (pct >= TARGET) {
+    const bonus = Math.round((pct - TARGET) * 100) * 500 + level * 1000; add(bonus); say(`FIELD CLAIMED ${Math.round(pct * 100)}% · +${bonus.toLocaleString()}`, 2.6);
+    if (pct >= 0.9) A.badge('claim90'); if (level >= 5) A.badge('level5');
+    state = 'clear'; clearT = 3; A.flash('#ff5ac8', 0.25); A.jingle([523, 659, 784, 1047, 1319], 0.09, 'square');
+  }
+}
+function nearestEdge(x0, y0) { let best = [me.x, me.y], bd = 1e9; for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) if (edge(x, y)) { const d = Math.abs(x - x0) + Math.abs(y - y0); if (d < bd) { bd = d; best = [x, y]; } } return best; }
+function die() {
+  if (inv > 0) return;
+  lives--; A.shake(7, 0.35); A.sfx('hurt'); A.burst(cx(me.x), cy(me.y), { n: 24, colors: ['#ff5ac8', '#fff', '#ffd23d'], speed: 160, life: 0.6 });
+  if (trail.length) { const [sx0, sy0] = trail.start; for (const [x, y] of trail) set(x, y, 0); me = { x: sx0, y: sy0 }; }
+  trail = []; drawing = false; fuse = -1; idleT = 0; inv = 1.8;
+  if (lives <= 0) return gameOver();
+  say('ZAPPED!', 1);
+}
+function gameOver() {
+  if (lost) return; lost = true; state = 'over';
+  const rec = A.submit(score);
+  A.overlay({ title: 'FENCE DOWN', big: `SCORE ${score.toLocaleString()} · FIELD ${level}`, sub: rec ? 'New high score!' : 'The sparks got the better of you.', btn: 'Play again', onGo: startGame });
+}
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+A.onHide(pause);
+A.onPress(c => { if (c === 'KeyP' || c === 'Escape') pause(); });
+
+/* ---------- update ---------- */
+function step(dx, dy, draw) {
+  const nx = me.x + dx, ny = me.y + dy; if (nx < 0 || ny < 0 || nx >= GW || ny >= GH) return false;
+  const v = at(nx, ny);
+  if (!drawing) {
+    if (v === 1 && edge(nx, ny)) { me.x = nx; me.y = ny; return true; }
+    if (v === 0 && draw) { drawing = true; trail = []; trail.start = [me.x, me.y]; set(nx, ny, 2); trail.push([nx, ny]); me.x = nx; me.y = ny; A.tone(880, 0.03, 'square', 0.015); return true; }
+    return false;
+  }
+  if (v === 2) return false; // can't cross your own line
+  if (v === 0) { set(nx, ny, 2); trail.push([nx, ny]); me.x = nx; me.y = ny; if (trail.length % 3 === 0) A.tone(600 + (trail.length % 30) * 12, 0.02, 'square', 0.012); return true; }
+  if (v === 1) { me.x = nx; me.y = ny; close(); return true; }
+  return false;
+}
+function update(dt) {
+  if (msgT > 0) msgT -= dt;
+  if (state === 'clear') { clearT -= dt; if (clearT <= 0) { level++; newField(); } return; }
+  if (state !== 'play') return;
+  if (inv > 0) inv -= dt;
+  const draw = A.held('Space', 'KeyZ', 'KeyJ');
+  const dir = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].find(k => A.held(k, { ArrowUp: 'KeyW', ArrowDown: 'KeyS', ArrowLeft: 'KeyA', ArrowRight: 'KeyD' }[k]));
+  moveT -= dt; let moved = false;
+  if (dir && (drawing ? draw : true)) while (moveT <= 0) { moveT += drawing ? 1 / 30 : 1 / 42; if (step(...D[dir], draw)) moved = true; else { moveT = Math.max(moveT, 0); break; } if (state !== 'play') return; }
+  if (moveT < 0) moveT = 0;
+  // the fuse: stand still out in the field and it burns along your line towards you
+  if (drawing) { idleT = moved ? 0 : idleT + dt; if (idleT > 1 && fuse < 0) { fuse = 0; fuseT = 0; A.tone(200, 0.3, 'sawtooth', 0.02); }
+    if (fuse >= 0) { if (moved) fuse = -1; else { fuseT += dt * 24; fuse = Math.floor(fuseT); if (fuse >= trail.length - 1) return die(); } } }
+  // sparks bounce round the open field
+  for (const s of sparks) {
+    s.t += dt; const nx = s.x + s.vx * dt, ny = s.y + s.vy * dt;
+    const cell = (x, y) => at(Math.floor(x / CS), Math.floor(y / CS));
+    if (cell(nx, s.y) === 2 || cell(s.x, ny) === 2) { if (drawing) return die(); }
+    if (cell(nx, s.y) !== 0) s.vx *= -1; else s.x = nx;
+    if (cell(s.x, ny) !== 0) s.vy *= -1; else s.y = ny;
+    if (drawing && Math.hypot(s.x - (me.x * CS + 3), s.y - (me.y * CS + 3)) < 8) return die();
+  }
+  // crawlers run along the fence
+  for (const c of crawlers) {
+    c.t += dt; while (c.t > 1 / (16 + level * 1.5)) { c.t -= 1 / (16 + level * 1.5);
+      const opts = [[c.d[0], c.d[1]], [c.d[1], -c.d[0]], [-c.d[1], c.d[0]]].filter(([dx, dy]) => edge(c.x + dx, c.y + dy));
+      const d = opts.length ? (Math.random() < 0.85 && opts.some(o => o[0] === c.d[0] && o[1] === c.d[1]) ? c.d : opts[Math.floor(Math.random() * opts.length)]) : [-c.d[0], -c.d[1]];
+      if (edge(c.x + d[0], c.y + d[1])) { c.x += d[0]; c.y += d[1]; c.d = d; } else c.d = [-c.d[0], -c.d[1]];
+    }
+    const tgt = drawing ? trail.start : [me.x, me.y]; if (tgt && Math.abs(c.x - tgt[0]) + Math.abs(c.y - tgt[1]) < 1 && (!drawing || inv <= 0)) { if (!drawing) return die(); }
+  }
+}
+
+/* ---------- drawing ---------- */
+function render(t) {
+  ctx.fillStyle = '#100a1e'; ctx.fillRect(0, 0, W, H);
+  // the open field: a dark grid; the claimed part shows the picture
+  ctx.fillStyle = '#05030c'; ctx.fillRect(FX, FY, FW, FH);
+  ctx.strokeStyle = 'rgba(255,90,200,.07)'; ctx.lineWidth = 1; ctx.beginPath(); for (let x = 0; x <= GW; x += 4) { ctx.moveTo(FX + x * CS + 0.5, FY); ctx.lineTo(FX + x * CS + 0.5, FY + FH); } for (let y = 0; y <= GH; y += 4) { ctx.moveTo(FX, FY + y * CS + 0.5); ctx.lineTo(FX + FW, FY + y * CS + 0.5); } ctx.stroke();
+  ctx.drawImage(shown, FX, FY);
+  // the fence edges glow
+  ctx.fillStyle = '#ff5ac8';
+  for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) if (g[y * GW + x] === 1 && edge(x, y)) ctx.fillRect(FX + x * CS + 1, FY + y * CS + 1, CS - 2, CS - 2);
+  // your new fence (and the fuse burning along it)
+  for (let i = 0; i < trail.length; i++) { const [x, y] = trail[i]; ctx.fillStyle = fuse >= 0 && i <= fuse ? '#ff4f3d' : Math.floor(t / 90 + i / 4) % 2 ? '#ffe36a' : '#fff'; ctx.fillRect(FX + x * CS, FY + y * CS, CS, CS); }
+  if (fuse >= 0 && trail[fuse]) { const [x, y] = trail[fuse]; A.burst(cx(x), cy(y), { n: 1, colors: ['#ffb03d', '#fff'], speed: 60, life: 0.25 }); }
+  // sparks
+  for (const s of sparks) {
+    const X = FX + s.x, Y = FY + s.y, r = 7 + Math.sin(s.t * 18) * 1.5;
+    const gl = ctx.createRadialGradient(X, Y, 0, X, Y, 22); gl.addColorStop(0, 'rgba(94,231,255,.5)'); gl.addColorStop(1, 'rgba(94,231,255,0)'); ctx.fillStyle = gl; ctx.fillRect(X - 22, Y - 22, 44, 44);
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); for (let i = 0; i < 6; i++) { const a = s.t * 9 + i * 1.047; ctx.moveTo(X, Y); ctx.lineTo(X + Math.cos(a) * r * 1.6, Y + Math.sin(a) * r * 1.6); } ctx.stroke();
+    ctx.fillStyle = OUT; ctx.beginPath(); ctx.arc(X, Y, r, 0, 6.29); ctx.fill(); ctx.fillStyle = '#5ee7ff'; ctx.beginPath(); ctx.arc(X, Y, r - 2, 0, 6.29); ctx.fill(); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(X - 1.5, Y - 1.5, 2.2, 0, 6.29); ctx.fill();
+  }
+  // crawlers
+  for (const c of crawlers) { const X = cx(c.x), Y = cy(c.y); ctx.fillStyle = OUT; ctx.beginPath(); ctx.arc(X, Y, 7, 0, 6.29); ctx.fill(); ctx.fillStyle = '#ffb03d'; ctx.beginPath(); ctx.arc(X, Y, 5.5, 0, 6.29); ctx.fill(); ctx.fillStyle = OUT; ctx.fillRect(X - 3, Y - 2, 2, 2); ctx.fillRect(X + 1, Y - 2, 2, 2); for (let i = 0; i < 4; i++) { const a = t / 120 + i * 1.57; ctx.fillStyle = '#ffd23d'; ctx.fillRect(X + Math.cos(a) * 8 - 1, Y + Math.sin(a) * 8 - 1, 2, 2); } }
+  // you
+  if (state !== 'title' && !(inv > 0 && Math.floor(t / 90) % 2)) {
+    const X = cx(me.x), Y = cy(me.y);
+    ctx.fillStyle = OUT; ctx.beginPath(); ctx.moveTo(X, Y - 9); ctx.lineTo(X + 9, Y); ctx.lineTo(X, Y + 9); ctx.lineTo(X - 9, Y); ctx.fill();
+    ctx.fillStyle = drawing ? '#ffe36a' : '#fff'; ctx.beginPath(); ctx.moveTo(X, Y - 7); ctx.lineTo(X + 7, Y); ctx.lineTo(X, Y + 7); ctx.lineTo(X - 7, Y); ctx.fill();
+    ctx.fillStyle = '#ff5ac8'; ctx.fillRect(X - 2, Y - 2, 4, 4);
+  }
+  // HUD
+  if (state !== 'title') {
+    ctx.font = '12px Silkscreen, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.fillStyle = '#fff'; ctx.fillText(`FIELD ${level}`, FX, 18);
+    ctx.fillStyle = '#c8c4d8'; ctx.fillText(`LIVES ${lives}`, FX + 110, 18);
+    const bw = 200, bx = W - FX - bw; ctx.fillStyle = '#2a2240'; ctx.fillRect(bx, 12, bw, 12); ctx.fillStyle = pct >= TARGET ? '#3dff8f' : '#ff5ac8'; ctx.fillRect(bx, 12, bw * Math.min(1, pct), 12); ctx.fillStyle = '#fff'; ctx.fillRect(bx + bw * TARGET - 1, 9, 2, 18);
+    ctx.textAlign = 'right'; ctx.fillStyle = '#fff'; ctx.fillText(`${Math.floor(pct * 100)}%`, bx - 8, 18);
+  }
+  if (msgT > 0 && state !== 'title') { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '24px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = OUT; ctx.fillText(msg, W / 2 + 2, FY + FH / 2 + 2); ctx.fillStyle = '#ffd8f4'; ctx.fillText(msg, W / 2, FY + FH / 2); ctx.globalAlpha = 1; }
+}
+A.loop(update, render);
+
+/* Attract demo: walk a little way along the fence, then cut a rectangle into the field (in, along, back out) where no
+ * spark is near, and repeat. */
+let plan = [], seg = null, walk = 0, wdir = 'ArrowLeft', wasDrawing = false;
+const inward = () => Object.keys(D).filter(k => at(me.x + D[k][0], me.y + D[k][1]) === 0);
+const perp = k => D[k][0] ? ['ArrowUp', 'ArrowDown'] : ['ArrowLeft', 'ArrowRight'];
+const opp = k => Object.keys(D).find(s => D[s][0] === -D[k][0] && D[s][1] === -D[k][1]);
+function makePlan() {
+  const ins = inward(); if (!ins.length) return false;
+  const k = ins[Math.floor(Math.random() * ins.length)], depth = 5 + Math.floor(Math.random() * 11), width = 6 + Math.floor(Math.random() * 16), side = perp(k)[Math.floor(Math.random() * 2)];
+  const x1 = me.x + D[k][0] * depth + D[side][0] * width, y1 = me.y + D[k][1] * depth + D[side][1] * width;
+  const bx0 = Math.min(me.x, x1) - 5, bx1 = Math.max(me.x, x1) + 5, by0 = Math.min(me.y, y1) - 5, by1 = Math.max(me.y, y1) + 5;
+  if (sparks.some(s => s.x / CS > bx0 && s.x / CS < bx1 && s.y / CS > by0 && s.y / CS < by1)) return false;
+  plan = [{ k, n: depth }, { k: side, n: width }, { k: opp(k), n: 99 }]; return true;
+}
+A.attract({
+  start: startGame,
+  stop: () => { state = 'title'; plan = []; seg = null; },
+  bot: dt => {
+    if (state !== 'play') return [];
+    if (wasDrawing && !drawing) { plan = []; seg = null; walk = 0.3 + Math.random() * 0.9; } // closed off (or zapped)
+    wasDrawing = drawing;
+    if (!drawing && !seg && !plan.length && !(walk <= 0 && makePlan())) { // walk along the fence for a bit
+      walk -= dt;
+      if (!edge(me.x + D[wdir][0], me.y + D[wdir][1])) { const o = Object.keys(D).filter(k => k !== opp(wdir) && edge(me.x + D[k][0], me.y + D[k][1])); wdir = o.length ? o[Math.floor(Math.random() * o.length)] : opp(wdir); }
+      return [wdir];
+    }
+    if (!seg) { const p = plan.shift(); if (!p) return []; seg = { ...p, x: me.x + D[p.k][0] * p.n, y: me.y + D[p.k][1] * p.n }; }
+    const nx = me.x + D[seg.k][0], ny = me.y + D[seg.k][1];
+    if ((me.x === seg.x && me.y === seg.y) || at(nx, ny) === 2 || nx < 0 || ny < 0 || nx >= GW || ny >= GH) {
+      seg = null;
+      if (drawing && !plan.length) { const o = Object.keys(D).filter(k => at(me.x + D[k][0], me.y + D[k][1]) !== 2); if (o.length) plan.push({ k: o[0], n: 99 }); } // find a way home
+      return ['Space'];
+    }
+    return ['Space', seg.k];
+  }
+});
+A.overlay({ title: 'FENCE LINE', sub: 'Hold <b>DRAW</b> and steer into the field to lay a new fence, then join it back up to claim the side the sparks aren’t on. Don’t let a spark touch your new fence, watch for crawlers on the old one, and don’t stop out in the open. Claim 75% to clear each field.', btn: 'Start', scores: true, onGo: startGame });
+})();
+</script>
+</body>
+</html>
