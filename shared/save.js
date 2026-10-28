@@ -6,6 +6,8 @@
  * Every sync pulls the cloud copy, merges it with this device and pushes the result, so two devices can both play
  * offline and still end up with everything: best scores and play counts take the higher value, top-10 tables are
  * combined, badges and prizes are unioned, tickets add up what was earned and spent. Settings stay per device.
+ * Resetting high scores (the lobby's settings) stamps arcade:scores:reset; a sync that meets an older copy drops that
+ * copy's scores, so the reset reaches the cloud and every device on the save rather than being merged back.
  * Loaded on demand (an ES module) by the lobby and, after each game over, by shared/arcade.js.
  */
 const CODE_KEY = 'bitcade:sync', WHEN_KEY = 'bitcade:synced'; // not arcade:*, so they never sync themselves
@@ -57,8 +59,15 @@ function deepMax(p, q) {
   if (!p || typeof p !== 'object') return q; if (!q || typeof q !== 'object') return p;
   const o = { ...q, ...p }; for (const k of Object.keys(o)) if (k in p && k in q) o[k] = deepMax(p[k], q[k]); return o;
 }
+const RESET = 'arcade:scores:reset', SCORES = /^arcade:(best|plays|top|daily|week):/;
+const dropScores = o => Object.fromEntries(Object.entries(o).filter(([k]) => !SCORES.test(k)));
 export function merge(a, b, prices, joining) {
+  // a high-score reset: the side that hasn't seen the newest one loses its scores (not when a device first joins:
+  // its scores are its own history, not ones from before that reset)
+  const ra = +a[RESET] || 0, rb = +b[RESET] || 0;
+  if (ra !== rb && !joining) { if (ra < rb) a = dropScores(a); else b = dropScores(b); }
   const out = { ...b, ...a };
+  if (ra || rb) out[RESET] = String(Math.max(ra, rb));
   for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) {
     const x = a[k], y = b[k];
     if (x == null || y == null) continue;
@@ -95,6 +104,7 @@ export function sync({ prices, joining } = {}) {
       const remote = json(await w.loadSave(id), {}), local = snapshot(), merged = merge(local, remote, prices, joining);
       let changed = false;
       for (const [k, v] of Object.entries(merged)) if (store.get(k) !== v) { store.set(k, v); changed = true; }
+      for (const k of Object.keys(local)) if (!(k in merged)) { store.del(k); changed = true; } // scores wiped by a reset on another device
       await w.storeSave(id, JSON.stringify(merged));
       store.set(WHEN_KEY, String(Date.now()));
       return { state: 'ok', changed };

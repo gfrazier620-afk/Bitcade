@@ -405,6 +405,14 @@ console.log('\nArcade floor');
   check(await page.isVisible('#cabs') && await page.evaluate(() => document.activeElement.id === 'cabQ'), '"/" jumps to the cabinet search from any section');
   await page.keyboard.press('Escape');
   check(!(await page.isVisible('#cabQ')), 'Escape closes the search');
+  await page.evaluate(() => { localStorage.setItem('arcade:best:wallbuster', '777'); localStorage.setItem('arcade:badges:wallbuster', '["clear"]'); });
+  await page.click('#setBtn');
+  check(await page.isVisible('.set-wipe') && !/cloud save/.test(await page.textContent('.set-panel')), 'the lobby settings have a high-score reset (this device only, with no cloud save)');
+  await page.click('.set-wipe');
+  check(/TAP AGAIN/.test(await page.textContent('.set-wipe')) && await page.evaluate(() => localStorage.getItem('arcade:best:wallbuster')) === '777', 'it asks for a second tap first');
+  await Promise.all([page.waitForEvent('load'), page.click('.set-wipe')]); await skipBoot(page);
+  check(await page.evaluate(() => !localStorage.getItem('arcade:best:wallbuster') && !!localStorage.getItem('arcade:badges:wallbuster') && +localStorage.getItem('arcade:scores:reset') > 0), 'resetting clears the scores (badges stay) and stamps the reset for cloud save');
+  check(!(await page.isVisible('#reset')), 'the footer no longer has a reset button');
   await page.click('#vFloor');
   await page.waitForFunction(() => window.Floor && Floor.state(), null, { timeout: 5000 }); // the floor loads when it's first needed
   check(await page.isVisible('#arcadeFloor') && !(await page.isVisible('#cabs')), 'WALK THE ARCADE shows the floor');

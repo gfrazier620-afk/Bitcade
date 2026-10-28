@@ -362,8 +362,6 @@ html:has(.fl-max){overflow:hidden}
 @media (max-width:640px){.tourney{grid-template-columns:auto 1fr}.tourney ol{grid-column:1/-1}.tourney .play{grid-column:1/-1;justify-self:stretch;text-align:center;padding:9px}}
 footer{margin-top:44px;text-align:center;color:var(--muted);font-size:13px}
 footer p{margin:4px 0}
-.reset{border:1px solid var(--line);background:transparent;border-radius:8px;padding:6px 10px;font-family:var(--f-pixel);font-size:11px;color:var(--muted);margin-top:10px}
-.reset[data-armed="true"]{border-color:#ff4f6d;color:#ff4f6d}
 .install{display:block;margin:14px auto 0;border:0;border-radius:10px;padding:10px 18px;font-family:var(--f-pixel);font-size:13px;background:linear-gradient(90deg,#ffe36a,#ff7a3d,#ff3d9a);color:#120a1c}
 .ios-hint{font-size:13px}
 .ios-hint b{color:var(--ink)}
@@ -690,7 +688,6 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
     <p>Works with a keyboard or touch, and most games with a game controller. High scores are saved in this browser.</p>
     <button class="install" id="install" hidden>Install Bitcade · plays offline</button>
     <p class="ios-hint" id="iosHint" hidden>On iPhone or iPad: tap Share, then <b>Add to Home Screen</b> to install. It plays offline.</p>
-    <button class="reset" id="reset">Reset all high scores</button>
     <p><a class="reboot" href="?boot">Replay the boot sequence</a></p>
   </footer>
 </div>
@@ -1108,7 +1105,7 @@ ScoresView.init({ el: document.getElementById('scoresView'), games: GAMES, paint
 // couch mode (shared/couch.js): arrows and controllers get round the lobby; the walkable floor has its own controls
 Couch.init({
   active: () => !document.documentElement.classList.contains('booting') && document.getElementById('boot').hidden && (!!document.querySelector('.set:not([hidden]),.ps:not([hidden]),.pc:not([hidden])') || floorView.hidden),
-  views: [vGrid, vFloor, document.getElementById('vScores'), document.getElementById('vRewards'), vProfile], onSettings: () => Settings.open()
+  views: [vGrid, vFloor, document.getElementById('vScores'), document.getElementById('vRewards'), vProfile], onSettings: () => window.Lobby.settings()
 });
 /* The five sections: PLAY (banner, Today card, cabinets), ARCADE (the walkable floor), SCORES, REWARDS (level, pass,
    missions, prize counter) and PROFILE. */
@@ -1195,12 +1192,18 @@ installBtn.addEventListener('click', () => { if (!installEvt) return; installEvt
 addEventListener('appinstalled', () => { installBtn.hidden = true; });
 const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
 if (!standalone && (/iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1))) document.getElementById('iosHint').hidden = false;
-const reset = document.getElementById('reset');
-reset.addEventListener('click', () => {
-  if (reset.dataset.armed !== 'true') { reset.dataset.armed = 'true'; reset.textContent = 'Click again to erase every score'; setTimeout(() => { reset.dataset.armed = 'false'; reset.textContent = 'Reset all high scores'; }, 4000); return; }
-  try { Object.keys(localStorage).filter(k => /^arcade:(best|plays|top|daily|week):/.test(k)).forEach(k => localStorage.removeItem(k)); } catch (e) {}
+/*
+ * Reset high scores (in Settings, DATA): clears this device's bests, top 10s, play counts and daily and weekly bests,
+ * and stamps arcade:scores:reset so cloud save (shared/save.js) clears them in the cloud and on the other devices too.
+ * Offline, the stamp waits and the next sync does it.
+ */
+async function resetScores() {
+  try { Object.keys(localStorage).filter(k => /^arcade:(best|plays|top|daily|week):/.test(k)).forEach(k => localStorage.removeItem(k)); localStorage.setItem('arcade:scores:reset', String(Date.now())); } catch (e) {}
+  if (get('bitcade:sync')) { try { const S = await import('./shared/save.js'); await S.sync({ prices }); } catch (e) {} }
   location.reload();
-});
+}
+const openSettings = () => Settings.open({ onResetScores: resetScores });
+window.Lobby.settings = openSettings;
 })();
 </script>
 <script>
@@ -1234,7 +1237,7 @@ reset.addEventListener('click', () => {
   if (chip) { if (mode === 'lobby') music(); musicLabel(); musicBtn.addEventListener('click', () => { chip.enabled = !chip.enabled; if (chip.enabled) music(); musicLabel(); }); }
   else musicBtn.hidden = true;
   // settings (shared/settings.js): the same panel as in the games, without the controls
-  document.getElementById('setBtn').addEventListener('click', () => Settings.open());
+  document.getElementById('setBtn').addEventListener('click', () => (window.Lobby && Lobby.settings ? Lobby.settings() : Settings.open()));
   Settings.onChange(k => {
     if (chip && (k === 'arcade:music' || k === 'arcade:muted')) { chip.refresh(); if (chip.enabled) music(); musicLabel(); }
     if (chip && k === 'arcade:vol:music') chip.volume(chip.level);
