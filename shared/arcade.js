@@ -936,6 +936,7 @@
     A.showBest();
     buildCabinet();
     if (mastered()) setMastered();
+    if (window.EVENT && EVENT.on('halloween')) document.body.classList.add('ev-halloween'); // a pumpkin by FREE PLAY
     const m = $('mute');
     // Touch players need a way to pause; add a header button unless the pad already has one (shown on coarse pointers only).
     if (m && !document.querySelector('[data-k="KeyP"]')) {

@@ -524,6 +524,14 @@ footer .privacy{font-size:11.5px;opacity:.75;max-width:60ch;margin:10px auto}
   .lobby{padding-bottom:96px}
   .upd{bottom:calc(76px + env(safe-area-inset-bottom))}
 }
+/* Halloween (window.EVENT): an orange-to-purple logo with a pumpkin, and the event's banner slide */
+body.ev-halloween .topbar .logo{background:linear-gradient(180deg,#ffb04a 0%,#ff6a1a 50%,#a04aff 100%);-webkit-background-clip:text;background-clip:text}
+.ev-mark{font-size:20px;line-height:1;margin-left:-8px;filter:drop-shadow(0 0 8px rgba(255,138,42,.6))}
+.hero-slide.halloween{--c:#ff8a2a}
+.hero-slide.halloween .hs-art{background:radial-gradient(circle at 78% 60%,rgba(255,138,42,.5),transparent 40%),radial-gradient(circle at 92% 18%,rgba(160,74,255,.45),transparent 38%),repeating-linear-gradient(115deg,rgba(255,138,42,.07) 0 2px,transparent 2px 22px),linear-gradient(120deg,#1e0a2e,#2a1006)}
+.hero-slide.halloween .hs-art::after{content:"🎃 👻";position:absolute;right:9%;top:50%;transform:translateY(-50%);font-size:84px;letter-spacing:.1em;filter:drop-shadow(0 0 26px rgba(255,138,42,.7))}
+@media (max-width:640px){.hero-slide.halloween .hs-art::after{top:30%;right:50%;transform:translate(50%,-50%);font-size:64px}}
+.todaycard .tc-ghost b{color:#ff9a3d}
 /* the Today card on PLAY: level, pass and missions in one line; it opens REWARDS */
 .todaycard{--c:#5ee7ff;display:flex;align-items:center;gap:10px 18px;flex-wrap:wrap;width:100%;max-width:1000px;margin:0 auto 18px;padding:10px 16px;border-radius:14px;cursor:pointer;
   background:var(--bg2);border:1px solid var(--line);color:var(--ink);font-family:var(--f-pixel);font-size:11px;letter-spacing:.04em;text-align:left}
@@ -954,6 +962,10 @@ if (feat) { heroTrack.append(tourney); tourney.insertAdjacentHTML('afterbegin', 
 {
   const nw = GAMES.slice().sort((a, b) => (b.added || '').localeCompare(a.added || '') || GAMES.indexOf(b) - GAMES.indexOf(a))[0];
   if (nw) heroSlide({ g: nw, kick: '✦ NEW ARRIVAL', title: nw.name, text: nw.blurb, cta: 'PLAY NOW ▶', href: `games/${nw.slug}/` });
+  if (window.EVENT && EVENT.on('halloween')) {
+    document.body.classList.add('ev-halloween'); document.getElementById('tbLogo').insertAdjacentHTML('afterend', '<span class="ev-mark" aria-hidden="true">🎃</span>');
+    heroSlide({ kick: '🎃 HALLOWEEN AT BITCADE · UNTIL OCTOBER 31', title: 'GHOSTS IN THE ARCADE', text: 'Five ghosts hide on the arcade floor every day. Find them for tickets, and get the Little Ghost and Pumpkin Head at the prize counter before they\u2019re gone.', cta: 'HUNT GHOSTS ▶', onGo: () => { setView('floor'); document.getElementById('floorCv').focus({ preventScroll: true }); }, cls: 'halloween' });
+  }
 }
 const heroCount = heroTrack.children.length, heroEl = document.getElementById('hero'), heroDots = heroEl.querySelector('.hero-dots');
 heroEl.hidden = !heroCount; heroEl.classList.toggle('one', heroCount < 2); // one slide: no dots or arrows
@@ -1067,7 +1079,7 @@ function renderMissions() {
     b.querySelector('i').textContent = `+${MISSIONS.REWARD} TICKETS`;
     b.addEventListener('click', () => {
       const w = MISSIONS.where(m);
-      if (w === 'floor') { setView('floor'); loadFloor().then(() => { Floor.goTo({ photo: 'booth' }[m.kind] || m.kind); document.getElementById('floorCv').focus({ preventScroll: true }); }, () => {}); }
+      if (w === 'floor') { setView('floor'); loadFloor().then(() => { if (m.kind !== 'ghost') Floor.goTo({ photo: 'booth' }[m.kind] || m.kind); document.getElementById('floorCv').focus({ preventScroll: true }); }, () => {}); }
       else if (w) enterGame(w);
       else setView('grid');
     });
@@ -1096,6 +1108,7 @@ function renderToday() {
   todayEl.innerHTML = (v ? `<span class="tc tc-lv">LV <b>${v.level}</b> <span class="tc-bar"><i style="width:${Math.round(v.pct * 100)}%"></i></span></span>` : '') +
     (se ? `<span class="tc tc-pass">PASS TIER <b>${PASS.tier()}</b>/${PASS.TIERS}</span>` : '') +
     (ms.length ? `<span class="tc tc-ms">MISSIONS <b>${done}/${ms.length}</b></span>` : '') +
+    (window.EVENT && EVENT.on('halloween') ? `<span class="tc tc-ghost">👻 GHOSTS <b>${(() => { try { const g = JSON.parse(localStorage.getItem('bitcade:ghosts')), d = new Date(); return g && g.d === d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate() ? g.f.length : 0; } catch (e) { return 0; } })()}/5</b></span>` : '') +
     (claim ? `<span class="tc-claim">${claim} TO CLAIM</span>` : '') + '<span class="tc tc-go">REWARDS ›</span>';
   if (v) document.getElementById('tbLvN').textContent = v.level;
   rwDot.hidden = !claim;

@@ -1227,5 +1227,12 @@ window.FloorPlay = kit => {
     if (o.kind === 'scope') return { title: 'TELESCOPE', sub: 'Look out over Neon City from the Sky Deck', btn: 'LOOK ▶', c: '#9ad8ff' };
     return { title: o.kind.toUpperCase(), sub: '', btn: 'USE ▶', c: '#5ee7ff' };
   }
-  return { sound, use, card, tick: (dt, now, s) => cabinetNoise(dt, s) };
+  /** Halloween (window.EVENT): a ghost found on the floor pays 2 tickets (5 more for all five today), outside the floor's cap. */
+  function ghost(found, all) {
+    const n = 2 + (all ? 5 : 0); TICKETS.add(n); kit.opt.onTickets && kit.opt.onTickets(); xp(8);
+    sound.react(kit.me.x, true); tone(330, 0.5, 0.04, { f1: 880, type: 'triangle' }); tone(660, 0.6, 0.02, { f1: 220, type: 'sine', at: 0.1 });
+    kit.say(all ? `ALL 5 GHOSTS! +${n} TICKETS` : `BOO! GHOST ${found}/5 · +${n} TICKETS`, 2.6, true);
+    mission({ type: 'ghost', found });
+  }
+  return { sound, use, card, ghost, tick: (dt, now, s) => cabinetNoise(dt, s) };
 };

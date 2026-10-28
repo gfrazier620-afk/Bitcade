@@ -258,6 +258,24 @@ window.TICKETS = (() => {
  * { type: 'run', slug, score, daily } after every game that counts (not easy mode, not demos); the floor sends
  * skee, pinball, claw and photo events; Blip Sports sends blip-win. Kept per device in bitcade:missions.
  */
+/*
+ * Seasonal events (window.EVENT): each runs between two dates every year, by the local calendar. While Halloween is
+ * on, the lobby and the arcade floor dress up (pumpkins, cobwebs, bats, orange light), five ghosts a day hide on the
+ * floor, the floor mission becomes a ghost hunt, and two prizes (event: 'halloween' in prizes.js) can be bought.
+ * ?event=halloween (or none) forces one for the visit, for testing.
+ */
+window.EVENT = (() => {
+  const EVENTS = [{ id: 'halloween', name: 'HALLOWEEN AT BITCADE', from: '10-20', to: '10-31' }];
+  const md = d => String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  let force = null;
+  try { const m = /[?&]event=(\w+)/.exec(location.search); if (m) sessionStorage.setItem('bitcade:event', m[1]); force = sessionStorage.getItem('bitcade:event'); } catch (e) {}
+  function current() {
+    if (force) return force === 'none' ? null : EVENTS.find(e => e.id === force) || null;
+    const k = md(new Date()); return EVENTS.find(e => k >= e.from && k <= e.to) || null;
+  }
+  return { EVENTS, current, on: id => { const c = current(); return !!c && (!id || c.id === id); } };
+})();
+
 window.MISSIONS = (() => {
   const get = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
   const set = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
@@ -288,7 +306,7 @@ window.MISSIONS = (() => {
       { kind: 'daily', game: pick(DAILY), n: 1 }
     ];
     if (feat && TARGETS[feat]) plays.push({ kind: 'tour', game: feat, n: 1 }, { kind: 'tour', game: feat, n: 1 });
-    const floor = [{ kind: 'skee', n: 250 }, { kind: 'skee', n: 300 }, { kind: 'pinball', n: 8000 }, { kind: 'pinball', n: 12000 }, { kind: 'claw', n: 1 }, { kind: 'photo', n: 1 }, { kind: 'blip', n: 1 }, { kind: 'hoops', n: 20 }, { kind: 'bop', n: 20 }];
+    const floor = window.EVENT && EVENT.on('halloween') ? [{ kind: 'ghost', n: 3 }, { kind: 'ghost', n: 5 }] : [{ kind: 'skee', n: 250 }, { kind: 'skee', n: 300 }, { kind: 'pinball', n: 8000 }, { kind: 'pinball', n: 12000 }, { kind: 'claw', n: 1 }, { kind: 'photo', n: 1 }, { kind: 'blip', n: 1 }, { kind: 'hoops', n: 20 }, { kind: 'bop', n: 20 }];
     const t = TARGETS[g] * (r() < 0.3 ? 2 : 1);
     return { d, list: [{ kind: 'score', game: g, n: t }, pick(plays), pick(floor)].map((m, i) => ({ id: i, prog: 0, done: false, seen: [], ...m })), bonus: false };
   }
@@ -310,10 +328,11 @@ window.MISSIONS = (() => {
     photo: () => 'Take a photo booth strip',
     blip: () => 'Win a game of Blip Sports',
     hoops: () => `Score ${m.n} at the hoop shooter`,
-    bop: () => `Bop ${m.n} points at Bop-a-Bot`
+    bop: () => `Bop ${m.n} points at Bop-a-Bot`,
+    ghost: () => `Find ${m.n} ghosts on the arcade floor`
   }[m.kind] || (() => 'Mission'))();
   /** Where you go to do it: a game page, or the arcade floor. */
-  const where = m => m.game ? `games/${m.game}/` : ['skee', 'pinball', 'claw', 'photo', 'hoops', 'bop'].includes(m.kind) ? 'floor' : m.kind === 'blip' ? 'games/blip-sports/' : null;
+  const where = m => m.game ? `games/${m.game}/` : ['skee', 'pinball', 'claw', 'photo', 'hoops', 'bop', 'ghost'].includes(m.kind) ? 'floor' : m.kind === 'blip' ? 'games/blip-sports/' : null;
   /** Count an event; returns { done: [missions just finished], tickets, all }. */
   function record(ev) {
     const m = load(), done = [];
@@ -334,6 +353,7 @@ window.MISSIONS = (() => {
       if (ev.type === 'claw' && x.kind === 'claw' && ev.won) p = 1;
       if (ev.type === 'photo' && x.kind === 'photo') p = 1;
       if (ev.type === 'blip-win' && x.kind === 'blip') p = 1;
+      if (ev.type === 'ghost' && x.kind === 'ghost') p = Math.max(p, ev.found);
       x.prog = p;
       if (p >= x.n) { x.done = true; done.push(x); }
     }

@@ -42,6 +42,8 @@ const check = (ok, what) => { checks++; if (!ok) failures.push(what); console.lo
 async function open(path, opts = {}) {
   const ctx = await browser.newContext({ serviceWorkers: 'block', ...opts }); // the offline section below turns it back on
   const page = await ctx.newPage();
+  // Seasonal events (window.EVENT) follow the calendar; tests run without one unless the URL asks (?event=halloween).
+  await page.addInitScript(() => { try { if (!/[?&]event=/.test(location.search)) sessionStorage.setItem('bitcade:event', 'none'); } catch (e) {} });
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   page.on('console', m => { if (m.type() === 'error' && !/fonts\.(googleapis|gstatic)/.test(m.text()) && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
@@ -860,6 +862,35 @@ console.log('\nLoading');
   check(await g.page.evaluate(() => window.__warm), 'a game\'s screen warms up as it loads');
   check(await g.page.waitForFunction(() => !document.querySelector('.screen .warm'), null, { timeout: 3000 }).then(() => true, () => false), 'and the warm-up clears away by itself');
   await g.close();
+}
+
+/* ---------- seasonal events: Halloween ---------- */
+console.log('\nHalloween');
+{
+  const { page, errors, close } = await open('/?feature=none&event=halloween');
+  await skipBoot(page);
+  check(await page.evaluate(() => EVENT.on('halloween') && document.body.classList.contains('ev-halloween') && !!document.querySelector('#heroTrack .hero-slide.halloween')), 'Halloween dresses up the lobby and adds its banner slide');
+  check(/GHOSTS/.test(await page.textContent('#todayCard')) && await page.evaluate(() => MISSIONS.list().some(m => m.kind === 'ghost')), 'the Today card counts ghosts, and the floor mission is a ghost hunt');
+  await page.evaluate(() => TICKETS.add(300)); await page.click('#vPrize');
+  check(await page.isVisible('.pc-item[data-id="ghostpet"]') && await page.isVisible('.pc-item[data-id="pumpkin"]'), 'the prize counter has the Halloween prizes');
+  check(await page.evaluate(() => Prizes.buy('pumpkin') && Prizes.buy('ghostpet')), 'and they can be bought while it\'s on');
+  await page.keyboard.press('Escape');
+  await page.click('#vFloor'); await page.waitForFunction(() => window.Floor && Floor.state()); await wait(400);
+  const gs = await page.evaluate(() => Floor.state().ghosts);
+  check(gs.length === 5 && gs.every(g => !g.got), 'five ghosts hide on the floor');
+  const t0 = await page.evaluate(() => TICKETS.balance());
+  await page.evaluate(g => Floor.goTo([g.x, g.y + 10]), gs[0]); await wait(500);
+  check(await page.evaluate(() => Floor.state().ghosts.filter(g => g.got).length) === 1 && await page.evaluate(t0 => TICKETS.balance() === t0 + 2, t0), 'walking into one finds it for 2 tickets');
+  check(await page.evaluate(() => MISSIONS.list().find(m => m.kind === 'ghost').prog === 1 && JSON.parse(localStorage.getItem('bitcade:ghosts')).f.length === 1), 'it counts for the mission and is remembered for the day');
+  check(!errors.length, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
+  await close();
+  const off = await open('/?feature=none&event=none');
+  await skipBoot(off.page); await off.page.click('#vPrize');
+  check(!(await off.page.$('.pc-item[data-id="pumpkin"]')) && await off.page.evaluate(() => !Prizes.buy('pumpkin')), 'out of season the Halloween prizes are gone and can\'t be bought');
+  await off.close();
+  const gp = await open('/games/neon-noodle/?event=halloween');
+  check(await gp.page.evaluate(() => document.body.classList.contains('ev-halloween')), 'game pages get a pumpkin by FREE PLAY');
+  await gp.close();
 }
 
 /* ---------- the Arcade Pass ---------- */

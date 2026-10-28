@@ -146,6 +146,7 @@ kbd{font-family:var(--f-pixel);font-size:11px;border:1px solid var(--line);borde
 .bezel-top .sc span{color:#ff4f6d}
 .bezel-top .sc span:last-child{color:#ffe36a}
 .bezel-top .sc b{color:#fff;font-size:14px}
+.ev-halloween .freeplay::before{content:"🎃 "}.ev-halloween .freeplay{color:#ff9a3d!important}
 .freeplay{color:#5ee7ff;letter-spacing:.08em;animation:boot-blink-k 1.4s steps(2,start) infinite}
 @keyframes boot-blink-k{to{visibility:hidden}}
 .cab-on .screen{width:var(--sw);border:3px solid #030207;border-radius:10px;

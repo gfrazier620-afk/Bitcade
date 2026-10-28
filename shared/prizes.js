@@ -10,6 +10,7 @@
  *
  * arcade:prizes holds the ids bought, arcade:equip the one worn per slot: { tint, skin, outfit, carpet }.
  * Prizes with pass: '<season>' come only from the Arcade Pass (window.PASS in shared/badges.js), free: true on its free track.
+ * Prizes with event: '<id>' can only be bought while that event is on (window.EVENT); once bought they're yours for good.
  */
 window.Prizes = (() => {
   const LIST = [
@@ -55,6 +56,8 @@ window.Prizes = (() => {
     { id: 'starlight', slot: 'outfit', pass: 's1', name: 'Starlight', price: 0, desc: 'A silver suit, a starry cape and a halo.' },
     { id: 'circuit', slot: 'carpet', pass: 's1', free: true, name: 'Circuit Board', price: 0, desc: 'Green board and gold traces that glow.' },
     { id: 'diamond', slot: 'skin', pass: 's1', name: 'Diamond Cabinet', price: 0, desc: 'Ice-white facets that catch the light. The top of Season 1.', sw: ['#ffffff', '#7ad8ff'] },
+    { id: 'ghostpet', slot: 'pet', event: 'halloween', name: 'Little Ghost', price: 120, desc: 'A friendly ghost that floats along behind you. Halloween only.' },
+    { id: 'pumpkin', slot: 'outfit', event: 'halloween', name: 'Pumpkin Head', price: 140, desc: 'A glowing jack-o\'-lantern for a head. Halloween only.' },
     { id: 'robodog', slot: 'pet', name: 'Robo-Dog', price: 150, desc: 'A loyal little robot that wags and follows you everywhere.' },
     { id: 'pixelcat', slot: 'pet', name: 'Pixel Cat', price: 150, desc: 'An orange cat who decided you\'re alright.' },
     { id: 'slime', slot: 'pet', name: 'Pet Slime', price: 100, desc: 'A friendly slime that boings along behind you.' },
@@ -104,7 +107,7 @@ window.Prizes = (() => {
   const changed = () => fns.forEach(f => f());
   function buy(id) {
     const p = LIST.find(x => x.id === id);
-    if (!p || has(id) || p.level || p.pass || (p.vip && !(window.VIP && VIP.unlocked())) || !TICKETS.spend(p.price)) return false;
+    if (!p || has(id) || p.level || p.pass || (p.event && !(window.EVENT && EVENT.on(p.event))) || (p.vip && !(window.VIP && VIP.unlocked())) || !TICKETS.spend(p.price)) return false;
     set('arcade:prizes', JSON.stringify([...owned(), id]));
     if (p.slot !== 'decor' && p.slot !== 'emote') wear(id);
     changed(); return true;
@@ -153,6 +156,7 @@ window.Prizes = (() => {
       if (!own && p.level) { btn.textContent = `LEVEL ${p.level}`; btn.disabled = true; }
       else if (!own && p.pass) { const t = passTier(p); btn.textContent = `${p.free ? 'FREE' : 'PASS'} · TIER ${t}`; btn.disabled = true; }
       else if (!own && locked) { btn.textContent = 'VIP ONLY'; btn.disabled = true; }
+      else if (!own && p.event && !(window.EVENT && EVENT.on(p.event))) { btn.textContent = 'BACK NEXT YEAR'; btn.disabled = true; }
       else if (!own) { btn.textContent = bal >= p.price ? `BUY · ${p.price}` : `NEED ${p.price}`; btn.disabled = bal < p.price; }
       else if (p.slot === 'decor') { btn.textContent = 'ON THE FLOOR'; btn.disabled = true; }
       else if (p.slot === 'emote') { btn.textContent = 'YOURS · PRESS E'; btn.disabled = true; }
@@ -166,10 +170,11 @@ window.Prizes = (() => {
       <div class="pc-how">Win tickets in every game: a few per game, more for a top-10 score or a new record, 10 per badge, and double on the weekly tournament game.</div></div>
       <div class="pc-bal">TICKETS <b>0</b></div><button class="pc-x" aria-label="Close">✕</button></div><div class="pc-body"></div></div>`;
     const body = box.querySelector('.pc-body');
-    [...SLOTS, ['vip', '★ VIP EXCLUSIVES · unlock the VIP room on the arcade floor'], ['level', '▲ LEVEL REWARDS · free when you reach the level'], ['pass', '✦ ARCADE PASS · Season 1 rewards']].forEach(([slot, label]) => {
+    const evOn = window.EVENT && EVENT.on('halloween'), evOwned = LIST.some(p => p.event && has(p.id));
+    [...(evOn || evOwned ? [['event', evOn ? '🎃 HALLOWEEN · limited time, only until October 31' : '🎃 HALLOWEEN · yours to keep']] : []), ...SLOTS, ['vip', '★ VIP EXCLUSIVES · unlock the VIP room on the arcade floor'], ['level', '▲ LEVEL REWARDS · free when you reach the level'], ['pass', '✦ ARCADE PASS · Season 1 rewards']].forEach(([slot, label]) => {
       const h = document.createElement('h3'); h.textContent = label; body.append(h);
       const row = document.createElement('div'); row.className = 'pc-row'; body.append(row);
-      LIST.filter(p => slot === 'vip' ? p.vip : slot === 'level' ? p.level : slot === 'pass' ? p.pass : p.slot === slot && !p.vip && !p.level && !p.pass).forEach(p => {
+      LIST.filter(p => slot === 'event' ? p.event && (evOn || has(p.id)) : slot === 'vip' ? p.vip : slot === 'level' ? p.level : slot === 'pass' ? p.pass : p.slot === slot && !p.vip && !p.level && !p.pass && !p.event).forEach(p => {
         const el = document.createElement('div'); el.className = 'pc-item'; el.dataset.id = p.id;
         el.innerHTML = '<canvas width="96" height="64"></canvas><b></b><small></small><button></button>';
         el.querySelector('b').textContent = p.name; el.querySelector('small').textContent = p.desc;

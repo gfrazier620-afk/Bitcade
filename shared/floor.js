@@ -584,6 +584,120 @@ window.Floor = (() => {
     x.fillStyle = 'rgba(255,255,255,.35)'; x.fillRect(cx - 6, o.y + 6, 3, 14);
   }
   const cabStyle = slug => [...slug].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7) % 3;
+
+  /* ---------- Halloween (window.EVENT): pumpkins, cobwebs, bats and orange light, and five ghosts a day to find ---------- */
+  const HW = () => !!(window.EVENT && EVENT.on('halloween'));
+  // jack-o'-lanterns, per floor: by the doors, along the main aisle, along the back wall
+  const PUMPKINS = [
+    [[1008, 1262], [1232, 1262], [200, 540], [620, 612], [1000, 540], [1420, 612], [1840, 540], [2180, 612], [70, 196], [700, 196], [1540, 196], [2190, 196]],
+    [[300, 196], [700, 196], [1100, 196], [1500, 196], [1880, 196], [120, 1120]]
+  ];
+  function drawPumpkin(x, px, py, t, i) {
+    if (!visible(px, py, 40)) return;
+    const fl = 0.7 + 0.3 * Math.sin(t / 90 + i * 1.7) * Math.sin(t / 53 + i);
+    x.fillStyle = 'rgba(0,0,0,.4)'; x.beginPath(); x.ellipse(px, py, 12, 4, 0, 0, 6.29); x.fill();
+    x.fillStyle = OUT; x.beginPath(); x.ellipse(px, py - 9, 13, 10.5, 0, 0, 6.29); x.fill();
+    const g = x.createRadialGradient(px - 4, py - 13, 1, px, py - 9, 13); g.addColorStop(0, '#ffb04a'); g.addColorStop(1, '#c8500a');
+    x.fillStyle = g; x.beginPath(); x.ellipse(px, py - 9, 11.5, 9, 0, 0, 6.29); x.fill();
+    x.strokeStyle = 'rgba(110,36,0,.55)'; x.lineWidth = 1.2; [-5, 0, 5].forEach(o => { x.beginPath(); x.ellipse(px + o, py - 9, 3.5, 8.6, 0, 0, 6.29); x.stroke(); });
+    paint(x, [[px - 1.5, py - 22, 3, 5, '#3a7a2a']]);
+    x.fillStyle = `rgba(255,226,110,${fl})`; x.shadowColor = '#ffb04a'; x.shadowBlur = 8;
+    x.beginPath(); x.moveTo(px - 7, py - 10); x.lineTo(px - 4, py - 15); x.lineTo(px - 1, py - 10); x.moveTo(px + 1, py - 10); x.lineTo(px + 4, py - 15); x.lineTo(px + 7, py - 10); x.fill();
+    x.beginPath(); x.moveTo(px - 7, py - 6); for (let k = 0; k <= 6; k++) x.lineTo(px - 7 + k * 14 / 6, py - (k % 2 ? 2 : 5)); x.lineTo(px + 7, py - 6); x.fill();
+    x.shadowBlur = 0;
+  }
+  function hwLights(L, t) {
+    if (!HW()) return;
+    PUMPKINS[level].forEach(([px, py], i) => L.push({ x: px, y: py - 8, r: 90, a: 0.55 + 0.25 * Math.sin(t / 90 + i * 1.7), c: '#ff8a2a' }));
+  }
+  /** A cobweb in a corner of the wall (sx, sy), spreading right (dir 1) or left (-1). */
+  function web(x, sx, sy, dir, s = 70) {
+    if (!visible(sx, sy, s + 20)) return;
+    x.strokeStyle = 'rgba(230,230,250,.32)'; x.lineWidth = 1;
+    const rays = [0, 0.25, 0.5, 0.78, 1].map(k => k * Math.PI / 2);
+    x.beginPath(); rays.forEach(a => { x.moveTo(sx, sy); x.lineTo(sx + Math.cos(a) * s * dir, sy + Math.sin(a) * s); }); x.stroke();
+    for (let r = s * 0.25; r < s; r += s * 0.22) { x.beginPath(); rays.forEach((a, i) => { const px = sx + Math.cos(a) * r * dir, py = sy + Math.sin(a) * r; if (i) { const m = (a + rays[i - 1]) / 2, sag = r * 0.88; x.quadraticCurveTo(sx + Math.cos(m) * sag * dir, sy + Math.sin(m) * sag, px, py); } else x.moveTo(px, py); }); x.stroke(); }
+    x.fillStyle = '#16101e'; x.beginPath(); x.arc(sx + s * 0.42 * dir, sy + s * 0.5, 3, 0, 6.29); x.fill(); // the spider
+    x.strokeStyle = 'rgba(230,230,250,.4)'; x.beginPath(); x.moveTo(sx + s * 0.42 * dir, sy + s * 0.2); x.lineTo(sx + s * 0.42 * dir, sy + s * 0.5 - 3); x.stroke();
+  }
+  function hwFloor(x, t) {
+    if (!HW()) return;
+    if (level) { web(x, 0, 0, 1, 90); web(x, LOFT.w, 0, -1, 90); }
+    else { web(x, 16, 0, 1, 90); web(x, VIPX, 0, -1, 90); [540, 1260, 1980].forEach(px => web(x, px + 13, 0, 1, 46)); }
+    PUMPKINS[level].forEach(([px, py], i) => drawPumpkin(x, px, py, t, i));
+  }
+  /** A ghost: a sheet with a wavy hem, eyes and a glow, centred at (gx, gy). */
+  function ghostShape(x, gx, gy, t, s = 1, a = 0.85) {
+    x.save(); x.translate(gx, gy); x.scale(s, s); x.globalAlpha = a;
+    const g = x.createRadialGradient(0, -8, 2, 0, -8, 28); g.addColorStop(0, 'rgba(200,220,255,.45)'); g.addColorStop(1, 'rgba(200,220,255,0)'); x.fillStyle = g; x.fillRect(-28, -36, 56, 56);
+    const body = (k, c) => { x.fillStyle = c; x.beginPath(); x.arc(0, -12, 10 + k, Math.PI, 0); x.lineTo(10 + k, 4 + k); for (let i = 0; i < 4; i++) { const bx = 10 + k - (i + 0.5) * (20 + 2 * k) / 4; x.quadraticCurveTo(bx + 2.5, 4 + k + Math.sin(t / 120 + i) * 2.5 + 3, bx - (20 + 2 * k) / 8, 4 + k); } x.lineTo(-10 - k, -12); x.fill(); };
+    body(1.5, OUT); body(0, '#f2f0ff');
+    x.fillStyle = OUT; x.beginPath(); x.ellipse(-3.5, -13, 2, 3, 0, 0, 6.29); x.ellipse(3.5, -13, 2, 3, 0, 0, 6.29); x.fill();
+    x.beginPath(); x.ellipse(0, -6, 2, 2.6, 0, 0, 6.29); x.fill();
+    x.restore();
+  }
+  // five ghosts a day, hidden round the ground floor (the same places for everyone that day); found ones in bitcade:ghosts
+  let ghosts = null;
+  const dayKey = () => { const d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); };
+  function ghostDay() {
+    if (level || !HW()) return null;
+    const d = dayKey(); if (ghosts && ghosts.d === d) return ghosts;
+    let h = 2166136261; for (const ch of 'ghosts:' + d) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+    const r = () => { h += 0x6d2b79f5; let q = h; q = Math.imul(q ^ (q >>> 15), q | 1); q ^= q + Math.imul(q ^ (q >>> 7), q | 61); return ((q ^ (q >>> 14)) >>> 0) / 4294967296; };
+    const list = [];
+    for (let tries = 0; list.length < 5 && tries < 600; tries++) {
+      const gx = 60 + r() * (VIPX - 140), gy = WALL + 70 + r() * (WH - WALL - 160);
+      if (hit(gx, gy, 16) || list.some(p => Math.hypot(p.x - gx, p.y - gy) < 340)) continue;
+      list.push({ x: gx, y: gy, ph: r() * 6 });
+    }
+    let saved = null; try { saved = JSON.parse(localStorage.getItem('bitcade:ghosts')); } catch (e) {}
+    const got = saved && saved.d === d && Array.isArray(saved.f) ? saved.f : [];
+    list.forEach((g, i) => { g.got = got.includes(i); });
+    ghosts = { d, list }; return ghosts;
+  }
+  function ghostStep(dt) {
+    const gs = ghostDay(); if (!gs || me.entering) return;
+    gs.list.forEach((g, i) => {
+      if (g.goneT != null) g.goneT += dt;
+      if (g.got) return;
+      if (Math.hypot(me.x - g.x, me.y - (g.y + 10)) < 40) {
+        g.got = true; g.goneT = 0;
+        const f = gs.list.map((q, k) => q.got ? k : -1).filter(k => k >= 0);
+        try { localStorage.setItem('bitcade:ghosts', JSON.stringify({ d: gs.d, f })); } catch (e) {}
+        for (let k = 0; k < 8; k++) puffs.push({ x: g.x + rnd(-14, 14), y: g.y + rnd(-20, 6), t: 0.5 });
+        if (play && play.ghost) play.ghost(f.length, f.length === 5);
+      }
+    });
+  }
+  function ghostDraws(list, x, t) {
+    const gs = ghostDay(); if (!gs) return;
+    for (const g of gs.list) {
+      if (g.got && (g.goneT == null || g.goneT > 1)) continue;
+      if (!visible(g.x, g.y, 60)) continue;
+      const k = g.goneT != null ? g.goneT : 0, bob = Math.sin(t / 500 + g.ph) * 5;
+      list.push([g.y + 10, () => ghostShape(x, g.x + Math.sin(t / 900 + g.ph) * 8, g.y - 26 + bob - k * 60, t + g.ph * 300, 1 + k * 0.4, (0.55 + 0.2 * Math.sin(t / 300 + g.ph)) * (1 - k))]);
+    }
+  }
+  // bats now and then, across the top of the screen
+  const bats = []; let batT = 4;
+  function hwScreen(x, t, dt) {
+    if (!HW()) return;
+    x.fillStyle = 'rgba(255,110,20,.035)'; x.fillRect(0, 0, SW, SH); // a warm orange cast over everything
+    if ((batT -= dt) <= 0) { batT = rnd(7, 13); const dir = Math.random() < 0.5 ? 1 : -1, y0 = rnd(30, SH * 0.3); for (let i = 0; i < 3 + (Math.random() * 3 | 0); i++) bats.push({ x: dir > 0 ? -30 - i * 26 : SW + 30 + i * 26, y: y0 + rnd(-20, 20), vx: dir * rnd(150, 210), ph: rnd(0, 6) }); }
+    for (let i = bats.length - 1; i >= 0; i--) {
+      const b = bats[i]; b.x += b.vx * dt; b.y += Math.sin(t / 200 + b.ph) * 0.6;
+      if (b.x < -80 || b.x > SW + 80) { bats.splice(i, 1); continue; }
+      const f = Math.sin(t / 60 + b.ph) * 6;
+      x.fillStyle = '#0a0612'; x.beginPath(); x.moveTo(b.x, b.y); x.quadraticCurveTo(b.x - 8, b.y - 6 - f, b.x - 16, b.y - f); x.quadraticCurveTo(b.x - 9, b.y + 1, b.x, b.y + 3); x.quadraticCurveTo(b.x + 9, b.y + 1, b.x + 16, b.y - f); x.quadraticCurveTo(b.x + 8, b.y - 6 - f, b.x, b.y); x.fill();
+      x.fillStyle = '#ff5a3a'; x.fillRect(b.x - 2, b.y - 1, 1.5, 1.5); x.fillRect(b.x + 0.5, b.y - 1, 1.5, 1.5);
+    }
+    const gs = ghostDay(); if (gs) { // how many found today, under the minimap
+      const n = gs.list.filter(g => g.got).length;
+      x.font = '9px Silkscreen, monospace'; x.textAlign = 'right'; x.textBaseline = 'middle'; x.fillStyle = n === 5 ? '#ffd23d' : '#ff9a3d';
+      x.fillText(n === 5 ? '★ ALL 5 GHOSTS FOUND' : `👻 GHOSTS FOUND ${n}/5`, MAP.x + MAP.w + 4, MAP.y + MAP.h + 32);
+    }
+  }
+
   /* ---------- sprites ---------- */
   function drawCab(x, c, t) {
     const { g } = c, X = c.x, Y = c.y, w = c.w, h = c.h, gold = mastered.has(g.slug), col = gold ? '#ffd23d' : g.c, isNear = near === c;
@@ -682,6 +796,7 @@ window.Floor = (() => {
     skater: { top: '#5a7aaa', legs: '#3a3a4a', hair: '#c88a3a', hat: 'beanie', capC: '#ff9a3d', flannel: '#c8203a', board: true },
     captain: { top: '#2a3a8a', legs: '#16161e', hair: '#3a2414', cape: '#c8203a', badge: '#ffd23d', sleeves: '#ffd23d' },
     legend: { top: '#ffd23d', legs: '#c89a2a', hair: '#fff6c2', hat: 'halo', cape: '#ff4fd1', glow: true },
+    pumpkin: { top: '#2a1a40', legs: '#16101e', hair: '#16101e', hat: 'pumpkin', cape: '#ff8a2a' }, // Halloween
     // Arcade Pass, Season 1
     neonrider: { top: '#ff4fd1', legs: '#16161e', hair: '#16161e', hat: 'helmet', visor: true, sleeves: '#22e0ff' },
     tracksuit: { top: '#3d6aff', legs: '#3d6aff', hair: '#3a2414', sleeves: '#f4effd', flannel: '#f4effd' },
@@ -738,6 +853,13 @@ window.Floor = (() => {
     if (o.badge && dir !== 'up') { x.fillStyle = o.badge; x.beginPath(); x.moveTo(side ? 2 : -4, -24); x.lineTo(side ? 5 : -1, -20); x.lineTo(side ? -1 : -7, -20); x.fill(); }
     if (o.hat === 'halo') { x.strokeStyle = '#fff6c2'; x.lineWidth = 2; x.shadowColor = '#ffd23d'; x.shadowBlur = 8; x.beginPath(); x.ellipse(0, -47, 8, 2.5, 0, 0, 6.29); x.stroke(); x.shadowBlur = 0; }
     if (o.tux && dir === 'down') { x.fillStyle = '#f4effd'; x.beginPath(); x.moveTo(-3, -26); x.lineTo(3, -26); x.lineTo(0, -16); x.fill(); x.fillStyle = o.bow || '#c8203a'; x.fillRect(-3, -26, 6, 3); }
+    if (o.hat === 'pumpkin') { // a jack-o'-lantern for a head, face glowing
+      x.fillStyle = OUT; x.beginPath(); x.ellipse(0, -34, 10.5, 9.5, 0, 0, 6.29); x.fill();
+      const pg = x.createRadialGradient(-3, -38, 1, 0, -34, 10); pg.addColorStop(0, '#ffb04a'); pg.addColorStop(1, '#c8500a'); x.fillStyle = pg; x.beginPath(); x.ellipse(0, -34, 9, 8, 0, 0, 6.29); x.fill();
+      x.strokeStyle = 'rgba(110,36,0,.55)'; x.lineWidth = 1; x.beginPath(); x.ellipse(0, -34, 3.5, 7.6, 0, 0, 6.29); x.stroke();
+      paint(x, [[-1, -46, 2, 4, '#3a7a2a']]);
+      if (dir !== 'up') { x.fillStyle = '#ffe26e'; const ex = side ? [2] : [-4, 3]; ex.forEach(e => { x.beginPath(); x.moveTo(e - 2, -35); x.lineTo(e, -39); x.lineTo(e + 2, -35); x.fill(); }); x.fillRect(side ? 0 : -4, -31, side ? 6 : 8, 2); }
+    }
     if (o.hat === 'tophat') { paint(x, [[-7, -55, 14, 14, '#16161e'], [-10, -43, 20, 3, '#16161e']]); x.fillStyle = '#ffd23d'; x.fillRect(-7, -46, 14, 2); }
     if (prop === 'gold' && dir !== 'up') { const hx = side ? 4 : 8; paint(x, [[hx, -24, 6, 9, 'rgba(255,230,160,.6)']]); x.fillStyle = '#ffd23d'; x.fillRect(hx + 1, -20, 4, 4); }
     if (prop === 'soda' && dir !== 'up') { const hx = side ? 4 : 8; paint(x, [[hx, -24, 6, 9, '#ff4f6d']]); x.fillStyle = '#fff'; x.fillRect(hx + 1, -21, 4, 2); x.fillStyle = '#e8e8f0'; x.fillRect(hx + 3, -29, 1, 5); }
@@ -868,7 +990,7 @@ window.Floor = (() => {
 
   /* ---------- pets, footstep trails and emotes (prizes from the counter: slots pet, trail and emote) ---------- */
   const pet = { x: WW / 2 + 20, y: 950, dir: 'right', t: 0, hop: 0, moving: false };
-  const FLYERS = ['ufo', 'phoenix'];
+  const FLYERS = ['ufo', 'phoenix', 'ghostpet'];
   function stepPet(dt) {
     const id = equip().pet; if (!id) return;
     const v = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[me.dir] || [0, 1];
@@ -902,6 +1024,8 @@ window.Floor = (() => {
       x.fillStyle = OUT; x.beginPath(); x.ellipse(0, -2, 14, 5, 0, 0, 6.29); x.fill(); x.fillStyle = '#c0c6d8'; x.beginPath(); x.ellipse(0, -2, 12.5, 4, 0, 0, 6.29); x.fill();
       x.fillStyle = '#5ee7ff'; x.beginPath(); x.ellipse(0, -5, 6, 5, 0, Math.PI, 0); x.fill(); x.fillStyle = 'rgba(255,255,255,.6)'; x.fillRect(-3, -8, 2, 2);
       for (let i = 0; i < 4; i++) { x.fillStyle = Math.floor(t * 6 + i) % 4 === 0 ? '#ffd23d' : '#ff4fd1'; x.fillRect(-10 + i * 6, -2, 2, 2); }
+    } else if (id === 'ghostpet') {
+      ghostShape(x, 0, 2, t * 1000, 0.85, 0.85);
     } else if (id === 'phoenix') {
       const flap = Math.sin(t * 10) * 6, g = x.createRadialGradient(0, -6, 1, 0, -6, 22); g.addColorStop(0, 'rgba(255,170,60,.45)'); g.addColorStop(1, 'rgba(255,120,40,0)'); x.fillStyle = g; x.fillRect(-22, -28, 44, 44);
       x.fillStyle = '#ff5a1a'; x.beginPath(); x.moveTo(-6, -4); x.lineTo(-16, 2 + Math.sin(t * 8) * 2); x.lineTo(-12, -6); x.lineTo(-18, -8 + Math.sin(t * 7) * 2); x.lineTo(-6, -8); x.fill(); // tail flames
@@ -1169,7 +1293,7 @@ window.Floor = (() => {
       LOFT_LAMPS.forEach(([x, y]) => L.push({ x, y, r: 230, a: 0.45 }));
       L.push({ x: 1520, y: 240, r: 360, a: 0.75, c: '#9ad8ff' }, { x: 1310, y: 640, r: 170, a: 0.95, c: '#ffd23d' }, { x: 200, y: 1010, r: 170, a: 0.85, c: '#3dff8f' }, { x: 560, y: 120, r: 300, a: 0.9, c: '#3dff8f' }, { x: 560, y: 620, r: 260, a: 0.6, c: '#3dff8f' });
       const feat = cabs.find(c => c.g.slug === opt.featured); if (feat) L.push({ x: feat.spot[0], y: feat.spot[1] - 10, r: 170, a: 1, c: '#ffd23d' });
-      L.push({ x: me.x, y: me.y - 16, r: 110, a: 0.5 }); return L;
+      hwLights(L, t); L.push({ x: me.x, y: me.y - 16, r: 110, a: 0.5 }); return L;
     }
     L.push({ x: 780, y: 720, r: 170, a: 0.85, c: '#3dff8f' }, { x: 420, y: 800, r: 120, a: 0.9, c: '#ffb870' }, { x: 40, y: 800, r: 120, a: 0.9, c: '#ffb870' }, { x: 1120, y: 1120, r: 150, a: 0.7, c: '#ff4fa3' });
     const flick = Math.sin(t / 97) > 0.97 || Math.sin(t / 61) > 0.985 ? 0.25 : 1; // the raceway sign is on the blink
@@ -1181,7 +1305,7 @@ window.Floor = (() => {
     const feat = cabs.find(c => c.g.slug === opt.featured); if (feat) L.push({ x: feat.spot[0], y: feat.spot[1] - 10, r: 170, a: 1, c: '#ffd23d' });
     [[2400, 560], [2720, 560], [2400, 980], [2720, 980], [2560, 300]].forEach(([x, y]) => L.push({ x, y, r: 250, a: 0.7, c: '#ffd23d' }));
     L.push({ x: 2240, y: 656, r: 120, a: 0.8, c: vipOpen ? '#ffd23d' : '#ff4f6d' }, { x: 2560, y: 760, r: 180, a: 0.9, c: '#ffd23d' });
-    L.push({ x: me.x, y: me.y - 16, r: 110, a: 0.5 });
+    hwLights(L, t); L.push({ x: me.x, y: me.y - 16, r: 110, a: 0.5 });
     return L;
   }
   const booth = { flash: 0 };
@@ -1653,7 +1777,7 @@ window.Floor = (() => {
     for (let i = puffs.length - 1; i >= 0; i--) if ((puffs[i].t -= dt) <= 0) puffs.splice(i, 1);
     if (booth.flash > 0) booth.flash = Math.max(0, booth.flash - dt * 3);
     if (zoneT > 0) zoneT -= dt;
-    camera(dt);
+    camera(dt); ghostStep(dt);
     if (play) play.tick(dt, now, { me, cabs, npcs, cam, zoom, near });
     draw(now, dt);
     if (me.entering && me.entering.t > 0.8 && !me.entering.done) { me.entering.done = true; opt.onPlay(me.entering.c.g); }
@@ -1685,7 +1809,7 @@ window.Floor = (() => {
     x.setTransform(dpr, 0, 0, dpr, 0, 0); x.globalAlpha = 0.6; x.imageSmoothingEnabled = true; x.drawImage(lightCv, 0, 0, SW, SH); x.globalAlpha = 1;
     x.setTransform(S, 0, 0, S, -cam.x * S, -cam.y * S); x.imageSmoothingEnabled = false;
     x.globalCompositeOperation = 'lighter'; x.globalAlpha = 0.5; x.drawImage(glowBg, sx, sy, sw, sh, sx, sy, sw, sh); x.globalAlpha = 1; x.globalCompositeOperation = 'source-over';
-    pools(x, L); beams(x, t, dt || 0.016);
+    pools(x, L); beams(x, t, dt || 0.016); hwFloor(x, t);
     if (!level) { if (owns('disco')) discoSpots(x, t); if (owns('strips')) drawStrips(x, t); drawTargets(x, t); }
     for (const p of puffs) { x.fillStyle = `rgba(200,190,230,${p.t})`; x.beginPath(); x.arc(p.x, p.y - (0.5 - p.t) * 10, 3 + (0.5 - p.t) * 8, 0, 6.29); x.fill(); }
     drawTrail(x);
@@ -1701,6 +1825,7 @@ window.Floor = (() => {
       drawWalker(x, me.x, me.y, em.dir || me.dir, 0, false, equip().outfit || '', em.pose, me.prop); x.restore();
     }]);
     if (equip().pet && !me.entering) list.push([pet.y + (FLYERS.includes(equip().pet) ? 30 : 0), () => drawPet(x, equip().pet, pet.x, pet.y, pet.dir, pet.t, pet.moving, pet.hop)]);
+    ghostDraws(list, x, t);
     list.sort((a, b) => a[0] - b[0]).forEach(d => d[1]());
     // a lighter dark over everything, then the glows
     x.setTransform(dpr, 0, 0, dpr, 0, 0); x.globalAlpha = 0.34; x.imageSmoothingEnabled = true; x.drawImage(lightCv, 0, 0, SW, SH); x.globalAlpha = 1;
@@ -1710,7 +1835,7 @@ window.Floor = (() => {
     overhead(x, t); dust(x, t);
     if (route.length && !mode) { const [tx, ty] = route[route.length - 1]; x.strokeStyle = 'rgba(255,255,255,.55)'; x.lineWidth = 2; x.beginPath(); x.ellipse(tx, ty, 10 + Math.sin(t / 150), 4, 0, 0, 6.29); x.stroke(); }
     // on the screen: haze, speech bubbles, the area name, the minimap, whatever's open
-    x.setTransform(dpr, 0, 0, dpr, 0, 0); haze(x, t);
+    x.setTransform(dpr, 0, 0, dpr, 0, 0); haze(x, t); hwScreen(x, t, dt || 0.016);
     if (window.XP && !me.entering) { const lv = XP.info(); if (lv.level >= 3) { // the nameplate: level and initials over your head
       const ini = initials() || 'YOU', tx = `LV ${lv.level} · ${ini}`, nx = (me.x - cam.x) * zoom, ny = (me.y - 60 - cam.y) * zoom - (me.bubble ? 30 : 0);
       x.font = '9px Silkscreen, monospace'; x.textAlign = 'center'; x.textBaseline = 'middle'; const w = x.measureText(tx).width + 12;
@@ -1808,7 +1933,7 @@ window.Floor = (() => {
     },
     stop() { running = false; cancelAnimationFrame(raf); keys.clear(); route = []; mode = null; if (play) play.sound.stop(); },
     /** Test and debug hook: where the walker is, what it's standing at, and what's open. */
-    state: () => ({ x: me.x, y: me.y, near: near && (near.kind === 'cab' ? near.g.slug : near.kind), mode: mode ? mode.name : null, people: npcs.length, zone: zoneName, level, loft: loftGames.map(g => g.slug) }),
+    state: () => ({ x: me.x, y: me.y, near: near && (near.kind === 'cab' ? near.g.slug : near.kind), mode: mode ? mode.name : null, people: npcs.length, zone: zoneName, level, loft: loftGames.map(g => g.slug), ghosts: (ghostDay() || { list: [] }).list.map(g => ({ x: g.x, y: g.y, got: g.got })) }),
     /** Put the walker in front of a cabinet (by slug) or a thing ('counter', 'claw', 'jukebox', 'board', 'booth', 'snack', 'stairs', 'pusher'), upstairs or down. */
     goTo(what) {
       if (Array.isArray(what)) { me.x = what[0]; me.y = what[1]; route = []; if (running) snapCamera(); return; }
