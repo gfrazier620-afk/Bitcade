@@ -2,8 +2,9 @@
  * The lobby's cabinets page (lobby only): shelves, search, genre chips, sorting, favorites and the big/small grid.
  *
  * The page opens on shelves: sideways rows for Continue playing (bitcade:recent, kept by shared/arcade.js on every
- * run), Favorites (bitcade:favs), New arrivals (each cabinet's `added` date), Not tried yet, and one row per genre
- * (each cabinet's `genre`, space-separated ids from GENRES). SEE ALL on a shelf, a chip, a search or a sort opens the
+ * run), Favorites (bitcade:favs, only once something's pinned), New arrivals (each cabinet's `added` date), Picked for
+ * you (picked()), and one row per genre (each cabinet's `genre`, space-separated ids from GENRES). Daily-challenge and
+ * story games carry a DAILY or ★ STORY tag on their tiles rather than shelves of their own. SEE ALL on a shelf, a chip, a search or a sort opens the
  * full grid (#floor, the lobby's .cab cards) filtered and sorted. The search, chip and sort last for the visit
  * (sessionStorage bitcade:cabs); the grid size is remembered (bitcade:cabsize: 'big' or 'small', small by default on
  * phones). A ★ on any cabinet or tile pins it to Favorites.
@@ -21,7 +22,7 @@
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
   const label = id => (GENRES.find(g => g[0] === id) || [id, id])[1];
 
-  let games = [], paint = null, st = { chip: 'home', q: '', sort: 'featured' };
+  let games = [], paint = null, stories = [], st = { chip: 'home', q: '', sort: 'featured' };
   let root, grid, shelvesEl, head, chipsEl, qIn, sortIn;
 
   const favs = () => json(get('bitcade:favs'), []);
@@ -37,6 +38,20 @@
     const r = json(get('bitcade:recent'), []).map(s => games.find(g => g.slug === s)).filter(Boolean);
     const rest = games.filter(g => !r.includes(g) && tried(g)).sort((a, b) => time(b) - time(a) || plays(b) - plays(a));
     return r.concat(rest).slice(0, 12);
+  }
+  /**
+   * Picked for you: games you haven't tried, best first by how much their genres match what you play most (plays and
+   * play time), with a little daily shuffle so the row changes. With no history it's a mix that changes each day; once
+   * you've tried nearly everything, it's the games you haven't played lately.
+   */
+  function picked() {
+    const w = {}; games.forEach(g => { const k = plays(g) + time(g) / 60; if (k) genres(g).forEach(id => { if (id !== '2p') w[id] = (w[id] || 0) + k; }); });
+    const fit = g => genres(g).reduce((n, id) => n + (w[id] || 0), 0), top = Math.max(1, ...games.map(fit));
+    const day = Math.floor(Date.now() / 864e5), mix = g => ((games.indexOf(g) * 37 + day * 53) % 101) / 101;
+    const lately = recent().slice(0, 4);
+    let pool = games.filter(g => !tried(g)); if (pool.length < 4) pool = games.filter(g => !lately.includes(g));
+    const rank = g => fit(g) / top + mix(g) * 0.35;
+    return pool.sort((a, b) => rank(b) - rank(a)).slice(0, 10);
   }
   function sorted(list, how) {
     const i = g => games.indexOf(g);
@@ -72,6 +87,7 @@
     const cv = el('canvas'); cv.width = 12; cv.height = 8; if (paint) paint(cv.getContext('2d'), g.px); scr.append(cv);
     [1, 2].forEach(n => { const img = el('img', n === 2 ? 'shot two' : 'shot'); img.alt = ''; img.loading = 'lazy'; img.src = `icons/screens/${g.slug}-${n}.webp`; img.addEventListener('error', () => img.remove()); scr.append(img); });
     if (isNew(g)) scr.append(el('b', 'new', 'NEW'));
+    if (g.daily || stories.includes(g.slug)) { const tags = el('span', 'tags'); if (stories.includes(g.slug)) tags.append(el('b', 'tg-story', '★ STORY')); if (g.daily) tags.append(el('b', 'tg-daily', 'DAILY')); scr.append(tags); }
     scr.append(favBtn(g));
     const best = +get('arcade:best:' + g.slug) || 0;
     a.append(scr, el('b', 't-name', g.name), el('span', 't-kind', `${g.kind.toUpperCase()}${best ? ' · ' + (g.label || 'BEST') + ' ' + best.toLocaleString() : ''}`));
@@ -102,9 +118,7 @@
     const f = favs().map(s => games.find(g => g.slug === s)).filter(Boolean);
     add('fav', '★ Favorites', f, { chip: 'fav', sort: 'featured' });
     add('new', '✦ New arrivals', sorted(games, 'new').slice(0, 10), { chip: 'all', sort: 'new' });
-    const fresh = games.filter(g => !tried(g));
-    if (fresh.length < games.length) add('untried', '? Not tried yet', fresh, { chip: 'all', sort: 'unplayed' });
-    add('daily', '◆ Daily challenges', games.filter(g => g.daily), { chip: 'daily', sort: 'featured' });
+    add('picked', '♥ Picked for you', picked(), { chip: 'all', sort: 'unplayed' });
     GENRES.forEach(([id, name]) => { const l = games.filter(g => genres(g).includes(id)); if (l.length > 1) add(id, name, l, { chip: id, sort: 'featured' }); }); // a genre of one is a chip, not a shelf
     shelvesEl.querySelectorAll('.shelf').forEach(s => { if (keep[s.dataset.shelf]) s.querySelector('.row').scrollLeft = keep[s.dataset.shelf]; });
   }
@@ -148,7 +162,7 @@
 
   /** Builds the page around #floor. games: the lobby's GAMES (each with its .cab card as g.el); paint(ctx, px) draws a pixel icon. */
   function init(opts) {
-    games = opts.games; paint = opts.paint;
+    games = opts.games; paint = opts.paint; stories = opts.stories || [];
     grid = document.getElementById('floor'); root = document.getElementById('cabs');
     shelvesEl = document.getElementById('shelves'); head = document.getElementById('gridHead'); chipsEl = document.getElementById('cabChips');
     qIn = document.getElementById('cabQ'); sortIn = document.getElementById('cabSort');

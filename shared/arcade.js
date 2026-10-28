@@ -96,16 +96,22 @@
     const strip = document.querySelector('.bezel-top');
     if (strip && !strip.querySelector('.plaque')) { const pl = document.createElement('span'); pl.className = 'plaque'; pl.textContent = '★ MASTERED ★'; strip.querySelector('.sc') ? strip.querySelector('.sc').after(pl) : strip.prepend(pl); }
   }
-  /** A short message at the top of the screen. Styled inline so pages without arcade.css (Blip Sports) get it too. */
-  function toast(text) {
-    const n = document.querySelectorAll('.arcade-toast').length, t = document.createElement('div');
+  /**
+   * A short message at the top of the screen, one at a time: more wait their turn (a repeat of one already waiting is
+   * dropped), so they never stack. Styled inline so pages without arcade.css (Blip Sports) get it too.
+   */
+  const toastQ = []; let toastOn = false;
+  function toast(text) { if (toastQ.includes(text)) return; toastQ.push(text); if (!toastOn) nextToast(); }
+  function nextToast() {
+    const text = toastQ.shift(); toastOn = text != null; if (!toastOn) return;
+    const t = document.createElement('div');
     t.className = 'arcade-toast'; t.textContent = text; t.setAttribute('role', 'status');
-    t.style.cssText = `position:fixed;left:50%;top:${64 + n * 46}px;transform:translate(-50%,-12px);z-index:50;padding:9px 16px;border-radius:10px;` +
+    t.style.cssText = 'position:fixed;left:50%;top:64px;transform:translate(-50%,-12px);z-index:50;padding:9px 16px;border-radius:10px;' +
       'background:#1f1940;border:1px solid #ffd23d;color:#ffd23d;font:13px Silkscreen,ui-monospace,monospace;letter-spacing:.04em;' +
       'box-shadow:0 6px 24px rgba(0,0,0,.5);opacity:0;transition:opacity .25s,transform .25s;pointer-events:none;white-space:nowrap';
     document.body.appendChild(t);
     requestAnimationFrame(() => { t.style.opacity = '1'; t.style.transform = 'translate(-50%,0)'; });
-    setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 2600);
+    setTimeout(() => { t.style.opacity = '0'; setTimeout(() => { t.remove(); nextToast(); }, 300); }, toastQ.length ? 2000 : 2600);
   }
   A.toast = toast;
 
@@ -177,29 +183,38 @@
       if (A.featured()) tix *= 2;
       if (window.TICKETS) TICKETS.add(tix); else tix = 0;
     }
+    gather = []; // level-ups, pass tiers and missions from this run go on the game-over screen, not in toasts
     let xp = null;
     if (window.XP) { let n = 10 + (rank >= 0 ? 10 : 0) + (rec && prevBest > 0 ? 15 : 0) + (daily ? 5 : 0); if (A.featured()) n *= 2; xp = A.gainXP(n, 'run', true); }
     lastResult = { s, rank, top, day, week, tix, xp };
-    A.mission({ type: 'run', slug: A.id, score: s, daily: !!daily });
+    try { A.mission({ type: 'run', slug: A.id, score: s, daily: !!daily }); } finally { lastResult.notes = gather; gather = null; }
     return rec;
   };
-  /** Add XP (shared/badges.js); a level-up gets a toast and fanfare, unless quiet (the game-over screen shows it). */
+  /*
+   * While A.submit runs, `gather` collects what the run earned besides tickets and XP (a level-up, a pass tier, missions
+   * done), and the game-over screen shows them in one row (`notes`, see A.overlay). Outside a submit they're toasts.
+   */
+  let gather = null;
+  const noteOne = (k, text) => { const i = gather.findIndex(x => x.k === k && k !== 'ms'); if (i >= 0) gather.splice(i, 1); gather.push({ k, text }); };
+  /** Add XP (shared/badges.js); a level-up gets a toast and fanfare, or a place on the game-over screen during a submit. */
   A.gainXP = (n, why, quiet) => {
     if (!window.XP || A.demo || runEasy || !n) return null;
     const r = XP.add(n, why);
-    if (r.up) setTimeout(() => {
+    if (r.up && gather) noteOne('lv', `▲ LEVEL ${r.after.level}${r.newTitle ? ' · ' + r.newTitle : ''}${r.unlocked.length ? ' · NEW PRIZE' : ''}`);
+    else if (r.up) setTimeout(() => {
       toast(`▲ LEVEL ${r.after.level}${r.newTitle ? ' · ' + r.newTitle : ''}${r.unlocked.length ? ' · NEW PRIZE UNLOCKED' : ''}`);
       A.jingle([523, 659, 784, 1047, 1319, 1047, 1319, 1568], 0.07, 'square'); A.flash('#5ee7ff', 0.25);
     }, quiet ? 1400 : 1100);
     return r;
   };
   // the same XP climbs the Arcade Pass (shared/badges.js): a toast for each new tier
-  if (window.PASS) PASS.onChange(r => { if (r.after > r.before) setTimeout(() => { toast(`✦ ARCADE PASS · TIER ${r.after}${PASS.ready().length ? ' · REWARD WAITING IN THE LOBBY' : ''}`); A.jingle([659, 988, 1319], 0.07, 'triangle'); }, 2000); });
+  if (window.PASS) PASS.onChange(r => { if (r.after > r.before && gather) noteOne('pass', `✦ PASS TIER ${r.after}${PASS.ready().length ? ' · REWARD WAITING' : ''}`); else if (r.after > r.before) setTimeout(() => { toast(`✦ ARCADE PASS · TIER ${r.after}${PASS.ready().length ? ' · REWARD WAITING IN THE LOBBY' : ''}`); A.jingle([659, 988, 1319], 0.07, 'triangle'); }, 2000); });
   /** Report to the daily missions (shared/badges.js); a toast for each one finished. */
   A.mission = ev => {
     if (!window.MISSIONS || A.demo || runEasy) return;
     const r = MISSIONS.record(ev);
     if (r.done.length) A.gainXP(r.done.length * 30 + (r.all ? 50 : 0), 'mission');
+    if (gather) { if (r.done.length) noteOne('ms', `✓ ${r.done.length > 1 ? r.done.length + ' MISSIONS' : 'MISSION'} DONE · +${r.done.length * MISSIONS.REWARD} TICKETS`); if (r.all) noteOne('all', `★ ALL 3 MISSIONS · +${MISSIONS.BONUS} BONUS`); return; }
     r.done.forEach((m, i) => setTimeout(() => { toast(`✓ MISSION · ${MISSIONS.text(m)} · +${MISSIONS.REWARD} TICKETS`); A.jingle([784, 988, 1319], 0.07, 'square'); }, 400 + i * 900));
     if (r.all) setTimeout(() => { toast(`★ ALL 3 DAILY MISSIONS · +${MISSIONS.BONUS} BONUS TICKETS`); A.jingle([523, 659, 784, 1047, 1319, 1568], 0.08, 'square'); }, 400 + r.done.length * 900);
   };
@@ -507,12 +522,19 @@
     clearInterval(contT);
     o.innerHTML = (isTitle && A.featured() ? `<div class="weekly">★ WEEKLY TOURNAMENT · ENDS IN ${WK.leftText()}</div>` : '') + `<h2></h2>${big ? '<div class="big"></div>' : ''}${sub ? '<p></p>' : ''}` +
       (res && res.easy ? '<div class="tix easy">EASY MODE · SCORE NOT RECORDED</div>' : isTitle && A.easy ? '<div class="tix easy">EASY MODE ON · SCORES WON\u2019T COUNT</div>' : '') +
-      (res && res.tix ? `<div class="tix">+${res.tix} TICKETS${A.featured() ? ' · DOUBLE THIS WEEK' : ''} · ${TICKETS.balance()} TOTAL</div>` : '') +
-      (res && res.xp ? `<div class="xpbar"><span>LV ${res.xp.after.level}</span><i><b style="width:${res.xp.up ? 0 : Math.round(res.xp.before.pct * 100)}%"></b></i><em>+${res.xp.gained} XP${res.xp.up ? ' · LEVEL UP!' : ''}</em></div>` : '') + `<div class="hs"></div>` +
+      (res && (res.tix || res.xp) ? '<div class="rsum">' +
+        (res.tix ? `<div class="tix">+${res.tix} TICKETS${A.featured() ? ' · DOUBLE THIS WEEK' : ''} · ${TICKETS.balance()} TOTAL</div>` : '') +
+        (res.xp ? `<div class="xpbar"><span>LV ${res.xp.after.level}</span><i><b style="width:${res.xp.up ? 0 : Math.round(res.xp.before.pct * 100)}%"></b></i><em>+${res.xp.gained} XP${res.xp.up ? ' · LEVEL UP!' : ''}</em></div>` : '') +
+        ((res.notes || []).length ? `<div class="notes">${res.notes.map(n => `<span class="note ${n.k}"></span>`).join('')}</div>` : '') + '</div>' : '') + `<div class="hs"></div>` +
       (isTitle ? '<div class="push">PUSH START</div>' : '') + (res ? '<div class="cont" hidden></div>' : '') +
       `<div class="btns"><button class="go"></button>${alt ? '<button class="go2"></button>' : ''}${alt2 ? '<button class="go2 go3"></button>' : ''}</div>` +
       (canShare ? '<button class="share">Share score</button>' : '') + (isTitle ? '<div class="credit">FREE PLAY · CREDIT 99</div>' : '');
     const xb = o.querySelector('.xpbar b'); if (xb && res && res.xp) requestAnimationFrame(() => requestAnimationFrame(() => { xb.style.width = Math.round(res.xp.after.pct * 100) + '%'; }));
+    if (res && res.notes && res.notes.length) {
+      o.querySelectorAll('.note').forEach((el, i) => { el.textContent = res.notes[i].text; });
+      const has = k => res.notes.some(n => n.k === k); // one fanfare for the lot: the biggest thing that happened
+      setTimeout(() => { if (has('lv')) { A.jingle([523, 659, 784, 1047, 1319, 1047, 1319, 1568], 0.07, 'square'); A.flash('#5ee7ff', 0.25); } else if (has('ms') || has('all')) A.jingle([784, 988, 1319], 0.07, 'square'); else A.jingle([659, 988, 1319], 0.07, 'triangle'); }, 700);
+    }
     if (canShare) { const sb = o.querySelector('.share'); sb.addEventListener('click', () => shareScore(res.s, res.day && res.day.d, sb)); }
     o.querySelector('h2').textContent = title;
     if (isTitle && A.id !== 'game') { const lc = document.createElement('canvas'); lc.className = 'logo'; lc.setAttribute('aria-hidden', 'true'); o.querySelector('h2').before(lc); o.querySelector('h2').classList.add('sr'); startLogo(lc, title); }

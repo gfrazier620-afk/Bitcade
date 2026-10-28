@@ -99,6 +99,9 @@ body{display:block;overflow-x:hidden;
 .t-name{font-family:var(--f-marquee);font-weight:400;font-size:15px;line-height:1.15;color:var(--c);padding:0 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tile.gold .t-name{color:#ffd23d}
 .t-kind{font-family:var(--f-pixel);font-size:10px;color:var(--muted);padding:0 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.t-scr .tags{position:absolute;z-index:2;left:6px;bottom:6px;display:flex;gap:4px}
+.t-scr .tags b{font-family:var(--f-pixel);font-weight:400;font-size:8.5px;letter-spacing:.08em;border-radius:4px;padding:2px 5px;background:rgba(8,5,18,.82)}
+.t-scr .tags .tg-daily{color:#3dff8f;border:1px solid rgba(61,255,143,.6)}.t-scr .tags .tg-story{color:#ffd23d;border:1px solid rgba(255,210,61,.6)}
 .fav{position:absolute;z-index:3;top:6px;right:6px;width:30px;height:30px;border-radius:50%;border:1px solid rgba(255,255,255,.18);background:rgba(8,5,18,.72);color:#d8d2ee;font-size:16px;line-height:1;cursor:pointer;display:grid;place-items:center;padding:0;opacity:.75;transition:opacity .15s,color .15s,border-color .15s}
 .fav:hover,.fav:focus-visible,.fav.on{opacity:1}
 .fav.on{color:#ffd23d;border-color:#ffd23d;text-shadow:0 0 8px rgba(255,210,61,.8)}
@@ -137,7 +140,7 @@ body{display:block;overflow-x:hidden;
 .hero{position:relative;max-width:1000px;margin:0 auto 18px}
 .hero-track{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;border-radius:18px;border:1px solid var(--line);background:var(--bg2);box-shadow:0 12px 40px rgba(0,0,0,.45)}
 .hero-track::-webkit-scrollbar{display:none}
-.hero-slide{--c:#5ee7ff;position:relative;flex:0 0 100%;scroll-snap-align:start;min-height:230px;display:flex;align-items:center;overflow:hidden;text-decoration:none;color:var(--ink);border:0;padding:0;font:inherit;text-align:left;cursor:pointer;
+.hero-slide{--c:#5ee7ff;position:relative;flex:0 0 100%;scroll-snap-align:start;min-height:190px;display:flex;align-items:center;overflow:hidden;text-decoration:none;color:var(--ink);border:0;padding:0;font:inherit;text-align:left;cursor:pointer;
   background:radial-gradient(ellipse at 15% 50%,color-mix(in srgb,var(--c) 22%,transparent),transparent 60%),#0d0a1d}
 .hero-slide .hs-shot{position:absolute;right:0;top:0;width:66%;height:100%;object-fit:cover;object-position:50% 35%;-webkit-mask-image:linear-gradient(90deg,transparent,#000 38%);mask-image:linear-gradient(90deg,transparent,#000 38%);opacity:.9}
 .hero-slide .hs-shot.two{animation:hs-flip 4s steps(1) infinite}
@@ -168,7 +171,8 @@ body{display:block;overflow-x:hidden;
 .couch .row{padding:10px 8px 12px}
 .today{max-width:900px;margin:0 auto 12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr));gap:10px}
 .today>.lvl,.today>.pstrip{margin:0;max-width:none}
-@media (max-width:640px){.hero-slide{min-height:300px;align-items:flex-end}.hero-slide .hs-shot{width:100%;height:62%;-webkit-mask-image:linear-gradient(180deg,#000 55%,transparent);mask-image:linear-gradient(180deg,#000 55%,transparent)}.hs-text{max-width:none;padding:18px 18px 30px}.hs-text p{font-size:13px}.hero-dots{left:18px}.hero .tourney{align-content:end;padding-top:150px}}
+.hero.one .hero-dots,.hero.one .hero-nav{display:none}
+@media (max-width:640px){.hero-slide{min-height:240px;align-items:flex-end}.hero-slide .hs-shot{width:100%;height:58%;-webkit-mask-image:linear-gradient(180deg,#000 55%,transparent);mask-image:linear-gradient(180deg,#000 55%,transparent)}.hs-text{max-width:none;padding:18px 18px 30px}.hs-text p{font-size:13px}.hero-dots{left:18px}.hero .tourney{align-content:end;padding-top:120px}}
 .tourney{--c:#ffd23d;display:grid;grid-template-columns:auto 1fr auto;gap:14px 20px;align-items:center;margin:0 auto 26px;max-width:900px;padding:16px 20px;
   border:2px solid #ffd23d;border-radius:16px;background:linear-gradient(135deg,rgba(255,210,61,.14),rgba(255,154,61,.05) 60%,transparent),var(--bg2);
   box-shadow:0 0 30px rgba(255,210,61,.18);text-decoration:none;color:var(--ink)}
@@ -836,6 +840,8 @@ const GAMES = [
     px: ['............', '.RR..RR..RR.', '............', '.RR..WW..RR.', '............', '.RR..RR..RR.', '............', '............'],
     px2: ['............', '.RR..RR..RR.', '............', '.RR..RWW.RR.', '............', '.RR..RR..RR.', '............', '............'] }
 ];
+// the nine cabinets with a story mode (shared/story.js): a ★ STORY tag on their tiles
+const STORY_GAMES = ['dungeon-delve', 'blast-brigade', 'pixel-peaks', 'turbo-tour', 'sky-squadron', 'knockout-kings', 'bomb-squad', 'tank-tactics', 'field-day'];
 const PAL = { G: '#3dff8f', W: '#ffffff', P: '#ff4fa3', R: '#ff4f6d', O: '#ff8a3d', Y: '#ffd23d', C: '#5ee7ff', L: '#c6ff3d', V: '#b48cff', B: '#3d7bff', S: '#e2a978', K: '#222', N: '#4f6bff', A: '#8a92a8', y: '#ffa23d', M: '#ff7bf0', E: '#9fb4ff', T: '#7a4a24', H: '#ffb27a', Q: '#6fb7ff', Z: '#22e0ff', X: '#ff4fd1', D: '#c4803e', d: '#140a0e' };
 const get = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 const floor = document.getElementById('floor');
@@ -866,7 +872,7 @@ GAMES.forEach(g => {
   floor.appendChild(a);
   g.el = a;
 });
-Shelves.init({ games: GAMES, paint });
+Shelves.init({ games: GAMES, paint, stories: STORY_GAMES });
 /*
  * Screen transitions, like an old CRT (games do the same in shared/arcade.js). Picking a cabinet drops a coin and
  * powers the lobby off: the picture collapses to a line, then a dot. Coming back from a game, it powers on again.
@@ -931,12 +937,11 @@ if (feat) {
   try { const mine = JSON.parse(get('arcade:week:' + feat.slug)); if (mine && mine.w === WEEKLY.key()) tourney.querySelector('.t-mine').textContent = mine.s.toLocaleString(); } catch (e) {}
 }
 /*
- * The featured banner up top: a strip of slides you can swipe, with dots and arrows, turning every 7 s (not with
- * reduced motion, nor while you're pointing at it): this week's tournament, the newest cabinet, a story mode (one a
- * day) and the Arcade Pass. Each shows that game's footage.
+ * The featured banner up top: two slides you can swipe, with dots and arrows, turning every 7 s (not with reduced
+ * motion, nor while you're pointing at it): this week's tournament and the newest cabinet, each over its footage.
+ * The story games get a ★ STORY tag on their tiles instead (STORY_GAMES), and the pass lives in REWARDS.
  */
 const heroTrack = document.getElementById('heroTrack');
-const STORIES = { 'dungeon-delve': ['THE FIVE DEPTHS', 'Five floors down to Morrowgast the lich. Buy upgrades with the gems you find, then try Boss Rush.'], 'blast-brigade': ['OPERATION IRON DAWN', 'Five fronts, from the desert to the Iron Fortress and its walking Colossus. Then hold out in Survival.'], 'pixel-peaks': ['THE EIGHT PEAKS', 'Climb all eight to the summit, where Grumble the storm cloud waits. Then race the Time Trial.'], 'turbo-tour': ['THE GRAND TOUR', 'Six races against five rivals. Finish in the top three to go on, and beat Vex Valentine in the final.'], 'sky-squadron': ['WINGS OVER THE WORLD', 'Six regions to free from the Iron Armada, all the way to the Sky Leviathan. Then the Boss Rush.'], 'knockout-kings': ['FROM THE BOTTOM', 'A back-alley bout to the world title in seven fights, with Coach Del in your corner. Then the Gauntlet.'], 'bomb-squad': ['THE CRITTER CAPER', 'Six zones of Maple Town, all the way to Doctor Gloop\'s monster, Queen Gloop. Then Critter Rush.'], 'tank-tactics': ['IRON FRONT', 'Six battlefields against the Rust Legion, up to the Iron Baron\'s fortress gun. Then the Endless Siege.'], 'field-day': ['ROAD TO THE GAMES', 'Five meets from the school sports day to the World Games, beating a named rival at each. Then the time trial.'] };
 function heroSlide({ g, kick, title, text, cta, href, onGo, cls }) {
   const a = document.createElement(href ? 'a' : 'button'); a.className = 'hero-slide' + (cls ? ' ' + cls : ''); if (href) a.href = href; else a.type = 'button';
   if (g) a.style.setProperty('--c', g.c);
@@ -950,15 +955,9 @@ if (feat) { heroTrack.append(tourney); tourney.insertAdjacentHTML('afterbegin', 
 {
   const nw = GAMES.slice().sort((a, b) => (b.added || '').localeCompare(a.added || '') || GAMES.indexOf(b) - GAMES.indexOf(a))[0];
   if (nw) heroSlide({ g: nw, kick: '✦ NEW ARRIVAL', title: nw.name, text: nw.blurb, cta: 'PLAY NOW ▶', href: `games/${nw.slug}/` });
-  const ids = Object.keys(STORIES), sg = GAMES.find(g => g.slug === ids[Math.floor(Date.now() / 864e5) % ids.length]);
-  if (sg) heroSlide({ g: sg, kick: `★ STORY MODE · ${sg.name.toUpperCase()}`, title: STORIES[sg.slug][0], text: STORIES[sg.slug][1] + ' Nine cabinets have a story now.', cta: 'PLAY THE STORY ▶', href: `games/${sg.slug}/` });
-  if (window.PASS && PASS.season()) {
-    const se = PASS.season(), ready = PASS.ready().length;
-    heroSlide({ kick: '✦ ARCADE PASS · SEASON 1', title: se.name, text: `Tier ${PASS.tier()} of ${PASS.TIERS}. Every bit of XP climbs it: tickets, prizes, and pass-only finishes like the Diamond Cabinet. ${ready ? ready + ' reward' + (ready === 1 ? '' : 's') + ' waiting.' : ''}`, cta: ready ? `CLAIM ${ready} ▶` : 'OPEN THE PASS ▶', onGo: () => PassView.open(), cls: 'pass' });
-  }
 }
 const heroCount = heroTrack.children.length, heroEl = document.getElementById('hero'), heroDots = heroEl.querySelector('.hero-dots');
-heroEl.hidden = !heroCount;
+heroEl.hidden = !heroCount; heroEl.classList.toggle('one', heroCount < 2); // one slide: no dots or arrows
 const heroSlides = () => [...heroTrack.children].filter(s => !s.hidden);
 let heroAt = 0, heroHold = false;
 heroSlides().forEach((s, i) => { const d = document.createElement('button'); d.type = 'button'; d.setAttribute('role', 'tab'); d.setAttribute('aria-label', `Slide ${i + 1}`); d.addEventListener('click', () => heroGo(i)); heroDots.append(d); });
