@@ -775,6 +775,7 @@
     screen.before(cab); bezel.append(strip, screen);
     const help = document.querySelector('.stage > .help'); if (help) panel.querySelector('.card').append(help);
     cab.append(marquee, bezel, panel);
+    cab.insertAdjacentHTML('afterend', '<p class="turn-hint" aria-hidden="true">⟳ TURN YOUR PHONE SIDEWAYS FOR A BIGGER SCREEN</p>'); // phones held upright, wide games
     document.body.classList.add('cab-on');
     fitScreen();
     ['resize', 'orientationchange'].forEach(e => addEventListener(e, fitScreen));
@@ -785,7 +786,8 @@
   /*
    * Phones and narrow windows: size the screen to the space really left once the header, marquee, score strip and
    * touch pad are laid out (each game's pad is different), so nothing spills off the bottom. A phone held sideways
-   * gets body.phone-land: no marquee, and the pad's two halves either side of the screen. Wide windows keep the CSS fit.
+   * gets body.phone-land: no marquee, the header floating in the corners, and the pad's two halves either side of the
+   * screen. Wide windows are measured the same way (the CSS fit is the fallback before this runs).
    */
   function fitScreen() {
     const body = document.body, screen = document.querySelector('.cab-on .screen'), stage = document.querySelector('.stage'), cab = document.querySelector('.cabinet');
@@ -793,21 +795,46 @@
     const vv = window.visualViewport, vw = vv ? vv.width : innerWidth, vh = vv ? vv.height : innerHeight;
     const phone = matchMedia('(pointer:coarse)').matches, land = phone && vw > vh && vh < 560;
     body.classList.toggle('phone-land', land);
-    if (!phone && innerWidth > 620) { body.style.removeProperty('--sw'); return; }
     const ar = A.W && A.H ? A.W / A.H : 1, cs = getComputedStyle(stage), bs = getComputedStyle(body), bar = document.querySelector('.bar');
     // everything in the stage except the screen, plus the header and the safe areas
     let used = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom), n = 0;
     for (const el of stage.children) {
-      const st = getComputedStyle(el); if (st.display === 'none' || st.position === 'fixed' || st.position === 'absolute') continue;
+      const st = getComputedStyle(el); if (st.display === 'none' || st.position === 'fixed' || st.position === 'absolute' || el.classList.contains('turn-hint')) continue;
       used += el.offsetHeight + parseFloat(st.marginTop) + parseFloat(st.marginBottom); n++;
     }
     used += Math.max(0, n - 1) * (parseFloat(cs.rowGap) || 0) - screen.offsetHeight;
-    used += (bar ? bar.offsetHeight : 0) + parseFloat(bs.paddingTop) + parseFloat(bs.paddingBottom) + 4;
+    used += (bar && !land ? bar.offsetHeight : 0) + parseFloat(bs.paddingTop) + parseFloat(bs.paddingBottom) + 4;
     const frameW = cab.offsetWidth - screen.offsetWidth, padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
     let maxW = vw - frameW - padX;
-    if (land) { const sides = [...document.querySelectorAll('.pad > *')].reduce((m, el) => Math.max(m, el.offsetWidth), 0); if (sides) maxW = Math.min(maxW, vw - 2 * (sides + 18) - frameW); }
+    if (land) { const sides = [...document.querySelectorAll('.pad > *, .bar > .back, .bar > .toggles')].reduce((m, el) => Math.max(m, el.offsetWidth), 0); if (sides) maxW = Math.min(maxW, vw - 2 * (sides + 14) - frameW); }
     const sw = Math.floor(Math.max(120, Math.min(maxW, (vh - used - 6) * ar)));
     body.style.setProperty('--sw', sw + 'px');
+    body.classList.toggle('wide-game', ar > 1.15);
+  }
+
+  /*
+   * BIG SCREEN (the ⛶ header button): no marquee or control panel, so the game's screen gets the whole window, and the
+   * browser goes full screen where it can. The layout is remembered (arcade:big); full screen itself needs a press each time.
+   */
+  function bigButton(before) {
+    const fsOK = !!(document.documentElement.requestFullscreen && document.fullscreenEnabled);
+    if (!fsOK && matchMedia('(pointer:coarse)').matches) return; // a phone without full screen (iPhone) already gets the slim cabinet
+    const b = document.createElement('button'); b.className = 'mute big-btn'; b.type = 'button';
+    const set = on => {
+      document.body.classList.toggle('big', on); b.textContent = '⛶'; b.title = on ? 'Back to the cabinet' : 'Big screen';
+      b.setAttribute('aria-label', b.title); b.setAttribute('aria-pressed', String(on)); store.set('arcade:big', on ? '1' : '0'); fitScreen();
+    };
+    set(store.get('arcade:big') === '1');
+    b.addEventListener('click', () => {
+      const on = !document.body.classList.contains('big'); set(on); b.blur();
+      try {
+        if (on && fsOK && !document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+        if (!on && document.fullscreenElement) document.exitFullscreen().catch(() => {});
+      } catch (e) {}
+    });
+    let wasFull = false; // leaving full screen (Esc) goes back to the cabinet too
+    document.addEventListener('fullscreenchange', () => { if (document.fullscreenElement) wasFull = true; else if (wasFull) { wasFull = false; set(false); } setTimeout(fitScreen, 60); });
+    before.before(b);
   }
 
   /*
@@ -898,6 +925,7 @@
       easySet();
       const group = document.createElement('div'); group.className = 'toggles'; m.before(group);
       [document.querySelector('.bar .pause'), tag, m].filter(Boolean).forEach(b => group.append(b));
+      bigButton(m);
       const controls = () => { const seen = new Set(), out = []; document.querySelectorAll('.pad [data-k], .bar .pause').forEach(b => { const c = b.dataset.k; if (seen.has(c)) return; seen.add(c); out.push({ code: c, label: c === 'KeyP' ? 'Pause' : (t => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase())((b.getAttribute('aria-label') || b.textContent || c).trim()) }); }); if (!seen.has('KeyP')) out.push({ code: 'KeyP', label: 'Pause' }); return out; };
       const openSettings = () => {
         A.unlock();

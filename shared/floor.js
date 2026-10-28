@@ -16,11 +16,12 @@
  * Floor.start() / Floor.stop() as the view is shown or hidden. Floor.preview(prize, ctx, w, h) draws prize previews.
  */
 window.Floor = (() => {
+  // VW x VH is the box the panels (claw, skee-ball, emotes…) are drawn in; SW x SH is the whole view, as big as the canvas, at least the box
   const VW = 960, VH = 600, GW = 2880, GH = 1320, WALL = 170, OUT = '#0a0612', CELL = 16;
   let WW = GW, WH = GH, level = 0; // the floor you're on: 0 the ground floor, 1 the Loft (whose size is LOFT)
   const WALK = 150, RUN = 290;
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let PAL = {}, opt = null, cv = null, ctx = null, dpr = 1, running = false, raf = 0, last = 0, play = null;
+  let SW = 960, SH = 600, BX = 0, BY = 0, fitZoom = 1.6, PAL = {}, opt = null, cv = null, ctx = null, dpr = 1, running = false, raf = 0, last = 0, play = null;
   let objs = [], cabs = [], solids = [], blocked = null, bg = null, glowBg = null, bgKey = null, lights = [];
   let mastered = new Set(), near = null, shownNear, route = [], arriveAct = null, idlePing = 0, padWas = [], mode = null;
   let zoom = 1.6, baseZoom = 1.6, zoneName = '', zoneT = 0, chatT = 4, lastStep = 0;
@@ -539,7 +540,7 @@ window.Floor = (() => {
   }
   const motes = Array.from({ length: 48 }, () => ({ x: Math.random(), y: Math.random(), p: Math.random() * 6.28, s: 0.4 + Math.random() * 0.8 }));
   function dust(x, t) { // world space, over whatever's in view
-    const vw = VW / zoom, vh = VH / zoom, m2 = (v, n) => ((v % n) + n) % n;
+    const vw = SW / zoom, vh = SH / zoom, m2 = (v, n) => ((v % n) + n) % n;
     for (const m of motes) {
       const px = cam.x + m2(m.x * vw + Math.sin(t / 2400 + m.p) * 16, vw), py = cam.y + m2(m.y * vh - t / 1000 * 5 * m.s, vh);
       x.fillStyle = `rgba(255,240,220,${0.14 + 0.16 * Math.sin(t / 700 + m.p)})`; x.fillRect(px, py, 0.7 + m.s, 0.7 + m.s);
@@ -553,7 +554,7 @@ window.Floor = (() => {
     }
     const S = 768, m2 = (v, n) => ((v % n) + n) % n, ox = -m2(cam.x * zoom * 0.4 + t / 50, S), oy = -m2(cam.y * zoom * 0.4 + t / 140, S);
     x.save(); x.globalAlpha = 0.05; x.globalCompositeOperation = 'lighter';
-    for (let j = oy; j < VH; j += S) for (let i = ox; i < VW; i += S) x.drawImage(hazeCv, i, j, S, S);
+    for (let j = oy; j < SH; j += S) for (let i = ox; i < SW; i += S) x.drawImage(hazeCv, i, j, S, S);
     x.restore();
   }
 
@@ -993,7 +994,7 @@ window.Floor = (() => {
     };
   }
   function openEmotes() { if (mode || me.entering) return; mode = emoteMenu(); keys.clear(); route = []; me.vx = me.vy = 0; }
-  const EMOTE_BTN = { x: 12, y: VH - 46, w: 96, h: 32 };
+  const EMOTE_BTN = { x: 12, y: SH - 46, w: 96, h: 32 };
   function drawEmoteButton(x) {
     x.fillStyle = 'rgba(10,6,18,.75)'; x.fillRect(EMOTE_BTN.x, EMOTE_BTN.y, EMOTE_BTN.w, EMOTE_BTN.h); x.strokeStyle = '#ff4fd1'; x.lineWidth = 1.5; x.strokeRect(EMOTE_BTN.x + 0.5, EMOTE_BTN.y + 0.5, EMOTE_BTN.w - 1, EMOTE_BTN.h - 1);
     x.font = '11px Silkscreen, monospace'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = '#ff4fd1'; x.fillText('☺ EMOTE · E', EMOTE_BTN.x + EMOTE_BTN.w / 2, EMOTE_BTN.y + EMOTE_BTN.h / 2 + 1);
@@ -1079,7 +1080,7 @@ window.Floor = (() => {
     if (reduced) return opt.onPlay(c.g);
     me.x = c.type === 'racer' ? c.seat[0] : c.spot[0]; me.y = c.type === 'racer' ? c.seat[1] : c.spot[1];
     me.dir = 'up'; me.pose = c.type === 'racer' ? 'sit' : ''; me.vx = me.vy = 0; route = [];
-    me.entering = { c, t: 0, done: false, z0: zoom, cx: cam.x + VW / zoom / 2, cy: cam.y + VH / zoom / 2 };
+    me.entering = { c, t: 0, done: false, z0: zoom, cx: cam.x + SW / zoom / 2, cy: cam.y + SH / zoom / 2 };
     if (play) play.sound.enter(c);
   }
   function showCard() {
@@ -1145,11 +1146,11 @@ window.Floor = (() => {
   });
   addEventListener('keyup', e => keys.delete(e.code));
   addEventListener('blur', () => keys.clear());
-  const MAP = { x: VW - 172, y: 10, w: 162, h: 162 * WH / WW };
+  const MAP = { x: SW - 172, y: 10, w: 162, h: 162 * WH / WW };
   function tap(e) {
     if (off() || me.entering) return;
-    const r = cv.getBoundingClientRect(), vx = (e.clientX - r.left) / r.width * VW, vy = (e.clientY - r.top) / r.height * VH;
-    if (mode) return mode.tap(vx, vy, e.pointerId);
+    const r = cv.getBoundingClientRect(), vx = (e.clientX - r.left) / r.width * SW, vy = (e.clientY - r.top) / r.height * SH;
+    if (mode) return mode.tap(vx - BX, vy - BY, e.pointerId);
     if (vx > EMOTE_BTN.x && vx < EMOTE_BTN.x + EMOTE_BTN.w && vy > EMOTE_BTN.y && vy < EMOTE_BTN.y + EMOTE_BTN.h) return openEmotes();
     if (vx > MAP.x && vx < MAP.x + MAP.w && vy > MAP.y && vy < MAP.y + MAP.h) { const wx = (vx - MAP.x) / MAP.w * WW, wy = (vy - MAP.y) / MAP.h * WH; return walkTo(wx, Math.max(WALL + 24, wy)); }
     const x = cam.x + vx / zoom, y = cam.y + vy / zoom;
@@ -1159,7 +1160,7 @@ window.Floor = (() => {
   }
 
   /* ---------- light ---------- */
-  const lightCv = document.createElement('canvas'), lx = lightCv.getContext('2d'); lightCv.width = VW / 2; lightCv.height = VH / 2;
+  const lightCv = document.createElement('canvas'), lx = lightCv.getContext('2d'); lightCv.width = SW / 2; lightCv.height = SH / 2;
   const LAMPS = [[300, 470], [1120, 300], [1120, 590], [1940, 470], [340, 1020], [200, 1180], [1120, 1000], [1940, 1000], [1980, 1060], [780, 960], [1480, 960], [1120, 1240]];
   function collectLights(t) {
     const L = [];
@@ -1196,7 +1197,7 @@ window.Floor = (() => {
     }
     lx.globalCompositeOperation = 'source-over';
   }
-  const visible = (x, y, m = 160) => x > cam.x - m && x < cam.x + VW / zoom + m && y > cam.y - m && y < cam.y + VH / zoom + m;
+  const visible = (x, y, m = 160) => x > cam.x - m && x < cam.x + SW / zoom + m && y > cam.y - m && y < cam.y + SH / zoom + m;
   function pools(x, L) {
     x.globalCompositeOperation = 'lighter';
     for (const l of L) {
@@ -1659,29 +1660,29 @@ window.Floor = (() => {
     raf = requestAnimationFrame(frame);
   }
   function camera(dt) {
-    baseZoom = cv.clientWidth && cv.clientWidth < 700 ? 2.5 : 1.6;
+    baseZoom = fitZoom;
     if (me.entering) {
       const e = me.entering, k = Math.min(1, e.t / 0.8), ease = k * k * (3 - 2 * k), [sx, sy, sw, sh] = e.c.screen;
-      zoom = e.z0 + (VW / (sw + 6) * 0.98 - e.z0) * ease;
+      zoom = e.z0 + (SW / (sw + 6) * 0.98 - e.z0) * ease;
       const cx = e.cx + (sx + sw / 2 - e.cx) * ease, cy = e.cy + (sy + sh / 2 - e.cy) * ease;
-      cam.x = cx - VW / zoom / 2; cam.y = cy - VH / zoom / 2; return;
+      cam.x = cx - SW / zoom / 2; cam.y = cy - SH / zoom / 2; return;
     }
     zoom += (baseZoom - zoom) * Math.min(1, dt * 4);
-    const vw = VW / zoom, vh = VH / zoom, tx = me.x + me.vx * 0.35 - vw / 2, ty = me.y - 30 + me.vy * 0.3 - vh / 2;
+    const vw = SW / zoom, vh = SH / zoom, tx = me.x + me.vx * 0.35 - vw / 2, ty = me.y - 30 + me.vy * 0.3 - vh / 2;
     const k = Math.min(1, dt * 5);
     cam.x += (tx - cam.x) * k; cam.y += (ty - cam.y) * k;
     cam.x = Math.max(0, Math.min(WW - vw, cam.x)); cam.y = Math.max(0, Math.min(WH - vh, cam.y));
   }
-  function snapCamera() { const vw = VW / zoom, vh = VH / zoom; cam.x = Math.max(0, Math.min(WW - vw, me.x - vw / 2)); cam.y = Math.max(0, Math.min(WH - vh, me.y - 30 - vh / 2)); }
+  function snapCamera() { const vw = SW / zoom, vh = SH / zoom; cam.x = Math.max(0, Math.min(WW - vw, me.x - vw / 2)); cam.y = Math.max(0, Math.min(WH - vh, me.y - 30 - vh / 2)); }
   function draw(t, dt) {
     const x = ctx; background();
     const L = collectLights(t); lightMap(L);
-    const S = dpr * zoom, vw = VW / zoom, vh = VH / zoom;
+    const S = dpr * zoom, vw = SW / zoom, vh = SH / zoom;
     x.setTransform(S, 0, 0, S, -cam.x * S, -cam.y * S); x.imageSmoothingEnabled = false;
     const sx = Math.max(0, Math.floor(cam.x)), sy = Math.max(0, Math.floor(cam.y)), sw = Math.min(WW - sx, Math.ceil(vw) + 2), sh = Math.min(WH - sy, Math.ceil(vh) + 2);
     x.drawImage(bg, sx, sy, sw, sh, sx, sy, sw, sh);
     // the dark, then what glows on the floor through it: blacklight carpet, pools of cabinet light
-    x.setTransform(dpr, 0, 0, dpr, 0, 0); x.globalAlpha = 0.6; x.imageSmoothingEnabled = true; x.drawImage(lightCv, 0, 0, VW, VH); x.globalAlpha = 1;
+    x.setTransform(dpr, 0, 0, dpr, 0, 0); x.globalAlpha = 0.6; x.imageSmoothingEnabled = true; x.drawImage(lightCv, 0, 0, SW, SH); x.globalAlpha = 1;
     x.setTransform(S, 0, 0, S, -cam.x * S, -cam.y * S); x.imageSmoothingEnabled = false;
     x.globalCompositeOperation = 'lighter'; x.globalAlpha = 0.5; x.drawImage(glowBg, sx, sy, sw, sh, sx, sy, sw, sh); x.globalAlpha = 1; x.globalCompositeOperation = 'source-over';
     pools(x, L); beams(x, t, dt || 0.016);
@@ -1702,7 +1703,7 @@ window.Floor = (() => {
     if (equip().pet && !me.entering) list.push([pet.y + (FLYERS.includes(equip().pet) ? 30 : 0), () => drawPet(x, equip().pet, pet.x, pet.y, pet.dir, pet.t, pet.moving, pet.hop)]);
     list.sort((a, b) => a[0] - b[0]).forEach(d => d[1]());
     // a lighter dark over everything, then the glows
-    x.setTransform(dpr, 0, 0, dpr, 0, 0); x.globalAlpha = 0.34; x.imageSmoothingEnabled = true; x.drawImage(lightCv, 0, 0, VW, VH); x.globalAlpha = 1;
+    x.setTransform(dpr, 0, 0, dpr, 0, 0); x.globalAlpha = 0.34; x.imageSmoothingEnabled = true; x.drawImage(lightCv, 0, 0, SW, SH); x.globalAlpha = 1;
     x.setTransform(S, 0, 0, S, -cam.x * S, -cam.y * S);
     glows(x, t);
     if (!level && owns('disco')) drawDisco(x, t);
@@ -1716,20 +1717,20 @@ window.Floor = (() => {
       x.fillStyle = 'rgba(10,6,18,.75)'; x.fillRect(nx - w / 2, ny - 7, w, 14); x.strokeStyle = lv.level >= 30 ? '#ffd23d' : '#5ee7ff'; x.lineWidth = 1; x.strokeRect(nx - w / 2 + .5, ny - 6.5, w - 1, 13);
       x.fillStyle = lv.level >= 30 ? '#ffd23d' : '#fff'; x.fillText(tx, nx, ny + 1); } }
     for (const n of [...npcs, ...(level ? [] : STAFF), me]) if (n.bubble && visible(n.x, n.y, 0)) bubble(x, (n.x - cam.x) * zoom, (n.y - 50 - cam.y) * zoom, n.bubble.text, n === me);
-    if (me.ride) { const r = me.ride, a = r.t < 0.45 ? r.t / 0.45 : Math.max(0, (0.9 - r.t) / 0.45); x.fillStyle = `rgba(5,2,12,${a})`; x.fillRect(0, 0, VW, VH); x.globalAlpha = a; neon(x, r.to ? 'GOING UP…' : 'GOING DOWN…', VW / 2, VH / 2, 30, '#3dff8f'); x.globalAlpha = 1; }
-    if (me.entering) { const k = Math.min(1, me.entering.t / 0.8); x.fillStyle = `rgba(255,255,255,${Math.max(0, k - 0.75) * 2})`; x.fillRect(0, 0, VW, VH); return; }
+    if (me.ride) { const r = me.ride, a = r.t < 0.45 ? r.t / 0.45 : Math.max(0, (0.9 - r.t) / 0.45); x.fillStyle = `rgba(5,2,12,${a})`; x.fillRect(0, 0, SW, SH); x.globalAlpha = a; neon(x, r.to ? 'GOING UP…' : 'GOING DOWN…', SW / 2, SH / 2, 30, '#3dff8f'); x.globalAlpha = 1; }
+    if (me.entering) { const k = Math.min(1, me.entering.t / 0.8); x.fillStyle = `rgba(255,255,255,${Math.max(0, k - 0.75) * 2})`; x.fillRect(0, 0, SW, SH); return; }
     if (zoneT > 0 && zoneName) {
       const a = Math.min(1, zoneT * 2, (2.4 - zoneT) * 4), z = zones().find(z => z.name === zoneName);
       x.globalAlpha = a; x.font = '26px Bungee, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
-      x.fillStyle = OUT; x.fillText(zoneName, VW / 2 + 3, VH - 37); x.shadowColor = z.c; x.shadowBlur = 16; x.fillStyle = z.c; x.fillText(zoneName, VW / 2, VH - 40); x.shadowBlur = 0; x.globalAlpha = 1;
+      x.fillStyle = OUT; x.fillText(zoneName, SW / 2 + 3, SH - 37); x.shadowColor = z.c; x.shadowBlur = 16; x.fillStyle = z.c; x.fillText(zoneName, SW / 2, SH - 40); x.shadowBlur = 0; x.globalAlpha = 1;
     }
     minimap(x, t);
     if (!mode) drawEmoteButton(x);
-    if (mode) mode.draw(x, t, dt);
+    if (mode) { if (BX || BY) { x.fillStyle = 'rgba(5,2,12,.6)'; x.fillRect(0, 0, SW, SH); } x.translate(BX, BY); mode.draw(x, t, dt); }
   }
   function bubble(x, bx, by, text, mine) {
     x.font = '11px Silkscreen, monospace'; x.textAlign = 'center'; x.textBaseline = 'middle';
-    const w = Math.min(320, x.measureText(text).width + 16), h = 22, X = Math.max(4, Math.min(VW - w - 4, bx - w / 2)), Y = Math.max(4, by - h);
+    const w = Math.min(320, x.measureText(text).width + 16), h = 22, X = Math.max(4, Math.min(SW - w - 4, bx - w / 2)), Y = Math.max(4, by - h);
     x.fillStyle = OUT; x.fillRect(X - 2, Y - 2, w + 4, h + 4); x.fillStyle = mine ? '#ffd23d' : '#f4effd'; x.fillRect(X, Y, w, h);
     x.beginPath(); x.moveTo(bx - 5, Y + h); x.lineTo(bx + 5, Y + h); x.lineTo(bx, Y + h + 7); x.fill();
     x.fillStyle = '#140c24'; x.fillText(text, X + w / 2, Y + h / 2 + 1, w - 8);
@@ -1741,11 +1742,28 @@ window.Floor = (() => {
     for (const z of zones()) { x.fillStyle = rgba(z.c, z.name === zoneName ? 0.22 : 0.09); x.fillRect(mx + z.x * k, my + Math.max(WALL, z.y) * k, z.w * k - 1, (z.y ? z.h : z.h - WALL) * k - 1); }
     for (const o of objs) { if (o.kind === 'plant' || o.kind === 'seat') continue; x.fillStyle = o.kind === 'cab' ? (mastered.has(o.g.slug) ? '#ffd23d' : o.g.c) : o.kind === 'counter' ? '#ffd23d' : o.kind === 'claw' ? '#5ee7ff' : 'rgba(255,255,255,.35)'; x.fillRect(mx + o.x * k, my + o.y * k, Math.max(2, o.w * k), Math.max(2, o.h * k)); }
     x.fillStyle = 'rgba(255,255,255,.55)'; for (const n of npcs) x.fillRect(mx + n.x * k - 1, my + n.y * k - 1, 2, 2);
-    const vw = VW / zoom, vh = VH / zoom; x.strokeStyle = 'rgba(255,255,255,.4)'; x.strokeRect(mx + cam.x * k, my + cam.y * k, vw * k, vh * k);
+    const vw = SW / zoom, vh = SH / zoom; x.strokeStyle = 'rgba(255,255,255,.4)'; x.strokeRect(mx + cam.x * k, my + cam.y * k, vw * k, vh * k);
     x.fillStyle = Math.floor(t / 300) % 2 ? '#fff' : '#ffd23d'; x.fillRect(mx + me.x * k - 2, my + me.y * k - 2, 4, 4);
     x.font = '9px Silkscreen, monospace'; const tab = level ? 'THE LOFT · 2F' : 'GROUND · 1F', tw = x.measureText(tab).width + 14;
     x.fillStyle = 'rgba(10,6,18,.85)'; x.fillRect(mx + w + 4 - tw, my + h + 4, tw, 15); x.strokeStyle = rgba(zc, 0.7); x.lineWidth = 2; x.strokeRect(mx + w + 4 - tw, my + h + 4, tw, 15);
     x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = level ? '#3dff8f' : '#e8e4f0'; x.fillText(tab, mx + w + 4 - tw / 2, my + h + 12);
+  }
+
+  /**
+   * Size the view to the canvas: the 960x600 box fits inside it and the view grows the other way (taller on a phone held
+   * upright, wider on a wide window), and on a big canvas the panels and minimap stop growing at 1.2x. The zoom keeps people a comfortable size: closer in on small canvases, a little
+   * more of the room on big ones. True when the size changed.
+   */
+  function fit() {
+    const w = cv.clientWidth || 960, h = cv.clientHeight || 600, k = Math.min(w / VW, h / VH, 1.2), r = Math.min(2, window.devicePixelRatio || 1);
+    const sw = Math.round(w / k), sh = Math.round(h / k), bw = Math.round(w * r), bh = Math.round(h * r);
+    if (sw === SW && sh === SH && cv.width === bw && cv.height === bh) return false;
+    SW = sw; SH = sh; BX = Math.round((SW - VW) / 2); BY = Math.round((SH - VH) / 2);
+    cv.width = bw; cv.height = bh; dpr = bw / SW;
+    lightCv.width = Math.ceil(SW / 2); lightCv.height = Math.ceil(SH / 2);
+    MAP.x = SW - 172; EMOTE_BTN.y = SH - 46;
+    fitZoom = Math.min(1.8, Math.max(0.93, Math.min(w, h * 1.6) / 600)) / k;
+    return true;
   }
 
   /* ---------- the kit floor-play.js builds on ---------- */
@@ -1763,13 +1781,13 @@ window.Floor = (() => {
   return {
     init(o) {
       opt = o; cv = o.canvas; PAL = o.pal || {}; layout(o.games);
-      dpr = Math.min(2, window.devicePixelRatio || 1); cv.width = VW * dpr; cv.height = VH * dpr;
-      ctx = cv.getContext('2d');
+      ctx = cv.getContext('2d'); fit();
+      if (window.ResizeObserver) new ResizeObserver(() => { if (fit() && running) snapCamera(); }).observe(cv);
       cv.addEventListener('pointerdown', tap);
       cv.addEventListener('touchstart', e => e.preventDefault(), { passive: false }); // no long-press menus: they cancel held touches (skee-ball, flippers)
       cv.addEventListener('contextmenu', e => e.preventDefault());
       ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => cv.addEventListener(ev, e => { if (mode && mode.untap) mode.untap(e.pointerId); }));
-      cv.addEventListener('pointermove', e => { if (!mode || !mode.move) return; const r = cv.getBoundingClientRect(); mode.move((e.clientX - r.left) / r.width * VW, (e.clientY - r.top) / r.height * VH, e.buttons > 0); });
+      cv.addEventListener('pointermove', e => { if (!mode || !mode.move) return; const r = cv.getBoundingClientRect(); mode.move((e.clientX - r.left) / r.width * SW - BX, (e.clientY - r.top) / r.height * SH - BY, e.buttons > 0); });
       play = window.FloorPlay ? window.FloorPlay(kit) : null;
       if (window.Prizes) Prizes.onChange(() => { bgKey = null; buildSolids(); showCard(); });
       if (document.fonts) { document.fonts.ready.then(() => { bgKey = null; }); document.fonts.addEventListener('loadingdone', () => { bgKey = null; }); } // the neon signs use Bungee
@@ -1783,7 +1801,7 @@ window.Floor = (() => {
       try { vipNew = vipOpen && localStorage.getItem('bitcade:vipseen') !== '1'; } catch (e) {}
       const bouncer = STAFF.find(s => s.name === 'bouncer'); bouncer.y = vipOpen ? 590 : 712;
       buildSolids(); bgKey = null; if (upstairs) { swap(1); buildSolids(); bgKey = null; } shownNear = undefined; me.entering = null; me.ride = null; me.pose = ''; mode = null;
-      zoom = baseZoom = cv.clientWidth && cv.clientWidth < 700 ? 2.5 : 1.6; snapCamera();
+      fit(); zoom = baseZoom = fitZoom; snapCamera();
       npcs.forEach(n => { if (!n.act) n.t = rnd(0, 2); });
       last = performance.now(); raf = requestAnimationFrame(frame);
       if (play) play.sound.start();

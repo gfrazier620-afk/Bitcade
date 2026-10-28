@@ -21,6 +21,7 @@ body{display:block;overflow-x:hidden;
     var(--bg)}
 .lobby{max-width:1120px;margin:0 auto;padding-inline:16px;padding-block:36px 64px}
 @media (max-width:760px){.lobby{padding-top:58px}} /* room for the ♪ MUSIC button above the logo */
+@media (min-width:1500px){.lobby{max-width:min(1680px,94vw)}.hero{max-width:1240px!important}.today,.missions,.lvl,.pstrip,.finder,.gchips{max-width:1140px!important}} /* big monitors: more cabinets across, a bigger floor */
 .marquee{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;margin-bottom:36px}
 .logo{font-family:"Bungee Shade","Bungee",system-ui,sans-serif;font-weight:400;font-size:clamp(52px,13vw,112px);line-height:.95;margin:0;letter-spacing:.02em;
   background:linear-gradient(180deg,#ffe36a 0%,#ff7a3d 45%,#ff3d9a 100%);-webkit-background-clip:text;background-clip:text;color:transparent;
@@ -265,10 +266,21 @@ body{display:block;overflow-x:hidden;
 .viewbar button[aria-pressed="true"]{color:#120a1c;background:#5ee7ff;border-color:#5ee7ff}
 .viewbar .prize{color:#1a0f00;background:linear-gradient(90deg,#ffd23d,#ff9a3d);border-color:#ffd23d}
 .viewbar .prize b{font-weight:400}
-.arcadefloor{max-width:1100px;margin:0 auto 26px}
+.arcadefloor{position:relative;margin:0 auto 26px}
 .arcadefloor canvas:focus{outline:none}
 .arcadefloor{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
-.arcadefloor canvas{display:block;width:100%;aspect-ratio:960/600;border-radius:14px;border:2px solid #2d2556;background:#140c24;touch-action:none;cursor:pointer;image-rendering:pixelated}
+/* the floor fills the window's height (the view grows to fit, see fit() in floor.js) */
+.arcadefloor canvas{display:block;width:100%;height:clamp(240px,calc(100dvh - 130px),1100px);border-radius:14px;border:2px solid #2d2556;background:#140c24;touch-action:none;cursor:pointer;image-rendering:pixelated}
+.fl-full{position:absolute;left:10px;top:10px;z-index:2;font-family:var(--f-pixel);font-size:11px;color:#e8e4f0;background:rgba(10,6,18,.75);border:1px solid rgba(255,255,255,.3);border-radius:6px;padding:5px 9px;cursor:pointer}
+.fl-full:hover{border-color:#5ee7ff;color:#5ee7ff}
+/* full screen: the floor takes the whole window (browser full screen where there is one) */
+.arcadefloor.fl-max{position:fixed;inset:0;z-index:70;margin:0;display:flex;flex-direction:column;gap:6px;background:#09070f;
+  padding:max(6px,env(safe-area-inset-top)) max(6px,env(safe-area-inset-right)) max(6px,env(safe-area-inset-bottom)) max(6px,env(safe-area-inset-left))}
+.arcadefloor.fl-max canvas{flex:1;height:auto;min-height:0;border-radius:10px}
+.arcadefloor.fl-max .fl-card{margin-top:0;min-height:0;padding:6px 12px}
+.arcadefloor.fl-max .fl-help{display:none}
+.arcadefloor.fl-max .fl-full{left:calc(max(6px,env(safe-area-inset-left)) + 10px);top:calc(max(6px,env(safe-area-inset-top)) + 10px)}
+html:has(.fl-max){overflow:hidden}
 .fl-card{--c:#5ee7ff;display:flex;align-items:center;justify-content:space-between;gap:14px;min-height:56px;margin-top:10px;padding:10px 14px;border-radius:12px;background:var(--bg2);border:1px solid var(--line);border-left:4px solid var(--c)}
 .fl-card b{display:block;font-family:var(--f-marquee);font-weight:400;font-size:18px;color:var(--c)}
 .fl-card small{font-family:var(--f-pixel);font-size:11px;color:var(--muted)}
@@ -527,6 +539,7 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
   </a>
   <section class="arcadefloor" id="arcadeFloor" hidden>
     <canvas id="floorCv" tabindex="0" aria-label="The arcade floor: walk to a cabinet to play it"></canvas>
+    <button class="fl-full" id="flFull" type="button" aria-pressed="false">⛶ FULL SCREEN</button>
     <div class="fl-card" id="floorCard"></div>
     <p class="fl-help"><span class="keys"><kbd>WASD</kbd> walk · <kbd>SHIFT</kbd> run · <kbd>ENTER</kbd> play · <kbd>E</kbd> emote · click to walk</span><span class="touch">Tap to walk · tap a cabinet to play · tap the map to jump</span></p>
   </section>
@@ -954,6 +967,7 @@ Couch.init({
 });
 function setView(v) {
   const walk = v === 'floor', prof = v === 'profile';
+  if (!walk && floorView.classList.contains('fl-max')) floorFull(false);
   floorView.hidden = !walk; document.getElementById('cabs').hidden = walk || prof; profileView.hidden = !prof; missionsEl.hidden = prof || !window.MISSIONS; lvlEl.hidden = prof || !window.XP; if (!prof) renderLevel(); passEl.hidden = prof || !(window.PASS && PASS.season()); if (!prof) PassView.render();
   document.getElementById('hero').hidden = prof || !heroCount;
   vGrid.setAttribute('aria-pressed', String(!walk && !prof)); vFloor.setAttribute('aria-pressed', String(walk)); vProfile.setAttribute('aria-pressed', String(prof));
@@ -965,6 +979,19 @@ vProfile.addEventListener('click', () => setView('profile'));
 // Cloud save: sync quietly on every visit; anything new from another device shows on the next visit (or right away on the profile).
 Profile.autoSync().then(r => { if (r.state === 'ok' && r.changed) { tixShow(); if (!profileView.hidden) Profile.render(); } });
 vGrid.addEventListener('click', () => setView('grid'));
+// Full screen for the floor: browser full screen where there is one, and the section fills the window either way (iPhones have none)
+const flFull = document.getElementById('flFull');
+function floorFull(on) {
+  floorView.classList.toggle('fl-max', on); flFull.textContent = on ? '✕ EXIT' : '⛶ FULL SCREEN'; flFull.setAttribute('aria-pressed', String(on));
+  try {
+    if (on && !document.fullscreenElement && floorView.requestFullscreen) floorView.requestFullscreen().catch(() => {});
+    if (!on && document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  } catch (e) {}
+  document.getElementById('floorCv').focus({ preventScroll: true });
+}
+flFull.addEventListener('click', () => floorFull(!floorView.classList.contains('fl-max')));
+document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && floorView.classList.contains('fl-max')) floorFull(false); });
+addEventListener('keydown', e => { if (e.code === 'Escape' && floorView.classList.contains('fl-max') && !(window.Floor && Floor.state().mode)) floorFull(false); });
 vFloor.addEventListener('click', () => { setView('floor'); document.getElementById('floorCv').focus({ preventScroll: true }); }); // so Enter plays, not re-presses this button
 setView(/[?&]view=profile\b/.test(location.search) ? 'profile' : get('bitcade:view') === 'floor' ? 'floor' : 'grid');
 /* Install: the service worker caches the lobby and every game. Browsers that support an install prompt get a button;

@@ -174,6 +174,15 @@ kbd{font-family:var(--f-pixel);font-size:11px;border:1px solid var(--line);borde
   .cab-on .pad{margin-top:14px}
 }
 @media (pointer:fine) and (min-width:621px){.cab-on .help{display:block}}
+/* BIG SCREEN (the ⛶ button): no marquee or control panel, a thin frame, and the screen takes the rest of the window */
+body.big .cabinet .marquee,body.big .cpanel,body.big .freeplay{display:none}
+body.big{--bz:4px}
+body.big .bezel{border-top:2px solid #2d2556;border-bottom:2px solid #2d2556;border-radius:10px;padding-bottom:var(--bz)}
+body.big .bezel-top{padding:3px 2px 4px}
+body.big .stage{padding:2px 6px 6px}
+body.big .bar{padding-top:3px;padding-bottom:3px}
+.big-btn{font-size:13px;line-height:1;padding:3px 8px}
+.big-btn[aria-pressed="true"]{color:var(--game);border-color:var(--game)}
 /* phones: a slim frame round the screen so the game gets the room (arcade.js measures what's left and sets --sw) */
 @media (pointer:coarse),(max-width:620px){
   .cab-on{--bz:5px}
@@ -191,8 +200,20 @@ kbd{font-family:var(--f-pixel);font-size:11px;border:1px solid var(--line);borde
   .cab-on .pad{margin-top:8px}
   .pad > .ab:last-child{margin-left:auto}
 }
-/* phones held sideways: no marquee, and the pad's halves sit either side of the screen */
+/* phones held upright: the touch pad sits at the bottom, under your thumbs */
+@media (pointer:coarse) and (orientation:portrait){.cab-on .stage{justify-content:space-between}}
+.turn-hint{display:none;margin:0;font-family:var(--f-pixel);font-size:10px;letter-spacing:.06em;color:var(--muted);text-align:center;opacity:.7}
+@media (pointer:coarse) and (orientation:portrait){body.wide-game .turn-hint{display:block}}
+/* phones held sideways: no marquee, the header floats in the top corners, and the pad's halves sit either side of the screen
+   (the buttons two to a row, so they take less of the width) */
 body.phone-land .cabinet .marquee{display:none}
+body.phone-land .bar{position:fixed;top:0;left:0;right:0;z-index:6;align-items:flex-start;background:transparent;pointer-events:none;
+  padding:max(4px,env(safe-area-inset-top,0px)) max(8px,env(safe-area-inset-right,0px)) 0 max(8px,env(safe-area-inset-left,0px))}
+body.phone-land .bar > *{pointer-events:auto}
+body.phone-land .toggles{flex-direction:column;align-items:flex-end;gap:4px}
+body.phone-land .ab{max-width:156px}
+body.phone-land .ab button{width:62px;height:62px}
+body.phone-land .ab button.sm{width:52px;height:52px}
 body.phone-land .bezel{border-top:2px solid #2d2556;border-radius:10px;padding-top:0}
 body.phone-land .freeplay{display:none}
 body.phone-land .pad{position:fixed;left:0;right:0;bottom:max(12px,env(safe-area-inset-bottom,0px));max-width:none;margin:0;
