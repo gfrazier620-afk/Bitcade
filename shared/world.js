@@ -8,6 +8,7 @@
  *       players/{uid} = { last }                                          post cooldown
  *       wins/{uid} = { n, s: total wins, t }                              Blip Sports world wins, +1 per win
  *       saves/{sha256 of a sync code} = { d: JSON, t }                    cloud save (shared/save.js)
+ *       act/{uid} and act/{uid}/ev/{id}                                   play activity for admin.html (shared/activity.js)
  * The config below only identifies the project. firestore.rules (published in the Firebase console) protects the data.
  */
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
@@ -56,6 +57,19 @@ export async function post(game, name, score, { all = true, day = null, week = n
   if (all) b.set(doc(board(game)), entry());
   if (day) b.set(doc(board(game, day)), entry());
   if (week) b.set(doc(board(game, null, week)), entry());
+  await b.commit();
+}
+
+/** Play activity (shared/activity.js): the player's profile, merged, and a batch of events, in one write. */
+export async function logActivity(profile, events) {
+  const u = await signIn(), b = writeBatch(db);
+  b.set(doc(db, 'act', u.uid), { ...profile, last: serverTimestamp() }, { merge: true });
+  const KEYS = ['k', 'g', 'ms', 'play', 's', 'runs', 'd', 'e', 'floor', 'at'];
+  for (const e of events) {
+    const o = { t: serverTimestamp() };
+    for (const k of KEYS) if (e[k] != null) o[k] = typeof e[k] === 'number' ? Math.round(e[k]) : e[k];
+    b.set(doc(collection(db, 'act', u.uid, 'ev')), o);
+  }
   await b.commit();
 }
 

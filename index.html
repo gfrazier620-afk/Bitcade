@@ -486,6 +486,7 @@ footer p{margin:4px 0}
 .boot.out.fast{animation-duration:.25s}
 @keyframes boot-out{to{opacity:0;transform:scale(1.12);filter:brightness(2.5) blur(2px)}}
 .reboot{color:var(--muted);font-size:12px}
+footer .privacy{font-size:11.5px;opacity:.75;max-width:60ch;margin:10px auto}
 
 /* ---------- the top bar: logo, sections, tickets, search, music, settings (sections drop to a bottom tab bar on phones) ---------- */
 .topbar{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:14px;padding:8px max(16px,env(safe-area-inset-right)) 8px max(16px,env(safe-area-inset-left));
@@ -685,6 +686,7 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
   </section>
   <footer>
     <p class="tag">FORTY-FOUR CLASSIC-STYLE GAMES · NO QUARTERS REQUIRED</p>
+    <p class="privacy">Bitcade logs anonymous play activity (which games are played, for how long, and scores) to help improve the games. Turn it off in ⚙ Settings.</p>
     <p>Works with a keyboard or touch, and most games with a game controller. High scores are saved in this browser.</p>
     <button class="install" id="install" hidden>Install Bitcade · plays offline</button>
     <p class="ios-hint" id="iosHint" hidden>On iPhone or iPad: tap Share, then <b>Add to Home Screen</b> to install. It plays offline.</p>
@@ -1203,6 +1205,12 @@ async function resetScores() {
   location.reload();
 }
 const openSettings = () => Settings.open({ onResetScores: resetScores });
+/* Play activity for admin.html (shared/activity.js): time in the lobby, and how much of it was on the walkable floor. */
+if (get('arcade:track') !== '0') import('./shared/activity.js').then(m => {
+  let floorMs = 0, f0 = 0; const onFloor = () => !floorView.hidden && !document.hidden;
+  setInterval(() => { const now = Date.now(); if (onFloor()) floorMs += f0 ? now - f0 : 0; f0 = onFloor() ? now : 0; }, 1000);
+  m.pageTimer('lobby', () => { const x = { floor: floorMs }; floorMs = 0; return x; });
+}).catch(() => {});
 window.Lobby.settings = openSettings;
 })();
 </script>

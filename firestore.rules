@@ -104,6 +104,33 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Play activity (shared/activity.js) for the admin page (admin.html). A signed-in player writes their own profile
+    // and adds events, never reads, edits or deletes them; only the admin's Google account can read. The admin is
+    // matched by a SHA-256 of their email, so the address isn't in this public file.
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email_verified == true
+        && hashing.sha256(request.auth.token.email.lower().toUtf8()).toBase64() == 'Z3VqEp3VSENqVy5gpn6zdrIOVHe/wnamoJfQg9Yr6/U=';
+    }
+    match /act/{uid} {
+      allow read: if isAdmin();
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['n', 'dev', 'lv', 'tix', 'first', 'last'])
+        && request.resource.data.last == request.time
+        && (!('n' in request.resource.data) || request.resource.data.n.matches('^[A-Z]{3}$'))
+        && (!('dev' in request.resource.data) || request.resource.data.dev in ['phone', 'tablet', 'desktop']);
+      allow delete: if false;
+      match /ev/{id} {
+        allow read: if isAdmin();
+        allow create: if request.auth != null && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['k', 'g', 'ms', 'play', 's', 'runs', 'd', 'e', 'floor', 'at', 't'])
+          && request.resource.data.keys().hasAll(['k', 'g', 't'])
+          && request.resource.data.k in ['run', 'page']
+          && request.resource.data.g is string && request.resource.data.g.size() <= 40
+          && request.resource.data.t == request.time;
+        allow update, delete: if false;
+      }
+    }
+
     // Everything else stays locked.
     match /{document=**} {
       allow read, write: if false;

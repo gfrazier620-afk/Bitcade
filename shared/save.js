@@ -12,7 +12,7 @@
  */
 const CODE_KEY = 'bitcade:sync', WHEN_KEY = 'bitcade:synced'; // not arcade:*, so they never sync themselves
 const ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ'; // no 0/O, 1/I/L
-const LOCAL_ONLY = /^arcade:(outbox|muted|music|crt|easy|equip|shake|flash|buzz)$|^arcade:(vol|keys):/; // per-device: queued posts, and settings
+const LOCAL_ONLY = /^arcade:(outbox|muted|music|crt|easy|equip|shake|flash|buzz|track)$|^arcade:(vol|keys):/; // per-device: queued posts, and settings
 
 const store = {
   get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } },

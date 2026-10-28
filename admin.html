@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Bitcade Admin</title>
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="shared/fonts.css">
+<!--
+  The admin page: play activity from shared/activity.js (act/{uid} and act/{uid}/ev in Firestore). Not linked from
+  anywhere. Sign in with Google; firestore.rules only lets the admin's account read, so anyone else sees nothing.
+-->
+<style>
+:root{--bg:#0f0c1f;--bg2:#181331;--panel:#1f1940;--line:#342b5e;--ink:#f4effd;--muted:#a39bc4;--hi:#5ee7ff;--pink:#ff4fa3;--gold:#ffd23d;--green:#3dff8f;
+  --f-marquee:"Bungee","Arial Black",system-ui,sans-serif;--f-pixel:"Silkscreen",ui-monospace,monospace;--f-body:"Rubik",ui-sans-serif,system-ui,sans-serif;color-scheme:dark}
+*{box-sizing:border-box}[hidden]{display:none!important}
+body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 20% -10%,#3a1450 0%,transparent 50%),radial-gradient(ellipse at 90% 10%,#0e3350 0%,transparent 45%),var(--bg);color:var(--ink);font:15px/1.45 var(--f-body)}
+button,select{font:inherit;color:inherit;cursor:pointer}
+.wrap{max-width:1240px;margin:0 auto;padding:18px 16px 60px}
+header{display:flex;align-items:center;gap:12px 18px;flex-wrap:wrap;margin-bottom:18px}
+.logo{font-family:"Bungee Shade","Bungee",sans-serif;font-size:28px;line-height:1;background:linear-gradient(180deg,#ffe36a,#ff7a3d 45%,#ff3d9a);-webkit-background-clip:text;background-clip:text;color:transparent}
+.tag{font-family:var(--f-pixel);font-size:11px;letter-spacing:.12em;color:var(--hi);border:1px solid var(--hi);border-radius:6px;padding:3px 8px}
+.who{margin-left:auto;display:flex;align-items:center;gap:10px;font-family:var(--f-pixel);font-size:11px;color:var(--muted)}
+.btn{font-family:var(--f-pixel);font-size:11px;letter-spacing:.06em;background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:7px 12px}
+.btn:hover{border-color:var(--hi);color:var(--hi)}
+.btn.main{color:#120a1c;background:var(--hi);border-color:var(--hi);font-size:13px;padding:11px 20px}
+select.btn{padding:6px 10px}
+.card{background:var(--bg2);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+.gate{max-width:480px;margin:12vh auto;text-align:center;display:flex;flex-direction:column;gap:14px;align-items:center}
+.gate p{margin:0;color:var(--muted)}
+.err{color:#ff8a9a;font-family:var(--f-pixel);font-size:11px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:12px}
+.tile small{display:block;font-family:var(--f-pixel);font-size:10px;letter-spacing:.1em;color:var(--muted)}
+.tile b{font-family:var(--f-marquee);font-weight:400;font-size:26px;line-height:1.2}
+.grid2{display:grid;grid-template-columns:1.2fr 1fr;gap:12px;margin-bottom:12px}
+@media (max-width:860px){.grid2{grid-template-columns:1fr}}
+h2{font-family:var(--f-marquee);font-weight:400;font-size:17px;margin:0 0 10px;letter-spacing:.03em}
+h2 small{font-family:var(--f-pixel);font-size:10px;color:var(--muted);margin-left:8px;letter-spacing:.08em}
+.days{display:flex;align-items:flex-end;gap:3px;height:150px;padding-top:6px}
+.days div{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;height:100%;min-width:0}
+.days i{display:block;width:100%;max-width:26px;border-radius:4px 4px 0 0;background:linear-gradient(180deg,var(--hi),#7a5cff);min-height:2px}
+.days span{font-family:var(--f-pixel);font-size:8.5px;color:var(--muted);white-space:nowrap}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{font-family:var(--f-pixel);font-weight:400;font-size:9.5px;letter-spacing:.1em;color:var(--muted);text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:7px 8px;border-bottom:1px solid rgba(52,43,94,.55);white-space:nowrap}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+tbody tr.pick{cursor:pointer}tbody tr.pick:hover{background:rgba(94,231,255,.06)}tbody tr.on{background:rgba(94,231,255,.12)}
+.bar{display:inline-block;height:7px;border-radius:4px;background:linear-gradient(90deg,var(--pink),var(--gold));vertical-align:middle;margin-right:6px}
+.scroll{overflow-x:auto}
+.ini{font-family:var(--f-pixel);color:var(--gold)}
+.dim{color:var(--muted)}
+.pill{font-family:var(--f-pixel);font-size:9.5px;border:1px solid currentColor;border-radius:999px;padding:1px 7px}
+.k-run{color:var(--green)}.k-page{color:var(--hi)}
+.detail{margin-top:12px}
+.detail-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.detail-head b{font-family:var(--f-marquee);font-weight:400;font-size:22px}
+.note{font-size:12.5px;color:var(--muted);margin:14px 0 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="logo">BITCADE</span><span class="tag">ADMIN</span>
+    <div class="who" id="who" hidden><span id="whoName"></span><select class="btn" id="range" aria-label="Time range"><option value="1">LAST 24 HOURS</option><option value="7" selected>LAST 7 DAYS</option><option value="30">LAST 30 DAYS</option><option value="0">ALL TIME</option></select><button class="btn" id="refresh">↻ REFRESH</button><button class="btn" id="out">SIGN OUT</button></div>
+  </header>
+  <section class="gate card" id="gate">
+    <h2>PLAY ACTIVITY</h2>
+    <p>Sign in with the admin Google account to see who's playing what.</p>
+    <button class="btn main" id="in">SIGN IN WITH GOOGLE</button>
+    <div class="err" id="gateErr" hidden></div>
+  </section>
+  <main id="dash" hidden>
+    <div class="tiles" id="tiles"></div>
+    <div class="grid2">
+      <section class="card"><h2>PLAY TIME PER DAY<small id="daysNote"></small></h2><div class="days" id="days"></div></section>
+      <section class="card"><h2>TOP GAMES<small>BY PLAY TIME</small></h2><div class="scroll"><table id="games"></table></div></section>
+    </div>
+    <section class="card"><h2>PLAYERS<small>TAP ONE FOR THEIR ACTIVITY</small></h2><div class="scroll"><table id="players"></table></div></section>
+    <section class="card detail" id="detail" hidden></section>
+    <p class="note">Players are anonymous: an id from Firebase's anonymous sign-in, plus their initials once they've saved some. Play time is time in a game with no menu up; time on site includes menus and the lobby. Players can turn this off in Settings.</p>
+  </main>
+</div>
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
+import { getFirestore, collection, query, orderBy, limit, getDocs } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-lite.js';
+
+// the same project as shared/world.js
+const app = initializeApp({ apiKey: 'AIzaSyAPy1xQoxSHA64Efns07QCNw7ASNIWQpOQ', authDomain: 'bitcade-4fa25.firebaseapp.com', projectId: 'bitcade-4fa25', storageBucket: 'bitcade-4fa25.firebasestorage.app', messagingSenderId: '543242117072', appId: '1:543242117072:web:d95c092bebfd02333ba3d5' });
+const auth = getAuth(app), db = getFirestore(app);
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const name = g => !g ? '—' : g === 'lobby' ? 'Lobby' : String(g).split('-').map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
+const dur = ms => { const m = Math.round((ms || 0) / 60000); return m < 1 ? `${Math.round((ms || 0) / 1000)}s` : m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`; };
+const when = ms => { if (!ms) return '—'; const d = new Date(ms), diff = Date.now() - ms; if (diff < 6e4) return 'just now'; if (diff < 36e5) return `${Math.round(diff / 6e4)}m ago`; if (diff < 864e5) return `${Math.round(diff / 36e5)}h ago`; return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }); };
+const ms = ts => ts && ts.toMillis ? ts.toMillis() : +ts || 0;
+
+let players = [], pick = null;
+
+$('in').addEventListener('click', async () => {
+  $('gateErr').hidden = true;
+  const p = new GoogleAuthProvider();
+  try { await signInWithPopup(auth, p); } catch (e) {
+    if (/popup-blocked|operation-not-supported/.test(e.code || '')) return signInWithRedirect(auth, p);
+    gateErr(e.code === 'auth/unauthorized-domain' ? 'This site isn’t in Firebase’s authorized domains yet (Authentication → Settings → Authorized domains).' : e.code === 'auth/operation-not-allowed' ? 'Google sign-in isn’t turned on yet (Firebase console → Authentication → Sign-in method → Google).' : (e.message || 'Sign-in failed.'));
+  }
+});
+getRedirectResult(auth).catch(e => gateErr(e.message || 'Sign-in failed.'));
+$('out').addEventListener('click', () => signOut(auth));
+$('refresh').addEventListener('click', load);
+$('range').addEventListener('change', render);
+function gateErr(t) { $('gateErr').textContent = t; $('gateErr').hidden = false; }
+
+onAuthStateChanged(auth, u => {
+  const ok = u && !u.isAnonymous;
+  $('gate').hidden = !!ok; $('who').hidden = !ok; $('dash').hidden = true;
+  if (ok) { $('whoName').textContent = u.email || ''; load(); }
+});
+
+async function load() {
+  $('tiles').innerHTML = '<div class="card tile"><small>LOADING…</small></div>'; $('dash').hidden = false;
+  try {
+    const snap = await getDocs(query(collection(db, 'act'), orderBy('last', 'desc'), limit(500)));
+    players = await Promise.all(snap.docs.map(async d => {
+      const ev = await getDocs(query(collection(db, 'act', d.id, 'ev'), orderBy('t', 'desc'), limit(2000)));
+      return { id: d.id, ...d.data(), last: ms(d.get('last')), ev: ev.docs.map(x => ({ ...x.data(), t: ms(x.get('t')) || x.get('at') })) };
+    }));
+    render();
+  } catch (e) {
+    $('dash').hidden = true; $('gate').hidden = false;
+    gateErr(e.code === 'permission-denied' ? `${auth.currentUser && auth.currentUser.email} isn’t the admin account (or the Firestore rules haven’t been published yet).` : (e.message || 'Couldn’t load activity.'));
+  }
+}
+
+function render() {
+  const days = +$('range').value, from = days ? Date.now() - days * 864e5 : 0;
+  const ps = players.map(p => {
+    const ev = p.ev.filter(e => e.t >= from), pages = ev.filter(e => e.k === 'page'), runs = ev.filter(e => e.k === 'run');
+    const play = pages.reduce((n, e) => n + (e.play || 0), 0), site = pages.reduce((n, e) => n + (e.ms || 0), 0), floor = pages.reduce((n, e) => n + (e.floor || 0), 0);
+    const byGame = {};
+    for (const e of ev) { if (e.g === 'lobby') continue; const b = byGame[e.g] || (byGame[e.g] = { play: 0, runs: 0, best: 0, last: 0 }); if (e.k === 'page') b.play += e.play || 0; else { b.runs++; b.best = Math.max(b.best, e.s || 0); } b.last = Math.max(b.last, e.t); }
+    const fav = Object.entries(byGame).sort((a, b) => b[1].play - a[1].play || b[1].runs - a[1].runs)[0];
+    return { ...p, evR: ev, visits: pages.filter(e => e.g === 'lobby').length, play, site, floor, runs: runs.length, byGame, fav: fav ? fav[0] : null, active: ev.length > 0 };
+  });
+  const act = ps.filter(p => p.active), sum = k => act.reduce((n, p) => n + p[k], 0);
+  const tile = (l, v, sub) => `<div class="card tile"><small>${l}</small><b>${v}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
+  $('tiles').innerHTML = tile('PLAYERS ACTIVE', act.length, `${players.length} ALL TIME`) + tile('PLAY TIME', dur(sum('play'))) + tile('TIME ON SITE', dur(sum('site'))) + tile('GAMES PLAYED', sum('runs').toLocaleString(), 'RUNS TO GAME OVER') + tile('LOBBY VISITS', sum('visits')) + tile('ON THE ARCADE FLOOR', dur(sum('floor')));
+
+  // play time per day
+  const n = days || Math.min(30, Math.max(7, Math.ceil((Date.now() - Math.min(...players.flatMap(p => p.ev.map(e => e.t)), Date.now())) / 864e5)));
+  const buckets = [...Array(n)].map((_, i) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - (n - 1 - i)); return { t: +d, v: 0 }; });
+  if (days === 1) { buckets.length = 0; for (let i = 23; i >= 0; i--) { const t = Date.now() - i * 36e5; buckets.push({ t: t - (t % 36e5), v: 0, hour: true }); } }
+  for (const p of act) for (const e of p.evR) if (e.k === 'page' && e.play) { const b = [...buckets].reverse().find(b => e.t >= b.t); if (b) b.v += e.play; }
+  const top = Math.max(1, ...buckets.map(b => b.v));
+  $('daysNote').textContent = days === 1 ? 'BY HOUR' : '';
+  $('days').innerHTML = buckets.map((b, i) => `<div title="${dur(b.v)}"><i style="height:${Math.round(b.v / top * 100)}%"></i><span>${i % Math.ceil(buckets.length / 8) ? '' : b.hour ? new Date(b.t).getHours() + 'h' : new Date(b.t).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' })}</span></div>`).join('');
+
+  // games
+  const games = {};
+  for (const p of act) for (const [g, b] of Object.entries(p.byGame)) { const x = games[g] || (games[g] = { play: 0, runs: 0, best: 0, who: 0 }); x.play += b.play; x.runs += b.runs; x.best = Math.max(x.best, b.best); x.who++; }
+  const gl = Object.entries(games).sort((a, b) => b[1].play - a[1].play || b[1].runs - a[1].runs).slice(0, 15), gTop = Math.max(1, ...gl.map(g => g[1].play));
+  $('games').innerHTML = `<thead><tr><th>GAME</th><th class="num">PLAYERS</th><th class="num">RUNS</th><th class="num">BEST</th><th>PLAY TIME</th></tr></thead><tbody>` +
+    (gl.length ? gl.map(([g, x]) => `<tr><td>${esc(name(g))}</td><td class="num">${x.who}</td><td class="num">${x.runs}</td><td class="num">${x.best ? x.best.toLocaleString() : '—'}</td><td><span class="bar" style="width:${Math.max(2, Math.round(x.play / gTop * 90))}px"></span>${dur(x.play)}</td></tr>`).join('') : '<tr><td colspan="5" class="dim">No games played in this range.</td></tr>') + '</tbody>';
+
+  // players
+  const label = p => p.n ? `<span class="ini">${esc(p.n)}</span>` : `<span class="dim">Player ${esc(p.id.slice(0, 5))}</span>`;
+  const list = ps.slice().sort((a, b) => b.last - a.last);
+  $('players').innerHTML = `<thead><tr><th>PLAYER</th><th>DEVICE</th><th class="num">LEVEL</th><th class="num">TICKETS</th><th>FIRST SEEN</th><th>LAST SEEN</th><th class="num">VISITS</th><th class="num">PLAY TIME</th><th class="num">RUNS</th><th>MOST PLAYED</th></tr></thead><tbody>` +
+    (list.length ? list.map(p => `<tr class="pick${pick === p.id ? ' on' : ''}" data-id="${esc(p.id)}"><td>${label(p)}</td><td>${esc(p.dev || '—')}</td><td class="num">${p.lv || '—'}</td><td class="num">${p.tix != null ? p.tix.toLocaleString() : '—'}</td><td>${when(p.first)}</td><td>${when(p.last)}</td><td class="num">${p.visits}</td><td class="num">${dur(p.play)}</td><td class="num">${p.runs}</td><td>${p.fav ? esc(name(p.fav)) : '<span class="dim">—</span>'}</td></tr>`).join('') : '<tr><td colspan="10" class="dim">Nobody yet. Activity shows up a few seconds after someone plays.</td></tr>') + '</tbody>';
+  $('players').querySelectorAll('tr.pick').forEach(r => r.addEventListener('click', () => { pick = pick === r.dataset.id ? null : r.dataset.id; render(); if (pick) $('detail').scrollIntoView({ behavior: 'smooth', block: 'start' }); }));
+
+  // one player
+  const p = ps.find(x => x.id === pick);
+  $('detail').hidden = !p;
+  if (p) {
+    const rows = Object.entries(p.byGame).sort((a, b) => b[1].play - a[1].play || b[1].runs - a[1].runs);
+    const evs = p.evR.slice(0, 150);
+    $('detail').innerHTML = `<div class="detail-head"><b>${p.n ? esc(p.n) : 'Player ' + esc(p.id.slice(0, 5))}</b><span class="dim">${esc(p.dev || '')} · level ${p.lv || '—'} · ${p.tix != null ? p.tix + ' tickets' : ''} · first seen ${when(p.first)} · id ${esc(p.id)}</span></div>
+      <div class="grid2"><div><h2>GAMES<small>IN THIS RANGE</small></h2><div class="scroll"><table><thead><tr><th>GAME</th><th class="num">PLAY TIME</th><th class="num">RUNS</th><th class="num">BEST</th><th>LAST PLAYED</th></tr></thead><tbody>${rows.length ? rows.map(([g, b]) => `<tr><td>${esc(name(g))}</td><td class="num">${dur(b.play)}</td><td class="num">${b.runs}</td><td class="num">${b.best ? b.best.toLocaleString() : '—'}</td><td>${when(b.last)}</td></tr>`).join('') : '<tr><td colspan="5" class="dim">No games in this range.</td></tr>'}</tbody></table></div></div>
+      <div><h2>TIMELINE<small>NEWEST FIRST</small></h2><div class="scroll" style="max-height:420px;overflow-y:auto"><table><tbody>${evs.length ? evs.map(e => `<tr><td class="dim">${when(e.t)}</td><td><span class="pill k-${e.k}">${e.k === 'run' ? 'GAME OVER' : 'VISIT'}</span></td><td>${esc(name(e.g))}</td><td class="dim">${e.k === 'run' ? `score ${(e.s || 0).toLocaleString()} · ${dur(e.ms)}${e.d ? ' · daily' : ''}${e.e ? ' · easy' : ''}` : `${dur(e.ms)} on page${e.play ? ` · ${dur(e.play)} playing` : ''}${e.runs ? ` · ${e.runs} run${e.runs > 1 ? 's' : ''}` : ''}${e.floor ? ` · ${dur(e.floor)} on the floor` : ''}`}</td></tr>`).join('') : '<tr><td class="dim">Nothing in this range.</td></tr>'}</tbody></table></div></div></div>`;
+  }
+}
+</script>
+</body>
+</html>

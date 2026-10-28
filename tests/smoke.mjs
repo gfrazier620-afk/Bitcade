@@ -681,6 +681,16 @@ console.log('\nBadges and sharing');
   check(!errors.length, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
   await close();
 
+  const ac = await open('/games/rock-rift/');
+  await ac.page.evaluate(() => { Arcade.startRun(); Arcade.submit(120); Arcade.overlay({ title: 'GAME OVER', btn: 'Play again', onGo: () => {} }); });
+  await wait(300);
+  check(await ac.page.evaluate(() => JSON.parse(localStorage.getItem('bitcade:actq') || '[]').some(e => e.k === 'run' && e.g === 'rock-rift' && e.s === 120)), 'a run is logged for the admin page (queued while Firebase is unreachable)');
+  await ac.page.click('#settings'); await ac.page.click('#setTrack');
+  check(await ac.page.evaluate(() => localStorage.getItem('arcade:track') === '0' && localStorage.getItem('bitcade:actq') === '[]'), 'turning off Share play activity stops it and clears the queue');
+  await ac.page.evaluate(() => { Arcade.submit(50); });
+  check(await ac.page.evaluate(() => localStorage.getItem('bitcade:actq') === '[]'), 'and nothing more is logged');
+  await ac.close();
+
   const hm = await open('/games/rock-rift/');
   check(!(await hm.page.isVisible('#ov .home')), 'title screens have no HOME button (the header has ◀ BITCADE)');
   await hm.page.evaluate(() => { Arcade.submit(0); Arcade.overlay({ title: 'GAME OVER', btn: 'Play again', onGo: () => {} }); });

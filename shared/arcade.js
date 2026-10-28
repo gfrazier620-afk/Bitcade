@@ -154,6 +154,7 @@
     s = Math.floor(s);
     if (A.demo) return false;
     try { const r = JSON.parse(store.get('bitcade:recent') || '[]').filter(x => x !== A.id); r.unshift(A.id); store.set('bitcade:recent', JSON.stringify(r.slice(0, 12))); } catch (e) {} // the lobby's Continue playing shelf
+    track({ k: 'run', g: A.id, s, ms: runT ? Date.now() - runT : 0, d: !!daily, e: !!runEasy }); runT = 0;
     if (runEasy) { lastResult = { s, rank: -1, top: A.top(), day: null, week: null, tix: 0, easy: true }; return false; }
     store.set('arcade:plays:' + A.id, (+store.get('arcade:plays:' + A.id) || 0) + 1);
     const top = A.top(); // read before updating the best, which A.top() falls back to when there's no table yet
@@ -424,7 +425,7 @@
     const f = t => {
       acc += Math.min(0.1, (t - last) / 1000) * (A.easy && !A.demo ? 0.7 : 1); last = t;
       while (acc >= dt) {
-        if (A.demo) demoTick(dt); else if (!overlayOpen()) { playT += dt; if (A.easy) runEasy = true; }
+        if (A.demo) demoTick(dt); else if (!overlayOpen()) { playT += dt; sessPlay += dt; if (A.easy) runEasy = true; }
         fxUpdate(dt);
         if (stopT > 0) stopT -= dt; else update(dt); // hit-pause freezes the game, not the effects
         acc -= dt;
@@ -490,7 +491,12 @@
     if (flashT > 0) { c.globalAlpha = Math.max(0, flashT / flashD) * (calm ? 0.2 : 0.55) * flashK(); c.fillStyle = flashC; c.fillRect(0, 0, A.W, A.H); c.globalAlpha = 1; }
   }
   // Play time per game (arcade:time:<slug>, seconds) for the lobby's profile page: game time with no screen up.
-  let playT = 0;
+  let playT = 0, sessPlay = 0, runT = 0, runs = 0; // sessPlay and runs: this piece of the visit, for shared/activity.js
+  /* Play activity for admin.html (shared/activity.js, anonymous, off with arcade:track '0'): each run, and time on the page. */
+  let act = null;
+  const track = ev => { if (act) act.track(ev); else if (store.get('arcade:track') !== '0' && A.id !== 'game') import(new URL('activity.js', KIT_URL).href).then(m => { act = m; m.track(ev); }).catch(() => {}); };
+  addEventListener('load', () => { if (store.get('arcade:track') === '0' || A.id === 'game') return;
+    import(new URL('activity.js', KIT_URL).href).then(m => { act = m; m.pageTimer(A.id, () => { const x = { play: Math.round(sessPlay * 1000), runs }; sessPlay = 0; runs = 0; return x; }); }).catch(() => {}); });
   const saveTime = () => { if (playT >= 1 && A.id !== 'game') { store.set('arcade:time:' + A.id, Math.round((+store.get('arcade:time:' + A.id) || 0) + playT)); playT = 0; } };
   setInterval(saveTime, 10000); addEventListener('pagehide', saveTime);
   const hideFns = [];
@@ -504,14 +510,14 @@
   // HOME on every overlay but the title screen (game over, pause, between stages): back to the lobby, CRT off first
   const homeShown = () => overlayOpen() && !entry && !!$('ov').querySelector('.home');
   const goHome = () => A.crtOff(new URL('../../', location.href).href);
-  const overlayGo = () => { if (entry) return saveEntry(); const f = goFn; if (!f) return; if (startsRun()) { runEasy = A.easy; A.coin(); } A.hideOverlay(); f(); };
+  const overlayGo = () => { if (entry) return saveEntry(); const f = goFn; if (!f) return; if (startsRun()) { runEasy = A.easy; A.coin(); runT = Date.now(); runs++; } A.hideOverlay(); f(); };
   const music = () => window.Chip; // shared/chip.js, when the page loads it
   /** Start a run from a page's own screen (shared/story.js) the way the overlay does: easy mode is noted, a coin drops. */
-  A.startRun = () => { runEasy = A.easy; A.coin(); };
+  A.startRun = () => { runEasy = A.easy; A.coin(); runT = Date.now(); runs++; };
   A.runEasy = () => runEasy;
-  const overlayAlt = () => { const f = altFn; if (!f) return; if (startsRun()) { runEasy = A.easy; A.coin(); } A.hideOverlay(); f(); };
+  const overlayAlt = () => { const f = altFn; if (!f) return; if (startsRun()) { runEasy = A.easy; A.coin(); runT = Date.now(); runs++; } A.hideOverlay(); f(); };
   let alt2Fn = null;
-  const overlayAlt2 = () => { const f = alt2Fn; if (!f) return; if (startsRun()) { runEasy = A.easy; A.coin(); } A.hideOverlay(); f(); };
+  const overlayAlt2 = () => { const f = alt2Fn; if (!f) return; if (startsRun()) { runEasy = A.easy; A.coin(); runT = Date.now(); runs++; } A.hideOverlay(); f(); };
   /**
    * Show the overlay. alt: { btn, onGo } adds a second button (gamepad Y), alt2 a third (gamepad X). scores: true lists the top 10 (title screens),
    * and daily: true adds today's daily-challenge board to it. Called right after A.submit, it also asks for initials

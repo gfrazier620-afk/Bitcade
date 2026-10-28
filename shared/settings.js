@@ -4,7 +4,7 @@
  * get a key of your own as well as its usual one. Everything stays on this device (cloud save leaves it alone):
  *   arcade:muted, arcade:music ('0' off), arcade:vol:sfx and arcade:vol:music (0–100), arcade:crt ('lite' | '1' | '0'),
  *   arcade:shake ('1' | '0.5' | '0'), arcade:flash ('1' | '0.4'), arcade:buzz ('0' off), arcade:easy,
- *   arcade:keys:<slug> ({ "KeyK": "Space" }: your key → the game's key).
+ *   arcade:keys:<slug> ({ "KeyK": "Space" }: your key → the game's key), arcade:track ('0': no play activity, shared/activity.js).
  * Pages listen with Settings.onChange(key => …) and read values with Settings.get(key). The lobby also passes
  * onResetScores, which adds a DATA section with a high-score reset (tap twice; it says whether the cloud save goes too).
  */
@@ -13,7 +13,7 @@ window.Settings = (() => {
   const set = (k, v) => { try { localStorage.setItem(k, String(v)); } catch (e) {} };
   const fns = [];
   const changed = k => fns.forEach(f => { try { f(k); } catch (e) {} });
-  const DEF = { 'arcade:vol:sfx': '100', 'arcade:vol:music': '100', 'arcade:crt': 'lite', 'arcade:shake': '1', 'arcade:flash': '1', 'arcade:buzz': '1', 'arcade:music': '1', 'arcade:muted': '0', 'arcade:easy': '0' };
+  const DEF = { 'arcade:vol:sfx': '100', 'arcade:vol:music': '100', 'arcade:crt': 'lite', 'arcade:shake': '1', 'arcade:flash': '1', 'arcade:buzz': '1', 'arcade:music': '1', 'arcade:muted': '0', 'arcade:easy': '0', 'arcade:track': '1' };
   const val = k => { const v = get(k); return v == null ? DEF[k] : v; };
   let box = null, opts = {}, waiting = null, lastFocus = null, armed = false, wiping = false, armT = 0;
 
@@ -39,7 +39,8 @@ window.Settings = (() => {
       <div class="set-row"><label>Flashes<small>softer for comfort</small></label>${seg('arcade:flash', [['1', 'FULL'], ['0.4', 'SOFT']])}</div>
       ${canBuzz ? `<div class="set-row"><label>Vibration<small>on big hits</small></label>${sw('buzz', val('arcade:buzz') !== '0')}</div>` : ''}
       <h3>GAMEPLAY</h3>
-      <div class="set-row"><label>Easy mode<small>slower, more lives; scores, badges and tickets don't count</small></label>${sw('easy', easy, 'setEasy')}</div>` +
+      <div class="set-row"><label>Easy mode<small>slower, more lives; scores, badges and tickets don't count</small></label>${sw('easy', easy, 'setEasy')}</div>
+      <div class="set-row"><label>Share play activity<small>anonymous: which games you play, for how long, and your scores, to help improve Bitcade</small></label>${sw('track', val('arcade:track') !== '0', 'setTrack')}</div>` +
       (acts.length ? `<h3>CONTROLS <button type="button" class="set-reset">RESET</button></h3><p class="set-note">Give any button a key of your own. Its usual key keeps working too. Controllers work as they are.</p>
       <div class="set-keys">${acts.map(a => { const mine = Object.keys(map).find(k => map[k] === a.code); return `<div class="set-key"><span>${a.label}</span><kbd>${keyName(a.code)}</kbd><button type="button" data-bind="${a.code}" class="${waiting === a.code ? 'wait' : ''}">${waiting === a.code ? 'PRESS A KEY…' : mine ? keyName(mine) : '+ ADD KEY'}</button></div>`; }).join('')}</div>` : '') +
       (opts.onResetScores ? `<h3>DATA</h3><div class="set-row"><label>Reset high scores<small>Clears your bests, top 10s, play counts and daily and weekly bests ${get('bitcade:sync') ? 'on this device <b>and in your cloud save</b> (your other devices too, when they next sync)' : 'on this device'}. World leaderboards, badges, tickets, levels and prizes stay.</small></label>` +
@@ -95,7 +96,8 @@ window.Settings = (() => {
         if (k === 'music') set('arcade:music', val('arcade:music') === '0' ? '1' : '0');
         if (k === 'buzz') { set('arcade:buzz', val('arcade:buzz') === '0' ? '1' : '0'); if (val('arcade:buzz') === '1' && navigator.vibrate) navigator.vibrate(40); }
         if (k === 'easy') set('arcade:easy', val('arcade:easy') === '1' ? '0' : '1');
-        changed({ sound: 'arcade:muted', music: 'arcade:music', buzz: 'arcade:buzz', easy: 'arcade:easy' }[k]); refocus(`[data-sw="${k}"]`); return;
+        if (k === 'track') { set('arcade:track', val('arcade:track') === '0' ? '1' : '0'); if (val('arcade:track') === '0') try { localStorage.setItem('bitcade:actq', '[]'); } catch (e) {} }
+        changed({ sound: 'arcade:muted', music: 'arcade:music', buzz: 'arcade:buzz', easy: 'arcade:easy', track: 'arcade:track' }[k]); refocus(`[data-sw="${k}"]`); return;
       }
       const r = e.target.closest('.set-seg button');
       if (r) { const k = r.parentNode.dataset.key; set(k, r.dataset.v); changed(k); refocus(`[data-key="${k}"] [data-v="${r.dataset.v}"]`); return; }
