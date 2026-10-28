@@ -864,6 +864,35 @@ console.log('\nLoading');
   await g.close();
 }
 
+/* ---------- feedback, error reports, challenges and messages (Firebase is unreachable here) ---------- */
+console.log('\nFeedback, errors and challenges');
+{
+  const { page, errors, close } = await open('/games/rock-rift/');
+  await page.evaluate(() => { localStorage.setItem('arcade:initials', 'TST'); Arcade.submit(150); Arcade.overlay({ title: 'GAME OVER', btn: 'Play again', onGo: () => {} }); });
+  await page.keyboard.press('Enter'); // save initials (a top-10 score)
+  check(await page.isVisible('#ov .chal-go') && /CHALLENGE A FRIEND/.test(await page.textContent('#ov .chal-go')), 'game over offers ⚔ CHALLENGE A FRIEND');
+  await page.click('#ov .fbk'); await page.waitForSelector('.set-panel');
+  check(await page.isVisible('#setFb') && await page.evaluate(() => document.activeElement.id === 'setFb'), '✎ Feedback opens Settings with the feedback box ready');
+  await page.fill('#setFb', 'Love the ghosts'); await page.click('.set-fb-send');
+  check(await page.waitForFunction(() => /COULDN.T SEND|THANKS/.test(document.querySelector('.set-panel').textContent), null, { timeout: 8000 }).then(() => true, () => false), 'sending feedback says whether it went (offline here)');
+  check(!errors.length, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
+  await close();
+  const er = await open('/games/rock-rift/');
+  await er.page.evaluate(() => setTimeout(() => { throw new Error('test boom'); }));
+  await wait(300);
+  check(await er.page.evaluate(() => JSON.parse(localStorage.getItem('bitcade:errq') || '[]').some(e => e.m.includes('test boom') && e.g === 'rock-rift')), 'errors on a game page are queued for the admin page');
+  await er.close();
+  const lb = await open('/');
+  await skipBoot(lb.page);
+  await lb.page.click('#tbMsg');
+  check(await lb.page.isVisible('.ib-panel') && await lb.page.waitForFunction(() => /connection/.test(document.querySelector('.ib-body').textContent), null, { timeout: 8000 }).then(() => true, () => false), '✉ opens the messages, which say they need a connection when offline');
+  await lb.page.keyboard.press('Escape');
+  check(!(await lb.page.isVisible('.ib-panel')), 'Escape closes them');
+  check(await lb.page.evaluate(() => Inbox.clean('you are a bitch') === 'you are a *****' && Inbox.clean('nice shot!') === 'nice shot!'), 'free text goes through a word filter');
+  check(!lb.errors.length, `no errors${lb.errors.length ? ': ' + lb.errors.join(' | ') : ''}`);
+  await lb.close();
+}
+
 /* ---------- seasonal events: Halloween ---------- */
 console.log('\nHalloween');
 {

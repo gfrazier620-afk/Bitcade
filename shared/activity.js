@@ -7,12 +7,14 @@
  *   act/{uid} = { n: initials, dev: 'phone' | 'tablet' | 'desktop', lv, tix, first, last }
  *   act/{uid}/ev/{id} = { k: 'run', g: slug, s: score, ms: run length, d: daily, e: easy, at, t }
  *                     | { k: 'page', g: slug or 'lobby', ms: time on the page, play: time playing, runs, floor, at, t }
+ * Errors caught on a page (arcade.js and the lobby queue them in bitcade:errq) go up the same way, to err/{id}.
  * Only the admin's Google account can read them (firestore.rules); nothing else about a player is sent.
  */
 const Q = 'bitcade:actq', MAX = 200;
 const get = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 const set = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
 const on = () => get('arcade:track') !== '0';
+const readErr = () => { try { const q = JSON.parse(get('bitcade:errq')); return Array.isArray(q) ? q : []; } catch (e) { return []; } };
 const read = () => { try { const q = JSON.parse(get(Q)); return Array.isArray(q) ? q : []; } catch (e) { return []; } };
 const write = q => set(Q, JSON.stringify(q.slice(-MAX)));
 
@@ -37,11 +39,13 @@ function profile() {
 /** Send what's queued (up to 100 at a time). Offline or blocked, it stays queued for next time. */
 export function flush() {
   if (busy) return busy;
-  if (!on()) { set(Q, '[]'); return Promise.resolve(); }
-  const q = read(); if (!q.length) return Promise.resolve();
-  const batch = q.slice(0, 100);
-  busy = import('./world.js').then(w => w.logActivity(profile(), batch))
-    .then(() => { write(read().slice(batch.length)); if (read().length) timer = setTimeout(flush, 1000); })
+  if (!on()) { set(Q, '[]'); set('bitcade:errq', '[]'); return Promise.resolve(); }
+  const q = read(), eq = readErr(); if (!q.length && !eq.length) return Promise.resolve();
+  const batch = q.slice(0, 100), p = profile();
+  busy = import('./world.js').then(w => Promise.all([ // each batch is cleared only once it's gone up, on its own
+    batch.length ? w.logActivity(p, batch).then(() => { write(read().slice(batch.length)); if (read().length) timer = setTimeout(flush, 1000); }, () => {}) : 0,
+    eq.length ? w.sendErrors(eq, p.dev).then(() => set('bitcade:errq', JSON.stringify(readErr().slice(eq.length))), () => {}) : 0
+  ]))
     .catch(() => {})
     .finally(() => { busy = null; });
   return busy;
@@ -61,5 +65,6 @@ export function pageTimer(g, extra) {
   };
   document.addEventListener('visibilitychange', () => { if (document.hidden) end(); else t0 = Date.now(); });
   addEventListener('pagehide', end);
-  if (read().length) setTimeout(flush, 3000); // anything left from last time
+  if (read().length || readErr().length) setTimeout(flush, 3000); // anything left from last time
+  setInterval(() => { if (readErr().length) flush(); }, 30000); // errors caught since
 }

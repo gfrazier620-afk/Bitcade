@@ -58,6 +58,16 @@ tbody tr.pick{cursor:pointer}tbody tr.pick:hover{background:rgba(94,231,255,.06)
 .detail-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:10px}
 .detail-head b{font-family:var(--f-marquee);font-weight:400;font-size:22px}
 .note{font-size:12.5px;color:var(--muted);margin:14px 0 0}
+.tabs2{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.tabs2 button{font-family:var(--f-pixel);font-size:11px;letter-spacing:.08em;color:var(--muted);background:var(--bg2);border:1px solid var(--line);border-radius:999px;padding:8px 14px;cursor:pointer}
+.tabs2 button[aria-pressed="true"]{color:#120a1c;background:var(--hi);border-color:var(--hi)}
+.tabs2 i{font-style:normal;color:#120a1c;background:var(--gold);border-radius:999px;padding:0 6px;margin-left:4px}
+#extra{display:flex;flex-direction:column;gap:10px}#extra[hidden]{display:none!important}
+.fbk p{margin:0 0 8px;font-size:15px;white-space:pre-wrap;word-break:break-word}.fbk.done{opacity:.5}
+.meta{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;font-size:12.5px;color:var(--muted)}.meta .acts{margin-left:auto;display:flex;gap:6px}
+.btn.sm{font-size:9.5px;padding:4px 8px}
+.errg .em{margin:0 0 6px;font-family:ui-monospace,monospace;font-size:13px;color:#ff8a9a;word-break:break-word}
+.fbk pre{margin:8px 0 0;max-height:280px;overflow:auto;font-size:12.5px;white-space:pre-wrap;background:#0d0a1d;border-radius:8px;padding:10px}
 .me-tog{display:flex;align-items:center;gap:6px;cursor:pointer}.me-tog input{accent-color:var(--hi)}
 .pill.you{color:var(--gold);margin-left:6px}
 tr.mine td{opacity:.55}
@@ -77,6 +87,8 @@ tr.mine td{opacity:.55}
     <div class="err" id="gateErr" hidden></div>
   </section>
   <main id="dash" hidden>
+    <nav class="tabs2"><button data-tab="act" aria-pressed="true">ACTIVITY</button><button data-tab="fb">FEEDBACK</button><button data-tab="err">ERRORS</button><button data-tab="rep">REPORTS</button></nav>
+    <div id="actView">
     <div class="tiles" id="tiles"></div>
     <div class="grid2">
       <section class="card"><h2>PLAY TIME PER DAY<small id="daysNote"></small></h2><div class="days" id="days"></div></section>
@@ -85,12 +97,14 @@ tr.mine td{opacity:.55}
     <section class="card"><h2>PLAYERS<small>TAP ONE FOR THEIR ACTIVITY</small></h2><div class="scroll"><table id="players"></table></div></section>
     <section class="card detail" id="detail" hidden></section>
     <p class="note">Players are anonymous: an id from Firebase's anonymous sign-in, plus their initials once they've saved some. Play time is time in a game with no menu up; time on site includes menus and the lobby. Players can turn this off in Settings.</p>
+    </div>
+    <section id="extra" hidden></section>
   </main>
 </div>
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
-import { getFirestore, collection, query, orderBy, limit, getDocs, getDoc, setDoc, doc } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-lite.js';
+import { getFirestore, collection, query, orderBy, limit, getDocs, getDoc, setDoc, updateDoc, deleteDoc, writeBatch, doc } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-lite.js';
 
 // the same project as shared/world.js. The admin signs in on an app of its own ('admin'), so the Google sign-in never
 // replaces the anonymous player the games use on this browser; that player (the default app's) is read to spot "me".
@@ -105,6 +119,56 @@ const name = g => !g ? '—' : g === 'lobby' ? 'Lobby' : String(g).split('-').ma
 const dur = ms => { const m = Math.round((ms || 0) / 60000); return m < 1 ? `${Math.round((ms || 0) / 1000)}s` : m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`; };
 const when = ms => { if (!ms) return '—'; const d = new Date(ms), diff = Date.now() - ms; if (diff < 6e4) return 'just now'; if (diff < 36e5) return `${Math.round(diff / 6e4)}m ago`; if (diff < 864e5) return `${Math.round(diff / 36e5)}h ago`; return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }); };
 const ms = ts => ts && ts.toMillis ? ts.toMillis() : +ts || 0;
+
+
+/* ---------- FEEDBACK, ERRORS and REPORTS tabs ---------- */
+let tab = 'act', fbs = [], errs = [], reps = [];
+const who = uid => { const p = players.find(x => x.id === uid); return p && p.n ? `<span class="ini">${esc(p.n)}</span>` : `<span class="dim">Player ${esc(String(uid || '').slice(0, 5))}</span>`; };
+document.querySelectorAll('.tabs2 button').forEach(b => b.addEventListener('click', () => { tab = b.dataset.tab; drawTabs(); }));
+async function loadExtra() {
+  const grab = async (c, n) => { try { return (await getDocs(query(collection(db, c), orderBy('t', 'desc'), limit(n)))).docs.map(d => ({ id: d.id, ...d.data(), t: ms(d.get('t')) })); } catch (e) { return null; } };
+  [fbs, errs, reps] = await Promise.all([grab('fb', 300), grab('err', 600), grab('rep', 100)]);
+  drawTabs();
+}
+function drawTabs() {
+  const open = (fbs || []).filter(f => !f.done).length, groups = errGroups();
+  const lab = { act: 'ACTIVITY', fb: `FEEDBACK${open ? ` <i>${open}</i>` : ''}`, err: `ERRORS${groups.length ? ` <i>${groups.length}</i>` : ''}`, rep: `REPORTS${(reps || []).length ? ` <i>${reps.length}</i>` : ''}` };
+  document.querySelectorAll('.tabs2 button').forEach(b => { b.innerHTML = lab[b.dataset.tab]; b.setAttribute('aria-pressed', String(b.dataset.tab === tab)); });
+  $('actView').hidden = tab !== 'act'; $('extra').hidden = tab === 'act';
+  if (tab === 'fb') drawFb(); else if (tab === 'err') drawErr(groups); else if (tab === 'rep') drawRep();
+}
+function drawFb() {
+  if (fbs === null) return $('extra').innerHTML = '<p class="dim">Couldn\u2019t load feedback. Have the latest rules been published?</p>';
+  const list = fbs.slice().sort((a, b) => (a.done ? 1 : 0) - (b.done ? 1 : 0) || b.t - a.t);
+  $('extra').innerHTML = list.length ? list.map(f => `<div class="card fbk${f.done ? ' done' : ''}" data-id="${esc(f.id)}"><p>${esc(f.x)}</p><div class="meta">${f.n ? `<span class="ini">${esc(f.n)}</span>` : who(f.uid)} · ${esc(name(f.g))} · ${esc(f.dev || '')} · ${when(f.t)}<span class="acts"><button class="btn sm" data-act="done">${f.done ? 'REOPEN' : '✓ DONE'}</button><button class="btn sm" data-act="del">DELETE</button></span></div></div>`).join('')
+    : '<p class="dim">No feedback yet. Players send it from ⚙ Settings → Send feedback, or ✎ Feedback on a game-over screen.</p>';
+  $('extra').querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', async () => {
+    const id = b.closest('[data-id]').dataset.id, f = fbs.find(x => x.id === id);
+    try { if (b.dataset.act === 'del') { await deleteDoc(doc(db, 'fb', id)); fbs = fbs.filter(x => x.id !== id); } else { await updateDoc(doc(db, 'fb', id), { done: !f.done }); f.done = !f.done; } drawTabs(); } catch (e) { b.textContent = 'FAILED'; }
+  }));
+}
+function errGroups() {
+  const g = {};
+  for (const e of errs || []) { const k = `${e.m}|${e.s}|${e.l}`; const x = g[k] || (g[k] = { k, m: e.m, s: e.s, l: e.l, n: 0, ids: [], pages: new Set(), devs: new Set(), uids: new Set(), first: e.t, last: e.t }); x.n++; x.ids.push(e.id); x.pages.add(e.g); x.devs.add(e.ua || e.dev); x.uids.add(e.uid); x.first = Math.min(x.first, e.t); x.last = Math.max(x.last, e.t); }
+  return Object.values(g).sort((a, b) => b.last - a.last);
+}
+function drawErr(groups) {
+  if (errs === null) return $('extra').innerHTML = '<p class="dim">Couldn\u2019t load errors. Have the latest rules been published?</p>';
+  $('extra').innerHTML = groups.length ? groups.map((x, i) => `<div class="card errg"><p class="em">${esc(x.m)}</p><div class="meta">${x.s ? esc(x.s) + (x.l ? ':' + x.l : '') + ' · ' : ''}<b>${x.n}×</b> · ${x.uids.size} player${x.uids.size > 1 ? 's' : ''} · on ${[...x.pages].map(name).map(esc).join(', ')} · ${[...x.devs].map(esc).join(', ')} · last ${when(x.last)}<span class="acts"><button class="btn sm" data-g="${i}">CLEAR</button></span></div></div>`).join('')
+    : '<p class="dim">No errors reported. 🎉</p>';
+  $('extra').querySelectorAll('[data-g]').forEach(b => b.addEventListener('click', async () => {
+    const x = groups[+b.dataset.g]; b.textContent = 'CLEARING…';
+    try { for (let i = 0; i < x.ids.length; i += 400) { const wb = writeBatch(db); x.ids.slice(i, i + 400).forEach(id => wb.delete(doc(db, 'err', id))); await wb.commit(); } errs = errs.filter(e => !x.ids.includes(e.id)); drawTabs(); } catch (e) { b.textContent = 'FAILED'; }
+  }));
+}
+function drawRep() {
+  if (reps === null) return $('extra').innerHTML = '<p class="dim">Couldn\u2019t load reports. Have the latest rules been published?</p>';
+  $('extra').innerHTML = reps.length ? reps.map(r => `<div class="card fbk" data-id="${esc(r.id)}"><div class="meta">${who(r.by)} reported ${who(r.other)} · ${when(r.t)}<span class="acts"><button class="btn sm" data-del>DELETE</button></span></div><pre>${esc(r.log)}</pre></div>`).join('')
+    : '<p class="dim">No reports. Players can report a conversation from its ✉ messages screen.</p>';
+  $('extra').querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => {
+    const id = b.closest('[data-id]').dataset.id; try { await deleteDoc(doc(db, 'rep', id)); reps = reps.filter(x => x.id !== id); drawTabs(); } catch (e) { b.textContent = 'FAILED'; }
+  }));
+}
 
 let players = [], pick = null, hide = new Set();
 const showMe = () => $('showMe').checked;
@@ -142,7 +206,7 @@ async function load() {
       const ev = await getDocs(query(collection(db, 'act', d.id, 'ev'), orderBy('t', 'desc'), limit(2000)));
       return { id: d.id, ...d.data(), last: ms(d.get('last')), ev: ev.docs.map(x => ({ ...x.data(), t: ms(x.get('t')) || x.get('at') })) };
     }));
-    render();
+    render(); loadExtra();
   } catch (e) {
     $('dash').hidden = true; $('gate').hidden = false;
     gateErr(e.code === 'permission-denied' ? `${auth.currentUser && auth.currentUser.email} isn’t the admin account (or the Firestore rules haven’t been published yet). Signed in as id ${auth.currentUser && auth.currentUser.uid}, email verified: ${auth.currentUser && auth.currentUser.emailVerified}.` : (e.message || 'Couldn’t load activity.'));

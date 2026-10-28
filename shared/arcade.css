@@ -223,6 +223,11 @@ body.phone-land .pad{position:fixed;left:0;right:0;bottom:max(12px,env(safe-area
 body.phone-land .pad > *{pointer-events:auto}
 
 /* title screens and game over, arcade style */
+/* challenges: the banner on the title screen, the result on game over, and the buttons */
+.chal{font-family:var(--f-pixel);font-size:11.5px;letter-spacing:.08em;color:#fff;background:linear-gradient(90deg,#c8203a,#ff4f6d);padding:5px 12px;border-radius:999px;box-shadow:0 0 14px rgba(255,79,109,.45)}
+.chal.win{color:#1a0f00;background:linear-gradient(90deg,#ffd23d,#ff9a3d);box-shadow:0 0 14px rgba(255,210,61,.5)}
+.chal-btns{display:flex;flex-wrap:wrap;justify-content:center;gap:0 6px}
+.chal-btns .share{color:#ff8a9a}.chal-btns .share:hover{color:#fff}.chal-btns .share[disabled]{opacity:.7;text-decoration:none}
 .push{font-family:var(--f-pixel);font-size:14px;letter-spacing:.14em;color:#ffe36a;text-shadow:0 0 10px rgba(255,227,106,.7);animation:boot-blink-k 1s steps(2,start) infinite}
 .credit{font-family:var(--f-pixel);font-size:10px;letter-spacing:.12em;color:var(--muted)}
 .cont{font-family:var(--f-marquee);font-size:22px;color:#ff4f6d;letter-spacing:.04em;text-shadow:0 0 14px rgba(255,79,109,.7)}

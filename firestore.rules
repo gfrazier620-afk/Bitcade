@@ -137,6 +137,109 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    // Feedback from Settings and errors caught on players' pages: anyone signed in can send them, only the admin reads
+    // (and can mark feedback done or clear things away).
+    match /fb/{id} {
+      allow read, update, delete: if isAdmin();
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['x', 'n', 'g', 'dev', 'uid', 't'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.x is string && request.resource.data.x.size() > 0 && request.resource.data.x.size() <= 1000
+        && request.resource.data.g is string && request.resource.data.g.size() <= 40
+        && (!('n' in request.resource.data) || request.resource.data.n.matches('^[A-Z]{3}$'))
+        && request.resource.data.t == request.time;
+    }
+    match /err/{id} {
+      allow read, delete: if isAdmin();
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['m', 's', 'l', 'g', 'dev', 'ua', 'uid', 't'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.m is string && request.resource.data.m.size() <= 300
+        && request.resource.data.s is string && request.resource.data.s.size() <= 200
+        && request.resource.data.g is string && request.resource.data.g.size() <= 40
+        && request.resource.data.t == request.time;
+    }
+
+    // Challenges: a player's score on a game, shared as a link (the id is random, so only people with the link find it).
+    // Anyone can read one; each player keeps one result against it, their best.
+    match /ch/{id} {
+      allow read: if true;
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['a', 'an', 'g', 's', 't'])
+        && request.resource.data.a == request.auth.uid
+        && request.resource.data.an.matches('^[A-Z]{3}$')
+        && request.resource.data.g is string && request.resource.data.g.size() <= 40
+        && request.resource.data.s is int && request.resource.data.s >= 0
+        && request.resource.data.t == request.time;
+      allow update, delete: if false;
+      match /res/{uid} {
+        allow read: if true;
+        allow create, update: if request.auth != null && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['n', 's', 't'])
+          && request.resource.data.n.matches('^[A-Z]{3}$')
+          && request.resource.data.s is int && request.resource.data.s >= 0
+          && request.resource.data.t == request.time;
+        allow delete: if false;
+      }
+    }
+
+    // Conversations between two players (shared/inbox.js), at dm/{uidA_uidB} with the ids in order. Only the two of them
+    // can read it or write to it, and each only changes their own name, "seen" time and acceptance. A new message must
+    // move `last` along in the same write, at most one a second. Quick chat and challenge cards are open to anyone in
+    // it; free text only once both have played each other's challenge (acc), up to 200 characters. A player someone
+    // has blocked (bl/{uid}) can't send them anything.
+    function other(pair) { let ids = pair.split('_'); return ids[0] == request.auth.uid ? ids[1] : ids[0]; }
+    match /dm/{pair} {
+      allow get: if request.auth != null && (resource == null || request.auth.uid in resource.data.m);
+      allow list: if request.auth != null && request.auth.uid in resource.data.m;
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['m', 'n', 'acc', 'seen', 'last'])
+        && request.resource.data.m is list && request.resource.data.m.size() == 2
+        && request.auth.uid in request.resource.data.m
+        && request.resource.data.m[0] < request.resource.data.m[1]
+        && pair == request.resource.data.m[0] + '_' + request.resource.data.m[1]
+        && request.resource.data.acc.keys().hasOnly([request.auth.uid])
+        && request.resource.data.seen.keys().hasOnly([request.auth.uid])
+        && request.resource.data.last == request.time;
+      allow update: if request.auth != null && request.auth.uid in resource.data.m
+        && request.resource.data.m == resource.data.m
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['n', 'acc', 'seen', 'last'])
+        && request.resource.data.n.diff(resource.data.n).affectedKeys().hasOnly([request.auth.uid])
+        && request.resource.data.acc.diff(resource.data.acc).affectedKeys().hasOnly([request.auth.uid])
+        && request.resource.data.seen.diff(resource.data.seen).affectedKeys().hasOnly([request.auth.uid])
+        && (request.resource.data.last == resource.data.last
+          || (request.resource.data.last == request.time && request.time > resource.data.last + duration.value(1, 's')));
+      allow delete: if false;
+      match /m/{id} {
+        allow read: if request.auth != null && request.auth.uid in get(/databases/$(database)/documents/dm/$(pair)).data.m;
+        allow create: if request.auth != null
+          && request.auth.uid in getAfter(/databases/$(database)/documents/dm/$(pair)).data.m
+          && getAfter(/databases/$(database)/documents/dm/$(pair)).data.last == request.time
+          && request.resource.data.u == request.auth.uid && request.resource.data.t == request.time
+          && request.resource.data.keys().hasOnly(['u', 'k', 'q', 'x', 'c', 'g', 's', 'vs', 't'])
+          && request.resource.data.k in ['q', 'x', 'ch', 'res']
+          && (request.resource.data.k != 'x' || (request.resource.data.x is string && request.resource.data.x.size() <= 200
+            && getAfter(/databases/$(database)/documents/dm/$(pair)).data.acc.get(request.auth.uid, false) == true
+            && getAfter(/databases/$(database)/documents/dm/$(pair)).data.acc.get(other(pair), false) == true))
+          && !(exists(/databases/$(database)/documents/bl/$(other(pair)))
+            && request.auth.uid in get(/databases/$(database)/documents/bl/$(other(pair))).data.u);
+        allow update, delete: if false;
+      }
+    }
+    // Each player's block list, theirs alone.
+    match /bl/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+    // Reports from the messages: the last messages of a conversation, for the admin page.
+    match /rep/{id} {
+      allow read, delete: if isAdmin();
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['by', 'other', 'pair', 'log', 't'])
+        && request.resource.data.by == request.auth.uid
+        && request.resource.data.log is string && request.resource.data.log.size() <= 5000
+        && request.resource.data.t == request.time;
+    }
+
     // Everything else stays locked.
     match /{document=**} {
       allow read, write: if false;

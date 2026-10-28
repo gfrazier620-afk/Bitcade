@@ -609,6 +609,47 @@ body.ev-halloween .topbar .logo{background:linear-gradient(180deg,#ffb04a 0%,#ff
 .fbtn[aria-expanded="true"],.fbtn:hover{color:var(--ink);border-color:var(--hi)}
 .fpop{position:absolute;right:0;top:calc(100% + 6px);z-index:20;display:flex;flex-direction:column;gap:10px;padding:12px 14px;border-radius:12px;background:#1a1438;border:1px solid var(--line);box-shadow:0 12px 30px rgba(0,0,0,.55);font-family:var(--f-pixel);font-size:10px;color:var(--muted);letter-spacing:.08em}
 .fpop label,.fpop .fp-row{display:flex;align-items:center;justify-content:space-between;gap:14px}
+
+/* messages (shared/inbox.js) */
+.tb-icon{position:relative}
+.tb-icon .tb-dot{top:-3px;right:-3px}
+.ib{position:fixed;inset:0;z-index:45;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(5,3,12,.78);backdrop-filter:blur(3px)}
+.ib-panel{width:min(520px,100%);height:min(680px,calc(100dvh - 32px));display:flex;flex-direction:column;border-radius:18px;border:1px solid #4a3f7e;overflow:hidden;
+  background:radial-gradient(ellipse at 50% 0%,rgba(255,79,109,.12),transparent 60%),linear-gradient(180deg,#1d1740,#130f2a);box-shadow:0 20px 60px rgba(0,0,0,.6)}
+.ib-head{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.ib-title{flex:1;font-family:var(--f-marquee);font-weight:400;font-size:19px;color:#ff8a9a;letter-spacing:.04em}
+.ib-back,.ib-x{font-size:18px;color:var(--ink);background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:9px;width:34px;height:34px;cursor:pointer}
+.ib-tools{display:flex;gap:6px}
+.ib-tool{font-family:var(--f-pixel);font-size:9.5px;letter-spacing:.06em;color:var(--muted);background:none;border:1px solid var(--line);border-radius:7px;padding:5px 8px;cursor:pointer}
+.ib-tool:hover{color:#ff8a9a;border-color:#ff8a9a}
+.ib-body{flex:1;overflow-y:auto;padding:10px 14px;display:flex;flex-direction:column;gap:6px}
+.ib-body h4{margin:14px 0 2px;font-family:var(--f-pixel);font-weight:400;font-size:10px;letter-spacing:.12em;color:var(--muted)}
+.ib-row{position:relative;display:flex;align-items:center;gap:12px;width:100%;padding:10px 12px;border-radius:12px;background:var(--bg2);border:1px solid var(--line);color:var(--ink);cursor:pointer;text-align:left}
+.ib-row:hover{border-color:#ff8a9a}.ib-row.new{border-color:#ffd23d}
+.ib-ini{font-family:var(--f-pixel);font-size:16px;color:#ffd23d;min-width:3.4ch}
+.ib-sub{flex:1;font-family:var(--f-pixel);font-size:10px;color:var(--muted)}.ib-sub em{font-style:normal}.ib-sub em.fr{color:#3dff8f}
+.ib-when{font-family:var(--f-pixel);font-size:10px;color:var(--muted)}
+.ib-dot{position:absolute;top:8px;right:8px;width:8px;height:8px;border-radius:50%;background:#ffd23d;box-shadow:0 0 8px #ffd23d}
+.ib-res{padding:4px 14px 8px;font-family:var(--f-pixel);font-size:11px;color:var(--muted)}.ib-res div{display:flex;justify-content:space-between;padding:2px 0}.ib-res b{font-weight:400;color:var(--ink)}
+.ib-note{margin:8px 0;font-size:13.5px;color:var(--muted);text-align:center;line-height:1.5}.ib-note.small{font-size:12px;margin:4px 0 0}
+.ib-msg{align-self:flex-start;max-width:78%;display:flex;flex-direction:column;gap:2px;padding:8px 12px;border-radius:14px 14px 14px 4px;background:#2a2350;font-size:14.5px;line-height:1.35;word-break:break-word;-webkit-user-select:text;user-select:text}
+.ib-msg.me{align-self:flex-end;border-radius:14px 14px 4px 14px;background:#7a2a4a}
+.ib-msg small{font-family:var(--f-pixel);font-size:9px;color:rgba(255,255,255,.5);align-self:flex-end}
+.ib-card{align-self:flex-start;max-width:86%;display:flex;flex-direction:column;gap:4px;padding:10px 12px;border-radius:12px;border:1px solid #ff4f6d;background:rgba(255,79,109,.08)}
+.ib-card.me{align-self:flex-end}.ib-card.win{border-color:#ffd23d;background:rgba(255,210,61,.08)}
+.ib-card b{font-family:var(--f-pixel);font-weight:400;font-size:12px;color:#ff8a9a}.ib-card.win b{color:#ffd23d}
+.ib-card span{font-size:13px;color:var(--muted)}
+.ib-play{align-self:flex-start;margin-top:2px;font-family:var(--f-pixel);font-size:11px;color:#120a1c;background:#ff4f6d;border:0;border-radius:8px;padding:6px 12px;cursor:pointer}
+.ib-foot{padding:8px 12px 12px;border-top:1px solid var(--line)}
+.ib-foot:empty{display:none}
+.ib-quick{display:flex;flex-wrap:wrap;gap:5px}
+.ib-quick button{font-size:12.5px;color:var(--ink);background:var(--bg2);border:1px solid var(--line);border-radius:999px;padding:5px 10px;cursor:pointer}
+.ib-quick button:hover{border-color:#ff8a9a}
+.ib-type{display:flex;gap:6px;margin-top:8px}
+.ib-text{flex:1;min-width:0;font:14px var(--f-body);color:var(--ink);background:#120e26;border:1px solid #4a3f7e;border-radius:10px;padding:9px 11px;-webkit-user-select:text;user-select:text}
+.ib-text:focus{outline:2px solid #ff8a9a}
+.ib-send{font-family:var(--f-pixel);font-size:12px;color:#120a1c;background:#ff8a9a;border:0;border-radius:10px;padding:0 16px;cursor:pointer}
+html.ib-open body{overflow:hidden}
 </style>
 </head>
 <body>
@@ -628,6 +669,11 @@ body.ev-halloween .topbar .logo{background:linear-gradient(180deg,#ffb04a 0%,#ff
   <div class="boot-skip">PRESS ANY KEY OR TAP TO SKIP</div>
 </div>
 <script>
+// Errors in the lobby, for the admin page (shared/activity.js sends them; off with Share play activity in Settings).
+(() => { const seen = new Set(); const q = (m, s, l) => { try { if (localStorage.getItem('arcade:track') === '0' || !m || /^Script error\.?$|ResizeObserver loop/.test(m) || (s && !String(s).startsWith(location.origin))) return; const k = m + '|' + s + '|' + l; if (seen.has(k) || seen.size > 8) return; seen.add(k); const a = JSON.parse(localStorage.getItem('bitcade:errq') || '[]'); a.push({ m: String(m).slice(0, 300), s: String(s || '').replace(location.origin, '').slice(0, 200), l: +l || 0, g: 'lobby', at: Date.now() }); localStorage.setItem('bitcade:errq', JSON.stringify(a.slice(-20))); } catch (e) {} };
+  addEventListener('error', e => q(e.message, e.filename, e.lineno)); addEventListener('unhandledrejection', e => q('Unhandled promise: ' + (e.reason && (e.reason.message || e.reason)), '', 0)); })();
+</script>
+<script>
 // The boot sequence plays once per visit (or with ?boot). Decided before the first paint, so there's no flash of either.
 try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(location.search)) document.getElementById('boot').hidden = true; else document.documentElement.classList.add('booting'); } catch (e) { document.getElementById('boot').hidden = true; }
 </script>
@@ -644,6 +690,7 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
     <button class="tb-chip tb-lv" id="tbLv" type="button" title="Your level">LV <b id="tbLvN">1</b></button>
     <button class="tb-chip tb-tix" id="vPrize" type="button" title="Prize counter">◈ <b id="tixN">0</b><span> TICKETS</span></button>
     <button class="tb-icon" id="tbSearch" type="button" aria-label="Search cabinets" title="Search ( / )">⌕</button>
+    <button class="tb-icon" id="tbMsg" type="button" aria-label="Messages" title="Messages">✉<i class="tb-dot" id="msgDot" hidden></i></button>
     <button class="tb-icon" id="musicBtn" type="button" aria-label="Music" title="Music">♪</button>
     <button class="tb-icon" id="setBtn" type="button" aria-haspopup="dialog" aria-label="Settings" title="Settings">⚙</button>
   </div>
@@ -711,6 +758,7 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
 <script src="shared/settings.js"></script>
 <script src="shared/couch.js"></script>
 <script src="shared/scores.js"></script>
+<script src="shared/inbox.js"></script>
 <script>
 (() => {
 const GAMES = [
@@ -1225,6 +1273,9 @@ if (get('arcade:track') !== '0') import('./shared/activity.js').then(m => {
   m.pageTimer('lobby', () => { const x = { floor: floorMs }; floorMs = 0; return x; });
 }).catch(() => {});
 window.Lobby.settings = openSettings;
+/* Messages (shared/inbox.js): the ✉ button; ?chat=<uid>&cn=<initials> (from a game over) opens that conversation. */
+Inbox.init({ btn: document.getElementById('tbMsg'), dot: document.getElementById('msgDot'), play: href => enterGame(href) });
+{ const p = new URLSearchParams(location.search), who = p.get('chat'); if (who && /^[A-Za-z0-9]{10,40}$/.test(who)) setTimeout(() => Inbox.open(who, p.get('cn')), 300); }
 })();
 </script>
 <script>

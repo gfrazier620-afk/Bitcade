@@ -6,6 +6,20 @@
     set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
   };
   A.store = store;
+  /* Errors on this page, for the admin page (shared/activity.js sends them; off with the same switch as play activity). */
+  const errSeen = new Set();
+  const errQ = (m, s, l) => {
+    try {
+      if (store.get('arcade:track') === '0' || !m || /^Script error\.?$|ResizeObserver loop/.test(m)) return;
+      if (s && !String(s).startsWith(location.origin)) return; // browser extensions and other sites
+      const k = m + '|' + s + '|' + l; if (errSeen.has(k) || errSeen.size > 8) return; errSeen.add(k);
+      const q = JSON.parse(store.get('bitcade:errq') || '[]');
+      q.push({ m: String(m).slice(0, 300), s: String(s || '').replace(location.origin, '').slice(0, 200), l: +l || 0, g: (document.body && document.body.dataset.game) || 'game', at: Date.now() });
+      store.set('bitcade:errq', JSON.stringify(q.slice(-20)));
+    } catch (e) {}
+  };
+  addEventListener('error', e => errQ(e.message, e.filename, e.lineno));
+  addEventListener('unhandledrejection', e => { const r = e.reason; errQ('Unhandled promise: ' + (r && (r.message || r)), r && r.stack ? (/https?:[^\s)]+/.exec(r.stack) || [''])[0].replace(/:\d+:\d+$/, '') : '', 0); });
   const $ = id => document.getElementById(id);
 
   /* ---------- scores ---------- */
@@ -115,6 +129,48 @@
   }
   A.toast = toast;
 
+
+  /*
+   * Challenges (the messages are in the lobby, shared/inbox.js). ?ch=<id> on a game page loads one: someone's score on
+   * this game. The title screen says so; your best against it goes back to them as a result message (which counts as
+   * accepting it: once two players have each played the other's challenge they can chat freely); game over says who's
+   * ahead. Any scoring run can start a challenge (a link to send) or, against a challenger, challenge them back.
+   */
+  const world = () => A.world();
+  A.chal = null;
+  const ini = () => { const n = store.get('arcade:initials'); return /^[A-Z]{3}$/.test(n || '') ? n : ''; };
+  const chalBanner = () => A.chal ? `<div class="chal">${A.chal.mine ? `⚔ YOUR CHALLENGE · ${A.chal.s.toLocaleString()} TO BEAT` : `⚔ ${A.chal.an} CHALLENGES YOU · BEAT ${A.chal.s.toLocaleString()}`}</div>` : '';
+  function loadChallenge() {
+    let id = null; try { id = new URLSearchParams(location.search).get('ch') || sessionStorage.getItem('bitcade:chal:' + A.id); } catch (e) {}
+    if (!id || !/^[A-Za-z0-9]{10,40}$/.test(id)) return;
+    world().then(w => Promise.all([w.getChallenge(id), w.myId()])).then(([c, me]) => {
+      if (!c || c.g !== A.id || !/^[A-Z]{3}$/.test(c.an)) return;
+      A.chal = { id, a: c.a, an: c.an, s: +c.s || 0, mine: c.a === me };
+      try { sessionStorage.setItem('bitcade:chal:' + A.id, id); } catch (e) {}
+      const o = $('ov'); if (o && !o.hidden && o.classList.contains('title') && !o.querySelector('.chal')) o.insertAdjacentHTML('afterbegin', chalBanner());
+    }).catch(() => {});
+  }
+  /** Your score against the challenge: when it beats your last one, it goes to the challenger with a message. */
+  function chalSend(r) {
+    const c = A.chal, n = ini(); if (!c || c.mine || !r || r.easy || !n) return;
+    const key = 'bitcade:chalbest:' + c.id, prev = store.get(key);
+    if (prev != null && r.s <= +prev) return; store.set(key, String(r.s));
+    world().then(w => w.postResult(c.id, n, r.s).then(() => w.sendMsg(c.a, c.an, n, { k: 'res', c: c.id, g: A.id, s: r.s, vs: c.s }, { accept: true }))).catch(() => {});
+  }
+  /** A new challenge with this score: a link to send (share sheet or clipboard), or straight to someone as a message. */
+  async function chalMake(s, btn, to) {
+    const n = ini(); if (!n) { btn.textContent = 'SAVE YOUR INITIALS FIRST (PROFILE)'; return; }
+    btn.disabled = true; btn.textContent = 'MAKING IT…';
+    try {
+      const w = await world(), id = await w.makeChallenge(A.id, s, n);
+      try { const l = JSON.parse(store.get('bitcade:chs') || '[]'); l.unshift({ id, g: A.id, s, t: Date.now() }); store.set('bitcade:chs', JSON.stringify(l.slice(0, 30))); } catch (e) {}
+      if (to) { await w.sendMsg(to.a, to.an, n, { k: 'ch', c: id, g: A.id, s }); btn.textContent = `SENT TO ${to.an} ✓`; return; }
+      const url = `${location.origin}${location.pathname}?ch=${id}`, text = `${n} scored ${s.toLocaleString()} on ${document.title} at Bitcade. Can you beat it?`;
+      try { if (navigator.share) { await navigator.share({ title: 'Bitcade challenge', text, url }); btn.textContent = 'CHALLENGE SENT ✓'; return; } } catch (e) { if (e.name === 'AbortError') { btn.textContent = '⚔ CHALLENGE A FRIEND'; btn.disabled = false; return; } }
+      try { await navigator.clipboard.writeText(`${text} ${url}`); btn.textContent = 'LINK COPIED · SEND IT TO A FRIEND'; } catch (e) { prompt('Copy your challenge link:', `${text} ${url}`); btn.textContent = '⚔ CHALLENGE A FRIEND'; }
+    } catch (e) { btn.textContent = 'OFFLINE · TRY AGAIN'; btn.disabled = false; }
+  }
+
   /** Share a score: the share sheet where there is one, otherwise copy to the clipboard. */
   async function shareScore(s, day, btn) {
     const url = location.origin + location.pathname;
@@ -189,6 +245,7 @@
     if (window.XP) { let n = 10 + (rank >= 0 ? 10 : 0) + (rec && prevBest > 0 ? 15 : 0) + (daily ? 5 : 0); if (A.featured()) n *= 2; xp = A.gainXP(n, 'run', true); }
     lastResult = { s, rank, top, day, week, tix, xp };
     try { A.mission({ type: 'run', slug: A.id, score: s, daily: !!daily }); } finally { lastResult.notes = gather; gather = null; }
+    if (A.chal && !A.chal.mine) { lastResult.chal = { an: A.chal.an, vs: A.chal.s }; chalSend(lastResult); }
     return rec;
   };
   /*
@@ -531,7 +588,8 @@
     if (isTitle) titleArgs = args;
     o.classList.toggle('title', !!isTitle);
     clearInterval(contT);
-    o.innerHTML = (isTitle && A.featured() ? `<div class="weekly">★ WEEKLY TOURNAMENT · ENDS IN ${WK.leftText()}</div>` : '') + `<h2></h2>${big ? '<div class="big"></div>' : ''}${sub ? '<p></p>' : ''}` +
+    o.innerHTML = (isTitle ? chalBanner() : '') + (isTitle && A.featured() ? `<div class="weekly">★ WEEKLY TOURNAMENT · ENDS IN ${WK.leftText()}</div>` : '') + `<h2></h2>${big ? '<div class="big"></div>' : ''}${sub ? '<p></p>' : ''}` +
+      (res && res.chal && !res.easy ? `<div class="chal${res.s > res.chal.vs ? ' win' : ''}">${res.s > res.chal.vs ? `⚔ YOU BEAT ${res.chal.an}! ${res.s.toLocaleString()} TO ${res.chal.vs.toLocaleString()}` : `⚔ ${res.chal.an} STILL LEADS · ${res.chal.vs.toLocaleString()} TO BEAT`}</div>` : '') +
       (res && res.easy ? '<div class="tix easy">EASY MODE · SCORE NOT RECORDED</div>' : isTitle && A.easy ? '<div class="tix easy">EASY MODE ON · SCORES WON\u2019T COUNT</div>' : '') +
       (res && (res.tix || res.xp) ? '<div class="rsum">' +
         (res.tix ? `<div class="tix">+${res.tix} TICKETS${A.featured() ? ' · DOUBLE THIS WEEK' : ''} · ${TICKETS.balance()} TOTAL</div>` : '') +
@@ -539,7 +597,9 @@
         ((res.notes || []).length ? `<div class="notes">${res.notes.map(n => `<span class="note ${n.k}"></span>`).join('')}</div>` : '') + '</div>' : '') + `<div class="hs"></div>` +
       (isTitle ? '<div class="push">PUSH START</div>' : '') + (res ? '<div class="cont" hidden></div>' : '') +
       `<div class="btns"><button class="go"></button>${alt ? '<button class="go2"></button>' : ''}${alt2 ? '<button class="go2 go3"></button>' : ''}${isTitle ? '' : '<button class="go2 home" title="Back to the arcade (Backspace)">⌂ HOME</button>'}</div>` +
-      (canShare ? '<button class="share">Share score</button>' : '') + (isTitle ? '<div class="credit">FREE PLAY · CREDIT 99</div>' : '');
+      (canShare ? '<button class="share">Share score</button>' : '') +
+      (canShare ? `<div class="chal-btns"><button class="share chal-go">⚔ CHALLENGE A FRIEND</button>${A.chal && !A.chal.mine ? `<button class="share chal-back">⚔ CHALLENGE ${A.chal.an} BACK</button><button class="share chal-msg">✉ MESSAGE ${A.chal.an}</button>` : ''}</div>` : '') +
+      (res ? '<button class="share fbk">✎ Feedback</button>' : '') + (isTitle ? '<div class="credit">FREE PLAY · CREDIT 99</div>' : '');
     const xb = o.querySelector('.xpbar b'); if (xb && res && res.xp) requestAnimationFrame(() => requestAnimationFrame(() => { xb.style.width = Math.round(res.xp.after.pct * 100) + '%'; }));
     if (res && res.notes && res.notes.length) {
       o.querySelectorAll('.note').forEach((el, i) => { el.textContent = res.notes[i].text; });
@@ -547,6 +607,13 @@
       setTimeout(() => { if (has('lv')) { A.jingle([523, 659, 784, 1047, 1319, 1047, 1319, 1568], 0.07, 'square'); A.flash('#5ee7ff', 0.25); } else if (has('ms') || has('all')) A.jingle([784, 988, 1319], 0.07, 'square'); else A.jingle([659, 988, 1319], 0.07, 'triangle'); }, 700);
     }
     if (canShare) { const sb = o.querySelector('.share'); sb.addEventListener('click', () => shareScore(res.s, res.day && res.day.d, sb)); }
+    if (canShare) {
+      o.querySelector('.chal-go').addEventListener('click', e => chalMake(res.s, e.currentTarget));
+      const cb = o.querySelector('.chal-back'), cm = o.querySelector('.chal-msg'), c = A.chal;
+      if (cb) cb.addEventListener('click', e => chalMake(res.s, e.currentTarget, c));
+      if (cm) cm.addEventListener('click', () => A.crtOff(new URL(`../../?chat=${encodeURIComponent(c.a)}&cn=${c.an}`, location.href).href));
+    }
+    const fbk = o.querySelector('.fbk'); if (fbk) fbk.addEventListener('click', () => A.openSettings && A.openSettings({ feedback: true }));
     o.querySelector('h2').textContent = title;
     if (isTitle && A.id !== 'game') { const lc = document.createElement('canvas'); lc.className = 'logo'; lc.setAttribute('aria-hidden', 'true'); o.querySelector('h2').before(lc); o.querySelector('h2').classList.add('sr'); startLogo(lc, title); }
     if (big) o.querySelector('.big').textContent = big;
@@ -566,7 +633,7 @@
     dailyDay = res && res.day ? res.day.d : daily ? A.today() : null;
     if (res) {
       shown = { top: res.top, hi: -1, day: res.day, week: res.week };
-      if (res.rank >= 0 || (res.day && res.day.improved) || (res.week && res.week.improved)) entry = { res, pos: 0, letters: [...(/^[A-Z]{3}$/.test(store.get('arcade:initials')) ? store.get('arcade:initials') : 'AAA')] };
+      if (res.rank >= 0 || (res.day && res.day.improved) || (res.week && res.week.improved) || (res.chal && !res.easy && !ini())) entry = { res, pos: 0, letters: [...(/^[A-Z]{3}$/.test(store.get('arcade:initials')) ? store.get('arcade:initials') : 'AAA')] };
     } else if (scores) shown = { top: A.top(), hi: -1, day: null };
     if (res && res.day) hsTab = 'today'; else if (res && res.week) hsTab = 'week'; else if (!tabs().includes(hsTab)) hsTab = 'world';
     renderHS(); o.hidden = false;
@@ -742,6 +809,7 @@
     const { res } = entry, n = entry.letters.join(''), placed = res.rank >= 0;
     const top = res.top.slice(); if (placed) { top.splice(res.rank, 0, { n, s: res.s }); top.length = Math.min(top.length, 10); store.set(topKey, JSON.stringify(top)); }
     store.set('arcade:initials', n);
+    if (res.chal) chalSend(res); // a challenge run waiting for initials to sign it
     shown = { top, hi: res.rank, day: shown && shown.day, week: shown && shown.week }; entry = null; lastSaved = { n, s: res.s };
     A.jingle([784, 988, 1175], 0.06); renderHS(); startContinue(); cloudSync();
     queuePost(n, res.s, placed, res.day && res.day.improved ? res.day.d : null, res.week && res.week.improved ? res.week.w : null);
@@ -752,13 +820,13 @@
     const go = o.querySelector('.go');
     go.textContent = entry ? 'Save' : goLabel; o.querySelectorAll('.go2').forEach(b => { b.hidden = !!entry; });
     const wk = o.querySelector('.weekly'); if (wk) wk.hidden = !!entry;
-    const sb = o.querySelector('.share'); if (sb) sb.hidden = !!entry;
+    o.querySelectorAll('.share,.chal-btns').forEach(b => { b.hidden = !!entry; });
     if (entry) {
       const slots = entry.letters.map((ch, i) => `<div class="slot${i === entry.pos ? ' cur' : ''}">` +
         `<button tabindex="-1" data-slot="${i}" data-dir="ArrowUp" aria-label="Next letter">▲</button>` +
         `<button tabindex="-1" data-slot="${i}" class="ch">${ch}</button>` +
         `<button tabindex="-1" data-slot="${i}" data-dir="ArrowDown" aria-label="Previous letter">▼</button></div>`).join('');
-      const r = entry.res, head = r.rank >= 0 ? `RANK ${r.rank + 1}` : r.day && r.day.improved ? `TODAY'S BEST` : `THIS WEEK'S BEST`;
+      const r = entry.res, head = r.rank >= 0 ? `RANK ${r.rank + 1}` : r.day && r.day.improved ? `TODAY'S BEST` : r.week && r.week.improved ? `THIS WEEK'S BEST` : 'CHALLENGE';
       hs.innerHTML = `<div class="hs-head">${head} · ENTER YOUR INITIALS</div><div class="ini">${slots}</div>` +
         `<div class="hs-hint">Type, or ↑↓ to change and ←→ to move</div>`;
       return;
@@ -936,6 +1004,7 @@
     A.showBest();
     buildCabinet();
     if (mastered()) setMastered();
+    loadChallenge();
     if (window.EVENT && EVENT.on('halloween')) document.body.classList.add('ev-halloween'); // a pumpkin by FREE PLAY
     const m = $('mute');
     // Touch players need a way to pause; add a header button unless the pad already has one (shown on coarse pointers only).
@@ -962,14 +1031,14 @@
       [document.querySelector('.bar .pause'), tag, m].filter(Boolean).forEach(b => group.append(b));
       bigButton(m);
       const controls = () => { const seen = new Set(), out = []; document.querySelectorAll('.pad [data-k], .bar .pause').forEach(b => { const c = b.dataset.k; if (seen.has(c)) return; seen.add(c); out.push({ code: c, label: c === 'KeyP' ? 'Pause' : (t => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase())((b.getAttribute('aria-label') || b.textContent || c).trim()) }); }); if (!seen.has('KeyP')) out.push({ code: 'KeyP', label: 'Pause' }); return out; };
-      const openSettings = () => {
+      const openSettings = (extra = {}) => {
         A.unlock();
         if (!overlayOpen() && !document.querySelector('.story:not([hidden])') && !A.demo) { kd('KeyP'); ku('KeyP'); } // pause a run first
-        const go = () => Settings.open({ slug: A.id, controls: controls() });
+        const go = () => Settings.open({ slug: A.id, controls: controls(), ...extra });
         if (window.Settings) return go();
         const s = document.createElement('script'); s.src = new URL('settings.js', KIT_URL).href; s.onload = () => { hookSettings(); go(); }; document.head.append(s);
       };
-      m.addEventListener('click', openSettings);
+      m.addEventListener('click', () => openSettings()); A.openSettings = openSettings;
       let hooked = false;
       const hookSettings = () => { if (hooked || !window.Settings) return; hooked = true; Settings.onChange(k => {
         if (k === 'arcade:muted') { A.muted = store.get('arcade:muted') === '1'; if (music()) music().refresh(); }
