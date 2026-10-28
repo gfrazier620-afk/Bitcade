@@ -106,10 +106,11 @@ service cloud.firestore {
 
     // Play activity (shared/activity.js) for the admin page (admin.html). A signed-in player writes their own profile
     // and adds events, never reads, edits or deletes them; only the admin's Google account can read. The admin is
-    // matched by a SHA-256 of their email, so the address isn't in this public file.
+    // matched by a SHA-256 of their email, so the address isn't in this public file. (Compared as hex: the rules'
+    // toBase64() is the URL-safe kind, which didn't match a standard Base64 value.)
     function isAdmin() {
       return request.auth != null && request.auth.token.email_verified == true
-        && hashing.sha256(request.auth.token.email.lower().toUtf8()).toBase64() == 'Z3VqEp3VSENqVy5gpn6zdrIOVHe/wnamoJfQg9Yr6/U=';
+        && hashing.sha256(request.auth.token.email.lower().toUtf8()).toHexString().lower() == '67756a129dd548436a572e60a67eb376b20e5477bfc276a6a097d083d62bebf5';
     }
     match /act/{uid} {
       allow read: if isAdmin();

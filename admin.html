@@ -129,7 +129,7 @@ async function load() {
     render();
   } catch (e) {
     $('dash').hidden = true; $('gate').hidden = false;
-    gateErr(e.code === 'permission-denied' ? `${auth.currentUser && auth.currentUser.email} isn’t the admin account (or the Firestore rules haven’t been published yet).` : (e.message || 'Couldn’t load activity.'));
+    gateErr(e.code === 'permission-denied' ? `${auth.currentUser && auth.currentUser.email} isn’t the admin account (or the Firestore rules haven’t been published yet). Signed in as id ${auth.currentUser && auth.currentUser.uid}, email verified: ${auth.currentUser && auth.currentUser.emailVerified}.` : (e.message || 'Couldn’t load activity.'));
   }
 }
 
