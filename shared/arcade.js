@@ -327,6 +327,7 @@
       if (/^Key[A-Z]$/.test(e.code)) { e.preventDefault(); entry.letters[entry.pos] = e.code[3]; entry.pos = Math.min(2, entry.pos + 1); A.tone(660, 0.03); renderHS(); return; }
       if (e.code === 'Backspace') { e.preventDefault(); entry.pos = Math.max(0, entry.pos - 1); renderHS(); return; }
     }
+    if (e.code === 'Backspace' && homeShown() && !e.repeat) { e.preventDefault(); goHome(); return; }
     if (overlayOpen() && (code === 'Enter' || code === 'Space')) {
       if (e.target.closest && e.target.closest('a,button:not(.go)')) return;
       e.preventDefault(); if (!e.repeat) overlayGo(); return;
@@ -390,6 +391,7 @@
         if (settingsOpen()) { gpSwallow.add(i); if (i === 0) Settings.pad('Space'); else if (i === 1 || i === 9) Settings.pad('Back'); }
         else if (A.padHook && A.padHook(i)) gpSwallow.add(i);
         else if (overlayOpen() && (i === 0 || i === 9)) { gpSwallow.add(i); overlayGo(); }
+        else if (i === 8 && homeShown()) { gpSwallow.add(i); goHome(); } // Back / Select = HOME
         else if (overlayOpen() && i === 3 && altFn && !entry) { gpSwallow.add(i); overlayAlt(); } // Y = second overlay button
         else if (overlayOpen() && i === 2 && alt2Fn && !entry) { gpSwallow.add(i); overlayAlt2(); } // X = third
       }
@@ -499,6 +501,9 @@
   let goFn = null, altFn = null, goLabel = '', entry = null, shown = null; // shown: { top, hi, day } for the table
   const overlayOpen = () => { const o = $('ov'); return o && !o.hidden; };
   const startsRun = () => !!shown; // title and game-over screens list scores; the pause screen doesn't
+  // HOME on every overlay but the title screen (game over, pause, between stages): back to the lobby, CRT off first
+  const homeShown = () => overlayOpen() && !entry && !!$('ov').querySelector('.home');
+  const goHome = () => A.crtOff(new URL('../../', location.href).href);
   const overlayGo = () => { if (entry) return saveEntry(); const f = goFn; if (!f) return; if (startsRun()) { runEasy = A.easy; A.coin(); } A.hideOverlay(); f(); };
   const music = () => window.Chip; // shared/chip.js, when the page loads it
   /** Start a run from a page's own screen (shared/story.js) the way the overlay does: easy mode is noted, a coin drops. */
@@ -527,7 +532,7 @@
         (res.xp ? `<div class="xpbar"><span>LV ${res.xp.after.level}</span><i><b style="width:${res.xp.up ? 0 : Math.round(res.xp.before.pct * 100)}%"></b></i><em>+${res.xp.gained} XP${res.xp.up ? ' · LEVEL UP!' : ''}</em></div>` : '') +
         ((res.notes || []).length ? `<div class="notes">${res.notes.map(n => `<span class="note ${n.k}"></span>`).join('')}</div>` : '') + '</div>' : '') + `<div class="hs"></div>` +
       (isTitle ? '<div class="push">PUSH START</div>' : '') + (res ? '<div class="cont" hidden></div>' : '') +
-      `<div class="btns"><button class="go"></button>${alt ? '<button class="go2"></button>' : ''}${alt2 ? '<button class="go2 go3"></button>' : ''}</div>` +
+      `<div class="btns"><button class="go"></button>${alt ? '<button class="go2"></button>' : ''}${alt2 ? '<button class="go2 go3"></button>' : ''}${isTitle ? '' : '<button class="go2 home" title="Back to the arcade (Backspace)">⌂ HOME</button>'}</div>` +
       (canShare ? '<button class="share">Share score</button>' : '') + (isTitle ? '<div class="credit">FREE PLAY · CREDIT 99</div>' : '');
     const xb = o.querySelector('.xpbar b'); if (xb && res && res.xp) requestAnimationFrame(() => requestAnimationFrame(() => { xb.style.width = Math.round(res.xp.after.pct * 100) + '%'; }));
     if (res && res.notes && res.notes.length) {
@@ -543,6 +548,7 @@
     o.querySelector('.go').addEventListener('click', () => { A.unlock(); overlayGo(); });
     if (alt) { const b2 = o.querySelector('.go2'); b2.textContent = alt.btn; b2.addEventListener('click', () => { A.unlock(); overlayAlt(); }); }
     if (alt2) { const b3 = o.querySelector('.go3'); b3.textContent = alt2.btn; b3.addEventListener('click', () => { A.unlock(); overlayAlt2(); }); }
+    const hb = o.querySelector('.home'); if (hb) hb.addEventListener('click', goHome);
     const hs = o.querySelector('.hs');
     hs.addEventListener('mousedown', e => { if (e.target.closest('button')) e.preventDefault(); }); // keep focus off the ▲▼ buttons
     hs.addEventListener('click', e => {

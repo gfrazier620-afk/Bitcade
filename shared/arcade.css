@@ -50,6 +50,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--game);outline-offse
   box-shadow:0 4px 0 color-mix(in srgb,var(--game) 45%,#000)}
 .go:active{transform:translateY(3px);box-shadow:0 1px 0 color-mix(in srgb,var(--game) 45%,#000)}
 .btns{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+.go2.home{border-color:var(--line);color:var(--muted)}.go2.home:hover{color:var(--ink);border-color:var(--ink)}
 .go2{border:2px solid var(--game);border-radius:10px;padding:10px 20px;font-family:var(--f-pixel);font-size:15px;background:transparent;color:var(--game)}
 
 /* top-10 table and initials entry inside the overlay */

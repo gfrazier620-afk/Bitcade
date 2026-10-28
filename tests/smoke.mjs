@@ -339,6 +339,10 @@ console.log('\nTickets and prizes');
   check(await page.evaluate(() => TICKETS.balance()) === 20, 'a new player starts with 20 tickets');
   await page.evaluate(() => { Arcade.submit(300); Arcade.overlay({ title: 'GAME OVER', btn: 'Play again', onGo: () => {} }); });
   check(/\+4 TICKETS/.test(await page.textContent('#ov .tix')) && await page.evaluate(() => TICKETS.balance()) === 24, 'a first top-10 score pays 4 tickets, shown on game over');
+  check(!(await page.isVisible('#ov .home')), 'HOME waits while you type your initials');
+  await page.keyboard.press('Enter');
+  check(await page.isVisible('#ov .home') && await page.isVisible('#ov .go'), 'game over offers PLAY AGAIN and HOME');
+  await page.keyboard.press('Enter');
   await page.keyboard.press('Enter');
   await page.evaluate(() => { Arcade.submit(900); Arcade.overlay({ title: 'GAME OVER', btn: 'Play again', onGo: () => {} }); });
   check(await page.evaluate(() => TICKETS.balance()) === 24 + 11, 'a new #1 and a new record pay 11');
@@ -676,6 +680,12 @@ console.log('\nBadges and sharing');
   check(/4,321 on Neon Noodle/.test(clip) && /games\/neon-noodle\//.test(clip), `Share copies the score and a link ("${clip.slice(0, 60)}…")`);
   check(!errors.length, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
   await close();
+
+  const hm = await open('/games/rock-rift/');
+  check(!(await hm.page.isVisible('#ov .home')), 'title screens have no HOME button (the header has ◀ BITCADE)');
+  await hm.page.evaluate(() => { Arcade.submit(0); Arcade.overlay({ title: 'GAME OVER', btn: 'Play again', onGo: () => {} }); });
+  await Promise.all([hm.page.waitForURL(u => !/games\//.test(u.pathname), { timeout: 5000 }).then(() => true, () => false).then(ok => check(ok, 'Backspace on game over goes back to the arcade')), hm.page.keyboard.press('Backspace')]);
+  await hm.close();
 
   const lobby = await open('/');
   await lobby.page.evaluate(() => localStorage.setItem('arcade:badges:wallbuster', '["clear"]'));
