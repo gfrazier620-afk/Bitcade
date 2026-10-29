@@ -1,7 +1,7 @@
 {
   "id": "admin.html",
-  "name": "Bitcade SOC",
-  "short_name": "Bitcade SOC",
+  "name": "Bitcade Admin",
+  "short_name": "Bitcade Admin",
   "description": "The Bitcade admin console: who's playing, alerts and feedback.",
   "start_url": "admin.html",
   "scope": "./",
