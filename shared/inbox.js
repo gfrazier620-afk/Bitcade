@@ -16,7 +16,7 @@ window.Inbox = (() => {
   const name = g => String(g || '').split('-').map(w => w ? w[0].toUpperCase() + w.slice(1) : '').join(' ');
   const when = ms => { const d = Date.now() - ms; return d < 6e4 ? 'now' : d < 36e5 ? `${Math.floor(d / 6e4)}m` : d < 864e5 ? `${Math.floor(d / 36e5)}h` : `${Math.floor(d / 864e5)}d`; };
   let o = null, box = null, w = null, me = null, convos = [], blockedList = [], cur = null, msgs = [], poll = 0, busy = false;
-  const world = () => w ? Promise.resolve(w) : import('./shared/world.js').then(m => (w = m)); // relative to the lobby page
+  const world = () => w ? Promise.resolve(w) : import('./world.js').then(m => (w = m)); // relative to this script, not the page
   const ini = () => { const n = get('arcade:initials'); return /^[A-Z]{3}$/.test(n || '') ? n : ''; };
   const other = c => c.m.find(x => x !== me);
   const friends = c => !!(c && c.acc[c.m[0]] && c.acc[c.m[1]]);

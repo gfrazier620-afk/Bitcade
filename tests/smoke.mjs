@@ -890,6 +890,7 @@ console.log('\nFeedback, errors and challenges');
   await skipBoot(lb.page);
   await lb.page.click('#tbMsg');
   check(await lb.page.isVisible('.ib-panel') && await lb.page.waitForFunction(() => /connection/.test(document.querySelector('.ib-body').textContent), null, { timeout: 8000 }).then(() => true, () => false), '✉ opens the messages, which say they need a connection when offline');
+  check(await lb.page.evaluate(() => { const r = performance.getEntriesByType('resource').map(e => e.name); return r.some(n => /\/shared\/world\.js$/.test(n)) && !r.some(n => /shared\/shared\//.test(n)); }), 'the messages load shared/world.js from the right place');
   await lb.page.keyboard.press('Escape');
   check(!(await lb.page.isVisible('.ib-panel')), 'Escape closes them');
   check(await lb.page.evaluate(() => Inbox.clean('you are a bitch') === 'you are a *****' && Inbox.clean('nice shot!') === 'nice shot!'), 'free text goes through a word filter');
