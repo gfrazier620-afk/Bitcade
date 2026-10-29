@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#04070a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="Bitcade SOC">
 <title>Bitcade SOC</title>
 <link rel="manifest" href="admin-manifest.json">
@@ -62,6 +62,7 @@ button{cursor:pointer}
 .top{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:8px 10px;padding:calc(10px + var(--top)) 16px 10px;background:rgba(4,7,10,.92);border-bottom:1px solid var(--line);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
 .brand{display:flex;align-items:center;gap:8px;font-weight:700;letter-spacing:.14em;font-size:15px;white-space:nowrap}
 .brand svg{flex:none}
+.blogo{display:block;filter:drop-shadow(0 0 6px rgba(57,255,136,.35))}
 .brand span{color:var(--g)}
 .chip{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;border:1px solid var(--line2);border-radius:4px;background:var(--p);font:600 11px/1 var(--f-ui);letter-spacing:.12em;white-space:nowrap}
 .lvl{border-color:currentColor}
@@ -260,9 +261,10 @@ pre{margin:8px 0 0;max-height:300px;overflow:auto;font:12px/1.5 var(--f-mono);wh
 </style>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><linearGradient id="bGrad" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="7"><stop offset="0" stop-color="#9affc4"/><stop offset=".5" stop-color="#39ff88"/><stop offset="1" stop-color="#3de0ff"/></linearGradient><symbol id="bLogo" viewBox="-1.2 -1.07 7.26 9"><rect x="-1.2" y="-1.07" width="7.26" height="9" rx="1.6" fill="#0a1116" stroke="#21434f" stroke-width=".18"/><g fill="url(#bGrad)"><rect x="0" y="0" width=".86" height=".86"/><rect x="1" y="0" width=".86" height=".86"/><rect x="2" y="0" width=".86" height=".86"/><rect x="3" y="0" width=".86" height=".86"/><rect x="0" y="1" width=".86" height=".86"/><rect x="4" y="1" width=".86" height=".86"/><rect x="0" y="2" width=".86" height=".86"/><rect x="4" y="2" width=".86" height=".86"/><rect x="0" y="3" width=".86" height=".86"/><rect x="1" y="3" width=".86" height=".86"/><rect x="2" y="3" width=".86" height=".86"/><rect x="3" y="3" width=".86" height=".86"/><rect x="0" y="4" width=".86" height=".86"/><rect x="4" y="4" width=".86" height=".86"/><rect x="0" y="5" width=".86" height=".86"/><rect x="4" y="5" width=".86" height=".86"/><rect x="0" y="6" width=".86" height=".86"/><rect x="1" y="6" width=".86" height=".86"/><rect x="2" y="6" width=".86" height=".86"/><rect x="3" y="6" width=".86" height=".86"/></g></symbol></defs></svg>
 <section class="gate" id="gate">
   <div class="box pn">
-    <div class="brand"><svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><path d="M11 1l9 4v6c0 5-4 9-9 10C6 20 2 16 2 11V5z" fill="none" stroke="#39ff88" stroke-width="2"/><path d="M7 11l3 3 5-6" fill="none" stroke="#39ff88" stroke-width="2"/></svg>BITCADE <span>// SOC</span></div>
+    <div class="brand"><svg class="blogo" width="27" height="34" aria-hidden="true"><use href="#bLogo"/></svg>BITCADE <span>ADMIN</span></div>
     <pre class="term" id="term"></pre>
     <button class="btn main" id="in">▶ AUTHENTICATE WITH GOOGLE</button>
     <div class="err" id="gateErr" hidden></div>
@@ -271,7 +273,7 @@ pre{margin:8px 0 0;max-height:300px;overflow:auto;font:12px/1.5 var(--f-mono);wh
 
 <div id="app" hidden>
   <header class="top">
-    <div class="brand"><svg width="20" height="20" viewBox="0 0 22 22" aria-hidden="true"><path d="M11 1l9 4v6c0 5-4 9-9 10C6 20 2 16 2 11V5z" fill="none" stroke="#39ff88" stroke-width="2"/><path d="M7 11l3 3 5-6" fill="none" stroke="#39ff88" stroke-width="2"/></svg><span class="full" style="color:inherit">BITCADE</span><span>SOC</span></div>
+    <div class="brand" aria-label="Bitcade"><svg class="blogo" width="25" height="32" aria-hidden="true"><use href="#bLogo"/></svg><span class="full" style="color:inherit">BITCADE</span></div>
     <button class="chip lvl ok" id="lvl" title="Alert level"><i></i><span>NOMINAL</span></button>
     <span class="chip live" id="live" title="Auto-refresh"><i></i><span class="lbl">LIVE</span><span id="sync" class="mono"></span></span>
     <span class="sp"></span>
