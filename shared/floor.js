@@ -50,6 +50,13 @@ window.Floor = (() => {
   }
   const shadow = (x, cx, cy, rx, ry = 7) => { x.fillStyle = 'rgba(0,0,0,.5)'; x.beginPath(); x.ellipse(cx, cy, rx, ry, 0, 0, 6.29); x.fill(); };
   const equip = () => (window.Prizes ? Prizes.equipped() : {});
+  /** How you look: your character (shared/avatar.js), or a prize outfit worn over it (keeping your skin). */
+  const myLook = () => {
+    const id = equip().outfit, me = window.Avatar && Avatar.valid(Avatar.get()) ? Avatar.look() : null;
+    if (me) me.glasses = me.glasses || me.shades;
+    if (id && OUTFITS[id]) return me ? { ...OUTFITS[id], skin: OUTFITS[id].skin || me.skin } : id;
+    return me || '';
+  };
   const owns = id => !!(window.Prizes && Prizes.has(id));
   const icon = (x, px, ox, oy, k) => px.forEach((row, j) => [...row].forEach((ch, i) => { if (PAL[ch]) { x.fillStyle = PAL[ch]; x.fillRect(ox + i * k, oy + j * k, k, k); } }));
   function footage(slug) {
@@ -830,6 +837,8 @@ window.Floor = (() => {
     }
     if (o.glow) { const g = x.createRadialGradient(0, -22, 2, 0, -22, 30); g.addColorStop(0, 'rgba(255,210,61,.55)'); g.addColorStop(1, 'rgba(255,210,61,0)'); x.fillStyle = g; x.fillRect(-30, -52, 60, 60); }
     if (o.cape) { const flap = moving ? Math.sin(walk * 2) * 2 : 0; x.fillStyle = OUT; x.beginPath(); x.moveTo(-8, -26); x.lineTo(8, -26); x.lineTo(10 + flap, dir === 'up' ? -4 : -8); x.lineTo(-10 - flap, dir === 'up' ? -4 : -8); x.fill(); x.fillStyle = o.cape; x.beginPath(); x.moveTo(-7, -25); x.lineTo(7, -25); x.lineTo(9 + flap, dir === 'up' ? -5 : -9); x.lineTo(-9 - flap, dir === 'up' ? -5 : -9); x.fill(); }
+    if (o.long && dir !== 'up') parts.splice(side ? -2 : -1, 0, ...(side ? [[-8, -38, 4, 13, o.hair, true]] : [[-8, -38, 3, 13, o.hair, true], [5, -38, 3, 13, o.hair, true]]));
+    else if (o.long) parts.push([-7, -38, 14, 12, o.hair, true]);
     paint(x, parts);
     if (dir === 'down') { x.fillStyle = OUT; x.fillRect(-4, -33, 2, 3); x.fillRect(2, -33, 2, 3); if (o.glasses) { x.fillStyle = '#111'; x.fillRect(-5, -34, 10, 3); } x.fillStyle = pose === 'cheer' ? OUT : '#c0604a'; x.fillRect(-1, -29, 3, pose === 'cheer' ? 2 : 1); }
     if (side) { x.fillStyle = OUT; x.fillRect(3, -33, 2, 3); if (o.glasses) { x.fillStyle = '#111'; x.fillRect(1, -34, 6, 3); } }
@@ -1103,7 +1112,7 @@ window.Floor = (() => {
         list.forEach((id, i) => {
           const [sx, sy, sw, sh] = slot(i), on = i === at; x.fillStyle = on ? '#2a1a4a' : '#140c24'; x.fillRect(sx, sy, sw, sh); x.strokeStyle = on ? '#ffd23d' : '#3a3060'; x.lineWidth = on ? 2 : 1; x.strokeRect(sx + 0.5, sy + 0.5, sw - 1, sh - 1);
           const look = emoteLook({ id, t: (t / 1000) % EMOTES[id][1], dur: EMOTES[id][1] });
-          x.save(); x.translate(sx + sw / 2, sy + 78 - (look.lift || 0)); x.scale(1.3 * (look.scale || 1), 1.3 * (look.scale || 1)); drawWalker(x, 0, 0, look.dir || 'down', 0, false, equip().outfit || '', look.pose); x.restore();
+          x.save(); x.translate(sx + sw / 2, sy + 78 - (look.lift || 0)); x.scale(1.3 * (look.scale || 1), 1.3 * (look.scale || 1)); drawWalker(x, 0, 0, look.dir || 'down', 0, false, myLook(), look.pose); x.restore();
           x.fillStyle = on ? '#ffd23d' : '#f4effd'; x.fillText(EMOTES[id][0], sx + sw / 2, sy + 94); x.fillStyle = 'rgba(255,255,255,.4)'; x.fillText(String(i + 1), sx + 10, sy + 10);
         });
       },
@@ -1819,10 +1828,10 @@ window.Floor = (() => {
     for (const n of npcs) if (visible(n.x, n.y)) list.push([n.y, () => drawWalker(x, n.x, n.y, n.dir, n.walk, n.moving, n.look, n.pose, n.prop)]);
     const em = me.emote ? emoteLook(me.emote) : null;
     list.push([me.y, () => {
-      if (me.turnT > 0 && !em) { const k = me.turnT / 0.14; x.save(); x.translate(me.x, me.y); x.scale(1 - k * 0.22, 1 + k * 0.08); x.translate(-me.x, -me.y); drawWalker(x, me.x, me.y, me.dir, me.walk, me.moving, equip().outfit || '', me.pose || (me.bubble && me.bubble.cheer ? 'cheer' : ''), me.prop); x.restore(); return; }
-      if (!em) return drawWalker(x, me.x, me.y, me.dir, me.walk, me.moving, equip().outfit || '', me.pose || (me.bubble && me.bubble.cheer ? 'cheer' : ''), me.prop);
+      if (me.turnT > 0 && !em) { const k = me.turnT / 0.14; x.save(); x.translate(me.x, me.y); x.scale(1 - k * 0.22, 1 + k * 0.08); x.translate(-me.x, -me.y); drawWalker(x, me.x, me.y, me.dir, me.walk, me.moving, myLook(), me.pose || (me.bubble && me.bubble.cheer ? 'cheer' : ''), me.prop); x.restore(); return; }
+      if (!em) return drawWalker(x, me.x, me.y, me.dir, me.walk, me.moving, myLook(), me.pose || (me.bubble && me.bubble.cheer ? 'cheer' : ''), me.prop);
       const sc = em.scale || 1; x.save(); x.translate(me.x, me.y - (em.lift || 0)); x.scale(sc, sc); x.translate(-me.x, -me.y);
-      drawWalker(x, me.x, me.y, em.dir || me.dir, 0, false, equip().outfit || '', em.pose, me.prop); x.restore();
+      drawWalker(x, me.x, me.y, em.dir || me.dir, 0, false, myLook(), em.pose, me.prop); x.restore();
     }]);
     if (equip().pet && !me.entering) list.push([pet.y + (FLYERS.includes(equip().pet) ? 30 : 0), () => drawPet(x, equip().pet, pet.x, pet.y, pet.dir, pet.t, pet.moving, pet.hop)]);
     ghostDraws(list, x, t);
@@ -1895,7 +1904,7 @@ window.Floor = (() => {
   const kit = {
     VW, VH, OUT, shade, paint, rgba, star, neon, drawWalker, randomLook, icon, footage, owns,
     get opt() { return opt; }, get me() { return me; }, get cabs() { return cabs; }, get allCabs() { return [...cabs, ...((saved[1 - level] || {}).cabs || [])]; }, get level() { return level; }, get npcs() { return npcs; }, get mastered() { return mastered; },
-    look: () => equip().outfit || '', initials, booth, held: c => keys.has(c), say: (text, dur, cheer) => { me.bubble = { text, t: dur || 2.4, cheer }; },
+    look: () => myLook(), initials, booth, held: c => keys.has(c), say: (text, dur, cheer) => { me.bubble = { text, t: dur || 2.4, cheer }; },
     staffSay: (who, text) => { const s = STAFF.find(s => s.name === who); if (s) say(s, text, 2.6); },
     open: m => { mode = m; keys.clear(); route = []; me.vx = me.vy = 0; showCard(); },
     close: () => { mode = null; keys.clear(); showCard(); },
@@ -1950,12 +1959,12 @@ window.Floor = (() => {
       if (p.slot === 'outfit') { x.fillStyle = '#140c24'; x.fillRect(0, 0, w, h); x.save(); x.scale(1.3, 1.3); drawWalker(x, w / 2 / 1.3, (h - 6) / 1.3, 'down', 0, false, p.id); x.restore(); return true; }
       if (p.slot === 'carpet') { carpet(x, p.id, w, h); return true; }
       if (p.slot === 'pet') { x.fillStyle = '#140c24'; x.fillRect(0, 0, w, h); x.save(); x.scale(2, 2); drawPet(x, p.id, w / 4, h / 2 - 6 + (FLYERS.includes(p.id) ? 10 : 0), 'right', t / 1000, false, 0); x.restore(); return true; }
-      if (p.slot === 'emote') { x.fillStyle = '#140c24'; x.fillRect(0, 0, w, h); const em = emoteLook({ id: p.id, t: (t / 1000) % EMOTES[p.id][1], dur: EMOTES[p.id][1] }); x.save(); x.translate(w / 2, h - 5 - (em.lift || 0) * 0.5); x.scale(0.95 * (em.scale || 1), 0.95 * (em.scale || 1)); drawWalker(x, 0, 0, em.dir || 'down', 0, false, equip().outfit || '', em.pose); x.restore(); return true; }
+      if (p.slot === 'emote') { x.fillStyle = '#140c24'; x.fillRect(0, 0, w, h); const em = emoteLook({ id: p.id, t: (t / 1000) % EMOTES[p.id][1], dur: EMOTES[p.id][1] }); x.save(); x.translate(w / 2, h - 5 - (em.lift || 0) * 0.5); x.scale(0.95 * (em.scale || 1), 0.95 * (em.scale || 1)); drawWalker(x, 0, 0, em.dir || 'down', 0, false, myLook(), em.pose); x.restore(); return true; }
       if (p.slot === 'trail') {
         x.fillStyle = '#140c24'; x.fillRect(0, 0, w, h); const c = { sparkle: '#ffd23d', neonprint: '#5ee7ff', bubbles: '#9ae8ff', rainbow: '#ff4fd1', flame: '#ff8a3d' }[p.id] || '#fff';
         for (let i = 0; i < 9; i++) { const px = 10 + i * (w - 20) / 8, py = h - 14 - Math.sin(i * 0.7) * 10, a = (i + 1) / 9; x.globalAlpha = a; x.fillStyle = p.id === 'rainbow' ? `hsl(${i * 40},95%,60%)` : i % 2 && p.id === 'neonprint' ? '#ff4fd1' : c;
           if (p.id === 'bubbles') { x.strokeStyle = c; x.beginPath(); x.arc(px, py - i * 2, 3, 0, 6.29); x.stroke(); } else { x.beginPath(); x.arc(px, py, p.id === 'neonprint' ? 3 : 2 + a * 2, 0, 6.29); x.fill(); } }
-        x.globalAlpha = 1; drawWalker(x, w - 14, h - 8, 'right', t / 120, true, equip().outfit || ''); return true;
+        x.globalAlpha = 1; drawWalker(x, w - 14, h - 8, 'right', t / 120, true, myLook()); return true;
       }
       if (p.slot !== 'decor') return false;
       x.fillStyle = '#140c24'; x.fillRect(0, 0, w, h); x.save();

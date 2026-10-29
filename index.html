@@ -321,6 +321,10 @@ html:has(.fl-max){overflow:hidden}
 .pf-card{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:18px;padding:18px 20px;border-radius:16px;border:2px solid #5ee7ff;
   background:linear-gradient(135deg,rgba(94,231,255,.12),transparent 60%),var(--bg2);box-shadow:0 0 28px rgba(94,231,255,.15)}
 .pf-id{display:flex;align-items:center;gap:16px}
+.pf-me{display:flex;flex-direction:column;align-items:center;gap:6px;flex:none}
+.pf-av{width:96px;height:112px;border-radius:12px;background:radial-gradient(ellipse at 50% 85%,rgba(255,79,163,.25),transparent 60%),#0a0716;border:2px solid #2d2556}
+.pf-btn.pf-edit{padding:5px 10px;font-size:10px}
+.pf-name{font-family:var(--f-marquee);font-size:28px;line-height:1.1;color:#ffe36a;word-break:break-all}.pf-name small{font-family:var(--f-pixel);font-size:13px;color:#5ee7ff;letter-spacing:.12em;vertical-align:middle}
 .pf-ini input{width:150px;font-family:var(--f-marquee);font-size:52px;line-height:1;letter-spacing:.08em;text-align:center;color:#ffe36a;background:#0a0716;border:2px solid #2d2556;border-radius:12px;padding:6px 4px;
   text-shadow:0 0 14px rgba(255,227,106,.6);user-select:text;-webkit-user-select:text}
 .pf-ini input:focus{outline:none;border-color:#ffe36a}
@@ -627,6 +631,8 @@ body.ev-halloween .topbar .logo{background:linear-gradient(180deg,#ffb04a 0%,#ff
 .ib-row{position:relative;display:flex;align-items:center;gap:12px;width:100%;padding:10px 12px;border-radius:12px;background:var(--bg2);border:1px solid var(--line);color:var(--ink);cursor:pointer;text-align:left}
 .ib-row:hover{border-color:#ff8a9a}.ib-row.new{border-color:#ffd23d}
 .ib-ini{font-family:var(--f-pixel);font-size:16px;color:#ffd23d;min-width:3.4ch}
+.ib-ini small{font-size:10px;color:#a39bc4;letter-spacing:.1em}
+.ib-av{width:30px;height:30px;flex:none;border-radius:8px;background:#0a0716;border:1px solid #2d2556;display:block}
 .ib-sub{flex:1;font-family:var(--f-pixel);font-size:10px;color:var(--muted)}.ib-sub em{font-style:normal}.ib-sub em.fr{color:#3dff8f}
 .ib-when{font-family:var(--f-pixel);font-size:10px;color:var(--muted)}
 .ib-dot{position:absolute;top:8px;right:8px;width:8px;height:8px;border-radius:50%;background:#ffd23d;box-shadow:0 0 8px #ffd23d}
@@ -752,6 +758,8 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
 <script src="shared/badges.js"></script>
 <script src="shared/boot.js"></script>
 <script src="shared/prizes.js"></script>
+<script src="shared/avatar.js"></script>
+<script src="shared/setup.js"></script>
 <script src="shared/profile.js"></script>
 <script src="shared/shelves.js"></script>
 <script src="shared/pass.js"></script>
@@ -1121,6 +1129,13 @@ function initFloor() { Floor.init({
 const profileView = document.getElementById('profileView'), vProfile = document.getElementById('vProfile');
 const prices = Object.fromEntries(Prizes.LIST.map(p => [p.id, p.price]));
 Profile.init({ el: profileView, games: GAMES, paint, prices, onSynced: changed => { if (changed) location.replace('?view=profile'); } });
+/* ---------- the player profile (shared/setup.js): a new player makes one as the doors open; later visits only check it's published ---------- */
+{
+  const lobbyReady = () => new Promise(r => { const t = setInterval(() => { if (!document.documentElement.classList.contains('booting')) { clearInterval(t); r(); } }, 250); });
+  if (Setup.need()) lobbyReady().then(() => Setup.open({ required: true }));
+  else setTimeout(() => Setup.check(), 3000);
+  addEventListener('bitcade:profile', () => { if (!profileView.hidden) Profile.render(); });
+}
 /* Daily missions (MISSIONS in shared/badges.js): three cards with progress, a countdown, and a tap goes to do it. */
 const missionsEl = document.getElementById('missions');
 function renderMissions() {

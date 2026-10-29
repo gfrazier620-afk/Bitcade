@@ -21,6 +21,14 @@ window.Inbox = (() => {
   const other = c => c.m.find(x => x !== me);
   const friends = c => !!(c && c.acc[c.m[0]] && c.acc[c.m[1]]);
   const unread = c => c.last > (c.seen[me] || 0) + 1000;
+  // other players' profiles (profiles/{uid}: player name and character), so two players with the same initials differ
+  const profs = {};
+  const them = c => { const p = profs[other(c)]; return p && p.name ? p.name : c.n[other(c)] || '???'; };
+  const face = uid => { const p = profs[uid]; return p && p.av && window.Avatar ? `<canvas class="ib-av" data-av="${esc(p.av)}"></canvas>` : '<i class="ib-av"></i>'; };
+  async function learn(uids) {
+    const want = [...new Set(uids)].filter(u => u && !(u in profs)); if (!want.length) return;
+    const got = await w.profiles(want).catch(() => ({})); for (const u of want) profs[u] = got[u] || null;
+  }
 
   /** opts: { btn, dot, play(href) } */
   function init(opts) {
@@ -31,7 +39,7 @@ window.Inbox = (() => {
   }
   /** Look for new messages (the dot on the ✉ button). */
   async function refresh() {
-    try { const m = await world(); me = me || await m.myId(); [convos, blockedList] = await Promise.all([m.conversations(), m.blocked()]); }
+    try { const m = await world(); me = me || await m.myId(); [convos, blockedList] = await Promise.all([m.conversations(), m.blocked()]); await learn(convos.map(other)); }
     catch (e) { return false; }
     o.dot.hidden = !convos.some(c => !blockedList.includes(other(c)) && unread(c));
     return true;
@@ -64,6 +72,7 @@ window.Inbox = (() => {
     body('<p class="ib-note">Loading…</p>'); foot('');
     if (!(await refresh())) { body('<p class="ib-note">Messages need a connection. Try again in a moment.</p>'); return; }
     if (uid && uid !== me) {
+      await learn([uid]);
       const c = convos.find(c => other(c) === uid) || { id: w.pairOf(me, uid), m: [me, uid].sort(), n: { [uid]: /^[A-Z]{3}$/.test(cn || '') ? cn : '???' }, acc: {}, seen: {}, last: 0, fresh: true };
       return talk(c);
     }
@@ -78,10 +87,11 @@ window.Inbox = (() => {
     cur = null; clearInterval(poll); head('✉ MESSAGES', false);
     const shown = convos.filter(c => !blockedList.includes(other(c)));
     const sent = (() => { try { return JSON.parse(get('bitcade:chs') || '[]'); } catch (e) { return []; } })().slice(0, 8);
-    body((shown.length ? shown.map(c => `<button class="ib-row${unread(c) ? ' new' : ''}" data-convo="${esc(c.id)}"><span class="ib-ini">${esc(c.n[other(c)] || '???')}</span><span class="ib-sub">${friends(c) ? '<em class="fr">★ FRIENDS</em>' : '<em>CHALLENGE RIVALS</em>'}</span><span class="ib-when">${c.last ? when(c.last) : ''}</span>${unread(c) ? '<i class="ib-dot"></i>' : ''}</button>`).join('')
+    body((shown.length ? shown.map(c => `<button class="ib-row${unread(c) ? ' new' : ''}" data-convo="${esc(c.id)}">${face(other(c))}<span class="ib-ini">${esc(them(c))}${profs[other(c)] && c.n[other(c)] ? ` <small>${esc(c.n[other(c)])}</small>` : ''}</span><span class="ib-sub">${friends(c) ? '<em class="fr">★ FRIENDS</em>' : '<em>CHALLENGE RIVALS</em>'}</span><span class="ib-when">${c.last ? when(c.last) : ''}</span>${unread(c) ? '<i class="ib-dot"></i>' : ''}</button>`).join('')
       : '<p class="ib-note">No messages yet. Finish a game and press <b>⚔ CHALLENGE A FRIEND</b> to send someone a link. When they play it, their result shows up here and you can chat.</p>') +
       (sent.length ? `<h4>CHALLENGES YOU SENT</h4>${sent.map(c => `<button class="ib-row ib-sent" data-chal="${esc(c.id)}"><span class="ib-ini">⚔</span><span class="ib-sub">${esc(name(c.g))} · YOUR ${(+c.s || 0).toLocaleString()}</span><span class="ib-when">${when(c.t)}</span></button><div class="ib-res" data-for="${esc(c.id)}" hidden></div>`).join('')}` : ''));
     foot('');
+    if (window.Avatar) Avatar.fill(box);
   }
   async function showResults(btn) {
     const id = btn.dataset.chal, out = box.querySelector(`.ib-res[data-for="${id}"]`); if (!out) return;
@@ -95,7 +105,7 @@ window.Inbox = (() => {
 
   async function talk(c) {
     if (!c) return;
-    cur = c; const who = c.n[other(c)] || '???';
+    cur = c; const who = them(c);
     head(who, true, `<button class="ib-tool ib-block">${blockedList.includes(other(c)) ? 'UNBLOCK' : 'BLOCK'}</button><button class="ib-tool ib-report">REPORT</button>`);
     body('<p class="ib-note">Loading…</p>'); drawFoot();
     await load();
@@ -110,15 +120,15 @@ window.Inbox = (() => {
     if (!c.fresh && unread(c)) w.markSeen(c.id).then(() => { c.seen[me] = Date.now(); }).catch(() => {});
   }
   function draw() {
-    const c = cur, el = box.querySelector('.ib-body'), atEnd = el.scrollTop + el.clientHeight > el.scrollHeight - 30, them = c.n[other(c)] || '???';
+    const c = cur, el = box.querySelector('.ib-body'), atEnd = el.scrollTop + el.clientHeight > el.scrollHeight - 30, who = them(c);
     const card = m => {
       const mine = m.u === me;
-      if (m.k === 'ch') return `<div class="ib-card ${mine ? 'me' : ''}"><b>⚔ ${mine ? 'YOU CHALLENGED ' + esc(them) : esc(them) + ' CHALLENGES YOU'}</b><span>${esc(name(m.g))} · ${(+m.s || 0).toLocaleString()} TO BEAT</span>${mine ? '' : `<button class="ib-play" data-play="games/${esc(m.g)}/?ch=${esc(m.c)}">PLAY IT ▶</button>`}</div>`;
-      if (m.k === 'res') { const win = m.s > m.vs; return `<div class="ib-card res ${mine ? 'me' : ''}${win ? ' win' : ''}"><b>${mine ? 'YOU' : esc(them)} SCORED ${(+m.s || 0).toLocaleString()}</b><span>${esc(name(m.g))} · against ${(+m.vs || 0).toLocaleString()} · ${win ? (mine ? 'YOU WON ★' : esc(them) + ' WON') : (mine ? 'NOT YET' : 'YOU’RE STILL AHEAD')}</span>${mine ? '' : `<button class="ib-play" data-play="games/${esc(m.g)}/">PLAY ${esc(name(m.g).toUpperCase())} ▶</button>`}</div>`; }
+      if (m.k === 'ch') return `<div class="ib-card ${mine ? 'me' : ''}"><b>⚔ ${mine ? 'YOU CHALLENGED ' + esc(who) : esc(who) + ' CHALLENGES YOU'}</b><span>${esc(name(m.g))} · ${(+m.s || 0).toLocaleString()} TO BEAT</span>${mine ? '' : `<button class="ib-play" data-play="games/${esc(m.g)}/?ch=${esc(m.c)}">PLAY IT ▶</button>`}</div>`;
+      if (m.k === 'res') { const win = m.s > m.vs; return `<div class="ib-card res ${mine ? 'me' : ''}${win ? ' win' : ''}"><b>${mine ? 'YOU' : esc(who)} SCORED ${(+m.s || 0).toLocaleString()}</b><span>${esc(name(m.g))} · against ${(+m.vs || 0).toLocaleString()} · ${win ? (mine ? 'YOU WON ★' : esc(who) + ' WON') : (mine ? 'NOT YET' : 'YOU’RE STILL AHEAD')}</span>${mine ? '' : `<button class="ib-play" data-play="games/${esc(m.g)}/">PLAY ${esc(name(m.g).toUpperCase())} ▶</button>`}</div>`; }
       const text = m.k === 'q' ? QUICK[m.q] || '…' : clean(m.x || '');
       return `<div class="ib-msg ${mine ? 'me' : ''}"><span>${esc(text)}</span><small>${when(m.t)}</small></div>`;
     };
-    el.innerHTML = msgs.length ? msgs.map(card).join('') : `<p class="ib-note">Say hi to ${esc(them)}!</p>`;
+    el.innerHTML = msgs.length ? msgs.map(card).join('') : `<p class="ib-note">Say hi to ${esc(who)}!</p>`;
     if (atEnd || el.dataset.first !== c.id) { el.scrollTop = el.scrollHeight; el.dataset.first = c.id; }
     drawFoot();
   }
@@ -127,7 +137,7 @@ window.Inbox = (() => {
     if (blockedList.includes(other(c))) { foot('<p class="ib-note">You’ve blocked this player. Unblock them to send messages.</p>'); return; }
     const keep = box.querySelector('.ib-text'), val = keep ? keep.value : '';
     foot(`<div class="ib-quick">${QUICK.map((t, i) => `<button data-q="${i}">${esc(t)}</button>`).join('')}</div>` +
-      (friends(c) ? `<div class="ib-type"><input class="ib-text" maxlength="200" placeholder="Message ${esc(c.n[other(c)] || '')}…" autocomplete="off"><button class="ib-send">SEND</button></div>`
+      (friends(c) ? `<div class="ib-type"><input class="ib-text" maxlength="200" placeholder="Message ${esc(them(c))}…" autocomplete="off"><button class="ib-send">SEND</button></div>`
         : '<p class="ib-note small">Free chat unlocks once you’ve both played each other’s challenge.</p>'));
     const t = box.querySelector('.ib-text'); if (t && val) { t.value = val; }
   }
@@ -150,9 +160,9 @@ window.Inbox = (() => {
     if (was) talk(c); else list();
   }
   async function reportIt(btn) {
-    const c = cur, them = c.n[other(c)] || '???';
+    const c = cur, who = them(c);
     if (btn.dataset.armed !== '1') { btn.dataset.armed = '1'; btn.textContent = 'TAP AGAIN TO REPORT'; setTimeout(() => { btn.dataset.armed = ''; btn.textContent = 'REPORT'; }, 4000); return; }
-    const log = msgs.slice(-30).map(m => `[${new Date(m.t).toISOString().slice(0, 16)}] ${m.u === me ? 'ME' : them}: ${m.k === 'x' ? m.x : m.k === 'q' ? QUICK[m.q] : m.k + ' ' + m.g + ' ' + m.s}`).join('\n');
+    const log = msgs.slice(-30).map(m => `[${new Date(m.t).toISOString().slice(0, 16)}] ${m.u === me ? 'ME' : who}: ${m.k === 'x' ? m.x : m.k === 'q' ? QUICK[m.q] : m.k + ' ' + m.g + ' ' + m.s}`).join('\n');
     try { await w.report(other(c), c.id, log); btn.textContent = 'REPORTED ✓'; } catch (e) { btn.textContent = 'OFFLINE'; }
   }
   return { init, open, close, isOpen: () => !!box && !box.hidden, QUICK, clean };

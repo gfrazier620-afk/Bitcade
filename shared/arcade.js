@@ -139,16 +139,17 @@
   const world = () => A.world();
   A.chal = null;
   const ini = () => { const n = store.get('arcade:initials'); return /^[A-Z]{3}$/.test(n || '') ? n : ''; };
-  const chalBanner = () => A.chal ? `<div class="chal">${A.chal.mine ? `⚔ YOUR CHALLENGE · ${A.chal.s.toLocaleString()} TO BEAT` : `⚔ ${A.chal.an} CHALLENGES YOU · BEAT ${A.chal.s.toLocaleString()}`}</div>` : '';
+  const chalBanner = () => A.chal ? `<div class="chal">${A.chal.mine ? `⚔ YOUR CHALLENGE · ${A.chal.s.toLocaleString()} TO BEAT` : `⚔ ${A.chal.who} CHALLENGES YOU · BEAT ${A.chal.s.toLocaleString()}`}</div>` : '';
   function loadChallenge() {
     let id = null; try { id = new URLSearchParams(location.search).get('ch') || sessionStorage.getItem('bitcade:chal:' + A.id); } catch (e) {}
     if (!id || !/^[A-Za-z0-9]{10,40}$/.test(id)) return;
-    world().then(w => Promise.all([w.getChallenge(id), w.myId()])).then(([c, me]) => {
+    world().then(w => Promise.all([w.getChallenge(id), w.myId(), w]).then(([c, me]) => {
       if (!c || c.g !== A.id || !/^[A-Z]{3}$/.test(c.an)) return;
-      A.chal = { id, a: c.a, an: c.an, s: +c.s || 0, mine: c.a === me };
+      A.chal = { id, a: c.a, an: c.an, who: c.an, s: +c.s || 0, mine: c.a === me };
+      w.profiles([c.a]).then(p => { const nm = p[c.a] && p[c.a].name; if (A.chal && /^[A-Z0-9]{3,12}$/.test(nm || '')) { A.chal.who = nm; const b = document.querySelector('#ov .chal'); if (b && !A.chal.mine) b.outerHTML = chalBanner(); } }).catch(() => {}); // their player name, for initials others share
       try { sessionStorage.setItem('bitcade:chal:' + A.id, id); } catch (e) {}
       const o = $('ov'); if (o && !o.hidden && o.classList.contains('title') && !o.querySelector('.chal')) o.insertAdjacentHTML('afterbegin', chalBanner());
-    }).catch(() => {});
+    })).catch(() => {});
   }
   /** Your score against the challenge: when it beats your last one, it goes to the challenger with a message. */
   function chalSend(r) {
@@ -245,7 +246,7 @@
     if (window.XP) { let n = 10 + (rank >= 0 ? 10 : 0) + (rec && prevBest > 0 ? 15 : 0) + (daily ? 5 : 0); if (A.featured()) n *= 2; xp = A.gainXP(n, 'run', true); }
     lastResult = { s, rank, top, day, week, tix, xp };
     try { A.mission({ type: 'run', slug: A.id, score: s, daily: !!daily }); } finally { lastResult.notes = gather; gather = null; }
-    if (A.chal && !A.chal.mine) { lastResult.chal = { an: A.chal.an, vs: A.chal.s }; chalSend(lastResult); }
+    if (A.chal && !A.chal.mine) { lastResult.chal = { an: A.chal.who || A.chal.an, vs: A.chal.s }; chalSend(lastResult); }
     return rec;
   };
   /*
@@ -554,6 +555,12 @@
   const track = ev => { if (act) act.track(ev); else if (store.get('arcade:track') !== '0' && A.id !== 'game') import(new URL('activity.js', KIT_URL).href).then(m => { act = m; m.track(ev); }).catch(() => {}); };
   addEventListener('load', () => { if (store.get('arcade:track') === '0' || A.id === 'game') return;
     import(new URL('activity.js', KIT_URL).href).then(m => { act = m; m.pageTimer(A.id, () => { const x = { play: Math.round(sessPlay * 1000), runs }; sessPlay = 0; runs = 0; return x; }); }).catch(() => {}); });
+  /* The player profile (shared/setup.js): a new player makes one before playing; after that each page only checks it's published. */
+  const setupJs = () => new Promise((ok, no) => { if (window.Setup) return ok(window.Setup); const s = document.createElement('script'); s.src = new URL('setup.js', KIT_URL).href; s.onload = () => ok(window.Setup); s.onerror = no; document.head.append(s); });
+  addEventListener('load', () => { if (A.id === 'game') return;
+    let skip = false; try { skip = sessionStorage.getItem('bitcade:nosetup') === '1'; } catch (e) {} // the smoke tests
+    if (!skip && (!/^[A-Z0-9]{3,12}$/.test(store.get('arcade:name') || '') || !/^[A-Z]{3}$/.test(store.get('arcade:initials') || '') || !store.get('arcade:avatar'))) setupJs().then(S => S.open({ required: true })).catch(() => {});
+    else setTimeout(() => setupJs().then(S => S.check()).catch(() => {}), 4000); });
   const saveTime = () => { if (playT >= 1 && A.id !== 'game') { store.set('arcade:time:' + A.id, Math.round((+store.get('arcade:time:' + A.id) || 0) + playT)); playT = 0; } };
   setInterval(saveTime, 10000); addEventListener('pagehide', saveTime);
   const hideFns = [];
@@ -598,7 +605,7 @@
       (isTitle ? '<div class="push">PUSH START</div>' : '') + (res ? '<div class="cont" hidden></div>' : '') +
       `<div class="btns"><button class="go"></button>${alt ? '<button class="go2"></button>' : ''}${alt2 ? '<button class="go2 go3"></button>' : ''}${isTitle ? '' : '<button class="go2 home" title="Back to the arcade (Backspace)">⌂ HOME</button>'}</div>` +
       (canShare ? '<button class="share">Share score</button>' : '') +
-      (canShare ? `<div class="chal-btns"><button class="share chal-go">⚔ CHALLENGE A FRIEND</button>${A.chal && !A.chal.mine ? `<button class="share chal-back">⚔ CHALLENGE ${A.chal.an} BACK</button><button class="share chal-msg">✉ MESSAGE ${A.chal.an}</button>` : ''}</div>` : '') +
+      (canShare ? `<div class="chal-btns"><button class="share chal-go">⚔ CHALLENGE A FRIEND</button>${A.chal && !A.chal.mine ? `<button class="share chal-back">⚔ CHALLENGE ${A.chal.who || A.chal.an} BACK</button><button class="share chal-msg">✉ MESSAGE ${A.chal.an}</button>` : ''}</div>` : '') +
       (res ? '<button class="share fbk">✎ Feedback</button>' : '') + (isTitle ? '<div class="credit">FREE PLAY · CREDIT 99</div>' : '');
     const xb = o.querySelector('.xpbar b'); if (xb && res && res.xp) requestAnimationFrame(() => requestAnimationFrame(() => { xb.style.width = Math.round(res.xp.after.pct * 100) + '%'; }));
     if (res && res.notes && res.notes.length) {

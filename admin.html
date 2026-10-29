@@ -14,6 +14,7 @@
 <link rel="icon" href="icons/admin-192.png">
 <link rel="apple-touch-icon" href="icons/admin-apple-touch-icon.png">
 <link rel="stylesheet" href="shared/fonts.css">
+<script src="shared/avatar.js"></script>
 <link rel="preload" href="shared/fonts/chakra-petch-600.woff2" as="font" type="font/woff2" crossorigin>
 <!--
   The admin console: play activity from shared/activity.js (act/{uid} and act/{uid}/ev in Firestore), feedback (fb),
@@ -119,12 +120,15 @@ main{padding:16px 16px 40px;min-width:0}
 .chart span{font:9px var(--f-mono);color:var(--mut);white-space:nowrap;height:11px}
 
 .sess{display:flex;flex-direction:column}
-.sess .row{display:grid;grid-template-columns:auto 52px minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 2px;border-bottom:1px dashed var(--line);cursor:pointer}
+.sess .row{display:grid;grid-template-columns:auto max-content minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 2px;border-bottom:1px dashed var(--line);cursor:pointer}
 .sess .row:last-child{border-bottom:0}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--mut)}
 .dot.live{background:var(--g);box-shadow:0 0 8px var(--g);animation:pulse 1.4s ease-in-out infinite}
 .dot.today{background:var(--c)}
 .ini{font:700 14px var(--f-mono);color:var(--a);letter-spacing:.06em}
+.pname{font-weight:700;letter-spacing:.06em;color:var(--ink)}.pname small{font:11px var(--f-mono);color:var(--a);margin-left:5px}
+canvas.av{width:22px;height:22px;border-radius:4px;background:#0e171e;border:1px solid var(--line2);vertical-align:-6px;margin-right:6px}
+.dh canvas.av{width:40px;height:40px;vertical-align:middle}
 .anon{font:12px var(--f-mono);color:var(--mut)}
 .you{font:700 9px var(--f-ui);letter-spacing:.12em;color:var(--a);border:1px solid currentColor;border-radius:3px;padding:0 4px;margin-left:6px;vertical-align:2px}
 .empty{color:var(--mut);font:12px var(--f-mono);padding:10px 2px}
@@ -310,7 +314,7 @@ pre{margin:8px 0 0;max-height:300px;overflow:auto;font:12px/1.5 var(--f-mono);wh
       </section>
       <section class="view" id="v-pl" hidden>
         <div class="vh"><h1>PLAYERS</h1><small id="plNote"></small></div>
-        <div class="tools"><input id="plQ" type="search" placeholder="search initials or id…" autocomplete="off" spellcheck="false"><select class="chip" id="plSort" aria-label="Sort"><option value="last">LAST SEEN</option><option value="play">PLAY TIME</option><option value="runs">RUNS</option><option value="first">NEWEST</option></select></div>
+        <div class="tools"><input id="plQ" type="search" placeholder="search name, initials or id…" autocomplete="off" spellcheck="false"><select class="chip" id="plSort" aria-label="Sort"><option value="last">LAST SEEN</option><option value="play">PLAY TIME</option><option value="runs">RUNS</option><option value="first">NEWEST</option></select></div>
         <section class="pn" style="padding:0"><div class="plist" id="plist"></div></section>
       </section>
       <section class="view" id="v-inc" hidden>
@@ -360,6 +364,7 @@ const LIVE = 3 * 60e3, POLL = 30e3;
 
 /* ---------- state ---------- */
 const players = new Map();          // id → { id, n, dev, lv, tix, first, last, on, ev: [{ id, k, g, t, ... }] }
+const profs = new Map();            // id → { name, n, av, t } from profiles/{uid} (shared/setup.js)
 let fbs = [], errs = [], reps = [];  // null when the rules refused
 let hide = new Set(), view = 'ov', pick = null, feedF = 'all', fbF = 'open', feedN = 300;
 let loaded = false, lastPoll = 0, pollOk = true;
@@ -367,7 +372,11 @@ let seen = (() => { try { return { inc: 0, fb: 0, pl: 0, ...JSON.parse(get('admi
 const mark = k => { seen[k] = Date.now(); put('admin:seen', JSON.stringify(seen)); };
 const showMe = () => $('showMe').checked;
 const visible = () => [...players.values()].filter(p => showMe() || !hide.has(p.id));
-const label = (p, id) => (p && p.n ? `<span class="ini">${esc(p.n)}</span>` : `<span class="anon">#${esc(String(id || (p && p.id) || '').slice(0, 5))}</span>`) + (hide.has(id || (p && p.id)) ? '<span class="you">YOU</span>' : '');
+const label = (p, id) => { id = id || (p && p.id); const pr = profs.get(id), n = (pr && pr.n) || (p && p.n);
+  return (pr && pr.av && window.Avatar ? `<canvas class="av" data-av="${esc(pr.av)}"></canvas>` : '') +
+    (pr && pr.name ? `<span class="pname">${esc(pr.name)}${n ? `<small>${esc(n)}</small>` : ''}</span>` : n ? `<span class="ini">${esc(n)}</span>` : `<span class="anon">#${esc(String(id || '').slice(0, 5))}</span>`) +
+    (hide.has(id) ? '<span class="you">YOU</span>' : ''); };
+const short = id => { const pr = profs.get(id), p = players.get(id); return (pr && pr.name) || (p && p.n) || '#' + String(id || '').slice(0, 5); };
 const who = uid => label(players.get(uid), uid);
 
 /* ---------- sign-in ---------- */
@@ -443,6 +452,7 @@ async function load() {
     players.clear();
     await Promise.all(snap.docs.map(async d => players.set(d.id, { id: d.id, ...d.data(), last: ms(d.get('last')), ev: await evs(d.id) })));
     [fbs, errs, reps] = await Promise.all([grab('fb', 300), grab('err', 600), grab('rep', 100)]);
+    await loadProfiles();
     loaded = true; lastPoll = Date.now(); pollOk = true;
     if (!seen.pl) mark('pl');
     render();
@@ -452,6 +462,10 @@ async function load() {
   }
 }
 
+async function loadProfiles() {
+  const after = Math.max(0, ...[...profs.values()].map(p => p.t || 0));
+  try { (await getDocs(after ? query(collection(db, 'profiles'), where('t', '>', fromT(after))) : collection(db, 'profiles'))).docs.forEach(d => profs.set(d.id, { ...d.data(), t: ms(d.get('t')) })); } catch (e) {}
+}
 let polling = false;
 async function poll() {
   if (!loaded || polling) return; if (DEMO) { lastPoll = Date.now(); return render(); } polling = true;
@@ -467,10 +481,11 @@ async function poll() {
     }));
     const [f, e, r] = await Promise.all([grab('fb', 100, maxT(fbs)), grab('err', 300, maxT(errs)), grab('rep', 50, maxT(reps))]);
     fbs = merge(fbs, f); errs = merge(errs, e); reps = merge(reps, r);
+    await loadProfiles();
     pollOk = true;
     // anything new since the last look gets a toast (and a phone notification, if on)
     const out = [];
-    for (const p of players.values()) if (!before.pl.has(p.id) && !hide.has(p.id)) out.push(['new', 'NEW PLAYER', `${p.n || '#' + p.id.slice(0, 5)} on ${p.dev || 'a device'}${p.on ? ' · ' + name(p.on) : ''}`, 'pl']);
+    for (const p of players.values()) if (!before.pl.has(p.id) && !hide.has(p.id)) out.push(['new', 'NEW PLAYER', `${short(p.id)} on ${p.dev || 'a device'}${p.on ? ' · ' + name(p.on) : ''}`, 'pl']);
     for (const x of (reps || [])) if (!before.rep.has(x.id)) out.push(['crit', 'REPORT', 'A player reported a conversation', 'inc']);
     for (const x of errGroups()) if (!before.errKeys.has(x.k)) out.push([x.sev, 'NEW ERROR', x.m, 'inc']);
     for (const x of (fbs || [])) if (!before.fb.has(x.id)) out.push(['msg', 'FEEDBACK', x.x, 'fb']);
@@ -549,6 +564,7 @@ function render() {
   badges();
   if (view === 'ov') drawOverview(); else if (view === 'feed') drawFeed(); else if (view === 'pl') drawPlayers(); else if (view === 'inc') drawInc(); else if (view === 'fb') drawFb();
   if (pick) drawPlayer();
+  if (window.Avatar) Avatar.fill(document);
 }
 
 const spark = (vals, col) => { const top = Math.max(1, ...vals), w = 100 / Math.max(1, vals.length - 1); return `<svg viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true"><polyline fill="none" stroke="${col}" stroke-width="1.5" vector-effect="non-scaling-stroke" points="${vals.map((v, i) => `${(i * w).toFixed(1)},${(22 - v / top * 20).toFixed(1)}`).join(' ')}"/><polygon fill="${col}" opacity=".12" points="0,24 ${vals.map((v, i) => `${(i * w).toFixed(1)},${(22 - v / top * 20).toFixed(1)}`).join(' ')} 100,24"/></svg>`; };
@@ -631,7 +647,7 @@ function drawFeed() {
 function drawPlayers() {
   const R = range(), now = Date.now(), q = $('plQ').value.trim().toLowerCase(), sort = $('plSort').value;
   let list = visible().map(p => ({ p, s: stats(p, R.from) }));
-  if (q) list = list.filter(({ p }) => (p.n || '').toLowerCase().includes(q) || p.id.toLowerCase().startsWith(q));
+  if (q) list = list.filter(({ p }) => (p.n || '').toLowerCase().includes(q) || ((profs.get(p.id) || {}).name || '').toLowerCase().includes(q) || p.id.toLowerCase().startsWith(q));
   const key = { last: x => x.p.last, play: x => x.s.play, runs: x => x.s.runs, first: x => x.p.first || 0 }[sort];
   list.sort((a, b) => key(b) - key(a));
   $('plNote').textContent = `${list.length} player${list.length === 1 ? '' : 's'} · ${visible().filter(p => now - p.last < LIVE).length} live · ${visible().filter(p => p.first > seen.pl).length} new since your last look`;
@@ -680,7 +696,7 @@ function drawPlayer() {
   const R = range(), s = stats(p, R.from), now = Date.now(), live = now - p.last < LIVE;
   const rows = Object.entries(s.byGame).sort((a, b) => b[1].play - a[1].play || b[1].runs - a[1].runs);
   const fact = (l, v) => `<div><small>${l}</small><b>${v}</b></div>`;
-  $('drawer').innerHTML = `<div class="dh"><button class="btn" id="dClose" aria-label="Close">←</button><span class="dot ${live ? 'live' : now - p.last < 864e5 ? 'today' : ''}"></span><b>${p.n ? esc(p.n) : '#' + esc(p.id.slice(0, 5))}</b>${hide.has(p.id) ? '<span class="you">YOU</span>' : ''}<span class="sp"></span><span class="mono dim">${live ? `<span style="color:var(--g)">LIVE${p.on ? ' · ' + esc(name(p.on)).toUpperCase() : ''}</span>` : 'seen ' + ago(p.last)}</span></div>
+  $('drawer').innerHTML = `<div class="dh"><button class="btn" id="dClose" aria-label="Close">←</button><span class="dot ${live ? 'live' : now - p.last < 864e5 ? 'today' : ''}"></span>${profs.get(p.id) && profs.get(p.id).av ? `<canvas class="av" data-av="${esc(profs.get(p.id).av)}"></canvas>` : ''}<b>${esc(short(p.id))}</b>${profs.get(p.id) && p.n ? `<span class="ini">${esc(p.n)}</span>` : ''}${hide.has(p.id) ? '<span class="you">YOU</span>' : ''}<span class="sp"></span><span class="mono dim">${live ? `<span style="color:var(--g)">LIVE${p.on ? ' · ' + esc(name(p.on)).toUpperCase() : ''}</span>` : 'seen ' + ago(p.last)}</span></div>
     <div class="db">
       <div class="facts">${fact('DEVICE', esc(p.dev || '—'))}${fact('LEVEL', p.lv || '—')}${fact('TICKETS', p.tix != null ? num(p.tix) : '—')}${fact('PLAY TIME', dur(s.play))}${fact('RUNS', s.runs)}${fact('LOBBY VISITS', s.visits)}${fact('FIRST SEEN', p.first ? new Date(p.first).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '—')}${fact('ON SITE', dur(s.site))}${fact('ON FLOOR', dur(s.floor))}</div>
       <section class="pn"><h2>GAMES<small>${R.days ? (R.days === 1 ? 'LAST 24H' : `LAST ${R.days} DAYS`) : 'ALL TIME'}</small></h2><div class="scroll"><table><thead><tr><th>GAME</th><th class="num">TIME</th><th class="num">RUNS</th><th class="num">BEST</th><th class="hide-s">LAST</th></tr></thead><tbody>${rows.length ? rows.map(([g, b]) => `<tr><td>${esc(name(g))}</td><td class="num">${dur(b.play)}</td><td class="num">${b.runs}</td><td class="num">${b.best ? num(b.best) : '—'}</td><td class="dim hide-s">${ago(b.last)}</td></tr>`).join('') : '<tr><td colspan="5" class="dim">No games in this range.</td></tr>'}</tbody></table></div></section>
@@ -688,6 +704,7 @@ function drawPlayer() {
       <button class="btn" id="meBtn">${hide.has(p.id) ? 'NOT ME · COUNT THEM AGAIN' : 'THIS IS ME · HIDE MY PLAY'}</button>
       <div class="idl">id ${esc(p.id)}</div>
     </div>`;
+  if (window.Avatar) Avatar.fill($('drawer'));
   $('dClose').addEventListener('click', () => openPlayer(null));
   $('meBtn').addEventListener('click', () => { if (hide.has(p.id)) hide.delete(p.id); else { hide.add(p.id); if (!showMe()) openPlayer(null); } saveHide(); render(); });
 }
@@ -705,6 +722,7 @@ if (DEMO) {
     players.set(id, { id, n, dev: pickOf(['phone', 'phone', 'desktop', 'tablet']), lv: 1 + Math.round(rnd() * 20), tix: Math.round(rnd() * 900), first: now - (i === 8 ? 0.2 : 4 + rnd() * 20) * 864e5, last: now - age, on: i < 3 ? pickOf(G) : null, ev });
   });
   hide.add('demo0' + 'x'.repeat(20));
+  ['GARRET', 'ACEMAN', 'MOMOFTHREE', 'ZEDHEAD', 'KAYLA', null, 'BOBBY', null, 'LILBIT', 'TOMMYGUN'].forEach((nm, i) => { const p = players.get('demo' + i + 'x'.repeat(20)); if (nm) profs.set(p.id, { name: nm, n: p.n, av: Avatar.random(), t: now }); });
   errs = [...Array(12)].map((_, i) => ({ id: 'e' + i, m: i < 7 ? "TypeError: Cannot read properties of undefined (reading 'x')" : 'ReferenceError: boss is not defined', s: i < 7 ? 'games/rock-rift/' : 'games/sky-squadron/', l: i < 7 ? 812 : 1450, g: i < 7 ? 'rock-rift' : 'sky-squadron', ua: pickOf(['Chrome 130 · Android', 'Safari 18 · iOS']), uid: 'demo' + (i % 4) + 'x'.repeat(20), t: now - (i < 7 ? rnd() * 3 : 20 + rnd() * 30) * 36e5 }));
   fbs = [{ id: 'f1', x: 'Love Turbo Tour! Could the second track be a bit easier on phones?', n: 'ACE', g: 'turbo-tour', dev: 'phone', uid: 'demo1' + 'x'.repeat(20), t: now - 40 * 6e4 }, { id: 'f2', x: 'The music button on the lobby is hard to find', n: 'KAY', g: 'lobby', dev: 'desktop', uid: 'demo4' + 'x'.repeat(20), t: now - 26 * 36e5, done: true }];
   reps = [{ id: 'r1', by: 'demo2' + 'x'.repeat(20), other: 'demo3' + 'x'.repeat(20), log: 'ZED: gg · MOM: rematch?', t: now - 3 * 36e5 }];

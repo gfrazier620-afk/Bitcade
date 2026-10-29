@@ -12,7 +12,7 @@
  */
 const CODE_KEY = 'bitcade:sync', WHEN_KEY = 'bitcade:synced'; // not arcade:*, so they never sync themselves
 const ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ'; // no 0/O, 1/I/L
-const LOCAL_ONLY = /^arcade:(outbox|muted|music|crt|easy|equip|shake|flash|buzz|track)$|^arcade:(vol|keys):/; // per-device: queued posts, and settings
+const LOCAL_ONLY = /^arcade:(outbox|muted|music|crt|easy|equip|shake|flash|buzz|track|name:ok)$|^arcade:(vol|keys):/; // per-device: queued posts, settings, and what this device last published of the profile
 
 const store = {
   get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } },
@@ -67,6 +67,8 @@ export function merge(a, b, prices, joining) {
   const ra = +a[RESET] || 0, rb = +b[RESET] || 0;
   if (ra !== rb && !joining) { if (ra < rb) a = dropScores(a); else b = dropScores(b); }
   const out = { ...b, ...a };
+  // joining a save: the save's player (name, its key, initials, character) is who this is, on this device too
+  if (joining && b['arcade:name'] && b['arcade:namekey']) for (const k of ['arcade:name', 'arcade:namekey', 'arcade:initials', 'arcade:avatar']) if (b[k] != null) out[k] = b[k];
   if (ra || rb) out[RESET] = String(Math.max(ra, rb));
   for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) {
     const x = a[k], y = b[k];
@@ -83,6 +85,7 @@ export function merge(a, b, prices, joining) {
       out[k] = JSON.stringify(p[f] === q[f] ? (p.s >= q.s ? p : q) : (String(p[f]) > String(q[f]) ? p : q));
     }
     else if (/^arcade:story:/.test(k)) out[k] = JSON.stringify(deepMax(json(x, {}), json(y, {}))); // story progress: the furthest of each
+    else if (joining && /^arcade:(name|namekey|initials|avatar)$/.test(k) && b['arcade:name'] && b['arcade:namekey']) out[k] = y; // the save's player (above)
     // anything else (initials, the cached ticket balance): this device's value
   }
   if (prices) out['arcade:tickets:spent'] = String(json(out['arcade:prizes'], []).reduce((t, id) => t + (prices[id] || 0), 0));

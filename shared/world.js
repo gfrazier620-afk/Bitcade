@@ -15,10 +15,13 @@
  *       dm/{uidA_uidB} = { m: [a, b], n: {uid: initials}, acc: {uid: true}, seen: {uid: t}, last }
  *         and dm/{pair}/m/{id} = { u, k: 'q' | 'x' | 'ch' | 'res', q, x, c, g, s, vs, t }      conversations (shared/inbox.js)
  *       bl/{uid} = { u: [blocked uids] }, rep/{id} = { by, other, pair, log, t }          blocks and reports
+ *       names/{NAME} = { u: [uids], h: sha256 of the name's key, t }    player names, one owner each (shared/setup.js)
+ *       nameproof/{uid} = { name, k }                                     the key, when another device joins a name
+ *       profiles/{uid} = { name, n: initials, av: avatar, t }             what other players see
  * The config below only identifies the project. firestore.rules (published in the Firebase console) protects the data.
  */
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
-import { getFirestore, collection, query, where, orderBy, limit, getDocs, getDoc, setDoc, updateDoc, doc, writeBatch, serverTimestamp, arrayUnion } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-lite.js';
+import { getFirestore, collection, query, where, orderBy, limit, getDocs, getDoc, setDoc, updateDoc, deleteDoc, doc, writeBatch, serverTimestamp, arrayUnion, arrayRemove } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-lite.js';
 
 const app = initializeApp({
   apiKey: 'AIzaSyAPy1xQoxSHA64Efns07QCNw7ASNIWQpOQ',
@@ -97,6 +100,40 @@ export async function sendErrors(list, dev) {
 
 /* ---------- challenges and messages (shared/inbox.js, and game over in shared/arcade.js) ---------- */
 export async function myId() { return (await signIn()).uid; }
+
+/* ---------- player names and profiles (shared/setup.js) ---------- */
+/** Who has a name: null when it's free, else { u: [uids], h: its key's hash }. */
+export async function nameOwner(name) { const d = await getDoc(doc(db, 'names', name)); return d.exists() ? { u: d.get('u') || [], h: d.get('h') || '' } : null; }
+/**
+ * Take a name (or join it from another device of the same player, proving the key) and publish the profile, in one
+ * write. Returns 'ok', 'taken' (someone else's) or 'full' (10 devices on it already).
+ */
+export async function claimName(name, key, h, profile) {
+  const u = await signIn(), ref = doc(db, 'names', name), cur = await getDoc(ref), b = writeBatch(db);
+  const prof = { name, n: profile.n, av: profile.av, t: serverTimestamp() };
+  if (!cur.exists()) b.set(ref, { u: [u.uid], h, t: serverTimestamp() });
+  else if (!(cur.get('u') || []).includes(u.uid)) {
+    if (cur.get('h') !== h) return 'taken';
+    if ((cur.get('u') || []).length >= 10) return 'full';
+    b.set(doc(db, 'nameproof', u.uid), { name, k: key });
+    b.update(ref, { u: arrayUnion(u.uid) });
+  }
+  b.set(doc(db, 'profiles', u.uid), prof);
+  await b.commit();
+  return 'ok';
+}
+/** Let go of a name this device had (after a rename): the last device on it frees it for anyone. */
+export async function releaseName(name) {
+  const u = await signIn(), ref = doc(db, 'names', name), cur = await getDoc(ref);
+  if (!cur.exists() || !(cur.get('u') || []).includes(u.uid)) return;
+  if ((cur.get('u') || []).length <= 1) await deleteDoc(ref); else await updateDoc(ref, { u: arrayRemove(u.uid) });
+}
+/** Other players' profiles: { uid: { name, n, av } } for the ones that have one. */
+export async function profiles(uids) {
+  const out = {};
+  await Promise.all([...new Set(uids)].filter(Boolean).map(async id => { try { const d = await getDoc(doc(db, 'profiles', id)); if (d.exists()) out[id] = { name: d.get('name'), n: d.get('n'), av: d.get('av') }; } catch (e) {} }));
+  return out;
+}
 export const pairOf = (a, b) => a < b ? `${a}_${b}` : `${b}_${a}`;
 /** A new challenge on a game: your initials and score. Returns its id (the link is the game's page with ?ch=id). */
 export async function makeChallenge(g, s, an) {

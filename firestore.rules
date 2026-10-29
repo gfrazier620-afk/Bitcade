@@ -134,6 +134,47 @@ service cloud.firestore {
       }
     }
 
+    // Player names and profiles (shared/setup.js). names/{NAME} is one player's name, first come first served; their
+    // other devices join it by proving its key (nameproof/{uid}, never readable: its SHA-256 must match the name's h).
+    // A device on a name can leave it, and the last one frees it. profiles/{uid} is the player name, initials and
+    // character other players see, only for a name that device is on. Anyone can look one up; only the admin can list.
+    match /names/{name} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if request.auth != null && name.matches('^[A-Z0-9]{3,12}$')
+        && request.resource.data.keys().hasOnly(['u', 'h', 't'])
+        && request.resource.data.u == [request.auth.uid]
+        && request.resource.data.h is string && request.resource.data.h.matches('^[0-9a-f]{64}$')
+        && request.resource.data.t == request.time;
+      allow update: if request.auth != null
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['u'])
+        && ((request.resource.data.u.size() == resource.data.u.size() + 1 && request.resource.data.u.hasAll(resource.data.u)
+              && request.auth.uid in request.resource.data.u && request.resource.data.u.size() <= 10
+              && getAfter(/databases/$(database)/documents/nameproof/$(request.auth.uid)).data.name == name
+              && hashing.sha256(getAfter(/databases/$(database)/documents/nameproof/$(request.auth.uid)).data.k.toUtf8()).toHexString().lower() == resource.data.h)
+          || (request.resource.data.u.size() == resource.data.u.size() - 1 && resource.data.u.hasAll(request.resource.data.u)
+              && request.auth.uid in resource.data.u && !(request.auth.uid in request.resource.data.u)));
+      allow delete: if request.auth != null && resource.data.u == [request.auth.uid];
+    }
+    match /nameproof/{uid} {
+      allow read, delete: if false;
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['name', 'k'])
+        && request.resource.data.name is string && request.resource.data.k is string && request.resource.data.k.size() <= 64;
+    }
+    match /profiles/{uid} {
+      allow get: if true;
+      allow list: if isAdmin();
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['name', 'n', 'av', 't'])
+        && request.resource.data.name is string && request.resource.data.name.matches('^[A-Z0-9]{3,12}$')
+        && request.resource.data.n is string && request.resource.data.n.matches('^[A-Z]{3}$')
+        && request.resource.data.av is string && request.resource.data.av.matches('^[0-9]{1,2}(-[0-9]{1,2}){5}$')
+        && request.resource.data.t == request.time
+        && request.auth.uid in getAfter(/databases/$(database)/documents/names/$(request.resource.data.name)).data.u;
+      allow delete: if false;
+    }
+
     // The admin page's own settings (admin.html): the players to leave out of the numbers (the admin's own devices).
     match /admin/{doc} {
       allow read, write: if isAdmin();

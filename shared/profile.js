@@ -37,8 +37,8 @@ window.Profile = (() => {
     const el = opt.el;
     el.innerHTML = `
       <div class="pf-card">
-        <div class="pf-id"><label class="pf-ini"><input id="pfIni" maxlength="3" autocomplete="off" spellcheck="false" placeholder="???" aria-label="Your initials" value="${esc(ini)}"></label>
-          <div>${lvl ? `<div class="pf-level">LEVEL ${lvl.level} · <b>${lvl.title}</b></div><div class="pf-xp"><i><b style="width:${Math.round(lvl.pct * 100)}%"></b></i><span>${lvl.need ? `${lvl.into.toLocaleString()} / ${lvl.need.toLocaleString()} XP` : 'MAX LEVEL'}</span></div>` : ''}<div class="pf-rank">${rank}</div><div class="pf-next">${next ? `${next[0] - st.got} more badge${next[0] - st.got === 1 ? '' : 's'} to ${next[1]}` : 'Every badge in the arcade. Legendary.'}</div></div></div>
+        <div class="pf-id"><div class="pf-me"><canvas class="pf-av" data-av="${esc(get('arcade:avatar') || '')}" data-full aria-hidden="true"></canvas><button class="pf-btn pf-edit" id="pfEdit">✎ EDIT</button></div>
+          <div><div class="pf-name">${esc(get('arcade:name') || 'NEW PLAYER')}${ini ? ` <small>${esc(ini)}</small>` : ''}</div>${lvl ? `<div class="pf-level">LEVEL ${lvl.level} · <b>${lvl.title}</b></div><div class="pf-xp"><i><b style="width:${Math.round(lvl.pct * 100)}%"></b></i><span>${lvl.need ? `${lvl.into.toLocaleString()} / ${lvl.need.toLocaleString()} XP` : 'MAX LEVEL'}</span></div>` : ''}<div class="pf-rank">${rank}</div><div class="pf-next">${next ? `${next[0] - st.got} more badge${next[0] - st.got === 1 ? '' : 's'} to ${next[1]}` : 'Every badge in the arcade. Legendary.'}</div></div></div>
         <div class="pf-stats">
           <span>GAMES PLAYED<b>${st.plays.toLocaleString()}</b></span><span>CABINETS TRIED<b>${st.tried}/${st.rows.length}</b></span>
           <span>BADGES<b>${st.got}/${st.all}</b></span><span>TICKETS EARNED<b>${window.TICKETS ? TICKETS.earned().toLocaleString() : 0}</b></span>
@@ -59,11 +59,8 @@ window.Profile = (() => {
       <div class="pf-prizes">${prizes.length ? prizes.map(p => `<span>${esc(p.name)}</span>`).join('') : '<em>Nothing yet. Win tickets in any game and trade them at the prize counter.</em>'}
         <button class="pf-btn" id="pfCounter">PRIZE COUNTER ▶</button></div>`;
     el.querySelectorAll('canvas[data-i]').forEach(c => opt.paint(c.getContext('2d'), st.rows[+c.dataset.i].g.px));
-    const input = el.querySelector('#pfIni');
-    input.addEventListener('input', () => {
-      input.value = input.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
-      if (input.value.length === 3) { set('arcade:initials', input.value); input.classList.add('ok'); } else input.classList.remove('ok');
-    });
+    if (window.Avatar) Avatar.fill(el.querySelector('.pf-me'));
+    el.querySelector('#pfEdit').addEventListener('click', () => window.Setup && Setup.open({ onDone: render })); // name, initials and look (shared/setup.js)
     el.querySelector('#pfCounter').addEventListener('click', () => window.Prizes && Prizes.open());
     cloud();
   }

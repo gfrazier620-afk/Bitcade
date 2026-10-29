@@ -44,6 +44,8 @@ async function open(path, opts = {}) {
   const page = await ctx.newPage();
   // Seasonal events (window.EVENT) follow the calendar; tests run without one unless the URL asks (?event=halloween).
   await page.addInitScript(() => { try { if (!/[?&]event=/.test(location.search)) sessionStorage.setItem('bitcade:event', 'none'); } catch (e) {} });
+  // New players make a profile first (shared/setup.js); tests skip it unless the URL says ?newplayer.
+  await page.addInitScript(() => { try { if (!/[?&]newplayer/.test(location.search)) sessionStorage.setItem('bitcade:nosetup', '1'); else sessionStorage.removeItem('bitcade:nosetup'); } catch (e) {} });
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   page.on('console', m => { if (m.type() === 'error' && !/fonts\.(googleapis|gstatic)/.test(m.text()) && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
@@ -548,9 +550,10 @@ console.log('\nProfile and cloud save');
   await page.click('#vProfile');
   check(await page.isVisible('#profileView .pf-card') && !(await page.isVisible('#floor')) && /ROOKIE/.test(await page.textContent('.pf-rank')), 'PROFILE shows the player card with a rank');
   check((await page.$$('.pf-game')).length === dirs.length, 'the trophy case has every cabinet');
-  await page.fill('#pfIni', 'qz');
-  await page.type('#pfIni', 'x');
-  check(await page.evaluate(() => localStorage.getItem('arcade:initials')) === 'QZX', 'typing initials on the profile saves them');
+  await page.click('#pfEdit');
+  check(await page.isVisible('.su') && await page.isVisible('.su-cancel'), '✎ EDIT on the profile card opens the profile setup, which can be cancelled');
+  await page.click('.su-cancel');
+  check(!(await page.isVisible('.su')), 'CANCEL closes it');
   await page.click('#pfOn');
   await page.waitForFunction(() => /Couldn.t reach the cloud/.test(document.getElementById('pfCloud').textContent));
   check(await page.evaluate(() => !localStorage.getItem('bitcade:sync')), 'offline, turning on cloud save says so and leaves it off');
@@ -635,6 +638,7 @@ console.log('\nInstall and offline');
   const ctx = await browser.newContext();
   await ctx.route(/fonts\.(googleapis|gstatic)\.com|gstatic\.com\/firebasejs|googleapis\.com/, r => r.abort());
   const page = await ctx.newPage(), errors = [];
+  await page.addInitScript(() => { try { sessionStorage.setItem('bitcade:nosetup', '1'); } catch (e) {} }); // no profile setup in the way
   page.on('pageerror', e => errors.push(e.message));
   await page.goto(BASE + '/');
   await page.evaluate(() => navigator.serviceWorker.ready);
@@ -923,6 +927,33 @@ console.log('\nAdmin console');
     check(!errors.length, `${what}: no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
     await close();
   }
+}
+
+/* ---------- new players: the profile setup (shared/setup.js) ---------- */
+console.log('\nProfile setup');
+{
+  const { page, errors, close } = await open('/?newplayer');
+  await skipBoot(page);
+  check(await page.waitForSelector('.su', { timeout: 6000 }).then(() => true, () => false) && !(await page.isVisible('.su-cancel')), 'a new player makes a profile once the doors open, with no way round it');
+  await page.fill('#suName', 'admin');
+  check(/different name/.test(await page.textContent('#suNameHint')), 'names that would look official are refused');
+  await page.fill('#suName', 'pixelpat9');
+  check(await page.inputValue('#suName') === 'PIXELPAT9' && await page.inputValue('#suIni') === 'PIX', 'names are capitals and numbers, and the initials fill in from the name');
+  check(await page.waitForFunction(() => /online/.test(document.getElementById('suNameHint').textContent), null, { timeout: 8000 }).then(() => true, () => false), 'offline, it says the name will be checked once online');
+  const part = await page.textContent('[data-part="1"] span');
+  await page.click('[data-part="1"] [data-d="1"]');
+  check(part !== await page.textContent('[data-part="1"] span'), 'the arrows change the character');
+  await page.click('.su-go');
+  check(await page.waitForSelector('.su', { state: 'detached', timeout: 8000 }).then(() => true, () => false), 'ENTER THE ARCADE saves it, offline too');
+  check(await page.evaluate(() => localStorage.getItem('arcade:name') === 'PIXELPAT9' && localStorage.getItem('arcade:initials') === 'PIX' && Avatar.valid(localStorage.getItem('arcade:avatar')) && !localStorage.getItem('arcade:name:ok')), 'the name, initials and character are kept, and the name waits to be claimed online');
+  await page.click('#vProfile');
+  check(/PIXELPAT9/.test(await page.textContent('.pf-name')) && /PIX/.test(await page.textContent('.pf-name small')), 'the profile card shows the player name and initials');
+  check(!errors.length, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
+  await close();
+  const g = await open('/games/rock-rift/?newplayer'); // a friend's challenge link can be someone's first page
+  check(await g.page.waitForSelector('.su', { timeout: 6000 }).then(() => true, () => false), 'a game page asks a new player too');
+  check(!g.errors.length, `no errors${g.errors.length ? ': ' + g.errors.join(' | ') : ''}`);
+  await g.close();
 }
 
 /* ---------- seasonal events: Halloween ---------- */
