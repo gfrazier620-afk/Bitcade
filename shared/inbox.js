@@ -1,9 +1,11 @@
 /*
  * Messages (lobby only): window.Inbox, the ✉ button in the top bar. Conversations start from challenges (shared/arcade.js
  * on game over): playing someone's challenge sends them your result, and anyone can send a challenge straight to a
- * player they've played. Everyone can use quick chat (QUICK); free text unlocks between two players who've each played
- * the other's challenge (acc in the conversation), goes through a word filter, and either player can block or report
- * (a report sends the last messages to the admin page). Firestore has no live updates in the Lite SDK, so an open
+ * player they've played. Or from FRIENDS: find a player by their player name and add them, which sends a friend request
+ * ('f') and marks your side of the conversation accepted (acc); they add you back from the request. Everyone can use
+ * quick chat (QUICK); free text unlocks once both sides have accepted (friends, or each played the other's challenge),
+ * goes through a word filter, and either player can unfriend, block or report (a report sends the last messages to the
+ * admin page). Firestore has no live updates in the Lite SDK, so an open
  * conversation checks for new messages every few seconds. The data and rules: shared/world.js, firestore.rules.
  */
 window.Inbox = (() => {
@@ -15,12 +17,14 @@ window.Inbox = (() => {
   const get = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
   const name = g => String(g || '').split('-').map(w => w ? w[0].toUpperCase() + w.slice(1) : '').join(' ');
   const when = ms => { const d = Date.now() - ms; return d < 6e4 ? 'now' : d < 36e5 ? `${Math.floor(d / 6e4)}m` : d < 864e5 ? `${Math.floor(d / 36e5)}h` : `${Math.floor(d / 864e5)}d`; };
-  let o = null, box = null, w = null, me = null, convos = [], blockedList = [], cur = null, msgs = [], poll = 0, busy = false;
+  let o = null, box = null, w = null, me = null, convos = [], blockedList = [], cur = null, msgs = [], poll = 0, busy = false, tab = 'msgs';
   const world = () => w ? Promise.resolve(w) : import('./world.js').then(m => (w = m)); // relative to this script, not the page
   const ini = () => { const n = get('arcade:initials'); return /^[A-Z]{3}$/.test(n || '') ? n : ''; };
   const other = c => c.m.find(x => x !== me);
   const friends = c => !!(c && c.acc[c.m[0]] && c.acc[c.m[1]]);
   const unread = c => c.last > (c.seen[me] || 0) + 1000;
+  const asked = c => !!(c.acc[other(c)] && !c.acc[me]); // they've added you; you haven't added them back
+  const set = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
   // other players' profiles (profiles/{uid}: player name and character), so two players with the same initials differ
   const profs = {};
   const them = c => { const p = profs[other(c)]; return p && p.name ? p.name : c.n[other(c)] || '???'; };
@@ -41,6 +45,7 @@ window.Inbox = (() => {
   async function refresh() {
     try { const m = await world(); me = me || await m.myId(); [convos, blockedList] = await Promise.all([m.conversations(), m.blocked()]); await learn(convos.map(other)); }
     catch (e) { return false; }
+    if (convos.length) set('bitcade:dm', '1'); // game pages check for new messages only for players who have some
     o.dot.hidden = !convos.some(c => !blockedList.includes(other(c)) && unread(c));
     return true;
   }
@@ -52,6 +57,11 @@ window.Inbox = (() => {
     box.addEventListener('click', e => {
       if (e.target === box || e.target.closest('.ib-x')) return close();
       if (e.target.closest('.ib-back')) return list();
+      const tb = e.target.closest('[data-tab]'); if (tb) { tab = tb.dataset.tab; return list(); }
+      if (e.target.closest('.ib-findgo')) return find();
+      const af = e.target.closest('[data-addf]'); if (af) return addFriend(af.dataset.addf, af.dataset.n, af);
+      const ac = e.target.closest('[data-addc]'); if (ac) { const c = convos.find(x => x.id === ac.dataset.addc) || cur; return c && addFriend(other(c), c.n[other(c)], ac); }
+      if (e.target.closest('.ib-unf')) return unfriend(e.target.closest('.ib-unf'));
       const row = e.target.closest('[data-convo]'); if (row) return talk(convos.find(c => c.id === row.dataset.convo));
       const q = e.target.closest('[data-q]'); if (q) return send({ k: 'q', q: +q.dataset.q });
       if (e.target.closest('.ib-send')) return sendText();
@@ -60,7 +70,10 @@ window.Inbox = (() => {
       if (e.target.closest('.ib-report')) return reportIt(e.target.closest('.ib-report'));
       const ch = e.target.closest('[data-chal]'); if (ch) return showResults(ch);
     });
-    box.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.classList.contains('ib-text')) { e.preventDefault(); sendText(); } });
+    box.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && e.target.classList.contains('ib-text')) { e.preventDefault(); sendText(); }
+      if (e.key === 'Enter' && e.target.classList.contains('ib-name')) { e.preventDefault(); find(); }
+    });
     addEventListener('keydown', e => { if (e.key === 'Escape' && !box.hidden) { e.preventDefault(); e.stopImmediatePropagation(); if (cur) list(); else close(); } }, true);
     box.setAttribute('data-keys-native', '');
     document.body.append(box);
@@ -83,15 +96,66 @@ window.Inbox = (() => {
   const foot = h => { box.querySelector('.ib-foot').innerHTML = h; };
   const head = (title, back, tools = '') => { box.querySelector('.ib-title').textContent = title; box.querySelector('.ib-back').hidden = !back; box.querySelector('.ib-tools').innerHTML = tools; };
 
+  const tabs = shown => { const n = shown.filter(asked).length;
+    return `<div class="ib-tabs" role="tablist"><button data-tab="msgs" role="tab" aria-selected="${tab === 'msgs'}">MESSAGES</button><button data-tab="fr" role="tab" aria-selected="${tab === 'fr'}">FRIENDS${n ? ` <i>${n}</i>` : ''}</button></div>`; };
+  const row = (c, extra = '') => `<div class="ib-frow"><button class="ib-row${unread(c) ? ' new' : ''}" data-convo="${esc(c.id)}">${face(other(c))}<span class="ib-ini">${esc(them(c))}${profs[other(c)] && c.n[other(c)] ? ` <small>${esc(c.n[other(c)])}</small>` : ''}</span><span class="ib-sub">${extra}</span>${unread(c) ? '<i class="ib-dot"></i>' : ''}</button></div>`;
   function list() {
     cur = null; clearInterval(poll); head('✉ MESSAGES', false);
     const shown = convos.filter(c => !blockedList.includes(other(c)));
+    if (tab === 'fr') return friendsList(shown);
     const sent = (() => { try { return JSON.parse(get('bitcade:chs') || '[]'); } catch (e) { return []; } })().slice(0, 8);
-    body((shown.length ? shown.map(c => `<button class="ib-row${unread(c) ? ' new' : ''}" data-convo="${esc(c.id)}">${face(other(c))}<span class="ib-ini">${esc(them(c))}${profs[other(c)] && c.n[other(c)] ? ` <small>${esc(c.n[other(c)])}</small>` : ''}</span><span class="ib-sub">${friends(c) ? '<em class="fr">★ FRIENDS</em>' : '<em>CHALLENGE RIVALS</em>'}</span><span class="ib-when">${c.last ? when(c.last) : ''}</span>${unread(c) ? '<i class="ib-dot"></i>' : ''}</button>`).join('')
-      : '<p class="ib-note">No messages yet. Finish a game and press <b>⚔ CHALLENGE A FRIEND</b> to send someone a link. When they play it, their result shows up here and you can chat.</p>') +
+    body(tabs(shown) + (shown.length ? shown.map(c => row(c, `${friends(c) ? '<em class="fr">★ FRIENDS</em>' : asked(c) ? '<em class="ask">WANTS TO BE FRIENDS</em>' : c.acc[me] ? '<em>REQUEST SENT</em>' : '<em>CHALLENGE RIVALS</em>'}</span><span class="ib-when">${c.last ? when(c.last) : ''}`)).join('')
+      : '<p class="ib-note">No messages yet. Add friends by their player name on the <b>FRIENDS</b> tab, or finish a game and press <b>⚔ CHALLENGE A FRIEND</b> to send someone a link.</p>') +
       (sent.length ? `<h4>CHALLENGES YOU SENT</h4>${sent.map(c => `<button class="ib-row ib-sent" data-chal="${esc(c.id)}"><span class="ib-ini">⚔</span><span class="ib-sub">${esc(name(c.g))} · YOUR ${(+c.s || 0).toLocaleString()}</span><span class="ib-when">${when(c.t)}</span></button><div class="ib-res" data-for="${esc(c.id)}" hidden></div>`).join('')}` : ''));
     foot('');
     if (window.Avatar) Avatar.fill(box);
+  }
+  /** FRIENDS: find a player by name, requests waiting for you, your friends, and requests you've sent. */
+  function friendsList(shown) {
+    const inc = shown.filter(asked), fr = shown.filter(friends), out = shown.filter(c => c.acc[me] && !c.acc[other(c)]);
+    const sec = (title, l, extra) => l.length ? `<h4>${title}</h4>${l.map(c => row(c, extra(c))).join('')}` : '';
+    body(tabs(shown) +
+      '<div class="ib-find"><input class="ib-name" maxlength="12" placeholder="PLAYER NAME" aria-label="Player name" autocomplete="off" autocapitalize="characters" spellcheck="false"><button class="ib-findgo">FIND</button></div><div class="ib-found"></div>' +
+      (inc.length ? `<h4>WANT TO BE FRIENDS</h4>${inc.map(c => `<div class="ib-frow">${row(c, '<em class="ask">ADDED YOU</em>')}<button class="ib-add" data-addc="${esc(c.id)}">ADD BACK</button></div>`).join('')}` : '') +
+      sec(`FRIENDS · ${fr.length}`, fr, () => '<em class="fr">★ FRIENDS</em>') +
+      sec('REQUESTS SENT', out, () => '<em>WAITING FOR THEM</em>') +
+      (inc.length || fr.length || out.length ? '' : '<p class="ib-note">Add friends by their player name. Once you’ve added each other you can chat freely.</p>'));
+    foot('');
+    if (window.Avatar) Avatar.fill(box);
+  }
+  async function find() {
+    const inp = box.querySelector('.ib-name'), out = box.querySelector('.ib-found'); if (!inp || !out) return;
+    const nm = inp.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); inp.value = nm;
+    const note = t => { out.innerHTML = `<p class="ib-note small">${t}</p>`; };
+    if (!/^[A-Z0-9]{3,12}$/.test(nm)) return note('Player names are 3 to 12 letters or numbers.');
+    if (nm === get('arcade:name')) return note('That’s you!');
+    note('Looking…');
+    let p = null; try { p = await w.findPlayer(nm); } catch (e) { return note('Couldn’t look just now. Try again.'); }
+    if (!p) return note(`No player called ${esc(nm)}.`);
+    if (p.uid === me) return note('That’s you!');
+    profs[p.uid] = p;
+    const c = convos.find(x => other(x) === p.uid);
+    const act = c && friends(c) ? `<button class="ib-add" data-convo="${esc(c.id)}">MESSAGE</button>` : c && c.acc[me] ? '<span class="ib-sub"><em>REQUEST SENT</em></span>'
+      : `<button class="ib-add" data-addf="${esc(p.uid)}" data-n="${esc(p.n || '')}">${c && asked(c) ? 'ADD BACK' : '＋ ADD FRIEND'}</button>`;
+    out.innerHTML = `<div class="ib-who">${face(p.uid)}<span class="ib-ini">${esc(p.name)} <small>${esc(p.n || '')}</small></span>${act}</div>`;
+    if (window.Avatar) Avatar.fill(out);
+  }
+  /** Add a friend: a friend request message, and your side of the conversation accepted. */
+  async function addFriend(uid, theirN, btn) {
+    if (busy || !uid || uid === me) return;
+    const my = ini(); if (!my) { if (btn) btn.textContent = 'SET YOUR INITIALS FIRST'; return; }
+    busy = true; if (btn) { btn.disabled = true; btn.textContent = 'ADDING…'; }
+    try {
+      await w.sendMsg(uid, /^[A-Z]{3}$/.test(theirN || '') ? theirN : '???', my, { k: 'f' }, { accept: true });
+      set('bitcade:dm', '1'); await refresh(); busy = false;
+      const c = convos.find(x => other(x) === uid);
+      if (cur && c) { cur = null; talk(c); } else list();
+    } catch (e) { busy = false; if (btn) { btn.disabled = false; btn.textContent = 'OFFLINE · TRY AGAIN'; } }
+  }
+  async function unfriend(btn) {
+    const c = cur; if (!c) return;
+    if (btn.dataset.armed !== '1') { btn.dataset.armed = '1'; btn.textContent = 'TAP AGAIN'; setTimeout(() => { btn.dataset.armed = ''; btn.textContent = 'UNFRIEND'; }, 4000); return; }
+    try { await w.setFriend(c.id, false); c.acc[me] = false; await refresh(); talk(convos.find(x => x.id === c.id) || c); } catch (e) { btn.textContent = 'OFFLINE'; }
   }
   async function showResults(btn) {
     const id = btn.dataset.chal, out = box.querySelector(`.ib-res[data-for="${id}"]`); if (!out) return;
@@ -106,7 +170,7 @@ window.Inbox = (() => {
   async function talk(c) {
     if (!c) return;
     cur = c; const who = them(c);
-    head(who, true, `<button class="ib-tool ib-block">${blockedList.includes(other(c)) ? 'UNBLOCK' : 'BLOCK'}</button><button class="ib-tool ib-report">REPORT</button>`);
+    head(who, true, (c.acc[me] ? '<button class="ib-tool ib-unf">UNFRIEND</button>' : `<button class="ib-tool ib-add2" data-addc="${esc(c.id)}">＋ FRIEND</button>`) + `<button class="ib-tool ib-block">${blockedList.includes(other(c)) ? 'UNBLOCK' : 'BLOCK'}</button><button class="ib-tool ib-report">REPORT</button>`);
     body('<p class="ib-note">Loading…</p>'); drawFoot();
     await load();
     clearInterval(poll); poll = setInterval(() => { if (!document.hidden && cur === c) load(); }, 5000);
@@ -121,8 +185,14 @@ window.Inbox = (() => {
   }
   function draw() {
     const c = cur, el = box.querySelector('.ib-body'), atEnd = el.scrollTop + el.clientHeight > el.scrollHeight - 30, who = them(c);
+    const fFrom = new Set();
     const card = m => {
       const mine = m.u === me;
+      if (m.k === 'f') { // a friend request; the second one, from the other side, makes them friends
+        const both = fFrom.has(mine ? other(c) : me); fFrom.add(m.u);
+        if (both) return `<div class="ib-card fr ${mine ? 'me' : ''}"><b>★ ${mine ? 'YOU ADDED ' + esc(who) + ' BACK' : esc(who) + ' ADDED YOU BACK'}</b><span>You’re friends now. Free chat is unlocked.</span></div>`;
+        return `<div class="ib-card fr ${mine ? 'me' : ''}"><b>★ ${mine ? 'YOU SENT ' + esc(who) + ' A FRIEND REQUEST' : esc(who) + ' WANTS TO BE FRIENDS'}</b>${!mine && asked(c) ? `<button class="ib-play" data-addc="${esc(c.id)}">ADD BACK</button>` : ''}</div>`;
+      }
       if (m.k === 'ch') return `<div class="ib-card ${mine ? 'me' : ''}"><b>⚔ ${mine ? 'YOU CHALLENGED ' + esc(who) : esc(who) + ' CHALLENGES YOU'}</b><span>${esc(name(m.g))} · ${(+m.s || 0).toLocaleString()} TO BEAT</span>${mine ? '' : `<button class="ib-play" data-play="games/${esc(m.g)}/?ch=${esc(m.c)}">PLAY IT ▶</button>`}</div>`;
       if (m.k === 'res') { const win = m.s > m.vs; return `<div class="ib-card res ${mine ? 'me' : ''}${win ? ' win' : ''}"><b>${mine ? 'YOU' : esc(who)} SCORED ${(+m.s || 0).toLocaleString()}</b><span>${esc(name(m.g))} · against ${(+m.vs || 0).toLocaleString()} · ${win ? (mine ? 'YOU WON ★' : esc(who) + ' WON') : (mine ? 'NOT YET' : 'YOU’RE STILL AHEAD')}</span>${mine ? '' : `<button class="ib-play" data-play="games/${esc(m.g)}/">PLAY ${esc(name(m.g).toUpperCase())} ▶</button>`}</div>`; }
       const text = m.k === 'q' ? QUICK[m.q] || '…' : clean(m.x || '');
@@ -138,7 +208,7 @@ window.Inbox = (() => {
     const keep = box.querySelector('.ib-text'), val = keep ? keep.value : '';
     foot(`<div class="ib-quick">${QUICK.map((t, i) => `<button data-q="${i}">${esc(t)}</button>`).join('')}</div>` +
       (friends(c) ? `<div class="ib-type"><input class="ib-text" maxlength="200" placeholder="Message ${esc(them(c))}…" autocomplete="off"><button class="ib-send">SEND</button></div>`
-        : '<p class="ib-note small">Free chat unlocks once you’ve both played each other’s challenge.</p>'));
+        : `<p class="ib-note small">Free chat unlocks once you’re friends: ${c.acc[me] ? `waiting for ${esc(them(c))} to add you back.` : 'tap ＋ FRIEND above, and they add you back.'}</p>`));
     const t = box.querySelector('.ib-text'); if (t && val) { t.value = val; }
   }
   async function send(msg) {

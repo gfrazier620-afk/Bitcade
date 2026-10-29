@@ -131,8 +131,17 @@ export async function releaseName(name) {
 /** Other players' profiles: { uid: { name, n, av } } for the ones that have one. */
 export async function profiles(uids) {
   const out = {};
-  await Promise.all([...new Set(uids)].filter(Boolean).map(async id => { try { const d = await getDoc(doc(db, 'profiles', id)); if (d.exists()) out[id] = { name: d.get('name'), n: d.get('n'), av: d.get('av') }; } catch (e) {} }));
+  await Promise.all([...new Set(uids)].filter(Boolean).map(async id => { try { const d = await getDoc(doc(db, 'profiles', id)); if (d.exists()) out[id] = { name: d.get('name'), n: d.get('n'), av: d.get('av'), t: d.get('t') && d.get('t').toMillis ? d.get('t').toMillis() : 0 }; } catch (e) {} }));
   return out;
+}
+/**
+ * A player by their player name, for adding a friend: { uid, name, n, av }, or null. A name can be on several of the
+ * player's devices; messages go to the one whose profile changed last.
+ */
+export async function findPlayer(name) {
+  const o = await nameOwner(name); if (!o || !o.u.length) return null;
+  const p = await profiles(o.u), best = o.u.filter(u => p[u] && p[u].name === name).sort((a, b) => p[b].t - p[a].t)[0];
+  return best ? { uid: best, ...p[best] } : null;
 }
 export const pairOf = (a, b) => a < b ? `${a}_${b}` : `${b}_${a}`;
 /** A new challenge on a game: your initials and score. Returns its id (the link is the game's page with ?ch=id). */
@@ -166,6 +175,8 @@ export async function messages(pair) {
   const q = await getDocs(query(collection(db, 'dm', pair, 'm'), orderBy('t', 'desc'), limit(60)));
   return q.docs.map(d => { const x = d.data(); return { id: d.id, ...x, t: x.t && x.t.toMillis ? x.t.toMillis() : Date.now() }; }).reverse();
 }
+/** Add or remove a friend in a conversation that already exists (your own acceptance, acc). */
+export async function setFriend(pair, on) { const u = await signIn(); await updateDoc(doc(db, 'dm', pair), { [`acc.${u.uid}`]: !!on }); }
 export async function markSeen(pair) { const u = await signIn(); await updateDoc(doc(db, 'dm', pair), { [`seen.${u.uid}`]: serverTimestamp() }); }
 export async function blocked() { const u = await signIn(), d = await getDoc(doc(db, 'bl', u.uid)); return d.exists() ? d.get('u') || [] : []; }
 export async function block(other) { const u = await signIn(); await setDoc(doc(db, 'bl', u.uid), { u: arrayUnion(other) }, { merge: true }); }

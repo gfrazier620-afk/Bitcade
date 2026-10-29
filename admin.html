@@ -15,6 +15,7 @@
 <link rel="apple-touch-icon" href="icons/admin-apple-touch-icon.png">
 <link rel="stylesheet" href="shared/fonts.css">
 <script src="shared/avatar.js"></script>
+<script src="shared/badges.js"></script>
 <link rel="preload" href="shared/fonts/chakra-petch-600.woff2" as="font" type="font/woff2" crossorigin>
 <!--
   The admin console: play activity from shared/activity.js (act/{uid} and act/{uid}/ev in Firestore), feedback (fb),
@@ -218,6 +219,13 @@ pre{margin:8px 0 0;max-height:300px;overflow:auto;font:12px/1.5 var(--f-mono);wh
 .facts small{display:block;font-size:9.5px;letter-spacing:.14em;color:var(--mut);font-weight:600}
 .facts b{font:700 15px var(--f-mono)}
 .idl{font:11px var(--f-mono);color:var(--mut);word-break:break-all}
+/* moderation drawer */
+.mtools{display:flex;flex-wrap:wrap;gap:8px;padding:0 14px 10px}
+.mtools input{flex:1;min-width:120px;height:30px;padding:0 10px;border:1px solid var(--line2);border-radius:4px;background:var(--p);font:12px var(--f-mono);text-transform:uppercase}
+.mrow{display:grid;grid-template-columns:auto auto minmax(0,1fr) auto;align-items:center;gap:6px 10px;padding:8px 14px;border-top:1px solid var(--line);font:12.5px var(--f-mono)}
+.mrow .rk{color:var(--mut);min-width:2.5ch}.mrow b{color:var(--a);letter-spacing:.08em}.mrow .dim{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mrow .btn{height:28px;font-size:10.5px}
+.mrow.orph b{color:var(--r)}
 
 .toasts{position:fixed;z-index:60;right:16px;top:calc(62px + var(--top));display:flex;flex-direction:column;gap:8px;width:min(340px,calc(100vw - 32px));pointer-events:none}
 .toast{pointer-events:auto;background:var(--p2);border:1px solid var(--line2);border-left:3px solid var(--c);border-radius:4px;padding:10px 12px;font-size:13px;box-shadow:0 10px 30px rgba(0,0,0,.5);animation:slide .2s ease-out;cursor:pointer}
@@ -281,6 +289,7 @@ pre{margin:8px 0 0;max-height:300px;overflow:auto;font:12px/1.5 var(--f-mono);wh
     <button class="chip icon-btn" id="menuBtn" aria-label="Menu" aria-expanded="false">⋯</button>
     <div class="menu" id="menu" hidden>
       <div class="em" id="whoName"></div>
+      <button id="modBtn">⚑ Moderation</button>
       <button id="refresh">↻ Refresh now</button>
       <label><input type="checkbox" id="showMe"> Show my own play <span id="meN" class="dim"></span></label>
       <label><input type="checkbox" id="notify"> Phone notifications</label>
@@ -408,6 +417,7 @@ $('menuBtn').addEventListener('click', e => { e.stopPropagation(); menu($('menu'
 document.addEventListener('click', e => { if (!$('menu').hidden && !$('menu').contains(e.target)) menu(false); });
 $('out').addEventListener('click', () => { menu(false); if (auth) signOut(auth); else location.href = 'admin.html'; });
 $('refresh').addEventListener('click', () => { menu(false); poll(); });
+$('modBtn').addEventListener('click', () => { menu(false); openMod(); });
 $('showMe').addEventListener('change', render);
 $('range').addEventListener('change', render);
 $('notify').checked = get('admin:notify') === '1' && 'Notification' in window && Notification.permission === 'granted';
@@ -430,8 +440,8 @@ $('fbF').addEventListener('click', e => { const b = e.target.closest('button'); 
 $('plQ').addEventListener('input', drawPlayers);
 $('plSort').addEventListener('change', drawPlayers);
 document.addEventListener('click', e => { const w = e.target.closest('[data-p]'); if (w && players.has(w.dataset.p)) openPlayer(w.dataset.p); const j = e.target.closest('[data-go]'); if (j) go(j.dataset.go); });
-$('scrim').addEventListener('click', () => openPlayer(null));
-addEventListener('keydown', e => { if (e.key === 'Escape') { if (pick) openPlayer(null); else menu(false); } });
+$('scrim').addEventListener('click', () => { modOn = false; openPlayer(null); });
+addEventListener('keydown', e => { if (e.key === 'Escape') { if (pick || modOn) { modOn = false; openPlayer(null); } else menu(false); } });
 
 /* ---------- loading: everything once, then only what's newer ---------- */
 const fromT = t => Timestamp.fromMillis(Math.max(0, t));
@@ -689,7 +699,7 @@ function drawFb() {
 
 /* ---------- one player ---------- */
 function openPlayer(id) {
-  pick = id; $('drawer').hidden = $('scrim').hidden = !id;
+  pick = id; modOn = false; $('drawer').hidden = $('scrim').hidden = !id;
   document.body.style.overflow = id ? 'hidden' : '';
   if (id) drawPlayer();
 }
@@ -709,6 +719,70 @@ function drawPlayer() {
   if (window.Avatar) Avatar.fill($('drawer'));
   $('dClose').addEventListener('click', () => openPlayer(null));
   $('meBtn').addEventListener('click', () => { if (hide.has(p.id)) hide.delete(p.id); else { hide.add(p.id); if (!showMe()) openPlayer(null); } saveHide(); render(); });
+}
+
+/* ---------- moderation: remove test or bogus scores from the world boards, and player profiles ---------- */
+let modOn = false;
+const GAMES = (window.WEEKLY && WEEKLY.rotation) || [];
+// tap once to arm, again within 4 s to do it
+const armed = b => { if (b.dataset.armed === '1') return true; b.dataset.armed = '1'; const t = b.textContent; b.textContent = 'TAP AGAIN'; setTimeout(() => { if (b.isConnected && b.dataset.armed === '1') { b.dataset.armed = ''; b.textContent = t; } }, 4000); return false; };
+function openMod() {
+  modOn = true; pick = null; $('drawer').hidden = $('scrim').hidden = false; document.body.style.overflow = 'hidden';
+  $('drawer').innerHTML = `<div class="dh"><button class="btn" id="dClose" aria-label="Close">←</button><b>MODERATION</b></div>
+    <div class="db">
+      <section class="pn" style="padding:12px 0 0"><h2 style="padding:0 14px">SCORE BOARDS<small>ALL-TIME</small></h2>
+        <div class="mtools"><select class="chip" id="mGame" aria-label="Game">${GAMES.map(g => `<option value="${esc(g)}">${esc(name(g))}</option>`).join('')}</select><button class="btn" id="mTop">TOP 100</button></div>
+        <div class="mtools"><input id="mIni" value="TST TSU" aria-label="Initials to find" maxlength="40"><button class="btn" id="mFind">FIND IN EVERY GAME</button></div>
+        <div id="mList"><p class="empty">Pick a game, or find initials across every board.</p></div></section>
+      <section class="pn" style="padding:12px 0 0"><h2 style="padding:0 14px">PLAYER PROFILES<small id="mPn"></small></h2><div id="mProf"><p class="empty">Loading…</p></div></section>
+      <p class="idl">Removing a score takes it off the world board for good (players keep their own device's table). Removing a profile hides that player's name and character from others and frees the name if it's on one device; their scores stay.</p>
+    </div>`;
+  $('dClose').addEventListener('click', () => { modOn = false; openPlayer(null); });
+  $('mTop').addEventListener('click', () => boardRows([$('mGame').value], null));
+  $('mFind').addEventListener('click', () => { const ini = [...new Set($('mIni').value.toUpperCase().match(/[A-Z]{3}/g) || [])].slice(0, 10); if (ini.length) boardRows(GAMES, ini); });
+  $('drawer').onclick = modClick;
+  profRows();
+}
+async function boardRows(games, ini) {
+  const out = $('mList'); out.innerHTML = '<p class="empty">Loading…</p>';
+  const rows = [];
+  if (DEMO) rows.push(...[['rock-rift', 'd1', 'TSU', 1500], ['rock-rift', 'd2', 'TST', 1000], ['neon-noodle', 'd3', 'TST', 2]].filter(x => games.includes(x[0])).map(([g, id, n, s]) => ({ g, id, n, s, t: Date.now() })));
+  else try {
+    await Promise.all(games.map(async g => {
+      const col = collection(db, 'boards', g, 'scores'), q = ini ? query(col, where('n', 'in', ini)) : query(col, orderBy('s', 'desc'), limit(100));
+      (await getDocs(q)).docs.forEach(d => rows.push({ g, id: d.id, n: d.get('n'), s: d.get('s') || 0, t: ms(d.get('t')) }));
+    }));
+  } catch (e) { out.innerHTML = `<p class="empty">Couldn't load: ${esc(e.code || e.message)}</p>`; return; }
+  rows.sort((a, b) => ini ? a.g.localeCompare(b.g) || b.s - a.s : b.s - a.s);
+  out.innerHTML = rows.length ? rows.map((x, i) => `<div class="mrow"><span class="rk">${ini ? '' : i + 1}</span><b>${esc(x.n)}</b><span class="dim">${num(x.s)}${ini ? ' · ' + esc(name(x.g)) : ''}${x.t ? ' · ' + new Date(x.t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''}</span><button class="btn bad" data-delsc="${esc(x.g)}|${esc(x.id)}">✕ REMOVE</button></div>`).join('')
+    : `<p class="empty">${ini ? `No scores under ${esc(ini.join(', '))}.` : 'No scores on this board yet.'}</p>`;
+}
+async function profRows() {
+  const out = $('mProf'), list = [...profs.entries()].sort((a, b) => (b[1].t || 0) - (a[1].t || 0));
+  $('mPn').textContent = list.length ? `${list.length}` : '';
+  if (!list.length) { out.innerHTML = '<p class="empty">No profiles yet.</p>'; return; }
+  const own = {}; // is the profile's device still on its name? (if not, it's left over from a rename or a test)
+  if (!DEMO) await Promise.all(list.map(async ([id, p]) => { try { const d = await getDoc(doc(db, 'names', p.name)); own[id] = d.exists() && (d.get('u') || []).includes(id); } catch (e) { own[id] = true; } }));
+  out.innerHTML = list.map(([id, p]) => { const orph = !DEMO && !own[id];
+    return `<div class="mrow${orph ? ' orph' : ''}">${p.av && window.Avatar ? `<canvas class="av" data-av="${esc(p.av)}"></canvas>` : '<span></span>'}<b>${esc(p.name)}</b><span class="dim">${esc(p.n || '')}${orph ? ' · LEFT OVER' : ''}${players.has(id) ? '' : ' · not tracked'} · #${esc(id.slice(0, 5))}</span><button class="btn bad" data-delpr="${esc(id)}">✕ REMOVE</button></div>`; }).join('');
+  if (window.Avatar) Avatar.fill(out);
+}
+async function modClick(e) {
+  const b = e.target.closest('[data-delsc], [data-delpr]'); if (!b || !armed(b)) return;
+  b.textContent = '…';
+  try {
+    if (b.dataset.delsc) { const [g, id] = b.dataset.delsc.split('|'); if (!DEMO) await deleteDoc(doc(db, 'boards', g, 'scores', id)); }
+    else {
+      const id = b.dataset.delpr, p = profs.get(id);
+      if (!DEMO) {
+        await deleteDoc(doc(db, 'profiles', id));
+        const n = p && await getDoc(doc(db, 'names', p.name)).catch(() => null);
+        if (n && n.exists() && JSON.stringify(n.get('u')) === JSON.stringify([id])) await deleteDoc(doc(db, 'names', p.name));
+      }
+      profs.delete(id); $('mPn').textContent = `${profs.size}`;
+    }
+    b.closest('.mrow').remove();
+  } catch (err) { b.textContent = err.code === 'permission-denied' ? 'RULES?' : 'FAILED'; }
 }
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

@@ -4,6 +4,13 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // The admin is matched by a SHA-256 of their email, so the address isn't in this public file. (Compared as hex: the
+    // rules' toBase64() is the URL-safe kind, which didn't match a standard Base64 value.)
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email_verified == true
+        && hashing.sha256(request.auth.token.email.lower().toUtf8()).toHexString().lower() == '67756a129dd548436a572e60a67eb376b20e5477bfc276a6a097d083d62bebf5';
+    }
+
     // Highest score each game will accept. Generous, just to stop absurd fakes.
     function maxScore() {
       return {
@@ -39,7 +46,8 @@ service cloud.firestore {
     match /boards/{game}/scores/{id} {
       allow read: if true;
       allow create: if validScore(game);
-      allow update, delete: if false;
+      allow update: if false;
+      allow delete: if isAdmin(); // moderation: the admin page removes test or bogus scores
     }
 
     // Daily-challenge boards, one per game per local date. A score is only accepted while that date is "today"
@@ -52,7 +60,8 @@ service cloud.firestore {
         && request.time > dayStart(day) - duration.value(14, 'h')
         && request.time < dayStart(day) + duration.value(36, 'h')
         && validScore(game);
-      allow update, delete: if false;
+      allow update: if false;
+      allow delete: if isAdmin();
     }
 
     // Weekly tournament boards, one per game per week (keyed by the week's Monday, UTC). A score is only accepted
@@ -63,7 +72,8 @@ service cloud.firestore {
         && request.time > dayStart(week) - duration.value(1, 'h')
         && request.time < dayStart(week) + duration.value(169, 'h')
         && validScore(game);
-      allow update, delete: if false;
+      allow update: if false;
+      allow delete: if isAdmin();
     }
 
     // Blip Sports world wins: one record per player, which only ever goes up by one, at most once a minute.
@@ -106,13 +116,7 @@ service cloud.firestore {
     }
 
     // Play activity (shared/activity.js) for the admin page (admin.html). A signed-in player writes their own profile
-    // and adds events, never reads, edits or deletes them; only the admin's Google account can read. The admin is
-    // matched by a SHA-256 of their email, so the address isn't in this public file. (Compared as hex: the rules'
-    // toBase64() is the URL-safe kind, which didn't match a standard Base64 value.)
-    function isAdmin() {
-      return request.auth != null && request.auth.token.email_verified == true
-        && hashing.sha256(request.auth.token.email.lower().toUtf8()).toHexString().lower() == '67756a129dd548436a572e60a67eb376b20e5477bfc276a6a097d083d62bebf5';
-    }
+    // and adds events, never reads, edits or deletes them; only the admin's Google account can read (isAdmin, above).
     match /act/{uid} {
       allow read: if isAdmin();
       allow create, update: if request.auth != null && request.auth.uid == uid
@@ -154,7 +158,7 @@ service cloud.firestore {
               && hashing.sha256(getAfter(/databases/$(database)/documents/nameproof/$(request.auth.uid)).data.k.toUtf8()).toHexString().lower() == resource.data.h)
           || (request.resource.data.u.size() == resource.data.u.size() - 1 && resource.data.u.hasAll(request.resource.data.u)
               && request.auth.uid in resource.data.u && !(request.auth.uid in request.resource.data.u)));
-      allow delete: if request.auth != null && resource.data.u == [request.auth.uid];
+      allow delete: if (request.auth != null && resource.data.u == [request.auth.uid]) || isAdmin();
     }
     match /nameproof/{uid} {
       allow read, delete: if false;
@@ -172,7 +176,7 @@ service cloud.firestore {
         && request.resource.data.av is string && request.resource.data.av.matches('^[0-9]{1,2}(-[0-9]{1,2}){5}$')
         && request.resource.data.t == request.time
         && request.auth.uid in getAfter(/databases/$(database)/documents/names/$(request.resource.data.name)).data.u;
-      allow delete: if false;
+      allow delete: if isAdmin();
     }
 
     // The admin page's own settings (admin.html): the players to leave out of the numbers (the admin's own devices).
@@ -228,9 +232,9 @@ service cloud.firestore {
 
     // Conversations between two players (shared/inbox.js), at dm/{uidA_uidB} with the ids in order. Only the two of them
     // can read it or write to it, and each only changes their own name, "seen" time and acceptance. A new message must
-    // move `last` along in the same write, at most one a second. Quick chat and challenge cards are open to anyone in
-    // it; free text only once both have played each other's challenge (acc), up to 200 characters. A player someone
-    // has blocked (bl/{uid}) can't send them anything.
+    // move `last` along in the same write, at most one a second. Quick chat, challenge cards and friend requests ('f')
+    // are open to anyone in it; free text only once both have accepted (acc: added each other as friends or played
+    // each other's challenge), up to 200 characters. A player someone has blocked (bl/{uid}) can't send them anything.
     function other(pair) { let ids = pair.split('_'); return ids[0] == request.auth.uid ? ids[1] : ids[0]; }
     match /dm/{pair} {
       allow get: if request.auth != null && (resource == null || request.auth.uid in resource.data.m);
@@ -260,7 +264,7 @@ service cloud.firestore {
           && getAfter(/databases/$(database)/documents/dm/$(pair)).data.last == request.time
           && request.resource.data.u == request.auth.uid && request.resource.data.t == request.time
           && request.resource.data.keys().hasOnly(['u', 'k', 'q', 'x', 'c', 'g', 's', 'vs', 't'])
-          && request.resource.data.k in ['q', 'x', 'ch', 'res']
+          && request.resource.data.k in ['q', 'x', 'ch', 'res', 'f']
           && (request.resource.data.k != 'x' || (request.resource.data.x is string && request.resource.data.x.size() <= 200
             && getAfter(/databases/$(database)/documents/dm/$(pair)).data.acc.get(request.auth.uid, false) == true
             && getAfter(/databases/$(database)/documents/dm/$(pair)).data.acc.get(other(pair), false) == true))

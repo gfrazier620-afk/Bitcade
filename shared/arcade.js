@@ -156,7 +156,7 @@
     const c = A.chal, n = ini(); if (!c || c.mine || !r || r.easy || !n) return;
     const key = 'bitcade:chalbest:' + c.id, prev = store.get(key);
     if (prev != null && r.s <= +prev) return; store.set(key, String(r.s));
-    world().then(w => w.postResult(c.id, n, r.s).then(() => w.sendMsg(c.a, c.an, n, { k: 'res', c: c.id, g: A.id, s: r.s, vs: c.s }, { accept: true }))).catch(() => {});
+    world().then(w => w.postResult(c.id, n, r.s).then(() => w.sendMsg(c.a, c.an, n, { k: 'res', c: c.id, g: A.id, s: r.s, vs: c.s }, { accept: true })).then(() => store.set('bitcade:dm', '1'))).catch(() => {});
   }
   /** A new challenge with this score: a link to send (share sheet or clipboard), or straight to someone as a message. */
   async function chalMake(s, btn, to) {
@@ -165,6 +165,7 @@
     try {
       const w = await world(), id = await w.makeChallenge(A.id, s, n);
       try { const l = JSON.parse(store.get('bitcade:chs') || '[]'); l.unshift({ id, g: A.id, s, t: Date.now() }); store.set('bitcade:chs', JSON.stringify(l.slice(0, 30))); } catch (e) {}
+      store.set('bitcade:dm', '1');
       if (to) { await w.sendMsg(to.a, to.an, n, { k: 'ch', c: id, g: A.id, s }); btn.textContent = `SENT TO ${to.an} ✓`; return; }
       const url = `${location.origin}${location.pathname}?ch=${id}`, text = `${n} scored ${s.toLocaleString()} on ${document.title} at Bitcade. Can you beat it?`;
       try { if (navigator.share) { await navigator.share({ title: 'Bitcade challenge', text, url }); btn.textContent = 'CHALLENGE SENT ✓'; return; } } catch (e) { if (e.name === 'AbortError') { btn.textContent = '⚔ CHALLENGE A FRIEND'; btn.disabled = false; return; } }
@@ -246,6 +247,7 @@
     if (window.XP) { let n = 10 + (rank >= 0 ? 10 : 0) + (rec && prevBest > 0 ? 15 : 0) + (daily ? 5 : 0); if (A.featured()) n *= 2; xp = A.gainXP(n, 'run', true); }
     lastResult = { s, rank, top, day, week, tix, xp };
     try { A.mission({ type: 'run', slug: A.id, score: s, daily: !!daily }); } finally { lastResult.notes = gather; gather = null; }
+    setTimeout(msgCheck, 3500); // game over: a good moment to mention new messages
     if (A.chal && !A.chal.mine) { lastResult.chal = { an: A.chal.who || A.chal.an, vs: A.chal.s }; chalSend(lastResult); }
     return rec;
   };
@@ -561,6 +563,39 @@
     let skip = false; try { skip = sessionStorage.getItem('bitcade:nosetup') === '1'; } catch (e) {} // the smoke tests
     if (!skip && (!/^[A-Z0-9]{3,12}$/.test(store.get('arcade:name') || '') || !/^[A-Z]{3}$/.test(store.get('arcade:initials') || '') || !store.get('arcade:avatar'))) setupJs().then(S => S.open({ required: true })).catch(() => {});
     else setTimeout(() => setupJs().then(S => S.check()).catch(() => {}), 4000); });
+  /*
+   * New messages (shared/inbox.js has the conversations): for a player who has any (bitcade:dm, set by the lobby's
+   * messages and by challenges), a game page looks every couple of minutes while a title, pause or game-over screen is
+   * up, never mid-run, and shows a notice to tap that opens the conversation in the lobby. bitcade:dmnote is the newest
+   * message already announced, so each one is announced once.
+   */
+  let msgBusy = false;
+  function msgCheck() {
+    if (msgBusy || A.id === 'game' || A.demo || document.hidden || !overlayOpen() || store.get('bitcade:dm') !== '1') return;
+    msgBusy = true;
+    world().then(w => Promise.all([w.conversations(), w.myId(), w.blocked(), w])).then(async ([cs, me, bl, w]) => {
+      const said = +store.get('bitcade:dmnote') || 0, them = c => c.m.find(x => x !== me);
+      const fresh = cs.filter(c => !bl.includes(them(c)) && c.last > (c.seen[me] || 0) + 1000 && c.last > said);
+      if (!fresh.length) return;
+      store.set('bitcade:dmnote', String(Math.max(...fresh.map(c => c.last))));
+      const c = fresh[0], o = them(c), p = (await w.profiles([o]).catch(() => ({})))[o];
+      msgNote((p && p.name) || c.n[o] || 'A PLAYER', fresh.length - 1, new URL(`../../?chat=${encodeURIComponent(o)}&cn=${c.n[o] || ''}`, location.href).href);
+    }).catch(() => {}).then(() => { msgBusy = false; });
+  }
+  function msgNote(who, more, href) {
+    const old = document.querySelector('.msg-note'); if (old) old.remove();
+    const b = document.createElement('button');
+    b.className = 'msg-note'; b.type = 'button'; b.setAttribute('role', 'status');
+    b.textContent = `✉ ${who}${more ? ` +${more}` : ''} SENT YOU A MESSAGE · OPEN`;
+    b.style.cssText = 'position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translate(-50%,12px);z-index:51;max-width:calc(100vw - 24px);overflow:hidden;text-overflow:ellipsis;' +
+      'padding:10px 16px;border-radius:12px;background:#1f1940;border:1px solid #ff8a9a;color:#ff8a9a;font:12px Silkscreen,ui-monospace,monospace;letter-spacing:.04em;' +
+      'box-shadow:0 6px 24px rgba(0,0,0,.5);opacity:0;transition:opacity .25s,transform .25s;white-space:nowrap;cursor:pointer';
+    b.addEventListener('click', () => A.crtOff(href));
+    document.body.appendChild(b); A.tone(880, 0.06, 'triangle', 0.03); A.tone(1175, 0.08, 'triangle', 0.03, 0.08);
+    requestAnimationFrame(() => { b.style.opacity = '1'; b.style.transform = 'translate(-50%,0)'; });
+    setTimeout(() => { b.style.opacity = '0'; setTimeout(() => b.remove(), 300); }, 12000);
+  }
+  addEventListener('load', () => { setTimeout(msgCheck, 6000); setInterval(msgCheck, 120000); });
   const saveTime = () => { if (playT >= 1 && A.id !== 'game') { store.set('arcade:time:' + A.id, Math.round((+store.get('arcade:time:' + A.id) || 0) + playT)); playT = 0; } };
   setInterval(saveTime, 10000); addEventListener('pagehide', saveTime);
   const hideFns = [];
