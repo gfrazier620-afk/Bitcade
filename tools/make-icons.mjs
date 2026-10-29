@@ -1,5 +1,6 @@
 /*
- * Draws the Bitcade app icons (a pixel-art B in the logo's yellow → orange → pink gradient) as PNGs in icons/.
+ * Draws the Bitcade app icons (a pixel-art B in the logo's yellow → orange → pink gradient) as PNGs in icons/, and the
+ * admin console's (admin.html: the same B in terminal green → cyan on near-black, so the two apps tell apart).
  * Run with: node tools/make-icons.mjs   (no dependencies; writes the PNG bytes by hand)
  */
 import { writeFileSync, mkdirSync } from 'node:fs';
@@ -8,7 +9,9 @@ import { fileURLToPath } from 'node:url';
 
 const OUT = fileURLToPath(new URL('../icons/', import.meta.url));
 const B = ['11110', '10001', '10001', '11110', '10001', '10001', '11110'];
-const BG = [0x0f, 0x0c, 0x1f], STOPS = [[0xff, 0xe3, 0x6a], [0xff, 0x7a, 0x3d], [0xff, 0x3d, 0x9a]];
+const SITE = { BG: [0x0f, 0x0c, 0x1f], STOPS: [[0xff, 0xe3, 0x6a], [0xff, 0x7a, 0x3d], [0xff, 0x3d, 0x9a]] };
+const ADMIN = { BG: [0x04, 0x07, 0x0a], STOPS: [[0x9a, 0xff, 0xc4], [0x39, 0xff, 0x88], [0x3d, 0xe0, 0xff]] };
+let BG, STOPS;
 
 const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
 const rowColor = r => { const t = r / (B.length - 1); return t < 0.5 ? mix(STOPS[0], STOPS[1], t * 2) : mix(STOPS[1], STOPS[2], (t - 0.5) * 2); };
@@ -54,10 +57,19 @@ function png(size, rgba) {
 }
 
 mkdirSync(OUT, { recursive: true });
-const files = {
+const files = {};
+({ BG, STOPS } = SITE);
+Object.assign(files, {
   'icon-192.png': draw(192, 0.62, true),
   'icon-512.png': draw(512, 0.62, true),
   'icon-maskable-512.png': draw(512, 0.46, false), // letter inside the 80% safe zone that launchers may crop to
   'apple-touch-icon.png': draw(180, 0.58, false)   // iOS rounds the corners itself
-};
+});
+({ BG, STOPS } = ADMIN);
+Object.assign(files, {
+  'admin-192.png': draw(192, 0.62, true),
+  'admin-512.png': draw(512, 0.62, true),
+  'admin-maskable-512.png': draw(512, 0.46, false),
+  'admin-apple-touch-icon.png': draw(180, 0.58, false)
+});
 for (const [name, data] of Object.entries(files)) { writeFileSync(OUT + name, data); console.log(`icons/${name}  ${data.length} bytes`); }

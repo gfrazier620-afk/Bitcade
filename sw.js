@@ -9,7 +9,9 @@
  * - Anything not in the copy comes from the network and is kept.
  * - The Firebase SDK (and Google Fonts, for pages from before the fonts lived here): cache first. Their URLs are versioned.
  * - Firestore and sign-in requests are left alone; the leaderboard already handles being offline.
- * - On localhost the network comes first, so edits show up while working on the site.
+ * - On localhost the network comes first, so edits show up while working on the site. So does the admin console
+ *   (admin.html and its manifest) everywhere: it's live data, never played offline, and should never wait on an update.
+ * - Tapping one of the admin console's notifications opens (or focuses) the console.
  *
  * Adding a game? Add its slug to GAMES. The smoke tests check that GAMES matches games/.
  */
@@ -39,7 +41,7 @@ self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
-  if (url.origin === location.origin) e.respondWith(DEV ? networkFirst(req) : fromCopy(req));
+  if (url.origin === location.origin) e.respondWith(DEV || /\/admin(\.html|-manifest\.json)$/.test(url.pathname) ? networkFirst(req) : fromCopy(req));
   else if (url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com' ||
     (url.hostname === 'www.gstatic.com' && url.pathname.startsWith('/firebasejs/'))) e.respondWith(cacheFirst(req));
 });
@@ -71,6 +73,15 @@ async function networkFirst(req) {
     throw err;
   }
 }
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || 'admin.html';
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+    const open = list.find(c => /admin\.html/.test(c.url));
+    return open ? open.focus() : self.clients.openWindow(url);
+  }));
+});
+
 async function cacheFirst(req) {
   const cache = await caches.open(RUNTIME), hit = await cache.match(req);
   if (hit) return hit;

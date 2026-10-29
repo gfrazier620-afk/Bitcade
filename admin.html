@@ -2,266 +2,714 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow">
-<title>Bitcade Admin</title>
-<link rel="icon" href="icons/icon-192.png">
+<meta name="theme-color" content="#04070a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Bitcade SOC">
+<title>Bitcade SOC</title>
+<link rel="manifest" href="admin-manifest.json">
+<link rel="icon" href="icons/admin-192.png">
+<link rel="apple-touch-icon" href="icons/admin-apple-touch-icon.png">
 <link rel="stylesheet" href="shared/fonts.css">
+<link rel="preload" href="shared/fonts/chakra-petch-600.woff2" as="font" type="font/woff2" crossorigin>
 <!--
-  The admin page: play activity from shared/activity.js (act/{uid} and act/{uid}/ev in Firestore). Not linked from
-  anywhere. Sign in with Google; firestore.rules only lets the admin's account read, so anyone else sees nothing.
+  The admin console: play activity from shared/activity.js (act/{uid} and act/{uid}/ev in Firestore), feedback (fb),
+  errors (err) and reports (rep). Not linked from anywhere; installable on its own from admin-manifest.json, with its
+  own icon. Sign in with Google; firestore.rules only lets the admin's account read, so anyone else sees nothing.
+
+  - OVERVIEW: alert level, KPIs against the previous period, who's on right now (act/{uid}.on and last, from the
+    heartbeat in activity.js), activity, the alert queue, top games and devices.
+  - FEED: one log of everything (runs, visits, new players, errors, feedback, reports), newest first.
+  - PLAYERS: searchable; tap one for their games and timeline (a drawer; full screen on phones).
+  - INCIDENTS: errors grouped by message and line, with a severity, and reports. FEEDBACK: mark done or delete.
+  It loads everything once, then every 30 s (while visible) fetches only what's newer, so it stays cheap to leave
+  open. New incidents, feedback and players since the last look get a toast, a NEW tag and the app badge, and a
+  phone notification while it's open, if turned on in the ⋯ menu. What's been looked at is kept in admin:seen.
+
   The admin's own play is left out (admin/settings { hide: [uid] }): this browser's player is added by itself, and any
   other player can be marked as "me" from their panel. SHOW MY PLAY puts them back in.
+
+  ?demo skips sign-in and fills the console with made-up players and alerts (nothing is read or written), for trying
+  the layout and for the smoke tests.
 -->
 <style>
-:root{--bg:#0f0c1f;--bg2:#181331;--panel:#1f1940;--line:#342b5e;--ink:#f4effd;--muted:#a39bc4;--hi:#5ee7ff;--pink:#ff4fa3;--gold:#ffd23d;--green:#3dff8f;
-  --f-marquee:"Bungee","Arial Black",system-ui,sans-serif;--f-pixel:"Silkscreen",ui-monospace,monospace;--f-body:"Rubik",ui-sans-serif,system-ui,sans-serif;color-scheme:dark}
+:root{--bg:#04070a;--p:#0a1116;--p2:#0e171e;--line:#16303a;--line2:#21434f;--ink:#d9f4ee;--mut:#6f918b;--g:#39ff88;--c:#3de0ff;--a:#ffb020;--r:#ff4d5e;--m:#d46bff;--b:#6ea8ff;
+  --f-ui:"Chakra Petch",ui-sans-serif,system-ui,sans-serif;--f-mono:ui-monospace,"Cascadia Mono","SF Mono",Menlo,Consolas,monospace;
+  --top:env(safe-area-inset-top,0px);--bot:env(safe-area-inset-bottom,0px);color-scheme:dark}
 *{box-sizing:border-box}[hidden]{display:none!important}
-body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 20% -10%,#3a1450 0%,transparent 50%),radial-gradient(ellipse at 90% 10%,#0e3350 0%,transparent 45%),var(--bg);color:var(--ink);font:15px/1.45 var(--f-body)}
-button,select{font:inherit;color:inherit;cursor:pointer}
-.wrap{max-width:1240px;margin:0 auto;padding:18px 16px 60px}
-header{display:flex;align-items:center;gap:12px 18px;flex-wrap:wrap;margin-bottom:18px}
-.logo{font-family:"Bungee Shade","Bungee",sans-serif;font-size:28px;line-height:1;background:linear-gradient(180deg,#ffe36a,#ff7a3d 45%,#ff3d9a);-webkit-background-clip:text;background-clip:text;color:transparent}
-.tag{font-family:var(--f-pixel);font-size:11px;letter-spacing:.12em;color:var(--hi);border:1px solid var(--hi);border-radius:6px;padding:3px 8px}
-.who{margin-left:auto;display:flex;align-items:center;gap:10px;font-family:var(--f-pixel);font-size:11px;color:var(--muted)}
-.btn{font-family:var(--f-pixel);font-size:11px;letter-spacing:.06em;background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:7px 12px}
-.btn:hover{border-color:var(--hi);color:var(--hi)}
-.btn.main{color:#120a1c;background:var(--hi);border-color:var(--hi);font-size:13px;padding:11px 20px}
-select.btn{padding:6px 10px}
-.card{background:var(--bg2);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
-.gate{max-width:480px;margin:12vh auto;text-align:center;display:flex;flex-direction:column;gap:14px;align-items:center}
-.gate p{margin:0;color:var(--muted)}
-.err{color:#ff8a9a;font-family:var(--f-pixel);font-size:11px}
-.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:12px}
-.tile small{display:block;font-family:var(--f-pixel);font-size:10px;letter-spacing:.1em;color:var(--muted)}
-.tile b{font-family:var(--f-marquee);font-weight:400;font-size:26px;line-height:1.2}
-.grid2{display:grid;grid-template-columns:1.2fr 1fr;gap:12px;margin-bottom:12px}
-@media (max-width:860px){.grid2{grid-template-columns:1fr}}
-h2{font-family:var(--f-marquee);font-weight:400;font-size:17px;margin:0 0 10px;letter-spacing:.03em}
-h2 small{font-family:var(--f-pixel);font-size:10px;color:var(--muted);margin-left:8px;letter-spacing:.08em}
-.days{display:flex;align-items:flex-end;gap:3px;height:150px;padding-top:6px}
-.days div{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;height:100%;min-width:0}
-.days i{display:block;width:100%;max-width:26px;border-radius:4px 4px 0 0;background:linear-gradient(180deg,var(--hi),#7a5cff);min-height:2px}
-.days span{font-family:var(--f-pixel);font-size:8.5px;color:var(--muted);white-space:nowrap}
-table{width:100%;border-collapse:collapse;font-size:13.5px}
-th{font-family:var(--f-pixel);font-weight:400;font-size:9.5px;letter-spacing:.1em;color:var(--muted);text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
-td{padding:7px 8px;border-bottom:1px solid rgba(52,43,94,.55);white-space:nowrap}
-td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
-tbody tr.pick{cursor:pointer}tbody tr.pick:hover{background:rgba(94,231,255,.06)}tbody tr.on{background:rgba(94,231,255,.12)}
-.bar{display:inline-block;height:7px;border-radius:4px;background:linear-gradient(90deg,var(--pink),var(--gold));vertical-align:middle;margin-right:6px}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;min-height:100vh;min-height:100dvh;color:var(--ink);font:500 14px/1.45 var(--f-ui);-webkit-tap-highlight-color:transparent;
+  background:radial-gradient(ellipse at 50% -20%,rgba(57,255,136,.07),transparent 60%),
+    repeating-linear-gradient(0deg,rgba(61,224,255,.025) 0 1px,transparent 1px 32px),repeating-linear-gradient(90deg,rgba(61,224,255,.025) 0 1px,transparent 1px 32px),var(--bg)}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:99;background:repeating-linear-gradient(180deg,rgba(0,0,0,.18) 0 1px,transparent 1px 3px);opacity:.35}
+button,select,input{font:inherit;color:inherit}
+button{cursor:pointer}
+.mono{font-family:var(--f-mono)}
+.dim{color:var(--mut)}
+
+/* ---------- sign-in ---------- */
+.gate{min-height:100vh;min-height:100dvh;display:grid;place-items:center;padding:calc(20px + var(--top)) 16px calc(20px + var(--bot))}
+.gate .box{width:min(440px,100%);display:flex;flex-direction:column;gap:16px}
+.term{font:13px/1.7 var(--f-mono);color:var(--g);white-space:pre-wrap;margin:0;min-height:8.5em}
+.term .dim{color:var(--mut)}
+.err{color:var(--r);font:12px/1.5 var(--f-mono)}
+
+/* ---------- frame ---------- */
+.top{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:8px 10px;padding:calc(10px + var(--top)) 16px 10px;background:rgba(4,7,10,.92);border-bottom:1px solid var(--line);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.brand{display:flex;align-items:center;gap:8px;font-weight:700;letter-spacing:.14em;font-size:15px;white-space:nowrap}
+.brand svg{flex:none}
+.brand span{color:var(--g)}
+.chip{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;border:1px solid var(--line2);border-radius:4px;background:var(--p);font:600 11px/1 var(--f-ui);letter-spacing:.12em;white-space:nowrap}
+.lvl{border-color:currentColor}
+.lvl i,.live i{width:8px;height:8px;border-radius:50%;background:currentColor;box-shadow:0 0 8px currentColor}
+.lvl.ok{color:var(--g)}.lvl.warn{color:var(--a)}.lvl.crit{color:var(--r);background:rgba(255,77,94,.1)}
+.lvl.crit i,.live.on i{animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.25}}
+.live{color:var(--mut)}.live.on{color:var(--g)}.live.bad{color:var(--a)}
+.sp{flex:1}
+select.chip{appearance:none;-webkit-appearance:none;padding-right:24px;background:var(--p) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236f918b'/%3E%3C/svg%3E") no-repeat right 8px center;cursor:pointer}
+.icon-btn{width:34px;height:30px;justify-content:center;padding:0;font-size:16px;letter-spacing:0}
+.menu{position:absolute;right:12px;top:calc(100% + 6px);width:min(300px,calc(100vw - 24px));background:var(--p2);border:1px solid var(--line2);border-radius:6px;padding:8px;display:flex;flex-direction:column;gap:2px;box-shadow:0 18px 40px rgba(0,0,0,.6)}
+.menu .em{font:12px var(--f-mono);color:var(--mut);padding:6px 8px 10px;border-bottom:1px solid var(--line);margin-bottom:4px;word-break:break-all}
+.menu label,.menu button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:0;border-radius:4px;padding:10px 8px;font-size:13px;letter-spacing:.06em;cursor:pointer}
+.menu label:hover,.menu button:hover{background:rgba(61,224,255,.08)}
+.menu input{accent-color:var(--g);width:16px;height:16px}
+
+.shell{display:grid;grid-template-columns:184px minmax(0,1fr)}
+.nav{position:sticky;top:51px;align-self:start;height:calc(100vh - 51px);display:flex;flex-direction:column;gap:2px;padding:14px 10px;border-right:1px solid var(--line)}
+.nav button{position:relative;display:flex;align-items:center;gap:10px;background:none;border:0;border-left:2px solid transparent;color:var(--mut);padding:10px 10px;font-weight:600;font-size:12px;letter-spacing:.12em;text-align:left}
+.nav button svg{flex:none;opacity:.8}
+.nav button:hover{color:var(--ink)}
+.nav button[aria-current="true"]{color:var(--g);border-left-color:var(--g);background:linear-gradient(90deg,rgba(57,255,136,.1),transparent)}
+.nav .n{margin-left:auto;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--r);color:#fff;font:700 10px/18px var(--f-mono);text-align:center}
+.nav .n.a{background:var(--a);color:#1a1000}
+main{padding:16px 16px 40px;min-width:0}
+.view{display:flex;flex-direction:column;gap:12px;max-width:1280px}
+.vh{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.vh h1{margin:0;font-size:18px;letter-spacing:.14em;font-weight:700}
+.vh small{color:var(--mut);font:11px var(--f-mono)}
+
+/* ---------- panels ---------- */
+.pn{position:relative;background:linear-gradient(180deg,var(--p2),var(--p));border:1px solid var(--line);border-radius:4px;padding:12px 14px;min-width:0}
+.pn::before,.pn::after{content:"";position:absolute;width:10px;height:10px;border:0 solid var(--c);opacity:.7;pointer-events:none}
+.pn::before{top:-1px;left:-1px;border-top-width:2px;border-left-width:2px}
+.pn::after{bottom:-1px;right:-1px;border-bottom-width:2px;border-right-width:2px}
+.pn h2{display:flex;align-items:center;gap:8px;margin:0 0 10px;font-size:11px;letter-spacing:.18em;font-weight:700;color:var(--c)}
+.pn h2 small{margin-left:auto;font:10px var(--f-mono);letter-spacing:.04em;color:var(--mut)}
+.pn h2 button{margin-left:auto}
+.g2{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:12px}
+.g2e{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+
+.kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
+.kpi{padding:10px 12px 8px}
+.kpi small{display:block;font-size:10px;letter-spacing:.16em;color:var(--mut);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kpi b{display:block;font:700 26px/1.15 var(--f-mono);letter-spacing:-.02em;margin-top:2px}
+.kpi .d{font:11px var(--f-mono);color:var(--mut);white-space:nowrap}
+.kpi .d .up{color:var(--g)}.kpi .d .dn{color:var(--r)}
+.kpi svg{display:block;width:100%;height:24px;margin-top:6px}
+.kpi.k-live b{color:var(--g)}.kpi.k-err b{color:var(--a)}.kpi.k-err.crit b{color:var(--r)}
+
+.chart{display:flex;align-items:flex-end;gap:2px;height:150px;padding-top:4px}
+.chart div{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;height:100%;min-width:0}
+.chart i{display:block;width:100%;max-width:22px;min-height:2px;background:linear-gradient(180deg,var(--g),rgba(57,255,136,.25));box-shadow:0 0 10px rgba(57,255,136,.25)}
+.chart i.now{background:linear-gradient(180deg,var(--c),rgba(61,224,255,.25))}
+.chart span{font:9px var(--f-mono);color:var(--mut);white-space:nowrap;height:11px}
+
+.sess{display:flex;flex-direction:column}
+.sess .row{display:grid;grid-template-columns:auto 52px minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 2px;border-bottom:1px dashed var(--line);cursor:pointer}
+.sess .row:last-child{border-bottom:0}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--mut)}
+.dot.live{background:var(--g);box-shadow:0 0 8px var(--g);animation:pulse 1.4s ease-in-out infinite}
+.dot.today{background:var(--c)}
+.ini{font:700 14px var(--f-mono);color:var(--a);letter-spacing:.06em}
+.anon{font:12px var(--f-mono);color:var(--mut)}
+.you{font:700 9px var(--f-ui);letter-spacing:.12em;color:var(--a);border:1px solid currentColor;border-radius:3px;padding:0 4px;margin-left:6px;vertical-align:2px}
+.empty{color:var(--mut);font:12px var(--f-mono);padding:10px 2px}
+
+.q{display:flex;flex-direction:column}
+.q .row{display:grid;grid-template-columns:52px minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 2px;border-bottom:1px dashed var(--line);cursor:pointer}
+.q .row:last-child{border-bottom:0}
+.q .tx{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sev{display:inline-block;min-width:44px;text-align:center;font:700 10px/18px var(--f-mono);letter-spacing:.06em;border:1px solid currentColor;border-radius:3px;padding:0 4px}
+.s-crit{color:var(--r)}.s-crit.sev{background:rgba(255,77,94,.12)}
+.s-warn{color:var(--a)}.s-low{color:var(--mut)}.s-msg{color:var(--b)}.s-new{color:var(--m)}.s-run{color:var(--g)}.s-vis{color:var(--c)}
+.new{font:700 9px var(--f-ui);letter-spacing:.12em;color:#04070a;background:var(--g);border-radius:3px;padding:1px 5px;margin-right:6px;vertical-align:1px}
+
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font-size:10px;letter-spacing:.14em;font-weight:600;color:var(--mut);text-align:left;padding:6px 8px;border-bottom:1px solid var(--line2);white-space:nowrap}
+td{padding:7px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+td.num,th.num{text-align:right;font-family:var(--f-mono)}
+.bar{--bw:90px;display:inline-block;width:calc(var(--f) * var(--bw));min-width:2px;height:6px;background:linear-gradient(90deg,var(--g),var(--c));vertical-align:middle;margin-right:8px;box-shadow:0 0 6px rgba(57,255,136,.4)}
 .scroll{overflow-x:auto}
-.ini{font-family:var(--f-pixel);color:var(--gold)}
-.dim{color:var(--muted)}
-.pill{font-family:var(--f-pixel);font-size:9.5px;border:1px solid currentColor;border-radius:999px;padding:1px 7px}
-.k-run{color:var(--green)}.k-page{color:var(--hi)}
-.detail{margin-top:12px}
-.detail-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:10px}
-.detail-head b{font-family:var(--f-marquee);font-weight:400;font-size:22px}
-.note{font-size:12.5px;color:var(--muted);margin:14px 0 0}
-.tabs2{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
-.tabs2 button{font-family:var(--f-pixel);font-size:11px;letter-spacing:.08em;color:var(--muted);background:var(--bg2);border:1px solid var(--line);border-radius:999px;padding:8px 14px;cursor:pointer}
-.tabs2 button[aria-pressed="true"]{color:#120a1c;background:var(--hi);border-color:var(--hi)}
-.tabs2 i{font-style:normal;color:#120a1c;background:var(--gold);border-radius:999px;padding:0 6px;margin-left:4px}
-#extra{display:flex;flex-direction:column;gap:10px}#extra[hidden]{display:none!important}
-.fbk p{margin:0 0 8px;font-size:15px;white-space:pre-wrap;word-break:break-word}.fbk.done{opacity:.5}
-.meta{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;font-size:12.5px;color:var(--muted)}.meta .acts{margin-left:auto;display:flex;gap:6px}
-.btn.sm{font-size:9.5px;padding:4px 8px}
-.errg .em{margin:0 0 6px;font-family:ui-monospace,monospace;font-size:13px;color:#ff8a9a;word-break:break-word}
-.fbk pre{margin:8px 0 0;max-height:280px;overflow:auto;font-size:12.5px;white-space:pre-wrap;background:#0d0a1d;border-radius:8px;padding:10px}
-.me-tog{display:flex;align-items:center;gap:6px;cursor:pointer}.me-tog input{accent-color:var(--hi)}
-.pill.you{color:var(--gold);margin-left:6px}
-tr.mine td{opacity:.55}
-.detail-head .btn{margin-left:auto}
+.devs{display:flex;flex-direction:column;gap:10px}
+.devs .r{display:grid;grid-template-columns:70px minmax(0,1fr) auto;gap:10px;align-items:center;font-size:12px;letter-spacing:.1em}
+.devs .tr{height:8px;background:var(--line);border-radius:1px;overflow:hidden}.devs .tr i{display:block;height:100%;background:var(--c)}
+.devs .num{text-align:right;font-family:var(--f-mono);white-space:nowrap}
+
+/* ---------- feed ---------- */
+.filters{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+.filters::-webkit-scrollbar{display:none}
+.filters button{flex:none;background:var(--p);border:1px solid var(--line2);border-radius:4px;padding:7px 11px;font-size:11px;font-weight:600;letter-spacing:.12em;color:var(--mut)}
+.filters button[aria-pressed="true"]{color:#04070a;background:var(--g);border-color:var(--g)}
+.log{font:12.5px/1.5 var(--f-mono);padding:4px 0}
+.log .day{color:var(--mut);font-size:11px;letter-spacing:.1em;padding:10px 12px 4px;border-bottom:1px solid var(--line)}
+.ln{display:grid;grid-template-columns:72px 50px 64px minmax(0,1fr);gap:10px;align-items:baseline;padding:5px 12px;border-bottom:1px solid rgba(22,48,58,.5)}
+.ln:hover{background:rgba(61,224,255,.04)}
+.ln time{color:var(--mut)}
+.ln .sev{font-size:9.5px;line-height:16px;min-width:0}
+.ln .who{cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ln .msg{word-break:break-word}
+.ln.fresh{background:rgba(57,255,136,.06);animation:fresh 2.5s ease-out}
+@keyframes fresh{from{background:rgba(57,255,136,.25)}}
+.more{margin:8px 12px;align-self:flex-start}
+
+/* ---------- players ---------- */
+.tools{display:flex;gap:8px;flex-wrap:wrap}
+.tools input{flex:1;min-width:160px;height:34px;background:var(--p);border:1px solid var(--line2);border-radius:4px;padding:0 10px;font:13px var(--f-mono);user-select:text}
+.tools input:focus,select.chip:focus{outline:1px solid var(--g)}
+.tools .chip{height:34px}
+.plist{display:flex;flex-direction:column}
+.pr{display:grid;grid-template-columns:14px minmax(80px,1.1fr) 70px 46px 86px 70px 50px minmax(90px,1fr);gap:10px;align-items:center;padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px}
+.pr:hover{background:rgba(61,224,255,.05)}
+.pr.mine{opacity:.55}
+.pr.hd{cursor:default;font-size:10px;letter-spacing:.14em;color:var(--mut);font-weight:600;border-bottom-color:var(--line2)}
+.pr.hd:hover{background:none}
+.pr .num{text-align:right;font-family:var(--f-mono)}
+.pr .lbl{display:none}
+.pr .fav{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ---------- incidents and feedback ---------- */
+.cards{display:flex;flex-direction:column;gap:10px}
+.inc .top2{display:flex;gap:10px;align-items:flex-start}
+.inc .em{margin:0;font:13px/1.5 var(--f-mono);word-break:break-word;flex:1}
+.inc.s-crit-b{border-color:rgba(255,77,94,.5)}
+.inc.s-crit-b::before,.inc.s-crit-b::after{border-color:var(--r)}
+.inc.done{opacity:.45}
+.meta{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:8px;font:11.5px var(--f-mono);color:var(--mut)}
+.meta b{color:var(--ink);font-weight:600}
+.acts{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;background:var(--p);border:1px solid var(--line2);border-radius:4px;padding:6px 12px;font-size:11px;font-weight:600;letter-spacing:.12em}
+.btn:hover{border-color:var(--c);color:var(--c)}
+.btn.main{background:var(--g);border-color:var(--g);color:#04070a;font-size:13px;min-height:44px}
+.btn.main:hover{color:#04070a;filter:brightness(1.1)}
+.btn.bad:hover{border-color:var(--r);color:var(--r)}
+.fbx{margin:0;font-size:15px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
+details{margin-top:8px}
+summary{cursor:pointer;color:var(--c);font:11px var(--f-mono);letter-spacing:.06em}
+pre{margin:8px 0 0;max-height:300px;overflow:auto;font:12px/1.5 var(--f-mono);white-space:pre-wrap;background:#03060a;border:1px solid var(--line);border-radius:4px;padding:10px}
+
+/* ---------- player drawer ---------- */
+.scrim{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.55)}
+.drawer{position:fixed;z-index:41;top:0;right:0;bottom:0;width:min(560px,100%);background:var(--bg);border-left:1px solid var(--line2);display:flex;flex-direction:column;box-shadow:-20px 0 50px rgba(0,0,0,.6);animation:slide .22s ease-out}
+@keyframes slide{from{transform:translateX(30px);opacity:0}}
+.dh{display:flex;align-items:center;gap:10px;padding:calc(12px + var(--top)) 14px 12px;border-bottom:1px solid var(--line)}
+.dh b{font:700 22px var(--f-mono);color:var(--a);letter-spacing:.08em}
+.db{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px;padding-bottom:calc(20px + var(--bot))}
+.facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.facts div{background:var(--p);border:1px solid var(--line);border-radius:4px;padding:8px 10px}
+.facts small{display:block;font-size:9.5px;letter-spacing:.14em;color:var(--mut);font-weight:600}
+.facts b{font:700 15px var(--f-mono)}
+.idl{font:11px var(--f-mono);color:var(--mut);word-break:break-all}
+
+.toasts{position:fixed;z-index:60;right:16px;top:calc(62px + var(--top));display:flex;flex-direction:column;gap:8px;width:min(340px,calc(100vw - 32px));pointer-events:none}
+.toast{pointer-events:auto;background:var(--p2);border:1px solid var(--line2);border-left:3px solid var(--c);border-radius:4px;padding:10px 12px;font-size:13px;box-shadow:0 10px 30px rgba(0,0,0,.5);animation:slide .2s ease-out;cursor:pointer}
+.toast.s-crit{border-left-color:var(--r)}.toast.s-warn{border-left-color:var(--a)}.toast.s-new{border-left-color:var(--m)}.toast.s-msg{border-left-color:var(--b)}
+.toast small{display:block;font:10px var(--f-mono);letter-spacing:.1em;margin-bottom:2px}
+.toast span{color:var(--ink)}
+.foot{font:11px/1.6 var(--f-mono);color:var(--mut);margin:6px 2px 0}
+
+/* ---------- tablets and phones ---------- */
+@media (max-width:1100px){.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.g2,.g2e{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:760px){
+  .shell{display:block}
+  .nav{position:fixed;z-index:30;top:auto;left:0;right:0;bottom:0;height:auto;flex-direction:row;justify-content:space-around;gap:0;padding:4px 4px calc(4px + var(--bot));border-right:0;border-top:1px solid var(--line2);background:rgba(6,10,14,.97)}
+  .nav button{flex:1;flex-direction:column;gap:3px;padding:7px 2px 5px;border-left:0;border-top:2px solid transparent;font-size:9px;letter-spacing:.1em;text-align:center}
+  .nav button[aria-current="true"]{border-top-color:var(--g);background:linear-gradient(180deg,rgba(57,255,136,.12),transparent)}
+  .nav .n{position:absolute;top:3px;left:calc(50% + 6px);margin:0}
+  main{padding:12px 12px calc(84px + var(--bot))}
+  .top{padding:calc(8px + var(--top)) 12px 8px;gap:6px}
+  .brand{font-size:13px;letter-spacing:.1em}
+  .brand .full{display:none}
+  .live .lbl{display:none}
+  .kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .kpi b{font-size:22px}
+  .chart{height:120px}
+  .ln{grid-template-columns:62px 46px minmax(0,1fr);gap:4px 8px;padding:7px 10px}
+  .ln .msg{grid-column:2/-1}
+  .ln time{grid-row:span 2}
+  .pr.hd{display:none}
+  .pr{grid-template-columns:14px minmax(0,1fr) auto;grid-template-areas:"d n t" ". m m";row-gap:4px;padding:11px 10px}
+  .pr>:nth-child(1){grid-area:d}.pr>:nth-child(2){grid-area:n}.pr>:nth-child(6){grid-area:t;text-align:right}
+  .pr>:nth-child(3),.pr>:nth-child(4),.pr>:nth-child(5),.pr>:nth-child(7),.pr>:nth-child(8){display:none}
+  .pr .m{grid-area:m;display:block!important;font:11.5px var(--f-mono);color:var(--mut)}
+  .toasts{top:auto;bottom:calc(76px + var(--bot));right:12px}
+  .drawer{border-left:0}
+  td,th{padding:7px 6px}
+  .hide-s{display:none}
+  .bar{--bw:44px}
+}
+.pr .m{display:none}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <span class="logo">BITCADE</span><span class="tag">ADMIN</span>
-    <div class="who" id="who" hidden><span id="whoName"></span><label class="me-tog"><input type="checkbox" id="showMe"> SHOW MY PLAY <span id="meN"></span></label><select class="btn" id="range" aria-label="Time range"><option value="1">LAST 24 HOURS</option><option value="7" selected>LAST 7 DAYS</option><option value="30">LAST 30 DAYS</option><option value="0">ALL TIME</option></select><button class="btn" id="refresh">↻ REFRESH</button><button class="btn" id="out">SIGN OUT</button></div>
-  </header>
-  <section class="gate card" id="gate">
-    <h2>PLAY ACTIVITY</h2>
-    <p>Sign in with the admin Google account to see who's playing what.</p>
-    <button class="btn main" id="in">SIGN IN WITH GOOGLE</button>
+<section class="gate" id="gate">
+  <div class="box pn">
+    <div class="brand"><svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><path d="M11 1l9 4v6c0 5-4 9-9 10C6 20 2 16 2 11V5z" fill="none" stroke="#39ff88" stroke-width="2"/><path d="M7 11l3 3 5-6" fill="none" stroke="#39ff88" stroke-width="2"/></svg>BITCADE <span>// SOC</span></div>
+    <pre class="term" id="term"></pre>
+    <button class="btn main" id="in">▶ AUTHENTICATE WITH GOOGLE</button>
     <div class="err" id="gateErr" hidden></div>
-  </section>
-  <main id="dash" hidden>
-    <nav class="tabs2"><button data-tab="act" aria-pressed="true">ACTIVITY</button><button data-tab="fb">FEEDBACK</button><button data-tab="err">ERRORS</button><button data-tab="rep">REPORTS</button></nav>
-    <div id="actView">
-    <div class="tiles" id="tiles"></div>
-    <div class="grid2">
-      <section class="card"><h2>PLAY TIME PER DAY<small id="daysNote"></small></h2><div class="days" id="days"></div></section>
-      <section class="card"><h2>TOP GAMES<small>BY PLAY TIME</small></h2><div class="scroll"><table id="games"></table></div></section>
+  </div>
+</section>
+
+<div id="app" hidden>
+  <header class="top">
+    <div class="brand"><svg width="20" height="20" viewBox="0 0 22 22" aria-hidden="true"><path d="M11 1l9 4v6c0 5-4 9-9 10C6 20 2 16 2 11V5z" fill="none" stroke="#39ff88" stroke-width="2"/><path d="M7 11l3 3 5-6" fill="none" stroke="#39ff88" stroke-width="2"/></svg><span class="full" style="color:inherit">BITCADE</span><span>SOC</span></div>
+    <button class="chip lvl ok" id="lvl" title="Alert level"><i></i><span>NOMINAL</span></button>
+    <span class="chip live" id="live" title="Auto-refresh"><i></i><span class="lbl">LIVE</span><span id="sync" class="mono"></span></span>
+    <span class="sp"></span>
+    <select class="chip" id="range" aria-label="Time range"><option value="1">24H</option><option value="7" selected>7D</option><option value="30">30D</option><option value="0">ALL</option></select>
+    <button class="chip icon-btn" id="menuBtn" aria-label="Menu" aria-expanded="false">⋯</button>
+    <div class="menu" id="menu" hidden>
+      <div class="em" id="whoName"></div>
+      <button id="refresh">↻ Refresh now</button>
+      <label><input type="checkbox" id="showMe"> Show my own play <span id="meN" class="dim"></span></label>
+      <label><input type="checkbox" id="notify"> Phone notifications</label>
+      <button id="out">⏻ Sign out</button>
     </div>
-    <section class="card"><h2>PLAYERS<small>TAP ONE FOR THEIR ACTIVITY</small></h2><div class="scroll"><table id="players"></table></div></section>
-    <section class="card detail" id="detail" hidden></section>
-    <p class="note">Players are anonymous: an id from Firebase's anonymous sign-in, plus their initials once they've saved some. Play time is time in a game with no menu up; time on site includes menus and the lobby. Players can turn this off in Settings.</p>
-    </div>
-    <section id="extra" hidden></section>
-  </main>
+  </header>
+  <div class="shell">
+    <nav class="nav" id="nav">
+      <button data-v="ov" aria-current="true"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="2" width="6" height="6"/><rect x="10" y="2" width="6" height="9"/><rect x="2" y="10" width="6" height="6"/><rect x="10" y="13" width="6" height="3"/></svg>OVERVIEW</button>
+      <button data-v="feed"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M1 9h3l2-5 3 10 3-7 2 2h3"/></svg>FEED</button>
+      <button data-v="pl"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="9" cy="6" r="3"/><path d="M3 16c0-3.5 2.7-5 6-5s6 1.5 6 5"/></svg>PLAYERS</button>
+      <button data-v="inc"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 2l8 14H1z"/><path d="M9 7v4M9 13v1"/></svg>INCIDENTS<span class="n" id="nInc" hidden></span></button>
+      <button data-v="fb"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 3h14v9H7l-4 3v-3H2z"/></svg>FEEDBACK<span class="n a" id="nFb" hidden></span></button>
+    </nav>
+    <main>
+      <section class="view" id="v-ov">
+        <div class="kpis" id="kpis"></div>
+        <div class="g2">
+          <section class="pn"><h2>ACTIVITY<small id="chartNote"></small></h2><div class="chart" id="chart"></div></section>
+          <section class="pn"><h2><span class="dot live" style="animation:none"></span>LIVE NOW<small>LAST 3 MIN</small></h2><div class="sess" id="sess"></div></section>
+        </div>
+        <div class="g2">
+          <section class="pn"><h2>ALERT QUEUE<small>NEWEST FIRST</small></h2><div class="q" id="queue"></div></section>
+          <section class="pn"><h2>DEVICES<small>ACTIVE PLAYERS</small></h2><div class="devs" id="devs"></div></section>
+        </div>
+        <section class="pn"><h2>TOP GAMES<small>BY PLAY TIME</small></h2><div class="scroll"><table id="games"></table></div></section>
+        <p class="foot">Players are anonymous: an id from Firebase's anonymous sign-in, plus their initials once they've saved some. Play time is time in a game with no menu up; time on site includes menus and the lobby. Players can turn this off in Settings.</p>
+      </section>
+      <section class="view" id="v-feed" hidden>
+        <div class="vh"><h1>EVENT FEED</h1><small id="feedNote"></small></div>
+        <div class="filters" id="feedF"></div>
+        <section class="pn" style="padding:0"><div class="log" id="log"></div></section>
+      </section>
+      <section class="view" id="v-pl" hidden>
+        <div class="vh"><h1>PLAYERS</h1><small id="plNote"></small></div>
+        <div class="tools"><input id="plQ" type="search" placeholder="search initials or id…" autocomplete="off" spellcheck="false"><select class="chip" id="plSort" aria-label="Sort"><option value="last">LAST SEEN</option><option value="play">PLAY TIME</option><option value="runs">RUNS</option><option value="first">NEWEST</option></select></div>
+        <section class="pn" style="padding:0"><div class="plist" id="plist"></div></section>
+      </section>
+      <section class="view" id="v-inc" hidden>
+        <div class="vh"><h1>INCIDENTS</h1><small>errors on players' pages, grouped · conversation reports</small></div>
+        <div class="cards" id="inc"></div>
+      </section>
+      <section class="view" id="v-fb" hidden>
+        <div class="vh"><h1>FEEDBACK</h1><small id="fbNote"></small></div>
+        <div class="filters" id="fbF"><button data-f="open" aria-pressed="true">OPEN</button><button data-f="done">DONE</button><button data-f="all">ALL</button></div>
+        <div class="cards" id="fbl"></div>
+      </section>
+    </main>
+  </div>
+  <div class="scrim" id="scrim" hidden></div>
+  <aside class="drawer" id="drawer" hidden></aside>
+  <div class="toasts" id="toasts" aria-live="polite"></div>
 </div>
+
 <script type="module">
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
-import { getFirestore, collection, query, orderBy, limit, getDocs, getDoc, setDoc, updateDoc, deleteDoc, writeBatch, doc } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-lite.js';
+// Firebase is loaded only when signing in for real (?demo, and the smoke tests, never touch it)
+const DEMO = new URLSearchParams(location.search).has('demo'), SDK = 'https://www.gstatic.com/firebasejs/10.14.1/';
+const [FA, FAU, FS] = DEMO ? [{}, {}, {}] : await Promise.all(['firebase-app.js', 'firebase-auth.js', 'firebase-firestore-lite.js'].map(f => import(SDK + f))).catch(() => [{}, {}, {}]);
+const { initializeApp } = FA;
+const { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } = FAU;
+const { getFirestore, collection, query, where, orderBy, limit, getDocs, getDoc, setDoc, updateDoc, deleteDoc, writeBatch, doc, Timestamp } = FS;
+const SDK_OK = !!initializeApp;
 
 // the same project as shared/world.js. The admin signs in on an app of its own ('admin'), so the Google sign-in never
 // replaces the anonymous player the games use on this browser; that player (the default app's) is read to spot "me".
 const CFG = { apiKey: 'AIzaSyAPy1xQoxSHA64Efns07QCNw7ASNIWQpOQ', authDomain: 'bitcade-4fa25.firebaseapp.com', projectId: 'bitcade-4fa25', storageBucket: 'bitcade-4fa25.firebasestorage.app', messagingSenderId: '543242117072', appId: '1:543242117072:web:d95c092bebfd02333ba3d5' };
-const app = initializeApp(CFG, 'admin');
-const auth = getAuth(app), db = getFirestore(app);
-const gameAuth = getAuth(initializeApp(CFG));
-const here = new Promise(ok => { const off = onAuthStateChanged(gameAuth, u => { off(); ok(u && u.isAnonymous ? u.uid : null); }); }); // this browser's player, if it has played
+const app = SDK_OK ? initializeApp(CFG, 'admin') : null;
+const auth = app && getAuth(app), db = app && getFirestore(app);
+const gameAuth = app && getAuth(initializeApp(CFG));
+const here = !app ? Promise.resolve(null) : new Promise(ok => { const off = onAuthStateChanged(gameAuth, u => { off(); ok(u && u.isAnonymous ? u.uid : null); }); }); // this browser's player, if it has played
 const $ = id => document.getElementById(id);
-const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const name = g => !g ? '—' : g === 'lobby' ? 'Lobby' : String(g).split('-').map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
 const dur = ms => { const m = Math.round((ms || 0) / 60000); return m < 1 ? `${Math.round((ms || 0) / 1000)}s` : m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`; };
-const when = ms => { if (!ms) return '—'; const d = new Date(ms), diff = Date.now() - ms; if (diff < 6e4) return 'just now'; if (diff < 36e5) return `${Math.round(diff / 6e4)}m ago`; if (diff < 864e5) return `${Math.round(diff / 36e5)}h ago`; return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }); };
+const ago = ms => { if (!ms) return '—'; const s = (Date.now() - ms) / 1000; return s < 60 ? 'now' : s < 3600 ? `${Math.round(s / 60)}m ago` : s < 86400 ? `${Math.round(s / 3600)}h ago` : `${Math.round(s / 86400)}d ago`; };
+const clock = ms => new Date(ms).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+const dayName = ms => new Date(ms).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }).toUpperCase();
 const ms = ts => ts && ts.toMillis ? ts.toMillis() : +ts || 0;
+const num = n => (n || 0).toLocaleString();
+const get = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const put = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+const LIVE = 3 * 60e3, POLL = 30e3;
 
-
-/* ---------- FEEDBACK, ERRORS and REPORTS tabs ---------- */
-let tab = 'act', fbs = [], errs = [], reps = [];
-const who = uid => { const p = players.find(x => x.id === uid); return p && p.n ? `<span class="ini">${esc(p.n)}</span>` : `<span class="dim">Player ${esc(String(uid || '').slice(0, 5))}</span>`; };
-document.querySelectorAll('.tabs2 button').forEach(b => b.addEventListener('click', () => { tab = b.dataset.tab; drawTabs(); }));
-async function loadExtra() {
-  const grab = async (c, n) => { try { return (await getDocs(query(collection(db, c), orderBy('t', 'desc'), limit(n)))).docs.map(d => ({ id: d.id, ...d.data(), t: ms(d.get('t')) })); } catch (e) { return null; } };
-  [fbs, errs, reps] = await Promise.all([grab('fb', 300), grab('err', 600), grab('rep', 100)]);
-  drawTabs();
-}
-function drawTabs() {
-  const open = (fbs || []).filter(f => !f.done).length, groups = errGroups();
-  const lab = { act: 'ACTIVITY', fb: `FEEDBACK${open ? ` <i>${open}</i>` : ''}`, err: `ERRORS${groups.length ? ` <i>${groups.length}</i>` : ''}`, rep: `REPORTS${(reps || []).length ? ` <i>${reps.length}</i>` : ''}` };
-  document.querySelectorAll('.tabs2 button').forEach(b => { b.innerHTML = lab[b.dataset.tab]; b.setAttribute('aria-pressed', String(b.dataset.tab === tab)); });
-  $('actView').hidden = tab !== 'act'; $('extra').hidden = tab === 'act';
-  if (tab === 'fb') drawFb(); else if (tab === 'err') drawErr(groups); else if (tab === 'rep') drawRep();
-}
-function drawFb() {
-  if (fbs === null) return $('extra').innerHTML = '<p class="dim">Couldn\u2019t load feedback. Have the latest rules been published?</p>';
-  const list = fbs.slice().sort((a, b) => (a.done ? 1 : 0) - (b.done ? 1 : 0) || b.t - a.t);
-  $('extra').innerHTML = list.length ? list.map(f => `<div class="card fbk${f.done ? ' done' : ''}" data-id="${esc(f.id)}"><p>${esc(f.x)}</p><div class="meta">${f.n ? `<span class="ini">${esc(f.n)}</span>` : who(f.uid)} · ${esc(name(f.g))} · ${esc(f.dev || '')} · ${when(f.t)}<span class="acts"><button class="btn sm" data-act="done">${f.done ? 'REOPEN' : '✓ DONE'}</button><button class="btn sm" data-act="del">DELETE</button></span></div></div>`).join('')
-    : '<p class="dim">No feedback yet. Players send it from ⚙ Settings → Send feedback, or ✎ Feedback on a game-over screen.</p>';
-  $('extra').querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', async () => {
-    const id = b.closest('[data-id]').dataset.id, f = fbs.find(x => x.id === id);
-    try { if (b.dataset.act === 'del') { await deleteDoc(doc(db, 'fb', id)); fbs = fbs.filter(x => x.id !== id); } else { await updateDoc(doc(db, 'fb', id), { done: !f.done }); f.done = !f.done; } drawTabs(); } catch (e) { b.textContent = 'FAILED'; }
-  }));
-}
-function errGroups() {
-  const g = {};
-  for (const e of errs || []) { const k = `${e.m}|${e.s}|${e.l}`; const x = g[k] || (g[k] = { k, m: e.m, s: e.s, l: e.l, n: 0, ids: [], pages: new Set(), devs: new Set(), uids: new Set(), first: e.t, last: e.t }); x.n++; x.ids.push(e.id); x.pages.add(e.g); x.devs.add(e.ua || e.dev); x.uids.add(e.uid); x.first = Math.min(x.first, e.t); x.last = Math.max(x.last, e.t); }
-  return Object.values(g).sort((a, b) => b.last - a.last);
-}
-function drawErr(groups) {
-  if (errs === null) return $('extra').innerHTML = '<p class="dim">Couldn\u2019t load errors. Have the latest rules been published?</p>';
-  $('extra').innerHTML = groups.length ? groups.map((x, i) => `<div class="card errg"><p class="em">${esc(x.m)}</p><div class="meta">${x.s ? esc(x.s) + (x.l ? ':' + x.l : '') + ' · ' : ''}<b>${x.n}×</b> · ${x.uids.size} player${x.uids.size > 1 ? 's' : ''} · on ${[...x.pages].map(name).map(esc).join(', ')} · ${[...x.devs].map(esc).join(', ')} · last ${when(x.last)}<span class="acts"><button class="btn sm" data-g="${i}">CLEAR</button></span></div></div>`).join('')
-    : '<p class="dim">No errors reported. 🎉</p>';
-  $('extra').querySelectorAll('[data-g]').forEach(b => b.addEventListener('click', async () => {
-    const x = groups[+b.dataset.g]; b.textContent = 'CLEARING…';
-    try { for (let i = 0; i < x.ids.length; i += 400) { const wb = writeBatch(db); x.ids.slice(i, i + 400).forEach(id => wb.delete(doc(db, 'err', id))); await wb.commit(); } errs = errs.filter(e => !x.ids.includes(e.id)); drawTabs(); } catch (e) { b.textContent = 'FAILED'; }
-  }));
-}
-function drawRep() {
-  if (reps === null) return $('extra').innerHTML = '<p class="dim">Couldn\u2019t load reports. Have the latest rules been published?</p>';
-  $('extra').innerHTML = reps.length ? reps.map(r => `<div class="card fbk" data-id="${esc(r.id)}"><div class="meta">${who(r.by)} reported ${who(r.other)} · ${when(r.t)}<span class="acts"><button class="btn sm" data-del>DELETE</button></span></div><pre>${esc(r.log)}</pre></div>`).join('')
-    : '<p class="dim">No reports. Players can report a conversation from its ✉ messages screen.</p>';
-  $('extra').querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => {
-    const id = b.closest('[data-id]').dataset.id; try { await deleteDoc(doc(db, 'rep', id)); reps = reps.filter(x => x.id !== id); drawTabs(); } catch (e) { b.textContent = 'FAILED'; }
-  }));
-}
-
-let players = [], pick = null, hide = new Set();
+/* ---------- state ---------- */
+const players = new Map();          // id → { id, n, dev, lv, tix, first, last, on, ev: [{ id, k, g, t, ... }] }
+let fbs = [], errs = [], reps = [];  // null when the rules refused
+let hide = new Set(), view = 'ov', pick = null, feedF = 'all', fbF = 'open', feedN = 300;
+let loaded = false, lastPoll = 0, pollOk = true;
+let seen = (() => { try { return { inc: 0, fb: 0, pl: 0, ...JSON.parse(get('admin:seen') || '{}') }; } catch (e) { return { inc: 0, fb: 0, pl: 0 }; } })();
+const mark = k => { seen[k] = Date.now(); put('admin:seen', JSON.stringify(seen)); };
 const showMe = () => $('showMe').checked;
-$('showMe').addEventListener('change', render);
-async function saveHide() { try { await setDoc(doc(db, 'admin', 'settings'), { hide: [...hide] }); } catch (e) {} }
+const visible = () => [...players.values()].filter(p => showMe() || !hide.has(p.id));
+const label = (p, id) => (p && p.n ? `<span class="ini">${esc(p.n)}</span>` : `<span class="anon">#${esc(String(id || (p && p.id) || '').slice(0, 5))}</span>`) + (hide.has(id || (p && p.id)) ? '<span class="you">YOU</span>' : '');
+const who = uid => label(players.get(uid), uid);
 
+/* ---------- sign-in ---------- */
+const typed = ['> bitcade security operations console', '> establishing link to bitcade-4fa25 … ok', '> operator authentication required', '<span class="dim">  access is limited to the admin account</span>'];
+(async () => { const t = $('term'); for (const l of typed) { t.innerHTML += l + '\n'; await new Promise(r => setTimeout(r, 160)); } })();
 $('in').addEventListener('click', async () => {
   $('gateErr').hidden = true;
+  if (!auth) return gateErr('Can’t reach Firebase. Check the connection and reload.');
   const p = new GoogleAuthProvider();
   try { await signInWithPopup(auth, p); } catch (e) {
     if (/popup-blocked|operation-not-supported/.test(e.code || '')) return signInWithRedirect(auth, p);
     gateErr(e.code === 'auth/unauthorized-domain' ? 'This site isn’t in Firebase’s authorized domains yet (Authentication → Settings → Authorized domains).' : e.code === 'auth/operation-not-allowed' ? 'Google sign-in isn’t turned on yet (Firebase console → Authentication → Sign-in method → Google).' : (e.message || 'Sign-in failed.'));
   }
 });
-getRedirectResult(auth).catch(e => gateErr(e.message || 'Sign-in failed.'));
-$('out').addEventListener('click', () => signOut(auth));
-$('refresh').addEventListener('click', load);
-$('range').addEventListener('change', render);
-function gateErr(t) { $('gateErr').textContent = t; $('gateErr').hidden = false; }
-
-onAuthStateChanged(auth, u => {
+if (auth) getRedirectResult(auth).catch(e => gateErr(e.message || 'Sign-in failed.'));
+function gateErr(t) { $('gateErr').textContent = '! ' + t; $('gateErr').hidden = false; }
+if (auth) onAuthStateChanged(auth, u => {
   const ok = u && !u.isAnonymous;
-  $('gate').hidden = !!ok; $('who').hidden = !ok; $('dash').hidden = true;
+  $('gate').hidden = !!ok; $('app').hidden = !ok;
   if (ok) { $('whoName').textContent = u.email || ''; load(); }
+  else { loaded = false; players.clear(); }
 });
 
+/* ---------- menu, nav and controls ---------- */
+const menu = open => { $('menu').hidden = !open; $('menuBtn').setAttribute('aria-expanded', String(open)); };
+$('menuBtn').addEventListener('click', e => { e.stopPropagation(); menu($('menu').hidden); });
+document.addEventListener('click', e => { if (!$('menu').hidden && !$('menu').contains(e.target)) menu(false); });
+$('out').addEventListener('click', () => { menu(false); if (auth) signOut(auth); else location.href = 'admin.html'; });
+$('refresh').addEventListener('click', () => { menu(false); poll(); });
+$('showMe').addEventListener('change', render);
+$('range').addEventListener('change', render);
+$('notify').checked = get('admin:notify') === '1' && 'Notification' in window && Notification.permission === 'granted';
+$('notify').addEventListener('change', async e => {
+  if (e.target.checked && 'Notification' in window) { const p = await Notification.requestPermission(); e.target.checked = p === 'granted'; if (p !== 'granted') toast('warn', 'NOTIFICATIONS', p === 'denied' ? 'Blocked in this browser’s settings.' : 'Not allowed.'); }
+  else if (e.target.checked) { e.target.checked = false; toast('warn', 'NOTIFICATIONS', 'This browser can’t show them. On iPhone, add the console to your home screen first.'); }
+  put('admin:notify', e.target.checked ? '1' : '0');
+});
+$('lvl').addEventListener('click', () => go('inc'));
+document.querySelectorAll('#nav button').forEach(b => b.addEventListener('click', () => go(b.dataset.v)));
+function go(v) {
+  view = v; scrollTo(0, 0);
+  document.querySelectorAll('#nav button').forEach(b => b.setAttribute('aria-current', String(b.dataset.v === v)));
+  for (const x of ['ov', 'feed', 'pl', 'inc', 'fb']) $('v-' + x).hidden = x !== v;
+  render();
+  if (v === 'inc' || v === 'fb' || v === 'pl') setTimeout(() => { mark(v); badges(); }, 50); // looked at: no longer new (the NEW tags stay until the next visit)
+}
+$('feedF').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { feedF = b.dataset.f; feedN = 300; drawFeed(); } });
+$('fbF').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { fbF = b.dataset.f; drawFb(); } });
+$('plQ').addEventListener('input', drawPlayers);
+$('plSort').addEventListener('change', drawPlayers);
+document.addEventListener('click', e => { const w = e.target.closest('[data-p]'); if (w && players.has(w.dataset.p)) openPlayer(w.dataset.p); const j = e.target.closest('[data-go]'); if (j) go(j.dataset.go); });
+$('scrim').addEventListener('click', () => openPlayer(null));
+addEventListener('keydown', e => { if (e.key === 'Escape') { if (pick) openPlayer(null); else menu(false); } });
+
+/* ---------- loading: everything once, then only what's newer ---------- */
+const fromT = t => Timestamp.fromMillis(Math.max(0, t));
+const evOf = d => ({ id: d.id, ...d.data(), t: ms(d.get('t')) || d.get('at') });
+async function evs(id, after) {
+  const q = after ? query(collection(db, 'act', id, 'ev'), where('t', '>', fromT(after)), orderBy('t', 'desc'), limit(500)) : query(collection(db, 'act', id, 'ev'), orderBy('t', 'desc'), limit(2000));
+  return (await getDocs(q)).docs.map(evOf);
+}
+const grab = async (c, n, after) => { try { return (await getDocs(after ? query(collection(db, c), where('t', '>', fromT(after)), orderBy('t', 'desc'), limit(n)) : query(collection(db, c), orderBy('t', 'desc'), limit(n)))).docs.map(d => ({ id: d.id, ...d.data(), t: ms(d.get('t')) })); } catch (e) { return null; } };
+const merge = (old, add) => { if (add === null) return old; if (old === null) return add; const ids = new Set(old.map(x => x.id)); return [...add.filter(x => !ids.has(x.id)), ...old]; };
+const maxT = list => Math.max(0, ...(list || []).map(x => x.t));
+
 async function load() {
-  $('tiles').innerHTML = '<div class="card tile"><small>LOADING…</small></div>'; $('dash').hidden = false;
+  $('kpis').innerHTML = '<div class="pn kpi"><small>LINKING…</small><b>…</b></div>';
   try {
     const st = await getDoc(doc(db, 'admin', 'settings')).catch(() => null);
     hide = new Set(st && st.exists() && Array.isArray(st.get('hide')) ? st.get('hide') : []);
     const mine = await here; if (mine && !hide.has(mine)) { hide.add(mine); saveHide(); }
     const snap = await getDocs(query(collection(db, 'act'), orderBy('last', 'desc'), limit(500)));
-    players = await Promise.all(snap.docs.map(async d => {
-      const ev = await getDocs(query(collection(db, 'act', d.id, 'ev'), orderBy('t', 'desc'), limit(2000)));
-      return { id: d.id, ...d.data(), last: ms(d.get('last')), ev: ev.docs.map(x => ({ ...x.data(), t: ms(x.get('t')) || x.get('at') })) };
-    }));
-    render(); loadExtra();
+    players.clear();
+    await Promise.all(snap.docs.map(async d => players.set(d.id, { id: d.id, ...d.data(), last: ms(d.get('last')), ev: await evs(d.id) })));
+    [fbs, errs, reps] = await Promise.all([grab('fb', 300), grab('err', 600), grab('rep', 100)]);
+    loaded = true; lastPoll = Date.now(); pollOk = true;
+    if (!seen.pl) mark('pl');
+    render();
   } catch (e) {
-    $('dash').hidden = true; $('gate').hidden = false;
-    gateErr(e.code === 'permission-denied' ? `${auth.currentUser && auth.currentUser.email} isn’t the admin account (or the Firestore rules haven’t been published yet). Signed in as id ${auth.currentUser && auth.currentUser.uid}, email verified: ${auth.currentUser && auth.currentUser.emailVerified}.` : (e.message || 'Couldn’t load activity.'));
+    $('app').hidden = true; $('gate').hidden = false;
+    gateErr(e.code === 'permission-denied' ? `${auth.currentUser && auth.currentUser.email} isn’t the admin account (or the Firestore rules haven’t been published yet).` : (e.message || 'Couldn’t load activity.'));
   }
 }
 
-function render() {
-  const days = +$('range').value, from = days ? Date.now() - days * 864e5 : 0;
-  $('meN').textContent = hide.size ? `(${hide.size})` : '';
-  const ps = players.filter(p => showMe() || !hide.has(p.id)).map(p => {
-    const ev = p.ev.filter(e => e.t >= from), pages = ev.filter(e => e.k === 'page'), runs = ev.filter(e => e.k === 'run');
-    const play = pages.reduce((n, e) => n + (e.play || 0), 0), site = pages.reduce((n, e) => n + (e.ms || 0), 0), floor = pages.reduce((n, e) => n + (e.floor || 0), 0);
-    const byGame = {};
-    for (const e of ev) { if (e.g === 'lobby') continue; const b = byGame[e.g] || (byGame[e.g] = { play: 0, runs: 0, best: 0, last: 0 }); if (e.k === 'page') b.play += e.play || 0; else { b.runs++; b.best = Math.max(b.best, e.s || 0); } b.last = Math.max(b.last, e.t); }
-    const fav = Object.entries(byGame).sort((a, b) => b[1].play - a[1].play || b[1].runs - a[1].runs)[0];
-    return { ...p, evR: ev, visits: pages.filter(e => e.g === 'lobby').length, play, site, floor, runs: runs.length, byGame, fav: fav ? fav[0] : null, active: ev.length > 0 };
-  });
-  const act = ps.filter(p => p.active), sum = k => act.reduce((n, p) => n + p[k], 0);
-  const tile = (l, v, sub) => `<div class="card tile"><small>${l}</small><b>${v}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
-  $('tiles').innerHTML = tile('PLAYERS ACTIVE', act.length, `${ps.length} ALL TIME${!showMe() && hide.size ? ' · NOT COUNTING YOU' : ''}`) + tile('PLAY TIME', dur(sum('play'))) + tile('TIME ON SITE', dur(sum('site'))) + tile('GAMES PLAYED', sum('runs').toLocaleString(), 'RUNS TO GAME OVER') + tile('LOBBY VISITS', sum('visits')) + tile('ON THE ARCADE FLOOR', dur(sum('floor')));
+let polling = false;
+async function poll() {
+  if (!loaded || polling) return; if (DEMO) { lastPoll = Date.now(); return render(); } polling = true;
+  const before = { errKeys: new Set(errGroups().map(g => g.k)), fb: new Set((fbs || []).map(f => f.id)), rep: new Set((reps || []).map(r => r.id)), pl: new Set(players.keys()) };
+  try {
+    const since = Math.max(0, ...[...players.values()].map(p => p.last));
+    const snap = await getDocs(query(collection(db, 'act'), where('last', '>', fromT(since)), orderBy('last', 'desc'), limit(200)));
+    await Promise.all(snap.docs.map(async d => {
+      const old = players.get(d.id), base = { id: d.id, ...d.data(), last: ms(d.get('last')) };
+      if (!old) return players.set(d.id, { ...base, ev: await evs(d.id) });
+      const add = await evs(d.id, maxT(old.ev)), ids = new Set(old.ev.map(e => e.id));
+      players.set(d.id, { ...old, ...base, ev: [...add.filter(e => !ids.has(e.id)), ...old.ev] });
+    }));
+    const [f, e, r] = await Promise.all([grab('fb', 100, maxT(fbs)), grab('err', 300, maxT(errs)), grab('rep', 50, maxT(reps))]);
+    fbs = merge(fbs, f); errs = merge(errs, e); reps = merge(reps, r);
+    pollOk = true;
+    // anything new since the last look gets a toast (and a phone notification, if on)
+    const out = [];
+    for (const p of players.values()) if (!before.pl.has(p.id) && !hide.has(p.id)) out.push(['new', 'NEW PLAYER', `${p.n || '#' + p.id.slice(0, 5)} on ${p.dev || 'a device'}${p.on ? ' · ' + name(p.on) : ''}`, 'pl']);
+    for (const x of (reps || [])) if (!before.rep.has(x.id)) out.push(['crit', 'REPORT', 'A player reported a conversation', 'inc']);
+    for (const x of errGroups()) if (!before.errKeys.has(x.k)) out.push([x.sev, 'NEW ERROR', x.m, 'inc']);
+    for (const x of (fbs || [])) if (!before.fb.has(x.id)) out.push(['msg', 'FEEDBACK', x.x, 'fb']);
+    for (const o of out.slice(0, 4)) { toast(...o); notify(o[1], o[2]); }
+    if (out.some(o => o[0] === 'crit') && navigator.vibrate) navigator.vibrate([60, 40, 60]);
+  } catch (err) { pollOk = false; }
+  lastPoll = Date.now(); polling = false; render();
+}
+setInterval(() => {
+  if (!loaded) return;
+  const left = Math.max(0, Math.ceil((lastPoll + POLL - Date.now()) / 1000));
+  $('sync').textContent = polling ? '…' : pollOk ? `${left}s` : 'RETRY';
+  $('live').className = 'chip live ' + (pollOk ? 'on' : 'bad');
+  if (!document.hidden && !polling && Date.now() - lastPoll >= POLL) poll();
+}, 1000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden && loaded && Date.now() - lastPoll > 5000) poll(); });
+async function saveHide() { try { await setDoc(doc(db, 'admin', 'settings'), { hide: [...hide] }); } catch (e) {} }
 
-  // play time per day
-  const n = days || Math.min(30, Math.max(7, Math.ceil((Date.now() - Math.min(...players.flatMap(p => p.ev.map(e => e.t)), Date.now())) / 864e5)));
-  const buckets = [...Array(n)].map((_, i) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - (n - 1 - i)); return { t: +d, v: 0 }; });
-  if (days === 1) { buckets.length = 0; for (let i = 23; i >= 0; i--) { const t = Date.now() - i * 36e5; buckets.push({ t: t - (t % 36e5), v: 0, hour: true }); } }
-  for (const p of act) for (const e of p.evR) if (e.k === 'page' && e.play) { const b = [...buckets].reverse().find(b => e.t >= b.t); if (b) b.v += e.play; }
-  const top = Math.max(1, ...buckets.map(b => b.v));
-  $('daysNote').textContent = days === 1 ? 'BY HOUR' : '';
-  $('days').innerHTML = buckets.map((b, i) => `<div title="${dur(b.v)}"><i style="height:${Math.round(b.v / top * 100)}%"></i><span>${i % Math.ceil(buckets.length / 8) ? '' : b.hour ? new Date(b.t).getHours() + 'h' : new Date(b.t).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' })}</span></div>`).join('');
+/* ---------- alerts ---------- */
+function errGroups() {
+  const g = {};
+  for (const e of errs || []) { const k = `${e.m}|${e.s}|${e.l}`; const x = g[k] || (g[k] = { k, m: e.m, s: e.s, l: e.l, n: 0, ids: [], pages: new Set(), devs: new Set(), uids: new Set(), first: e.t, last: e.t }); x.n++; x.ids.push(e.id); x.pages.add(e.g); x.devs.add(e.ua || e.dev); x.uids.add(e.uid); x.first = Math.min(x.first, e.t); x.last = Math.max(x.last, e.t); }
+  return Object.values(g).map(x => ({ ...x, sev: x.uids.size >= 3 || x.n >= 10 ? 'crit' : Date.now() - x.last < 864e5 ? 'warn' : 'low' })).sort((a, b) => b.last - a.last);
+}
+function badges() {
+  const groups = errGroups(), nInc = groups.filter(x => x.last > seen.inc).length + (reps || []).filter(r => r.t > seen.inc).length;
+  const nFb = (fbs || []).filter(f => !f.done && f.t > seen.fb).length;
+  $('nInc').textContent = nInc; $('nInc').hidden = !nInc; $('nFb').textContent = nFb; $('nFb').hidden = !nFb;
+  if (navigator.setAppBadge) (nInc + nFb ? navigator.setAppBadge(nInc + nFb) : navigator.clearAppBadge()).catch(() => {});
+  // the alert level: CRITICAL for an unseen report or a widespread error, ELEVATED for any error today or unseen feedback
+  const crit = (reps || []).some(r => r.t > seen.inc) || groups.some(x => x.sev === 'crit' && Date.now() - x.last < 864e5);
+  const warn = groups.some(x => Date.now() - x.last < 864e5) || nFb > 0;
+  const l = crit ? ['crit', 'CRITICAL'] : warn ? ['warn', 'ELEVATED'] : ['ok', 'NOMINAL'];
+  $('lvl').className = 'chip lvl ' + l[0]; $('lvl').querySelector('span').textContent = l[1];
+  return { groups, nInc, nFb };
+}
+function toast(sev, title, text, to) {
+  const t = document.createElement('div'); t.className = 'toast s-' + sev;
+  t.innerHTML = `<small class="s-${sev}">${esc(title)}</small><span>${esc(String(text).slice(0, 140))}</span>`;
+  t.addEventListener('click', () => { if (to) go(to); t.remove(); });
+  $('toasts').prepend(t); setTimeout(() => t.remove(), 7000);
+  while ($('toasts').children.length > 4) $('toasts').lastChild.remove();
+}
+function notify(title, body) {
+  if (get('admin:notify') !== '1' || !('Notification' in window) || Notification.permission !== 'granted') return;
+  const o = { body: String(body).slice(0, 140), icon: 'icons/admin-192.png', badge: 'icons/admin-192.png', tag: 'bitcade-' + title, data: { url: location.href } };
+  if (navigator.serviceWorker && navigator.serviceWorker.controller) navigator.serviceWorker.ready.then(r => r.showNotification('Bitcade · ' + title, o)).catch(() => {});
+  else try { new Notification('Bitcade · ' + title, o); } catch (e) {}
+}
 
-  // games
-  const games = {};
-  for (const p of act) for (const [g, b] of Object.entries(p.byGame)) { const x = games[g] || (games[g] = { play: 0, runs: 0, best: 0, who: 0 }); x.play += b.play; x.runs += b.runs; x.best = Math.max(x.best, b.best); x.who++; }
-  const gl = Object.entries(games).sort((a, b) => b[1].play - a[1].play || b[1].runs - a[1].runs).slice(0, 15), gTop = Math.max(1, ...gl.map(g => g[1].play));
-  $('games').innerHTML = `<thead><tr><th>GAME</th><th class="num">PLAYERS</th><th class="num">RUNS</th><th class="num">BEST</th><th>PLAY TIME</th></tr></thead><tbody>` +
-    (gl.length ? gl.map(([g, x]) => `<tr><td>${esc(name(g))}</td><td class="num">${x.who}</td><td class="num">${x.runs}</td><td class="num">${x.best ? x.best.toLocaleString() : '—'}</td><td><span class="bar" style="width:${Math.max(2, Math.round(x.play / gTop * 90))}px"></span>${dur(x.play)}</td></tr>`).join('') : '<tr><td colspan="5" class="dim">No games played in this range.</td></tr>') + '</tbody>';
-
-  // players
-  const label = p => (p.n ? `<span class="ini">${esc(p.n)}</span>` : `<span class="dim">Player ${esc(p.id.slice(0, 5))}</span>`) + (hide.has(p.id) ? '<span class="pill you">YOU</span>' : '');
-  const list = ps.slice().sort((a, b) => b.last - a.last);
-  $('players').innerHTML = `<thead><tr><th>PLAYER</th><th>DEVICE</th><th class="num">LEVEL</th><th class="num">TICKETS</th><th>FIRST SEEN</th><th>LAST SEEN</th><th class="num">VISITS</th><th class="num">PLAY TIME</th><th class="num">RUNS</th><th>MOST PLAYED</th></tr></thead><tbody>` +
-    (list.length ? list.map(p => `<tr class="pick${pick === p.id ? ' on' : ''}${hide.has(p.id) ? ' mine' : ''}" data-id="${esc(p.id)}"><td>${label(p)}</td><td>${esc(p.dev || '—')}</td><td class="num">${p.lv || '—'}</td><td class="num">${p.tix != null ? p.tix.toLocaleString() : '—'}</td><td>${when(p.first)}</td><td>${when(p.last)}</td><td class="num">${p.visits}</td><td class="num">${dur(p.play)}</td><td class="num">${p.runs}</td><td>${p.fav ? esc(name(p.fav)) : '<span class="dim">—</span>'}</td></tr>`).join('') : '<tr><td colspan="10" class="dim">Nobody yet. Activity shows up a few seconds after someone plays.</td></tr>') + '</tbody>';
-  $('players').querySelectorAll('tr.pick').forEach(r => r.addEventListener('click', () => { pick = pick === r.dataset.id ? null : r.dataset.id; render(); if (pick) $('detail').scrollIntoView({ behavior: 'smooth', block: 'start' }); }));
-
-  // one player
-  const p = ps.find(x => x.id === pick);
-  $('detail').hidden = !p;
-  if (p) {
-    const rows = Object.entries(p.byGame).sort((a, b) => b[1].play - a[1].play || b[1].runs - a[1].runs);
-    const evs = p.evR.slice(0, 150);
-    $('detail').innerHTML = `<div class="detail-head"><b>${p.n ? esc(p.n) : 'Player ' + esc(p.id.slice(0, 5))}</b><span class="dim">${esc(p.dev || '')} · level ${p.lv || '—'} · ${p.tix != null ? p.tix + ' tickets' : ''} · first seen ${when(p.first)} · id ${esc(p.id)}</span><button class="btn" id="meBtn">${hide.has(p.id) ? 'NOT ME · COUNT THEM AGAIN' : 'THIS IS ME · HIDE'}</button></div>
-      <div class="grid2"><div><h2>GAMES<small>IN THIS RANGE</small></h2><div class="scroll"><table><thead><tr><th>GAME</th><th class="num">PLAY TIME</th><th class="num">RUNS</th><th class="num">BEST</th><th>LAST PLAYED</th></tr></thead><tbody>${rows.length ? rows.map(([g, b]) => `<tr><td>${esc(name(g))}</td><td class="num">${dur(b.play)}</td><td class="num">${b.runs}</td><td class="num">${b.best ? b.best.toLocaleString() : '—'}</td><td>${when(b.last)}</td></tr>`).join('') : '<tr><td colspan="5" class="dim">No games in this range.</td></tr>'}</tbody></table></div></div>
-      <div><h2>TIMELINE<small>NEWEST FIRST</small></h2><div class="scroll" style="max-height:420px;overflow-y:auto"><table><tbody>${evs.length ? evs.map(e => `<tr><td class="dim">${when(e.t)}</td><td><span class="pill k-${e.k}">${e.k === 'run' ? 'GAME OVER' : 'VISIT'}</span></td><td>${esc(name(e.g))}</td><td class="dim">${e.k === 'run' ? `score ${(e.s || 0).toLocaleString()} · ${dur(e.ms)}${e.d ? ' · daily' : ''}${e.e ? ' · easy' : ''}` : `${dur(e.ms)} on page${e.play ? ` · ${dur(e.play)} playing` : ''}${e.runs ? ` · ${e.runs} run${e.runs > 1 ? 's' : ''}` : ''}${e.floor ? ` · ${dur(e.floor)} on the floor` : ''}`}</td></tr>`).join('') : '<tr><td class="dim">Nothing in this range.</td></tr>'}</tbody></table></div></div></div>`;
-    $('meBtn').addEventListener('click', () => { if (hide.has(p.id)) hide.delete(p.id); else { hide.add(p.id); if (!showMe()) pick = null; } saveHide(); render(); });
+/* ---------- numbers for a time range ---------- */
+function stats(p, from, to = Infinity) {
+  const ev = p.ev.filter(e => e.t >= from && e.t < to), pages = ev.filter(e => e.k === 'page');
+  const byGame = {};
+  for (const e of ev) { if (e.g === 'lobby') continue; const b = byGame[e.g] || (byGame[e.g] = { play: 0, runs: 0, best: 0, last: 0 }); if (e.k === 'page') b.play += e.play || 0; else { b.runs++; b.best = Math.max(b.best, e.s || 0); } b.last = Math.max(b.last, e.t); }
+  const fav = Object.entries(byGame).sort((a, b) => b[1].play - a[1].play || b[1].runs - a[1].runs)[0];
+  return { ev, byGame, fav: fav ? fav[0] : null, active: ev.length > 0, play: pages.reduce((n, e) => n + (e.play || 0), 0), site: pages.reduce((n, e) => n + (e.ms || 0), 0), floor: pages.reduce((n, e) => n + (e.floor || 0), 0), visits: pages.filter(e => e.g === 'lobby').length, runs: ev.filter(e => e.k === 'run').length };
+}
+function range() {
+  const days = +$('range').value, now = Date.now();
+  let buckets;
+  if (days === 1) buckets = [...Array(24)].map((_, i) => { const t = now - (23 - i) * 36e5; return { t: t - (t % 36e5), hour: true }; });
+  else {
+    const all = Math.min(now, ...[...players.values()].flatMap(p => p.ev.map(e => e.t)));
+    const n = days || Math.min(30, Math.max(7, Math.ceil((now - all) / 864e5)));
+    buckets = [...Array(n)].map((_, i) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - (n - 1 - i)); return { t: +d }; });
   }
+  buckets.forEach(b => Object.assign(b, { play: 0, runs: 0, who: new Set() }));
+  return { days, from: days ? now - days * 864e5 : 0, prev: days ? now - 2 * days * 864e5 : 0, buckets };
+}
+
+/* ---------- drawing ---------- */
+function render() {
+  if (!loaded) return;
+  $('meN').textContent = hide.size ? `(${hide.size})` : '';
+  badges();
+  if (view === 'ov') drawOverview(); else if (view === 'feed') drawFeed(); else if (view === 'pl') drawPlayers(); else if (view === 'inc') drawInc(); else if (view === 'fb') drawFb();
+  if (pick) drawPlayer();
+}
+
+const spark = (vals, col) => { const top = Math.max(1, ...vals), w = 100 / Math.max(1, vals.length - 1); return `<svg viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true"><polyline fill="none" stroke="${col}" stroke-width="1.5" vector-effect="non-scaling-stroke" points="${vals.map((v, i) => `${(i * w).toFixed(1)},${(22 - v / top * 20).toFixed(1)}`).join(' ')}"/><polygon fill="${col}" opacity=".12" points="0,24 ${vals.map((v, i) => `${(i * w).toFixed(1)},${(22 - v / top * 20).toFixed(1)}`).join(' ')} 100,24"/></svg>`; };
+const delta = (cur, prev, days) => { if (!days) return '<span>all time</span>'; if (!prev) return cur ? '<span class="up">▲ new</span>' : '<span>— vs prev</span>'; const d = Math.round((cur - prev) / prev * 100); return d === 0 ? '<span>= vs prev</span>' : `<span class="${d > 0 ? 'up' : 'dn'}">${d > 0 ? '▲' : '▼'} ${Math.abs(d)}%</span> vs prev`; };
+
+function drawOverview() {
+  const R = range(), vis = visible(), now = Date.now();
+  const cur = vis.map(p => ({ p, s: stats(p, R.from) })), act = cur.filter(x => x.s.active);
+  const prev = R.days ? vis.map(p => stats(p, R.prev, R.from)).filter(s => s.active) : [];
+  const sum = (l, k) => l.reduce((n, x) => n + (x.s ? x.s[k] : x[k]), 0);
+  for (const { p, s } of act) for (const e of s.ev) { const b = [...R.buckets].reverse().find(b => e.t >= b.t); if (!b) continue; if (e.k === 'page') b.play += e.play || 0; else b.runs++; b.who.add(p.id); }
+  const live = vis.filter(p => now - p.last < LIVE).sort((a, b) => b.last - a.last);
+  const groups = errGroups(), err24 = (errs || []).filter(e => now - e.t < 864e5).length;
+  const openFb = (fbs || []).filter(f => !f.done).length;
+  const errB = R.buckets.map(b => 0); for (const e of errs || []) { const i = R.buckets.findLastIndex ? R.buckets.findLastIndex(b => e.t >= b.t) : -1; if (i >= 0 && e.t >= R.from) errB[i]++; }
+  const k = (cls, l, v, d, sp) => `<div class="pn kpi ${cls}"><small>${l}</small><b>${v}</b><div class="d">${d}</div>${sp || ''}</div>`;
+  $('kpis').innerHTML =
+    k('k-live', 'LIVE NOW', live.length, `<span>${vis.filter(p => now - p.last < 864e5).length} today</span>`, spark(R.buckets.map(b => b.who.size), 'var(--g)')) +
+    k('', 'ACTIVE PLAYERS', act.length, delta(act.length, prev.length, R.days), spark(R.buckets.map(b => b.who.size), 'var(--c)')) +
+    k('', 'PLAY TIME', dur(sum(act, 'play')), delta(sum(act, 'play'), sum(prev, 'play'), R.days), spark(R.buckets.map(b => b.play), 'var(--c)')) +
+    k('', 'RUNS', num(sum(act, 'runs')), delta(sum(act, 'runs'), sum(prev, 'runs'), R.days), spark(R.buckets.map(b => b.runs), 'var(--c)')) +
+    k('k-err' + (groups.some(x => x.sev === 'crit' && now - x.last < 864e5) ? ' crit' : ''), 'ERRORS · 24H', err24, `<span>${groups.length} type${groups.length === 1 ? '' : 's'} logged</span>`, spark(errB, 'var(--a)')) +
+    k('', 'OPEN ITEMS', openFb + (reps || []).length, `<span>${openFb} feedback · ${(reps || []).length} report${(reps || []).length === 1 ? '' : 's'}</span>`);
+
+  const top = Math.max(1, ...R.buckets.map(b => b.play));
+  $('chartNote').textContent = (R.days === 1 ? 'PLAY TIME BY HOUR' : 'PLAY TIME BY DAY') + ' · ' + dur(sum(act, 'play'));
+  $('chart').innerHTML = R.buckets.map((b, i) => `<div title="${dur(b.play)} · ${b.runs} runs · ${b.who.size} players"><i class="${i === R.buckets.length - 1 ? 'now' : ''}" style="height:${Math.round(b.play / top * 100)}%"></i><span>${i % Math.ceil(R.buckets.length / 7) ? '' : b.hour ? new Date(b.t).getHours() + 'h' : new Date(b.t).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' })}</span></div>`).join('');
+
+  $('sess').innerHTML = live.length ? live.slice(0, 8).map(p => `<div class="row" data-p="${esc(p.id)}"><span class="dot live"></span><span>${label(p)}</span><span class="dim" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.on ? esc(name(p.on)) : 'online'} · ${esc(p.dev || '')}</span><span class="mono dim">${ago(p.last)}</span></div>`).join('')
+    : `<div class="empty">No one on right now.${vis.length ? ` Last seen: ${label(vis.slice().sort((a, b) => b.last - a.last)[0])} ${ago(Math.max(...vis.map(p => p.last)))}` : ''}</div>`;
+
+  const items = [...(reps || []).map(r => ({ t: r.t, sev: 'crit', tag: 'REPORT', tx: `${who(r.by)} reported ${who(r.other)}`, go: 'inc', fresh: r.t > seen.inc })),
+    ...groups.filter(x => x.sev !== 'low').map(x => ({ t: x.last, sev: x.sev, tag: x.sev === 'crit' ? 'CRIT' : 'WARN', tx: `${esc(x.m)} <span class="dim">· ${x.n}×</span>`, go: 'inc', fresh: x.last > seen.inc })),
+    ...(fbs || []).filter(f => !f.done).map(f => ({ t: f.t, sev: 'msg', tag: 'MSG', tx: esc(f.x), go: 'fb', fresh: f.t > seen.fb }))].sort((a, b) => b.t - a.t).slice(0, 7);
+  $('queue').innerHTML = items.length ? items.map(x => `<div class="row" data-go="${x.go}"><span class="sev s-${x.sev}">${x.tag}</span><span class="tx">${x.fresh ? '<span class="new">NEW</span>' : ''}${x.tx}</span><span class="mono dim">${ago(x.t)}</span></div>`).join('') : '<div class="empty">All clear. No open incidents or feedback.</div>';
+
+  const devs = { phone: 0, tablet: 0, desktop: 0 }; for (const { p } of act) devs[p.dev] = (devs[p.dev] || 0) + 1;
+  const dTop = Math.max(1, act.length);
+  $('devs').innerHTML = Object.entries(devs).map(([d, n]) => `<div class="r"><span>${d.toUpperCase()}</span><span class="tr"><i style="width:${Math.round(n / dTop * 100)}%"></i></span><span class="num">${n} · ${Math.round(n / dTop * 100)}%</span></div>`).join('') +
+    `<div class="r" style="margin-top:6px"><span class="dim">ON FLOOR</span><span class="dim mono">${dur(sum(act, 'floor'))} walking the arcade</span><span></span></div><div class="r"><span class="dim">ON SITE</span><span class="dim mono">${dur(sum(act, 'site'))} · ${num(sum(act, 'visits'))} lobby visits</span><span></span></div>`;
+
+  const games = {};
+  for (const { s } of act) for (const [g, b] of Object.entries(s.byGame)) { const x = games[g] || (games[g] = { play: 0, runs: 0, best: 0, who: 0 }); x.play += b.play; x.runs += b.runs; x.best = Math.max(x.best, b.best); x.who++; }
+  const gl = Object.entries(games).sort((a, b) => b[1].play - a[1].play || b[1].runs - a[1].runs).slice(0, 12), gTop = Math.max(1, ...gl.map(g => g[1].play));
+  $('games').innerHTML = `<thead><tr><th>GAME</th><th class="num">PLAYERS</th><th class="num">RUNS</th><th class="num hide-s">BEST</th><th>PLAY TIME</th></tr></thead><tbody>` +
+    (gl.length ? gl.map(([g, x]) => `<tr><td>${esc(name(g))}</td><td class="num">${x.who}</td><td class="num">${x.runs}</td><td class="num hide-s">${x.best ? num(x.best) : '—'}</td><td><span class="bar" style="--f:${(x.play / gTop).toFixed(3)}"></span><span class="mono">${dur(x.play)}</span></td></tr>`).join('') : '<tr><td colspan="5" class="dim">No games played in this range.</td></tr>') + '</tbody>';
+}
+
+function feedItems(from) {
+  const out = [];
+  for (const p of visible()) {
+    if (p.first >= from) out.push({ t: p.first, f: 'new', sev: 'new', tag: 'NEW', id: p.id, msg: `first visit · ${p.dev || 'device'}` });
+    for (const e of p.ev) if (e.t >= from) out.push(e.k === 'run'
+      ? { t: e.t, f: 'run', sev: 'run', tag: 'RUN', id: p.id, ev: e.id, msg: `${esc(name(e.g))} · <b>${num(e.s)}</b> · ${dur(e.ms)}${e.d ? ' · daily' : ''}${e.e ? ' · easy' : ''}` }
+      : { t: e.t, f: 'vis', sev: 'vis', tag: 'VISIT', id: p.id, ev: e.id, msg: `${esc(name(e.g))} · ${dur(e.ms)}${e.play ? ` · ${dur(e.play)} playing` : ''}${e.runs ? ` · ${e.runs} run${e.runs > 1 ? 's' : ''}` : ''}${e.floor ? ` · ${dur(e.floor)} on floor` : ''}` });
+  }
+  for (const e of errs || []) if (e.t >= from) out.push({ t: e.t, f: 'err', sev: 'warn', tag: 'ERROR', id: e.uid, msg: `${esc(e.m)} <span class="dim">· ${esc(name(e.g))} · ${esc(e.ua || e.dev || '')}</span>` });
+  for (const f of fbs || []) if (f.t >= from) out.push({ t: f.t, f: 'fb', sev: 'msg', tag: 'MSG', id: f.uid, msg: `“${esc(String(f.x).slice(0, 160))}” <span class="dim">· ${esc(name(f.g))}</span>` });
+  for (const r of reps || []) if (r.t >= from) out.push({ t: r.t, f: 'rep', sev: 'crit', tag: 'REPORT', id: r.by, msg: `reported ${who(r.other)}` });
+  return out.sort((a, b) => b.t - a.t);
+}
+let feedSeen = 0;
+function drawFeed() {
+  const R = range(), all = feedItems(R.from);
+  const F = [['all', 'ALL'], ['run', 'RUNS'], ['vis', 'VISITS'], ['new', 'NEW PLAYERS'], ['err', 'ERRORS'], ['fb', 'FEEDBACK'], ['rep', 'REPORTS']];
+  $('feedF').innerHTML = F.map(([f, l]) => { const n = f === 'all' ? all.length : all.filter(x => x.f === f).length; return `<button data-f="${f}" aria-pressed="${f === feedF}">${l} <span class="mono">${n}</span></button>`; }).join('');
+  const list = all.filter(x => feedF === 'all' || x.f === feedF);
+  $('feedNote').textContent = `${num(list.length)} events · ${R.days ? 'last ' + (R.days === 1 ? '24h' : R.days + ' days') : 'all time'} · newest first`;
+  let day = '', html = '';
+  for (const x of list.slice(0, feedN)) {
+    const d = dayName(x.t); if (d !== day) { day = d; html += `<div class="day">── ${d} ──</div>`; }
+    const p = players.get(x.id);
+    html += `<div class="ln${feedSeen && x.t > feedSeen ? ' fresh' : ''}"><time>${clock(x.t)}</time><span class="sev s-${x.sev}">${x.tag}</span><span class="who"${p ? ` data-p="${esc(x.id)}"` : ''}>${who(x.id)}</span><span class="msg">${x.msg}</span></div>`;
+  }
+  $('log').innerHTML = (html || '<div class="empty" style="padding:14px">Nothing in this range.</div>') + (list.length > feedN ? `<button class="btn more" id="more">SHOW MORE (${num(list.length - feedN)})</button>` : '');
+  if ($('more')) $('more').addEventListener('click', () => { feedN += 300; drawFeed(); });
+  feedSeen = Math.max(feedSeen, ...list.slice(0, 1).map(x => x.t), Date.now() - POLL);
+}
+
+function drawPlayers() {
+  const R = range(), now = Date.now(), q = $('plQ').value.trim().toLowerCase(), sort = $('plSort').value;
+  let list = visible().map(p => ({ p, s: stats(p, R.from) }));
+  if (q) list = list.filter(({ p }) => (p.n || '').toLowerCase().includes(q) || p.id.toLowerCase().startsWith(q));
+  const key = { last: x => x.p.last, play: x => x.s.play, runs: x => x.s.runs, first: x => x.p.first || 0 }[sort];
+  list.sort((a, b) => key(b) - key(a));
+  $('plNote').textContent = `${list.length} player${list.length === 1 ? '' : 's'} · ${visible().filter(p => now - p.last < LIVE).length} live · ${visible().filter(p => p.first > seen.pl).length} new since your last look`;
+  const st = p => now - p.last < LIVE ? 'live' : now - p.last < 864e5 ? 'today' : '';
+  $('plist').innerHTML = `<div class="pr hd"><span></span><span>PLAYER</span><span>DEVICE</span><span class="num">LV</span><span class="num">PLAY</span><span class="num">SEEN</span><span class="num">RUNS</span><span>MOST PLAYED</span></div>` +
+    (list.length ? list.map(({ p, s }) => `<div class="pr${hide.has(p.id) ? ' mine' : ''}" data-p="${esc(p.id)}"><span class="dot ${st(p)}"></span><span>${label(p)}${p.first > seen.pl ? ' <span class="new">NEW</span>' : ''}</span><span class="dim">${esc(p.dev || '—')}</span><span class="num">${p.lv || '—'}</span><span class="num">${dur(s.play)}</span><span class="num dim">${ago(p.last)}</span><span class="num">${s.runs}</span><span class="fav dim">${s.fav ? esc(name(s.fav)) : '—'}</span><span class="m">${esc(p.dev || '—')} · LV ${p.lv || '—'} · ${dur(s.play)} played · ${s.runs} runs${s.fav ? ' · ' + esc(name(s.fav)) : ''}${now - p.last < LIVE && p.on ? ' · <b style="color:var(--g)">on ' + esc(name(p.on)) + '</b>' : ''}</span></div>`).join('')
+      : '<div class="empty" style="padding:14px">No players match.</div>');
+}
+
+function drawInc() {
+  const groups = errGroups();
+  const repH = (reps === null ? ['<p class="empty">Couldn’t load reports. Have the latest rules been published?</p>'] : reps.map(r => `<div class="pn inc s-crit-b" data-id="${esc(r.id)}"><div class="top2"><span class="sev s-crit">REPORT</span><p class="em">${r.t > seen.inc ? '<span class="new">NEW</span>' : ''}${who(r.by)} reported ${who(r.other)}</p></div><div class="meta"><span>${ago(r.t)}</span><span>${new Date(r.t).toLocaleString()}</span></div><details><summary>CONVERSATION LOG</summary><pre>${esc(r.log)}</pre></details><div class="acts"><button class="btn" data-p="${esc(r.other)}">VIEW REPORTED PLAYER</button><button class="btn bad" data-delrep="${esc(r.id)}">DISMISS</button></div></div>`));
+  const errH = errs === null ? ['<p class="empty">Couldn’t load errors. Have the latest rules been published?</p>'] : groups.map((x, i) => `<div class="pn inc${x.sev === 'crit' ? ' s-crit-b' : ''}"><div class="top2"><span class="sev s-${x.sev}">${x.sev === 'crit' ? 'CRIT' : x.sev === 'warn' ? 'WARN' : 'LOW'}</span><p class="em">${x.last > seen.inc ? '<span class="new">NEW</span>' : ''}${esc(x.m)}</p></div><div class="meta">${x.s ? `<span>${esc(x.s)}${x.l ? ':' + x.l : ''}</span>` : ''}<span><b>${x.n}×</b></span><span><b>${x.uids.size}</b> player${x.uids.size > 1 ? 's' : ''}</span><span>first ${ago(x.first)}</span><span>last ${ago(x.last)}</span></div><details><summary>WHERE · WHO</summary><div class="meta"><span>pages: ${[...x.pages].map(name).map(esc).join(', ')}</span></div><div class="meta"><span>browsers: ${[...x.devs].map(esc).join(', ')}</span></div><div class="meta"><span>players: ${[...x.uids].map(who).join(' ')}</span></div></details><div class="acts"><button class="btn" data-clr="${i}">✓ RESOLVE · CLEAR ${x.n}</button></div></div>`);
+  const all = [...repH, ...errH];
+  $('inc').innerHTML = all.length ? all.join('') : '<div class="pn"><div class="empty">No incidents. All systems nominal.</div></div>';
+  $('inc').querySelectorAll('[data-clr]').forEach(b => b.addEventListener('click', async () => {
+    const x = groups[+b.dataset.clr]; b.textContent = 'CLEARING…';
+    try { for (let i = 0; i < x.ids.length; i += 400) { const wb = writeBatch(db); x.ids.slice(i, i + 400).forEach(id => wb.delete(doc(db, 'err', id))); await wb.commit(); } errs = errs.filter(e => !x.ids.includes(e.id)); render(); } catch (e) { b.textContent = 'FAILED'; }
+  }));
+  $('inc').querySelectorAll('[data-delrep]').forEach(b => b.addEventListener('click', async () => {
+    const id = b.dataset.delrep; try { await deleteDoc(doc(db, 'rep', id)); reps = reps.filter(x => x.id !== id); render(); } catch (e) { b.textContent = 'FAILED'; }
+  }));
+}
+
+function drawFb() {
+  document.querySelectorAll('#fbF button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.f === fbF)));
+  if (fbs === null) return $('fbl').innerHTML = '<p class="empty">Couldn’t load feedback. Have the latest rules been published?</p>';
+  const list = fbs.filter(f => fbF === 'all' || (fbF === 'done') === !!f.done).sort((a, b) => b.t - a.t);
+  $('fbNote').textContent = `${fbs.filter(f => !f.done).length} open · ${fbs.filter(f => f.done).length} done`;
+  $('fbl').innerHTML = list.length ? list.map(f => `<div class="pn inc${f.done ? ' done' : ''}" data-id="${esc(f.id)}"><p class="fbx">${!f.done && f.t > seen.fb ? '<span class="new">NEW</span>' : ''}${esc(f.x)}</p><div class="meta"><span>${f.n ? `<span class="ini">${esc(f.n)}</span>` : who(f.uid)}</span><span>${esc(name(f.g))}</span><span>${esc(f.dev || '')}</span><span>${ago(f.t)}</span></div><div class="acts">${players.has(f.uid) ? `<button class="btn" data-p="${esc(f.uid)}">PLAYER</button>` : ''}<button class="btn" data-act="done">${f.done ? '↺ REOPEN' : '✓ DONE'}</button><button class="btn bad" data-act="del">DELETE</button></div></div>`).join('')
+    : `<div class="pn"><div class="empty">${fbF === 'open' ? 'Inbox zero. ' : ''}Players send feedback from ⚙ Settings → Send feedback, or ✎ Feedback on a game-over screen.</div></div>`;
+  $('fbl').querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', async () => {
+    const id = b.closest('[data-id]').dataset.id, f = fbs.find(x => x.id === id);
+    try { if (b.dataset.act === 'del') { await deleteDoc(doc(db, 'fb', id)); fbs = fbs.filter(x => x.id !== id); } else { await updateDoc(doc(db, 'fb', id), { done: !f.done }); f.done = !f.done; } render(); } catch (e) { b.textContent = 'FAILED'; }
+  }));
+}
+
+/* ---------- one player ---------- */
+function openPlayer(id) {
+  pick = id; $('drawer').hidden = $('scrim').hidden = !id;
+  document.body.style.overflow = id ? 'hidden' : '';
+  if (id) drawPlayer();
+}
+function drawPlayer() {
+  const p = players.get(pick); if (!p) return openPlayer(null);
+  const R = range(), s = stats(p, R.from), now = Date.now(), live = now - p.last < LIVE;
+  const rows = Object.entries(s.byGame).sort((a, b) => b[1].play - a[1].play || b[1].runs - a[1].runs);
+  const fact = (l, v) => `<div><small>${l}</small><b>${v}</b></div>`;
+  $('drawer').innerHTML = `<div class="dh"><button class="btn" id="dClose" aria-label="Close">←</button><span class="dot ${live ? 'live' : now - p.last < 864e5 ? 'today' : ''}"></span><b>${p.n ? esc(p.n) : '#' + esc(p.id.slice(0, 5))}</b>${hide.has(p.id) ? '<span class="you">YOU</span>' : ''}<span class="sp"></span><span class="mono dim">${live ? `<span style="color:var(--g)">LIVE${p.on ? ' · ' + esc(name(p.on)).toUpperCase() : ''}</span>` : 'seen ' + ago(p.last)}</span></div>
+    <div class="db">
+      <div class="facts">${fact('DEVICE', esc(p.dev || '—'))}${fact('LEVEL', p.lv || '—')}${fact('TICKETS', p.tix != null ? num(p.tix) : '—')}${fact('PLAY TIME', dur(s.play))}${fact('RUNS', s.runs)}${fact('LOBBY VISITS', s.visits)}${fact('FIRST SEEN', p.first ? new Date(p.first).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '—')}${fact('ON SITE', dur(s.site))}${fact('ON FLOOR', dur(s.floor))}</div>
+      <section class="pn"><h2>GAMES<small>${R.days ? (R.days === 1 ? 'LAST 24H' : `LAST ${R.days} DAYS`) : 'ALL TIME'}</small></h2><div class="scroll"><table><thead><tr><th>GAME</th><th class="num">TIME</th><th class="num">RUNS</th><th class="num">BEST</th><th class="hide-s">LAST</th></tr></thead><tbody>${rows.length ? rows.map(([g, b]) => `<tr><td>${esc(name(g))}</td><td class="num">${dur(b.play)}</td><td class="num">${b.runs}</td><td class="num">${b.best ? num(b.best) : '—'}</td><td class="dim hide-s">${ago(b.last)}</td></tr>`).join('') : '<tr><td colspan="5" class="dim">No games in this range.</td></tr>'}</tbody></table></div></section>
+      <section class="pn" style="padding:12px 0 4px"><h2 style="padding:0 14px">TIMELINE<small>NEWEST FIRST</small></h2><div class="log">${s.ev.slice(0, 200).map(e => `<div class="ln" style="grid-template-columns:auto 50px minmax(0,1fr)"><time>${new Date(e.t).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' })} ${clock(e.t).slice(0, 5)}</time><span class="sev s-${e.k === 'run' ? 'run' : 'vis'}">${e.k === 'run' ? 'RUN' : 'VISIT'}</span><span class="msg">${esc(name(e.g))} · ${e.k === 'run' ? `<b>${num(e.s)}</b> · ${dur(e.ms)}${e.d ? ' · daily' : ''}${e.e ? ' · easy' : ''}` : `${dur(e.ms)}${e.play ? ` · ${dur(e.play)} playing` : ''}${e.runs ? ` · ${e.runs} run${e.runs > 1 ? 's' : ''}` : ''}${e.floor ? ` · ${dur(e.floor)} on floor` : ''}`}</span></div>`).join('') || '<div class="empty" style="padding:0 14px 10px">Nothing in this range.</div>'}</div></section>
+      <button class="btn" id="meBtn">${hide.has(p.id) ? 'NOT ME · COUNT THEM AGAIN' : 'THIS IS ME · HIDE MY PLAY'}</button>
+      <div class="idl">id ${esc(p.id)}</div>
+    </div>`;
+  $('dClose').addEventListener('click', () => openPlayer(null));
+  $('meBtn').addEventListener('click', () => { if (hide.has(p.id)) hide.delete(p.id); else { hide.add(p.id); if (!showMe()) openPlayer(null); } saveHide(); render(); });
+}
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+
+/* ---------- ?demo: made-up data, nothing read or written ---------- */
+if (DEMO) {
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647, pickOf = a => a[Math.floor(rnd() * a.length)];
+  const G = ['rock-rift', 'neon-noodle', 'stackdown', 'turbo-tour', 'pixel-peaks', 'gem-cascade', 'field-day', 'comet-courier', 'hilo-hustle'], now = Date.now();
+  ['GCF', 'ACE', 'MOM', 'ZED', 'KAY', null, 'BOB', null, 'LIL', 'TOM'].forEach((n, i) => {
+    const id = 'demo' + i + 'x'.repeat(20), ev = [], age = (i < 3 ? 0.0008 : rnd() * 9) * 864e5;
+    for (let j = 0; j < 30 + rnd() * 60; j++) { const t = now - age - rnd() * 12 * 864e5, g = pickOf(G); ev.push(rnd() < .55 ? { id: id + j, k: 'run', g, s: Math.round(rnd() * 40000), ms: 3e4 + rnd() * 3e5, t } : { id: id + j, k: 'page', g: rnd() < .3 ? 'lobby' : g, ms: 6e4 + rnd() * 9e5, play: rnd() * 6e5, runs: Math.round(rnd() * 4), t }); }
+    ev.sort((a, b) => b.t - a.t);
+    players.set(id, { id, n, dev: pickOf(['phone', 'phone', 'desktop', 'tablet']), lv: 1 + Math.round(rnd() * 20), tix: Math.round(rnd() * 900), first: now - (i === 8 ? 0.2 : 4 + rnd() * 20) * 864e5, last: now - age, on: i < 3 ? pickOf(G) : null, ev });
+  });
+  hide.add('demo0' + 'x'.repeat(20));
+  errs = [...Array(12)].map((_, i) => ({ id: 'e' + i, m: i < 7 ? "TypeError: Cannot read properties of undefined (reading 'x')" : 'ReferenceError: boss is not defined', s: i < 7 ? 'games/rock-rift/' : 'games/sky-squadron/', l: i < 7 ? 812 : 1450, g: i < 7 ? 'rock-rift' : 'sky-squadron', ua: pickOf(['Chrome 130 · Android', 'Safari 18 · iOS']), uid: 'demo' + (i % 4) + 'x'.repeat(20), t: now - (i < 7 ? rnd() * 3 : 20 + rnd() * 30) * 36e5 }));
+  fbs = [{ id: 'f1', x: 'Love Turbo Tour! Could the second track be a bit easier on phones?', n: 'ACE', g: 'turbo-tour', dev: 'phone', uid: 'demo1' + 'x'.repeat(20), t: now - 40 * 6e4 }, { id: 'f2', x: 'The music button on the lobby is hard to find', n: 'KAY', g: 'lobby', dev: 'desktop', uid: 'demo4' + 'x'.repeat(20), t: now - 26 * 36e5, done: true }];
+  reps = [{ id: 'r1', by: 'demo2' + 'x'.repeat(20), other: 'demo3' + 'x'.repeat(20), log: 'ZED: gg · MOM: rematch?', t: now - 3 * 36e5 }];
+  $('whoName').textContent = 'demo mode · made-up data'; $('gate').hidden = true; $('app').hidden = false;
+  loaded = true; lastPoll = now; render();
 }
 </script>
 </body>

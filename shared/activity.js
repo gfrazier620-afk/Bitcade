@@ -4,10 +4,12 @@
  *
  * Events wait in a queue in localStorage (bitcade:actq, never synced) and go up in one batch a few seconds later, or
  * on the next page if the tab closed first. shared/world.js writes them under the player's anonymous id:
- *   act/{uid} = { n: initials, dev: 'phone' | 'tablet' | 'desktop', lv, tix, first, last }
+ *   act/{uid} = { n: initials, dev: 'phone' | 'tablet' | 'desktop', lv, tix, first, last, on: the page they're on }
  *   act/{uid}/ev/{id} = { k: 'run', g: slug, s: score, ms: run length, d: daily, e: easy, at, t }
  *                     | { k: 'page', g: slug or 'lobby', ms: time on the page, play: time playing, runs, floor, at, t }
  * Errors caught on a page (arcade.js and the lobby queue them in bitcade:errq) go up the same way, to err/{id}.
+ * While a page is open and showing, a heartbeat every 90 s updates on and last (no events), so the admin console can
+ * show who's on right now and where.
  * Only the admin's Google account can read them (firestore.rules); nothing else about a player is sent.
  */
 const Q = 'bitcade:actq', MAX = 200;
@@ -65,6 +67,9 @@ export function pageTimer(g, extra) {
   };
   document.addEventListener('visibilitychange', () => { if (document.hidden) end(); else t0 = Date.now(); });
   addEventListener('pagehide', end);
+  const beat = () => { if (on() && !document.hidden) import('./world.js').then(w => w.logActivity({ ...profile(), on: g }, [])).catch(() => {}); };
+  setTimeout(beat, 5000); setInterval(beat, 90000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) beat(); });
   if (read().length || readErr().length) setTimeout(flush, 3000); // anything left from last time
   setInterval(() => { if (readErr().length) flush(); }, 30000); // errors caught since
 }

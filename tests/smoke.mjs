@@ -893,6 +893,38 @@ console.log('\nFeedback, errors and challenges');
   await lb.close();
 }
 
+/* ---------- the admin console (admin.html) ---------- */
+console.log('\nAdmin console');
+{
+  const gate = await open('/admin.html');
+  check(await gate.page.isVisible('#in') && !(await gate.page.isVisible('#app')), 'the admin console asks to sign in first');
+  await gate.page.click('#in');
+  check(await gate.page.waitForFunction(() => /reach Firebase/.test(document.getElementById('gateErr').textContent), null, { timeout: 5000 }).then(() => true, () => false), 'and says so when Firebase is unreachable');
+  check(!gate.errors.length, `no errors${gate.errors.length ? ': ' + gate.errors.join(' | ') : ''}`);
+  await gate.close();
+  for (const [what, opts] of [['desktop', {}], ['phone', { viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true }]]) {
+    const { page, errors, close } = await open('/admin.html?demo', opts);
+    await page.waitForSelector('#kpis .kpi:nth-child(6)');
+    check(await page.$$eval('#sess .row', r => r.length) > 0 && await page.$$eval('#queue .row', r => r.length) > 0 && await page.$$eval('#games tbody tr', r => r.length) > 0, `${what}: the overview shows KPIs, live sessions, alerts and top games (demo data)`);
+    check(await page.evaluate(() => document.getElementById('lvl').classList.contains('crit')), `${what}: the alert level goes critical for an unseen report`);
+    const wide = [];
+    for (const v of ['ov', 'feed', 'pl', 'inc', 'fb']) {
+      await page.click(`#nav [data-v="${v}"]`);
+      if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)) wide.push(v);
+    }
+    check(!wide.length, `${what}: no view scrolls sideways${wide.length ? ' (' + wide.join(', ') + ')' : ''}`);
+    await page.click('#nav [data-v="feed"]');
+    check(await page.$$eval('#log .ln', r => r.length) > 20, `${what}: the feed lists events`);
+    await page.click('#nav [data-v="pl"]'); await page.click('#plist .pr[data-p]');
+    check(await page.isVisible('#drawer') && /TIMELINE/.test(await page.textContent('#drawer')), `${what}: tapping a player opens their details`);
+    await page.keyboard.press('Escape');
+    check(!(await page.isVisible('#drawer')), `${what}: Escape closes them`);
+    if (what === 'phone') check(await page.evaluate(() => { const r = document.getElementById('nav').getBoundingClientRect(); return Math.abs(r.bottom - innerHeight) < 2 && r.width >= innerWidth - 1; }), 'phone: the tabs sit along the bottom');
+    check(!errors.length, `${what}: no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
+    await close();
+  }
+}
+
 /* ---------- seasonal events: Halloween ---------- */
 console.log('\nHalloween');
 {

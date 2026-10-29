@@ -116,8 +116,9 @@ service cloud.firestore {
     match /act/{uid} {
       allow read: if isAdmin();
       allow create, update: if request.auth != null && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly(['n', 'dev', 'lv', 'tix', 'first', 'last'])
+        && request.resource.data.keys().hasOnly(['n', 'dev', 'lv', 'tix', 'first', 'last', 'on'])
         && request.resource.data.last == request.time
+        && (!('on' in request.resource.data) || (request.resource.data.on is string && request.resource.data.on.size() <= 40))
         && (!('n' in request.resource.data) || request.resource.data.n.matches('^[A-Z]{3}$'))
         && (!('dev' in request.resource.data) || request.resource.data.dev in ['phone', 'tablet', 'desktop']);
       allow delete: if false;
