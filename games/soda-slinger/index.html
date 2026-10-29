@@ -56,6 +56,8 @@ const PLACES = [
 ];
 const LOOKS = { diner: [['#3d6aff', '#e8b890', 'cap'], ['#ffd23d', '#c8885a', 'bob'], ['#3dc85a', '#f4c8a0', 'bald']], surf: [['#ff7ab8', '#c8885a', 'shades'], ['#ffd23d', '#e8b890', 'bob'], ['#5a8aff', '#8a5a3a', 'cap']], rink: [['#ff5ac8', '#e8b890', 'puff'], ['#5ad8ff', '#8a5a3a', 'shades'], ['#ffd23d', '#f4c8a0', 'puff']], moon: [['#c8d8e8', '#8ad13d', 'dome'], ['#ff9a3d', '#b48aff', 'dome'], ['#e8e8f0', '#5ad8ff', 'antenna']] };
 let state = 'title', level = 1, score = 0, lives = 3, place = PLACES[0], cust = [], glasses = [], tips = [], me = null, toCome = 0, spawnT = [], showT = 0, msg = '', msgT = 0, lost = false, clean = true, bg = null;
+// counters open as the rounds go: two in round 1, three in round 2, all four from round 3
+const open = () => Math.min(ROWS, level + 1);
 const say = (t, s = 1.6) => { msg = t; msgT = s; };
 const add = (n, x, y, c = '#ffd23d') => { score += n; A.setScore(score); if (x !== undefined) A.pop(x, y, '+' + n, c); };
 
@@ -92,7 +94,7 @@ function counter(y) {
 /* ---------- people and glasses ---------- */
 function spawn(row) {
   const looks = LOOKS[place.kind], l = looks[Math.floor(Math.random() * looks.length)];
-  cust.push({ row, x: DOOR + 10, state: 'walk', go: 0.9, t: Math.random() * 0.5, push: 0, drink: 0, body: l[0], skin: l[1], hat: l[2], sp: 22 + level * 3.2 });
+  cust.push({ row, x: DOOR + 10, state: 'walk', go: 0.9, t: Math.random() * 0.5, push: 0, drink: 0, body: l[0], skin: l[1], hat: l[2], sp: 18 + level * 3.2 });
   toCome--; A.tone(880, 0.05, 'triangle', 0.02); A.tone(660, 0.05, 'triangle', 0.02, 0.06);
 }
 function startGame() { level = 1; score = 0; A.setScore(0); lives = A.easy ? 5 : 3; lost = false; newLevel(); }
@@ -121,7 +123,7 @@ A.onPress(c => {
   if (c === 'KeyP' || c === 'Escape') return pause();
   if (state !== 'play') return;
   const d = c === 'ArrowUp' || c === 'KeyW' ? -1 : c === 'ArrowDown' || c === 'KeyS' ? 1 : 0;
-  if (d) { me.row = (me.row + d + ROWS) % ROWS; me.x = TAP; A.tone(440, 0.04, 'square', 0.02, 0, 660); }
+  if (d) { me.row = (me.row + d + open()) % open(); me.x = TAP; A.tone(440, 0.04, 'square', 0.02, 0, 660); }
 });
 
 /* ---------- update ---------- */
@@ -143,7 +145,7 @@ function update(dt) {
   tips = tips.filter(tp => { if (tp.row === me.row && Math.abs(tp.x - me.x) < 24) { add(1500, tp.x, ROWY[tp.row] - 40, '#5ee7ff'); showT = 3; say('SHOWTIME!', 2); A.jingle([523, 659, 784, 659, 523, 784, 1047], 0.1, 'square'); A.badge('tips'); return false; } return (tp.t -= dt) > 0; });
   if (showT > 0) showT -= dt;
   // customers come in
-  for (let r = 0; r < ROWS; r++) if (toCome > 0 && showT <= 0 && (spawnT[r] -= dt) <= 0) { spawnT[r] = A.rand(2.2, 4.6) / (1 + level * 0.1); spawn(r); }
+  for (let r = 0; r < open(); r++) if (toCome > 0 && showT <= 0 && (spawnT[r] -= dt) <= 0) { spawnT[r] = A.rand(2.8, 5.2) / (1 + (level - 1) * 0.12); spawn(r); }
   for (const c of cust) {
     c.t += dt;
     if (c.state === 'walk' && showT <= 0) { // shuffle, pause, shuffle
@@ -152,7 +154,7 @@ function update(dt) {
     }
     if (c.state === 'pushed') { const d = Math.min(c.push, 210 * dt); c.x -= d; c.push -= d; if (c.x < DOOR + 4) { c.state = 'out'; add(50, DOOR + 30, ROWY[c.row] - 50); } else if (c.push <= 0) { c.state = 'drink'; c.drink = 1.1; } }
     if (c.state === 'drink' && (c.drink -= dt) <= 0) {
-      c.state = 'walk'; glasses.push({ row: c.row, x: c.x + 16, full: false, v: 120 + level * 6 }); A.tone(500, 0.08, 'triangle', 0.025, 0, 700);
+      c.state = 'walk'; glasses.push({ row: c.row, x: c.x + 16, full: false, v: 95 + level * 8 }); A.tone(500, 0.08, 'triangle', 0.025, 0, 700);
       if (Math.random() < 0.12) tips.push({ row: c.row, x: c.x + 4, t: 7 });
     }
   }
@@ -171,7 +173,9 @@ function update(dt) {
   glasses = glasses.filter(g => !g.done);
   cust = cust.filter(c => c.state !== 'out');
   if (toCome <= 0 && !cust.length && !glasses.length) {
-    const bonus = 1000 * level + (clean ? 2000 : 0); add(bonus); say(clean ? `SPOTLESS! +${bonus}` : `ROUND CLEAR! +${bonus}`, 2.4);
+    const bonus = 1000 * level + (clean ? 2000 : 0); add(bonus);
+    const heal = lives < (A.easy ? 5 : 3); if (heal) lives++; // a clear round wins a heart back
+    say((clean ? `SPOTLESS! +${bonus}` : `ROUND CLEAR! +${bonus}`) + (heal ? ' +♥' : ''), 2.4);
     if (clean) A.badge('spotless'); if (level >= 4) A.badge('moon');
     A.jingle([523, 659, 784, 1047, 1319], 0.09, 'square'); state = 'between';
     setTimeout(() => { if (state !== 'between') return; level++; newLevel(); }, 2400);
@@ -222,6 +226,10 @@ function render(t) {
     for (const c of cust) if (c.row === r) drawPerson(c, t);
     if (me && me.row === r && state !== 'title') drawMe(t);
     counter(ROWY[r]);
+    if (state !== 'title' && r >= open()) { // not open yet this round
+      ctx.fillStyle = 'rgba(10,6,18,.55)'; ctx.fillRect(DOOR - 4, ROWY[r] - 70, END - DOOR + 18, 92);
+      paint(ctx, [[W / 2 - 46, ROWY[r] - 46, 92, 22, '#ff4f6d']]); ctx.fillStyle = '#fff'; ctx.font = '11px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('CLOSED', W / 2, ROWY[r] - 35);
+    }
     for (const tp of tips) if (tp.row === r && (tp.t > 2 || Math.floor(t / 120) % 2)) { ctx.fillStyle = OUT; ctx.beginPath(); ctx.arc(tp.x, ROWY[r] - 16, 6, 0, 6.29); ctx.fill(); ctx.fillStyle = '#ffd23d'; ctx.beginPath(); ctx.arc(tp.x, ROWY[r] - 16, 5, 0, 6.29); ctx.fill(); ctx.fillStyle = '#fff6c2'; ctx.fillRect(tp.x - 2, ROWY[r] - 19, 2, 2); }
     for (const g of glasses) if (g.row === r) drawGlass(g);
   }
@@ -252,8 +260,8 @@ A.attract({
     const near = r => Math.max(0, ...cust.filter(c => c.row === r && c.state === 'walk').map(c => c.x));
     let row = me.row;
     if (empt && empt.x > END - 140 && empt.row !== me.row) row = empt.row;
-    else { let best = -1; for (let r = 0; r < ROWS; r++) if (need(r) > 0 && near(r) > best) { best = near(r); row = r; } }
-    if (row !== me.row) { botPour = 0; return [((row - me.row + ROWS) % ROWS) <= ROWS / 2 ? '!ArrowDown' : '!ArrowUp']; }
+    else { let best = -1; for (let r = 0; r < open(); r++) if (need(r) > 0 && near(r) > best) { best = near(r); row = r; } }
+    if (row !== me.row) { botPour = 0; return [((row - me.row + open()) % open()) <= open() / 2 ? '!ArrowDown' : '!ArrowUp']; }
     if (me.x < TAP - 1) return ['ArrowRight'];
     if (need(me.row) > 0 || me.fill > 0) { botPour += dt; if (me.fill < 1) return ['Space']; botPour = 0; return []; }
     return [];
