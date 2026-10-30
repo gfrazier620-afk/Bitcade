@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Skyline Smash</title>
+<link rel="manifest" href="../../manifest.json">
+<meta name="theme-color" content="#0f0c1f">
+<link rel="icon" type="image/png" href="../../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../../icons/apple-touch-icon.png">
+<link rel="preload" href="../../shared/fonts/bungee-400.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="../../shared/fonts/silkscreen-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../../shared/fonts.css">
+<link rel="stylesheet" href="../../shared/arcade.css">
+<style>
+.mons{display:flex;justify-content:center;gap:6px;margin:10px 0 0;flex-wrap:wrap}
+.mons button{font:11px Silkscreen,monospace;letter-spacing:.06em;color:#d8d0f0;background:rgba(20,12,36,.85);border:2px solid #3a2f5a;border-radius:8px;padding:6px 10px;cursor:pointer}
+.mons button.on{color:#120a1c;background:var(--mc);border-color:var(--mc)}
+</style>
+</head>
+<body data-game="skyline-smash" data-pad="0:Space 1:KeyK 2:KeyK" style="--game:#ff5a4a">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>SKYLINE SMASH</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <div class="pad">
+    <div class="dp"><button class="u" data-k="ArrowUp" aria-label="Climb up">▲</button><button class="l" data-k="ArrowLeft" aria-label="Left">◀</button><button class="r" data-k="ArrowRight" aria-label="Right">▶</button><button class="d" data-k="ArrowDown" aria-label="Climb down">▼</button></div>
+    <div class="ab"><button class="sm" data-k="KeyK">JUMP</button><button data-k="Space">PUNCH</button></div>
+  </div>
+  <p class="help"><b>1 player:</b> arrows or WASD walk and climb (▲ in front of a building) · <kbd>Space</kbd>/<kbd>J</kbd> punch · <kbd>K</kbd> jump or let go · <b>2 players:</b> WASD + <kbd>F</kbd> punch + <kbd>G</kbd> jump, arrows + <kbd>L</kbd> punch + <kbd>K</kbd> jump · <kbd>P</kbd> pause · gamepad: d-pad, A punch, B jump</p>
+</main>
+<script src="../../shared/chip.js"></script>
+<script src="../../shared/badges.js"></script>
+<script src="../../shared/arcade.js"></script>
+<script src="../../shared/story.js"></script>
+<script>
+(() => {
+/*
+ * Skyline Smash: a giant monster in a little city. Climb the front of a building, punch its windows in, and once more
+ * than half of it is smashed it comes down. Windows hide snacks (health), gems (points) and live wires (ouch), and
+ * soldiers lean out of them to shoot. Soldiers and tanks come along the street and helicopters buzz round your head;
+ * punch them. You get hungrier as you go, so keep eating. Flatten every building to clear the city. Three monsters
+ * (Clawdia hits hardest, Burrowbo climbs and punches fastest, Rustbolt takes the most), one player or two.
+ * Story mode (shared/story.js): The Big Stomp, six cities up to Titan-X, Dr. Gearwright's giant robot. Snacks buy
+ * upgrades (one is a CPU monster friend). Beating it opens DEMOLITION DERBY: 90 seconds, buildings keep coming.
+ */
+const A = Arcade, cv = document.getElementById('cv');
+const W = 640, H = 400, GROUND = 344, ctx = A.canvas(cv, W, H), OUT = '#0a0612';
+function shade(hex, k) {
+  let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join('');
+  const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+function paint(x, list) {
+  x.fillStyle = OUT; for (const q of list) x.fillRect(q[0] - 2, q[1] - 2, q[2] + 4, q[3] + 4);
+  for (const [px, py, w, h, c] of list) { x.fillStyle = c; x.fillRect(px, py, w, h); if (w > 3 && h > 3) { x.fillStyle = shade(c, 0.3); x.fillRect(px, py, w, Math.max(1, h * 0.2)); x.fillStyle = shade(c, -0.3); x.fillRect(px, py + h - Math.max(1, h * 0.2), w, Math.max(1, h * 0.2)); } }
+}
+
+/* ---------- monsters, cities ---------- */
+const MON = {
+  claw: { name: 'CLAWDIA', c: '#ff5a4a', hp: 100, pow: 2, cd: 0.3, walk: 105, climb: 80 },
+  mole: { name: 'BURROWBO', c: '#b07a48', hp: 100, pow: 1, cd: 0.15, walk: 120, climb: 130 },
+  bolt: { name: 'RUSTBOLT', c: '#7aa6c8', hp: 140, pow: 1, cd: 0.24, walk: 92, climb: 95 }
+};
+const CITIES = [
+  { name: 'HARBOR TOWN', sky: ['#2a3a7a', '#f0956a'], sun: '#ffd27a', far: '#3a3466', walls: ['#c8644a', '#8a6a5a', '#4a8a9a', '#a8885a'], win: '#ffe08a', water: true },
+  { name: 'SUNNYVALE', sky: ['#3a9ae8', '#bfe8ff'], sun: '#fff4b0', far: '#7ab0d8', walls: ['#e8c06a', '#7ac08a', '#e88a8a', '#8aa8e8'], win: '#cfefff' },
+  { name: 'NEON DOWNTOWN', sky: ['#0a0620', '#3a1450'], sun: '#e8e8ff', far: '#1e1440', walls: ['#3a3a5a', '#2a4a5a', '#4a2a5a', '#3a4a3a'], win: '#ff5ac8', night: true },
+  { name: 'DUSTY GULCH', sky: ['#e88a3a', '#ffd88a'], sun: '#fff0c0', far: '#c86a3a', walls: ['#c8a070', '#a87a4a', '#d8b888', '#9a6a4a'], win: '#ffe8a8' },
+  { name: 'SNOWPEAK CITY', sky: ['#6a8ac8', '#e8f0ff'], sun: '#ffffff', far: '#a8bce0', walls: ['#7a8aa8', '#a86a6a', '#6a9a8a', '#9a8ab8'], win: '#fff0b0', snow: true },
+  { name: 'GEARWRIGHT TOWER', sky: ['#1a0a1a', '#6a1a2a'], sun: '#ff6a4a', far: '#2a1020', walls: ['#4a4a5a', '#5a4a4a'], win: '#ff7a3a', night: true }
+];
+const CW = 22, CH = 24; // a window cell
+
+let S = null, derby = false, derbyT = 0, smashed = 0, titan = null;
+const up = id => S ? S.lv(id) : 0;
+let state = 'title', two = false, level = 1, score = 0, city = CITIES[0], bg = null, players = [], blds = [], foes = [], shots = [], loot = [], debris = [], spawn = {}, msg = '', msgT = 0, lost = false, swats = 0, botMem = new Map();
+const say = (t, s = 2) => { msg = t; msgT = s; };
+const add = (n, x, y, c = '#ffd23d') => { score += n; A.setScore(score); if (x !== undefined) A.pop(x, y, '+' + n, c); };
+const live = () => players.filter(p => !p.ko);
+
+/* ---------- the city ---------- */
+function drawBg() {
+  bg = document.createElement('canvas'); bg.width = W; bg.height = H; const b = bg.getContext('2d'), c = city, r = A.seeded('skyline:bg:' + c.name);
+  const g = b.createLinearGradient(0, 0, 0, GROUND); g.addColorStop(0, c.sky[0]); g.addColorStop(1, c.sky[1]); b.fillStyle = g; b.fillRect(0, 0, W, GROUND);
+  if (c.night) { b.fillStyle = 'rgba(255,255,255,.8)'; for (let k = 0; k < 60; k++) b.fillRect(Math.floor(r() * W), Math.floor(r() * 200), 1, 1); }
+  b.fillStyle = c.sun; b.beginPath(); b.arc(520, c.night ? 70 : 110, c.night ? 22 : 34, 0, 6.29); b.fill();
+  b.fillStyle = 'rgba(255,255,255,.18)'; b.beginPath(); b.arc(520, c.night ? 70 : 110, c.night ? 34 : 50, 0, 6.29); b.fill();
+  for (let x = 0; x < W;) { const w = 20 + r() * 40, h = 40 + r() * 110; b.fillStyle = c.far; b.fillRect(x, GROUND - 40 - h, w, h + 40); b.fillStyle = c.night ? 'rgba(255,90,200,.35)' : 'rgba(255,255,255,.12)'; for (let y = GROUND - 30 - h; y < GROUND - 50; y += 12) for (let k = x + 4; k < x + w - 6; k += 10) if (r() < 0.4) b.fillRect(k, y, 4, 5); x += w + 4; }
+  if (c.water) { b.fillStyle = '#2a5a9a'; b.fillRect(0, GROUND - 26, W, 26); b.fillStyle = 'rgba(255,255,255,.3)'; for (let k = 0; k < 30; k++) b.fillRect(Math.floor(r() * W), GROUND - 22 + Math.floor(r() * 18), 10, 1); }
+  if (c.snow) { b.fillStyle = '#f4f8ff'; for (let k = 0; k < 90; k++) b.fillRect(Math.floor(r() * W), Math.floor(r() * GROUND), 2, 2); }
+  // the street
+  b.fillStyle = '#4a4458'; b.fillRect(0, GROUND, W, 12); b.fillStyle = '#6a6478'; b.fillRect(0, GROUND, W, 3);
+  b.fillStyle = '#2a2632'; b.fillRect(0, GROUND + 12, W, H - GROUND - 12);
+  b.fillStyle = '#ffd23d'; for (let x = 10; x < W; x += 48) b.fillRect(x, GROUND + 32, 24, 3);
+  if (c.snow) { b.fillStyle = '#e8f0ff'; b.fillRect(0, GROUND, W, 4); }
+}
+function mkBuilding(x, cols, rows, k) {
+  const r = A.seeded('skyline:b:' + level + ':' + x)(), cells = [];
+  for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) cells.push({ hp: 2, item: null, peek: 0 });
+  return { x, cols, rows, w: cols * CW + 8, top: GROUND - rows * CH - 8, cells, c: city.walls[k % city.walls.length], roof: Math.floor(r * 3), sink: 0, falling: false, gone: false, broken: 0 };
+}
+const cellRect = (b, i, j) => ({ x: b.x + 4 + i * CW, y: GROUND - (j + 1) * CH - 2 + b.sink, w: CW, h: CH });
+function cellAt(b, x, y) { if (b.falling || b.gone) return null; const i = Math.floor((x - b.x - 4) / CW), j = Math.floor((GROUND - 2 - y) / CH); return i >= 0 && i < b.cols && j >= 0 && j < b.rows ? { i, j, c: b.cells[j * b.cols + i] } : null; }
+const inside = (b, x) => !b.falling && !b.gone && x > b.x + 6 && x < b.x + b.w - 6;
+function newCity() {
+  const sto = S && S.run, si = sto && !derby ? S.run.stage : (level - 1) % 5;
+  city = CITIES[sto && !derby ? si : (level - 1) % 5]; drawBg();
+  blds = []; foes = []; shots = []; loot = []; debris = []; titan = null;
+  const r = A.seeded('skyline:city:' + level + (sto ? ':s' + si : ''));
+  if (sto && !derby && si === 5) { // Titan-X's yard: two tall towers to climb
+    blds = [mkBuilding(40, 4, 9, 0), mkBuilding(210, 3, 8, 1)];
+    titan = { x: 500, hp: S.run.hard ? 90 : 60, max: S.run.hard ? 90 : 60, dir: -1, rocketT: 2.5, laserT: 6, laser: null, hit: 0, step: 0, dead: 0, swatT: 3, swing: 0 };
+  } else {
+    const n = derby ? 4 : Math.min(5, 3 + Math.floor((level - 1) / 2)), slot = (W - 40) / n;
+    for (let k = 0; k < n; k++) { const cols = 3 + Math.floor(r() * 3), rows = Math.min(10, 4 + Math.floor(r() * 3) + Math.min(4, Math.floor(level / 2))); blds.push(mkBuilding(Math.round(20 + k * slot + (slot - (cols * CW + 8)) / 2), cols, rows, k)); }
+  }
+  spawn = { sold: 2.5, heli: 7, tank: 10, peek: 3 };
+  players.forEach((p, k) => { if (p.ko && p.hp <= 0 && !p.out) { p.ko = false; p.hp = Math.round(p.max / 2); } Object.assign(p, { x: 70 + k * 500, y: GROUND, vx: 0, vy: 0, st: 'ground', b: null, face: k ? -1 : 1 }); });
+  say(derby ? 'DEMOLITION DERBY' : sto ? `${si + 1} · ${city.name}` : `CITY ${level} · ${city.name}`, 2.2); A.jingle([392, 523, 659, 784], 0.08, 'square');
+  if (sto && !derby) S.reach(si);
+}
+
+/* ---------- players ---------- */
+const SETS = [{ L: ['KeyA'], R: ['KeyD'], U: ['KeyW'], D: ['KeyS'], P: ['KeyF'], J: ['KeyG'] }, { L: ['ArrowLeft'], R: ['ArrowRight'], U: ['ArrowUp'], D: ['ArrowDown'], P: ['KeyL', 'Enter'], J: ['KeyK'] }];
+const ONE = { L: ['ArrowLeft', 'KeyA'], R: ['ArrowRight', 'KeyD'], U: ['ArrowUp', 'KeyW'], D: ['ArrowDown', 'KeyS'], P: ['Space', 'KeyJ', 'KeyZ'], J: ['KeyK', 'KeyX'] };
+function mkMon(i, kind, ai = false) {
+  const m = MON[kind], max = Math.round(m.hp * (A.easy ? 1.5 : 1)) + up('hide') * 25;
+  return { i, kind, m, ai, keys: ai ? null : two ? SETS[i] : ONE, x: 70 + i * 500, y: GROUND, vx: 0, vy: 0, st: 'ground', b: null, face: i ? -1 : 1, hp: max, max, cool: 0, punchT: 0, hurtT: 0, ko: false, out: false, anim: 0, climbAnim: 0, pow: m.pow + up('fist'), spd: 1 + up('climb') * 0.25, intent: {} };
+}
+function input(p) {
+  if (p.ai) return p.intent;
+  const k = p.keys; return { L: A.held(...k.L), R: A.held(...k.R), U: A.held(...k.U), D: A.held(...k.D) };
+}
+const fist = p => ({ x: p.x + p.face * 24, y: p.y - (p.st === 'climb' ? 40 : p.st === 'ground' ? 24 : 34) }); // from the street you reach the bottom row
+function jump(p) {
+  if (p.ko || state !== 'play') return;
+  if (p.st === 'ground' || p.st === 'roof') { p.vy = -340; p.st = 'air'; p.b = null; A.sfx('jump'); }
+  else if (p.st === 'climb') { p.st = 'air'; p.vy = -120; p.vx = -p.face * 90; p.b = null; }
+}
+function punch(p) {
+  if (p.ko || state !== 'play' || p.cool > 0) return;
+  p.cool = p.m.cd; p.punchT = 0.14; const f = fist(p);
+  A.tone(140 + Math.random() * 40, 0.06, 'square', 0.035, 0, 70);
+  // a foe in reach?
+  for (const e of foes) if (!e.dead && Math.abs(e.x - f.x) < 28 && Math.abs(e.y - e.h / 2 - f.y) < e.h / 2 + 20) return hitFoe(e, p);
+  if (titan && titan.hp > 0) { const head = f.y < GROUND - 196 && f.y > GROUND - 250, body = f.y >= GROUND - 196 && f.y < GROUND - 10; if (Math.abs(f.x - titan.x) < (head ? 34 : 38) && (head || body)) return hitTitan(head ? 2 : 1, f.x, f.y); }
+  // a building: the window under the fist (on a roof, the top row under you)
+  for (const b of blds) {
+    let hit = cellAt(b, f.x, f.y);
+    if (!hit && p.st === 'roof' && p.b === b) hit = cellAt(b, Math.min(b.x + b.w - 8, Math.max(b.x + 8, f.x)), b.top + 14);
+    if (hit) return hitCell(b, hit, p);
+  }
+  A.burst(f.x, f.y, { n: 4, color: '#fff', speed: 60, life: 0.2, size: 2 });
+}
+function hitCell(b, { i, j, c }, p) {
+  const r = cellRect(b, i, j), cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+  if (c.hp <= 0) { // already a hole: grab what's inside
+    if (c.item) take(b, c, p, cx, cy); else A.burst(cx, cy, { n: 5, color: shade(b.c, -0.3), speed: 70, life: 0.3, size: 2, kind: 'debris' });
+    return;
+  }
+  c.hp -= p.pow; A.shake(2, 0.1); A.burst(cx, cy, { n: 8, colors: ['#cfefff', '#fff', shade(b.c, -0.2)], speed: 120, life: 0.4, size: 2, kind: 'debris' });
+  if (c.peek > 0) { c.peek = 0; add(200, cx, cy - 10, '#5ee7ff'); A.sfx('hurt'); A.burst(cx, cy, { n: 10, color: '#7a8a5a', speed: 140, life: 0.5 }); }
+  if (c.hp > 0) return;
+  b.broken++; add(50); A.noise(0.12, 0.04);
+  const r2 = Math.random();
+  c.item = r2 < 0.14 ? 'snack' : r2 < 0.2 ? 'gem' : r2 < 0.26 ? 'wire' : null;
+  if (c.item === 'wire') { c.item = null; zap(p, cx, cy); }
+  if (b.broken >= Math.ceil(b.cells.length * 0.55)) collapse(b);
+}
+function take(b, c, p, x, y) {
+  if (c.item === 'snack') { const heal = 20 * (1 + up('belly')); p.hp = Math.min(p.max, p.hp + heal); add(100, x, y - 12, '#3dff8f'); A.sfx('powerup'); A.burst(x, y, { n: 10, colors: ['#ffd23d', '#ff8a3d', '#3dff8f'], speed: 90, life: 0.4 }); if (S && S.run) S.bank(3); }
+  if (c.item === 'gem') { add(1000, x, y - 12, '#5ee7ff'); A.sfx('pickup'); A.ring(x, y, '#5ee7ff', 30); if (S && S.run) S.bank(8); }
+  c.item = null;
+}
+function zap(p, x, y) { A.burst(x, y, { n: 18, colors: ['#ffff8a', '#5ee7ff', '#fff'], speed: 200, life: 0.35, kind: 'spark' }); A.flash('#ffff8a', 0.1); A.tone(1200, 0.2, 'sawtooth', 0.04, 0, 200); hurt(p, 8, true); }
+function collapse(b) {
+  if (b.falling) return; b.falling = true; smashed++;
+  add(250 * b.rows, b.x + b.w / 2, b.top + 20, '#ffd23d');
+  A.shake(9, 0.9); A.hitstop(0.06); A.noise(1.2, 0.09); A.sfx('boom');
+  for (const p of players) if (p.b === b) { p.st = 'air'; p.b = null; p.vy = -80; }
+  if (S && S.run) S.bank(10 + b.rows);
+}
+function hurt(p, n, force) {
+  if (p.ko || (!force && p.hurtT > 0) || state !== 'play') return;
+  p.hp -= n; p.hurtT = 0.5; A.sfx('hurt'); A.shake(4, 0.2); A.burst(p.x, p.y - 30, { n: 8, color: '#fff', speed: 120, life: 0.3 });
+  if (p.hp <= 0) { p.hp = 0; p.ko = true; p.st = 'air'; p.b = null; p.vy = -200; A.shake(10, 0.6); A.flash('#ff4f6d', 0.2); say(`${p.m.name} IS DOWN!`, 1.8); if (!players.some(q => !q.ko && !q.ai)) gameOver(); }
+}
+
+/* ---------- the army ---------- */
+const FOE = { sold: { hp: 1, h: 20, pts: 100 }, tank: { hp: 3, h: 26, pts: 600 }, heli: { hp: 2, h: 22, pts: 400 } };
+function addFoe(k) {
+  const side = Math.random() < 0.5 ? -1 : 1, x = side < 0 ? -20 : W + 20;
+  const e = { k, ...FOE[k], x, y: k === 'heli' ? 80 + Math.random() * 150 : GROUND, dir: -side, t: Math.random() * 2, shoot: 1.5 + Math.random(), dead: false, hit: 0 };
+  if (S && S.run && S.run.hard) e.hp++;
+  foes.push(e);
+}
+function hitFoe(e, p) {
+  e.hp -= p.pow; e.hit = 0.12; A.hitstop(0.04); A.burst(e.x, e.y - e.h / 2, { n: 8, color: '#fff', speed: 110, life: 0.3 });
+  if (e.hp > 0) { A.tone(300, 0.05, 'square', 0.03); return; }
+  e.dead = true; add(e.pts, e.x, e.y - e.h); if (S && S.run) S.bank(e.k === 'sold' ? 1 : 5);
+  A.sfx('boom'); A.burst(e.x, e.y - e.h / 2, { n: e.k === 'sold' ? 10 : 22, colors: ['#ffd23d', '#ff8a3d', '#555'], speed: 170, life: 0.6, kind: e.k === 'sold' ? 'spark' : 'debris' });
+  if (e.k !== 'sold') { A.shake(5, 0.3); A.ring(e.x, e.y - e.h / 2, '#ff8a3d', 40); }
+  if (e.k === 'heli') { debris.push({ x: e.x, y: e.y, vx: p.face * 120, vy: -60, r: 0, vr: 6 }); if (++swats >= 10) A.badge('swatter'); }
+}
+function fire(x, y, p, sp = 190, dmg = 4, g = 0, c = '#ffd23d') {
+  const tx = p.x, ty = p.y - 30, d = Math.hypot(tx - x, ty - y) || 1;
+  shots.push({ x, y, vx: (tx - x) / d * sp, vy: (ty - y) / d * sp - (g ? 180 : 0), g, dmg, c, t: 4 });
+}
+const nearest = (x, y) => live().sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0];
+function hitTitan(n, x, y) {
+  titan.hp -= n; titan.hit = 0.15; add(n * 150, x, y, '#ff4f6d'); A.hitstop(0.05); A.shake(4, 0.2); A.burst(x, y, { n: 12, colors: ['#ffd23d', '#c8d0e0', '#fff'], speed: 160, life: 0.4, kind: 'spark' }); A.tone(180, 0.08, 'square', 0.05);
+  if (titan.hp > 0) return;
+  titan.hp = 0; titan.dead = 0.01; titan.laser = null; add(20000, titan.x, GROUND - 240, '#ffd23d'); if (S && S.run) S.bank(200);
+  say('TITAN-X GOES DOWN!', 3); A.flash('#fff', 0.3); A.shake(14, 1.4); A.noise(1.6, 0.1);
+  for (let k = 0; k < 8; k++) setTimeout(() => A.burst(titan.x - 40 + Math.random() * 80, GROUND - Math.random() * 230, { n: 20, colors: ['#ffd23d', '#ff8a3d', '#555'], speed: 200, life: 0.7 }), k * 180);
+  setTimeout(() => cityClear(), 2200);
+}
+
+/* ---------- the game ---------- */
+function newGame(twoP, kind = pick()) {
+  if (S) S.run = null; derby = false; two = twoP; level = 1; score = 0; swats = 0; A.setScore(0); lost = false;
+  players = two ? [mkMon(0, 'claw'), mkMon(1, 'bolt')] : [mkMon(0, kind)];
+  newCity(); state = 'play';
+}
+function pick() { const k = A.store.get('arcade:skyline:mon'); return MON[k] ? k : 'claw'; }
+function choose() {
+  A.overlay({ title: 'PICK A MONSTER', sub: '<b>Clawdia</b> punches hardest (a window in one hit). <b>Burrowbo</b> climbs and punches fastest. <b>Rustbolt</b> takes the most punishment.', btn: 'CLAWDIA', onGo: () => go('claw'), alt: { btn: 'BURROWBO', onGo: () => go('mole') }, alt2: { btn: 'RUSTBOLT', onGo: () => go('bolt') } });
+  function go(k) { A.store.set('arcade:skyline:mon', k); newGame(false, k); }
+}
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play', alt: S && S.quit() }); }
+A.onHide(pause);
+A.onPress(c => {
+  if (c === 'KeyP' || c === 'Escape') return pause();
+  if (state !== 'play') return;
+  for (const p of players) if (!p.ai) { if (p.keys.P.includes(c)) punch(p); if (p.keys.J.includes(c)) jump(p); }
+});
+function cityClear() {
+  if (state !== 'play') return;
+  const bonus = 2000 * level; add(bonus); say(`CITY FLATTENED! +${bonus}`, 2.4); A.jingle([523, 659, 784, 1047, 1319], 0.09, 'square');
+  A.badge('flatten'); if (level >= 5) A.badge('city5');
+  if (S && S.run && !derby) { S.bank(40 + S.run.stage * 15); if (S.clear(S.run.stage)) { state = 'over'; setTimeout(() => S.win(), 2000); return; } S.run.stage++; }
+  state = 'between'; setTimeout(() => { if (state !== 'between') return; level++; players.forEach(p => { if (!p.ko) p.hp = Math.min(p.max, p.hp + 25); }); newCity(); state = 'play'; }, 2400);
+}
+function gameOver() {
+  if (lost) return; lost = true; state = 'over';
+  if (S && S.run) { const run = S.run; setTimeout(() => { if (derby) return S.modeEnd(smashed, { title: 'TIME!', big: `${smashed} BUILDING${smashed === 1 ? '' : 'S'} FLATTENED` }); S.fail({ title: 'KNOCKED OUT', big: `${run.stage + 1} · ${S.stageName(run.stage).toUpperCase()}`, sub: 'Spend your snacks on upgrades, then stomp back in' }); }, 1500); return; }
+  setTimeout(() => { const rec = A.submit(score); A.overlay({ title: 'KNOCKED OUT', big: `SCORE ${score.toLocaleString()} · CITY ${level}`, sub: rec ? 'New high score!' : 'The army wins this round.', btn: two ? 'Again (2P)' : 'Again', onGo: () => two ? newGame(true) : newGame(false), alt: { btn: two ? '1 player' : '2 players', onGo: () => two ? choose() : newGame(true) } }); }, 1500);
+}
+
+function update(dt) {
+  if (msgT > 0) msgT -= dt;
+  if (state !== 'play') return;
+  const sto = S && S.run;
+  if (derby) { derbyT -= dt; if (derbyT <= 0) { derbyT = 0; lost = false; return gameOver(); } }
+  // players
+  for (const p of players) {
+    if (p.ai) p.intent = brain(p, dt);
+    p.cool -= dt; p.punchT -= dt; p.hurtT -= dt; p.anim += dt;
+    if (!p.ko && !p.ai && !(S && S.run && derby)) p.hp -= dt * 0.45 * (A.demo ? 0 : 1); // hunger
+    if (!p.ko && p.hp <= 0) hurt(p, 1, true);
+    const k = p.ko ? {} : input(p), walk = p.m.walk * p.spd, climb = p.m.climb * p.spd;
+    if (p.st === 'ground' || p.st === 'roof') {
+      p.vx = (k.R ? 1 : 0) - (k.L ? 1 : 0); if (p.vx) p.face = p.vx; p.x = A.clamp(p.x + p.vx * walk * dt, 16, W - 16);
+      if (p.vx) p.climbAnim += dt;
+      if (p.st === 'roof' && !inside(p.b, p.x)) { p.st = 'air'; p.vy = 0; p.b = null; }
+      if (p.st === 'roof' && k.D) { p.st = 'climb'; p.y = p.b.top + 58; }
+      if (p.st === 'ground' && k.U) { const b = blds.find(b => inside(b, p.x)); if (b) { p.st = 'climb'; p.b = b; p.y -= 4; } else if (!p.ai) jump(p); }
+    } else if (p.st === 'climb') {
+      const b = p.b; if (!b || b.falling) { p.st = 'air'; p.b = null; }
+      else {
+        const dx = (k.R ? 1 : 0) - (k.L ? 1 : 0), dy = (k.D ? 1 : 0) - (k.U ? 1 : 0);
+        if (dx) p.face = dx; p.x += dx * climb * 0.8 * dt; p.y += dy * climb * dt; if (dx || dy) p.climbAnim += dt;
+        if (!inside(b, p.x)) { p.st = 'air'; p.vy = 0; p.b = null; }
+        else if (p.y - 50 < b.top) { p.y = b.top; p.st = 'roof'; }
+        else if (p.y >= GROUND) { p.y = GROUND; p.st = 'ground'; p.b = null; }
+      }
+    }
+    if (p.st === 'air') {
+      p.vy += 900 * dt; const oy = p.y; p.y += p.vy * dt; p.x = A.clamp(p.x + p.vx * dt * 0.6, 16, W - 16);
+      if (!p.ko) { const k2 = input(p); if (k2.L) p.x -= walk * 0.6 * dt; if (k2.R) p.x += walk * 0.6 * dt; }
+      if (p.vy > 0) {
+        const roof = blds.find(b => inside(b, p.x) && oy <= b.top && p.y >= b.top);
+        if (roof && !p.ko) { p.y = roof.top; p.st = 'roof'; p.b = roof; p.vy = 0; }
+        else if (p.y >= GROUND) { p.y = GROUND; p.vy = 0; p.st = 'ground'; if (!p.ko) { A.shake(3, 0.15); for (const e of foes) if (!e.dead && e.k === 'sold' && Math.abs(e.x - p.x) < 30) hitFoe(e, p); } }
+      }
+    }
+  }
+  // buildings sink and go
+  for (const b of blds) if (b.falling && !b.gone) {
+    b.sink += dt * (40 + b.sink * 1.2);
+    if (Math.random() < dt * 14) A.burst(b.x + Math.random() * b.w, GROUND - 4, { n: 3, color: '#b8b0a8', speed: 60, life: 0.9, size: 6, kind: 'smoke', gravity: -40 });
+    if (b.sink >= GROUND - b.top) b.gone = true;
+  }
+  if (derby) blds = blds.map(b => b.gone ? mkBuilding(b.x, b.cols, Math.min(10, b.rows + 1), Math.floor(Math.random() * 4)) : b);
+  // windows: soldiers lean out and shoot
+  if ((spawn.peek -= dt) <= 0) {
+    spawn.peek = Math.max(1, 3.4 - level * 0.25);
+    const bs = blds.filter(b => !b.falling && !b.gone), b = bs[Math.floor(Math.random() * bs.length)];
+    if (b) { const c = b.cells.filter(c => c.hp > 0 && !c.peek); const w = c[Math.floor(Math.random() * c.length)]; if (w) w.peek = 3; }
+  }
+  for (const b of blds) b.cells.forEach((c, n) => {
+    if (c.peek <= 0) return; c.peek -= dt;
+    if (c.peek < 1.6 && c.peek + dt >= 1.6) { const r = cellRect(b, n % b.cols, Math.floor(n / b.cols)), p = nearest(r.x + 11, r.y + 12); if (p && Math.hypot(p.x - r.x, p.y - r.y) < 280) fire(r.x + 11, r.y + 10, p, 170, 3); }
+  });
+  // the army
+  const lv = sto && !derby ? S.run.stage + 1 : level, hard = sto && S.run.hard ? 0.8 : 1;
+  if (!titan || titan.hp > 0) {
+    if ((spawn.sold -= dt) <= 0) { spawn.sold = Math.max(1.1, 3.6 - lv * 0.3) * hard; if (foes.filter(e => e.k === 'sold').length < (titan ? 2 : 2 + lv)) addFoe('sold'); }
+    if (lv >= 2 && (spawn.heli -= dt) <= 0) { spawn.heli = Math.max(4, 11 - lv) * hard; if (foes.filter(e => e.k === 'heli').length < (titan ? 1 : 1 + Math.floor(lv / 2))) addFoe('heli'); }
+    if (lv >= 4 && !titan && (spawn.tank -= dt) <= 0) { spawn.tank = Math.max(7, 16 - lv) * hard; if (foes.filter(e => e.k === 'tank').length < 2) addFoe('tank'); }
+  }
+  for (const e of foes) {
+    if (e.dead) continue; e.t += dt; e.hit -= dt;
+    const p = nearest(e.x, e.y); if (!p) continue;
+    if (e.k === 'sold') { const want = Math.abs(p.x - e.x) > 150 ? Math.sign(p.x - e.x) : Math.abs(p.x - e.x) < 70 ? -Math.sign(p.x - e.x) : 0; e.dir = want || e.dir; e.x += want * 46 * dt; if ((e.shoot -= dt) <= 0) { e.shoot = 2.6 + Math.random() * 1.6; fire(e.x, e.y - 16, p, 190, 2); A.tone(900, 0.03, 'square', 0.015); } }
+    if (e.k === 'tank') { const want = Math.abs(p.x - e.x) > 200 ? Math.sign(p.x - e.x) : 0; e.dir = Math.sign(p.x - e.x) || e.dir; e.x += want * 30 * dt; if ((e.shoot -= dt) <= 0) { e.shoot = 3; const d = p.x - e.x; shots.push({ x: e.x + e.dir * 20, y: e.y - 22, vx: d * 0.9, vy: -330 + Math.min(0, (p.y - GROUND)) * 0.9, g: 420, dmg: 8, c: '#ff8a3d', t: 4, big: true }); A.noise(0.12, 0.04); } }
+    if (e.k === 'heli') { const tx = p.x + (e.x < p.x ? -110 : 110), ty = Math.max(50, p.y - 70); e.x += A.clamp(tx - e.x, -1, 1) * 70 * dt; e.y += A.clamp(ty - e.y, -1, 1) * 50 * dt + Math.sin(e.t * 3) * 0.3; e.dir = Math.sign(p.x - e.x) || 1; if ((e.shoot -= dt) <= 0) { e.shoot = 1.4 + Math.random(); fire(e.x + e.dir * 14, e.y - 6, p, 220, 3); } }
+  }
+  foes = foes.filter(e => !e.dead && e.x > -60 && e.x < W + 60);
+  // Titan-X
+  if (titan) updTitan(dt);
+  // shots
+  for (const s of shots) {
+    s.vy += s.g * dt; s.x += s.vx * dt; s.y += s.vy * dt; s.t -= dt;
+    if (s.big && s.y >= GROUND) { s.t = 0; A.burst(s.x, GROUND, { n: 10, color: '#ff8a3d', speed: 120, life: 0.4 }); A.shake(2, 0.1); }
+    for (const p of live()) if (Math.abs(s.x - p.x) < 18 && s.y > p.y - 52 && s.y < p.y) { s.t = 0; hurt(p, s.dmg); }
+  }
+  shots = shots.filter(s => s.t > 0 && s.x > -20 && s.x < W + 20 && s.y < H);
+  for (const d of debris) { d.vy += 500 * dt; d.x += d.vx * dt; d.y += d.vy * dt; d.r += d.vr * dt; if (d.y > GROUND) { d.done = true; A.burst(d.x, GROUND, { n: 14, colors: ['#ff8a3d', '#555', '#ffd23d'], speed: 150, life: 0.5 }); A.shake(4, 0.2); } }
+  debris = debris.filter(d => !d.done);
+  // cleared?
+  if (!derby && !titan && blds.every(b => b.gone)) cityClear(); // Titan-X's yard clears when it falls (hitTitan)
+}
+function updTitan(dt) {
+  const t = titan; t.hit -= dt;
+  if (t.dead) { t.dead += dt; return; }
+  const p = nearest(t.x, GROUND - 100); if (!p) return;
+  const goal = A.clamp(p.x + 46, 318, 570); if (Math.abs(goal - t.x) > 4) { t.dir = Math.sign(goal - t.x); t.x += t.dir * 26 * dt; t.step += dt; } // it strides after you, so climbing a tower brings its head in reach
+  if ((t.rocketT -= dt) <= 0) { t.rocketT = (S && S.run && S.run.hard ? 1.8 : 2.6); fire(t.x - 30, GROUND - 170, p, 160, 7, 0, '#ff4f6d'); fire(t.x - 30, GROUND - 150, p, 130, 7, 0, '#ff4f6d'); A.tone(220, 0.15, 'sawtooth', 0.04, 0, 600); }
+  // up by its head for long, and it swats you off the tower: the arm goes up first, so back off
+  t.swatT -= dt;
+  if (!t.swing && t.swatT <= 0 && live().some(q => Math.abs(q.x - t.x) < 80 && q.y < GROUND - 60)) { t.swing = 0.75; A.tone(260, 0.5, 'sawtooth', 0.03, 0, 120); }
+  if (t.swing) { t.swing -= dt; if (t.swing <= 0) { t.swing = 0; t.swatT = 3 + Math.random(); A.shake(7, 0.3); A.noise(0.2, 0.05); for (const q of live()) if (Math.abs(q.x - t.x) < 84 && q.y < GROUND - 40) { hurt(q, 12); q.st = 'air'; q.b = null; q.vy = -160; q.vx = -240; } } }
+  if (!t.laser && (t.laserT -= dt) <= 0) { t.laser = { y: A.clamp(p.y - 30, 90, GROUND - 20), warn: 0.9, on: 0.5 }; A.tone(1400, 0.4, 'sine', 0.03, 0, 900); }
+  if (t.laser) {
+    const L = t.laser;
+    if (L.warn > 0) L.warn -= dt;
+    else { L.on -= dt; for (const q of live()) if (q.x < t.x && Math.abs(q.y - 30 - L.y) < 26) hurt(q, 15); if (L.on <= 0) { t.laser = null; t.laserT = 5 + Math.random() * 2; } }
+  }
+}
+
+/* ---------- drawing ---------- */
+function drawBuilding(b) {
+  if (b.gone) return;
+  ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, GROUND); ctx.clip(); ctx.translate(Math.sin(b.sink) * (b.falling ? 2 : 0), b.sink);
+  const x = b.x, y = b.top, w = b.w, h = GROUND - b.top;
+  ctx.fillStyle = OUT; ctx.fillRect(x - 2, y - 2, w + 4, h + 4);
+  ctx.fillStyle = b.c; ctx.fillRect(x, y, w, h); ctx.fillStyle = shade(b.c, 0.25); ctx.fillRect(x, y, w, 4); ctx.fillStyle = shade(b.c, -0.25); ctx.fillRect(x + w - 4, y, 4, h);
+  // roof bits
+  ctx.fillStyle = OUT; ctx.fillRect(x - 4, y - 4, w + 8, 6); ctx.fillStyle = shade(b.c, -0.4); ctx.fillRect(x - 3, y - 3, w + 6, 4);
+  if (b.roof === 0) paint(ctx, [[x + w - 26, y - 22, 16, 14, '#8a6a4a'], [x + w - 24, y - 8, 2, 6, '#5a4a3a'], [x + w - 14, y - 8, 2, 6, '#5a4a3a']]);
+  if (b.roof === 1) { ctx.fillStyle = OUT; ctx.fillRect(x + 10, y - 26, 3, 24); ctx.fillStyle = '#ff4f6d'; ctx.fillRect(x + 9, y - 30, 5, 5); }
+  if (b.roof === 2) paint(ctx, [[x + 8, y - 12, 18, 10, '#a8b0c0']]);
+  ctx.translate(0, -b.sink);
+  b.cells.forEach((c, n) => {
+    const r = cellRect(b, n % b.cols, Math.floor(n / b.cols)), wx = r.x + 4, wy = r.y + 4, ww = r.w - 8, wh = r.h - 8;
+    if (c.hp >= 2) { ctx.fillStyle = shade(b.c, -0.45); ctx.fillRect(wx - 1, wy - 1, ww + 2, wh + 2); ctx.fillStyle = (n * 7 + level) % 3 ? city.win : shade(city.win, -0.55); ctx.fillRect(wx, wy, ww, wh); ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.fillRect(wx + 2, wy + 2, 3, wh - 4); }
+    else if (c.hp === 1) { ctx.fillStyle = shade(b.c, -0.45); ctx.fillRect(wx - 1, wy - 1, ww + 2, wh + 2); ctx.fillStyle = shade(city.win, -0.3); ctx.fillRect(wx, wy, ww, wh); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(wx + 2, wy + 3); ctx.lineTo(wx + ww / 2, wy + wh / 2); ctx.lineTo(wx + ww - 2, wy + 2); ctx.moveTo(wx + ww / 2, wy + wh / 2); ctx.lineTo(wx + 4, wy + wh - 1); ctx.stroke(); }
+    else { ctx.fillStyle = '#120a14'; ctx.fillRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2); ctx.fillStyle = shade(b.c, -0.2); ctx.fillRect(r.x + 1, r.y + 1, 5, 3); ctx.fillRect(r.x + r.w - 7, r.y + r.h - 5, 6, 4);
+      if (c.item === 'snack') { paint(ctx, [[r.x + 6, r.y + 8, 10, 4, '#d8a050'], [r.x + 6, r.y + 12, 10, 3, '#5a3a1a'], [r.x + 6, r.y + 15, 10, 3, '#d8a050']]); ctx.fillStyle = '#3dff8f'; ctx.fillRect(r.x + 6, r.y + 12, 10, 1); }
+      if (c.item === 'gem') { ctx.fillStyle = OUT; ctx.beginPath(); ctx.moveTo(r.x + 11, r.y + 4); ctx.lineTo(r.x + 18, r.y + 12); ctx.lineTo(r.x + 11, r.y + 20); ctx.lineTo(r.x + 4, r.y + 12); ctx.fill(); ctx.fillStyle = '#5ee7ff'; ctx.beginPath(); ctx.moveTo(r.x + 11, r.y + 6); ctx.lineTo(r.x + 16, r.y + 12); ctx.lineTo(r.x + 11, r.y + 18); ctx.lineTo(r.x + 6, r.y + 12); ctx.fill(); ctx.fillStyle = '#fff'; ctx.fillRect(r.x + 9, r.y + 9, 2, 2); }
+    }
+    if (c.peek > 0 && c.hp > 0) { const lean = Math.min(1, (3 - c.peek) * 4, c.peek * 4); paint(ctx, [[r.x + 7, r.y + 16 - lean * 8, 8, 8, '#e8b890'], [r.x + 6, r.y + 13 - lean * 8, 10, 4, '#5a6a3a']]); ctx.fillStyle = OUT; ctx.fillRect(r.x + 12, r.y + 18 - lean * 8, 2, 2); if (c.peek < 1.8 && c.peek > 1.3) { ctx.fillStyle = '#ffd23d'; ctx.fillRect(r.x + 15, r.y + 18 - lean * 8, 4, 2); } }
+  });
+  ctx.restore();
+}
+function drawMon(p, t) {
+  const m = p.m, x = Math.round(p.x), y = Math.round(p.y), c = p.hurtT > 0 && Math.floor(t / 60) % 2 ? '#ffffff' : m.c;
+  const climbing = p.st === 'climb', step = Math.sin(p.climbAnim * 12), punchOut = p.punchT > 0 ? 1 : 0;
+  ctx.save(); ctx.translate(x, y); if (p.ko) { ctx.rotate(-p.face * 0.5); ctx.globalAlpha = 0.8; } ctx.scale(p.face, 1);
+  ctx.fillStyle = 'rgba(0,0,0,.25)'; if (p.st === 'ground') { ctx.beginPath(); ctx.ellipse(0, 1, 22, 4, 0, 0, 6.29); ctx.fill(); }
+  const armY = climbing ? -48 + step * 4 : -34, armY2 = climbing ? -48 - step * 4 : -32, reach = punchOut ? 16 : 0;
+  if (p.kind === 'claw') {
+    paint(ctx, [[-16, -10, 6, 10, shade(c, -0.2)], [-4, -10, 6, 10, shade(c, -0.2)], [8, -10, 6, 10, shade(c, -0.2)], [-22, -34, 40, 26, c], [-6, -50, 4, 16, c], [6, -50, 4, 16, c], [-10, -40, 4, 6, c]]);
+    paint(ctx, [[-9, -56, 8, 8, '#fff'], [5, -56, 8, 8, '#fff']]); ctx.fillStyle = OUT; ctx.fillRect(-5 + (p.face > 0 ? 2 : 0), -53, 3, 4); ctx.fillRect(9, -53, 3, 4);
+    paint(ctx, [[-30, armY2, 12, 10, shade(c, -0.15)], [14 + reach, armY - 4, 16, 14, c], [26 + reach, armY - 8, 8, 6, shade(c, 0.2)]]);
+    ctx.fillStyle = OUT; ctx.fillRect(-6, -22, 14, 2);
+  } else if (p.kind === 'mole') {
+    paint(ctx, [[-14, -10, 10, 10, '#5a3a20'], [4, -10, 10, 10, '#5a3a20'], [-18, -46, 34, 38, c], [8, -36, 14, 10, '#ff9ab0']]);
+    ctx.fillStyle = '#e8c8a0'; ctx.fillRect(-12, -26, 20, 14);
+    paint(ctx, [[-4, -42, 6, 5, '#1a1418'], [4, -42, 6, 5, '#1a1418']]); ctx.fillStyle = '#fff'; ctx.fillRect(-2, -42, 2, 2); ctx.fillRect(6, -42, 2, 2);
+    paint(ctx, [[-26, armY2, 12, 12, '#e8c8a0'], [12 + reach, armY - 2, 14, 12, '#e8c8a0']]); ctx.fillStyle = OUT; for (let k = 0; k < 3; k++) ctx.fillRect(25 + reach, armY + k * 4 - 1, 4, 2);
+  } else {
+    paint(ctx, [[-14, -12, 10, 12, '#5a6a7a'], [4, -12, 10, 12, '#5a6a7a'], [-18, -44, 36, 34, c], [-12, -58, 26, 14, shade(c, 0.1)], [-1, -66, 3, 8, '#5a6a7a']]);
+    ctx.fillStyle = '#ff4f6d'; ctx.fillRect(-2, -70, 5, 4);
+    ctx.fillStyle = OUT; ctx.fillRect(-8, -54, 20, 6); ctx.fillStyle = '#5ee7ff'; ctx.fillRect(-6, -53, 16, 4); ctx.fillStyle = '#fff'; ctx.fillRect(4, -53, 4, 2);
+    ctx.fillStyle = shade(c, -0.3); ctx.fillRect(-12, -32, 24, 3); ctx.fillRect(-12, -24, 24, 3);
+    paint(ctx, [[-28, armY2, 12, 12, '#5a6a7a'], [14, armY, 6 + reach, 6, '#8a9aaa'], [18 + reach, armY - 4, 12, 14, shade(c, -0.1)]]);
+  }
+  if (punchOut) { ctx.fillStyle = 'rgba(255,255,255,.8)'; ctx.fillRect(34 + reach, armY - 6, 3, 3); ctx.fillRect(36 + reach, armY + 4, 3, 3); }
+  ctx.restore();
+  if (p.ko) { ctx.fillStyle = '#ffd23d'; ctx.font = '10px Silkscreen, monospace'; ctx.textAlign = 'center'; for (let k = 0; k < 3; k++) ctx.fillText('★', x + Math.cos(t / 200 + k * 2.1) * 16, y - 70 + Math.sin(t / 200 + k * 2.1) * 4); }
+}
+function drawFoe(e, t) {
+  const x = Math.round(e.x), y = Math.round(e.y), f = e.dir, flash = e.hit > 0;
+  ctx.save(); ctx.translate(x, y); ctx.scale(f, 1);
+  if (e.k === 'sold') {
+    const s = Math.floor(e.t * 8) % 2;
+    paint(ctx, [[-4, -8, 3, 8 - s, '#3a4a2a'], [1, -8, 3, 7 + s, '#3a4a2a'], [-5, -16, 10, 9, flash ? '#fff' : '#5a6a3a'], [-4, -22, 8, 6, '#e8b890'], [-5, -24, 10, 3, '#4a5a2a'], [3, -14, 9, 2, '#2a2a32']]);
+  } else if (e.k === 'tank') {
+    paint(ctx, [[-22, -12, 44, 12, '#3a3a2a'], [-20, -20, 40, 10, flash ? '#fff' : '#6a7a4a'], [-10, -28, 20, 9, flash ? '#fff' : '#7a8a5a'], [8, -26, 20, 4, '#4a5a3a']]);
+    ctx.fillStyle = '#1a1a14'; for (let k = -18; k < 22; k += 8) { ctx.beginPath(); ctx.arc(k + ((e.t * 20) % 8) * 0, -6, 3, 0, 6.29); ctx.fill(); }
+  } else {
+    const rot = (t / 30) % 2 ? 1 : -1;
+    paint(ctx, [[-14, -14, 24, 12, flash ? '#fff' : '#4a6a8a'], [-30, -12, 18, 4, '#3a5a7a'], [-32, -18, 4, 8, '#3a5a7a'], [-6, -2, 16, 2, '#2a2a32']]);
+    ctx.fillStyle = '#bfe8ff'; ctx.fillRect(2, -12, 7, 6);
+    ctx.fillStyle = OUT; ctx.fillRect(-20 + rot * 6, -18, 36, 2); ctx.fillRect(-2, -18, 2, 4);
+  }
+  ctx.restore();
+}
+function drawTitan(t) {
+  const T = titan, x = Math.round(T.x), y = GROUND + (T.dead ? Math.min(300, T.dead * 60) : 0), c = T.hit > 0 ? '#fff' : '#8a96b0', lg = Math.sin(T.step * 3) * 4;
+  ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, GROUND + 2); ctx.clip(); ctx.translate(x, y); if (T.dead) ctx.rotate(Math.min(0.5, T.dead * 0.2));
+  paint(ctx, [[-30, -60 + lg, 22, 60 - lg, '#5a6278'], [8, -60 - lg, 22, 60 + lg, '#5a6278'], [-38, -196, 76, 140, c], [-26, -186, 52, 40, shade(c, -0.25)], [-60, -186, 22, 90, '#6a7290'], [38, -186, 22, 90, '#6a7290'], [-62, -100, 26, 22, '#4a5068'], [36, -100, 26, 22, '#4a5068'], [-24, -244, 48, 48, c]]);
+  ctx.fillStyle = OUT; ctx.fillRect(-18, -230, 36, 12); ctx.fillStyle = T.laser && T.laser.warn <= 0 ? '#fff' : '#ff4f6d'; ctx.fillRect(-16, -228, 32, 8);
+  ctx.fillStyle = '#ffd23d'; ctx.fillRect(-10, -176, 20, 20); ctx.fillStyle = OUT; ctx.font = '12px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('X', 0, -161);
+  ctx.fillStyle = '#ff4f6d'; ctx.fillRect(-4, -256, 8, 12);
+  if (T.swing > 0) { paint(ctx, [[-66, -300, 24, 110, '#6a7290'], [-72, -320, 34, 24, '#4a5068']]); if (Math.floor(t / 90) % 2) { ctx.fillStyle = '#ffd23d'; ctx.font = '22px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('!', -55, -326); } }
+  ctx.restore();
+  if (T.laser && !T.dead) { const L = T.laser; if (L.warn > 0) { ctx.strokeStyle = `rgba(255,79,109,${0.3 + 0.4 * Math.sin(t / 40)})`; ctx.setLineDash([8, 6]); ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, L.y); ctx.lineTo(T.x - 20, L.y); ctx.stroke(); ctx.setLineDash([]); } else { ctx.fillStyle = 'rgba(255,79,109,.5)'; ctx.fillRect(0, L.y - 14, T.x - 20, 28); ctx.fillStyle = '#fff'; ctx.fillRect(0, L.y - 4, T.x - 20, 8); } }
+}
+function render(t) {
+  if (bg) ctx.drawImage(bg, 0, 0); else { ctx.fillStyle = '#1a1030'; ctx.fillRect(0, 0, W, H); }
+  for (const b of blds) drawBuilding(b);
+  if (titan) drawTitan(t);
+  for (const e of foes) if (e.k !== 'heli') drawFoe(e, t);
+  for (const p of players) if (state !== 'title') drawMon(p, t);
+  for (const e of foes) if (e.k === 'heli') drawFoe(e, t);
+  for (const d of debris) { ctx.save(); ctx.translate(d.x, d.y); ctx.rotate(d.r); paint(ctx, [[-12, -5, 24, 10, '#4a6a8a']]); ctx.restore(); }
+  for (const s of shots) { ctx.fillStyle = OUT; ctx.fillRect(s.x - (s.big ? 4 : 3), s.y - (s.big ? 4 : 3), s.big ? 8 : 6, s.big ? 8 : 6); ctx.fillStyle = s.c; ctx.fillRect(s.x - (s.big ? 3 : 2), s.y - (s.big ? 3 : 2), s.big ? 6 : 4, s.big ? 6 : 4); }
+  if (state === 'title') return;
+  // the HUD
+  ctx.fillStyle = 'rgba(10,6,18,.72)'; ctx.fillRect(0, 0, W, 26);
+  ctx.font = '10px Silkscreen, monospace'; ctx.textBaseline = 'middle';
+  players.forEach((p, k) => {
+    const x0 = k ? W - 178 : 8; ctx.textAlign = 'left'; ctx.fillStyle = p.m.c; ctx.fillText(p.m.name, x0, 13); if (p.ai && k) { ctx.fillStyle = '#a39bc4'; ctx.fillText('CPU', x0 + 172, 13); }
+    const bx = x0 + 78, bw = 90; ctx.fillStyle = '#2a2240'; ctx.fillRect(bx, 8, bw, 10); ctx.fillStyle = p.hp / p.max < 0.3 ? '#ff4f6d' : '#3dff8f'; ctx.fillRect(bx, 8, bw * p.hp / p.max, 10); ctx.strokeStyle = OUT; ctx.strokeRect(bx, 8, bw, 10);
+  });
+  ctx.textAlign = 'center'; ctx.fillStyle = '#fff';
+  ctx.fillText(derby ? `TIME ${Math.ceil(derbyT)} · ${smashed} DOWN` : titan ? `TITAN-X` : `${city.name} · ${blds.filter(b => !b.falling && !b.gone).length} LEFT`, W / 2, 13);
+  if (titan && titan.hp > 0) { ctx.fillStyle = '#2a2240'; ctx.fillRect(W / 2 - 80, 30, 160, 8); ctx.fillStyle = '#ff4f6d'; ctx.fillRect(W / 2 - 80, 30, 160 * titan.hp / titan.max, 8); }
+  if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '24px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = OUT; ctx.fillText(msg, W / 2 + 2, H / 2 - 38); ctx.fillStyle = '#ff5a4a'; ctx.fillText(msg, W / 2, H / 2 - 40); ctx.globalAlpha = 1; }
+}
+if (/[?&]debug/.test(location.search)) window.__smash = () => ({ state, players: players.map(p => ({ st: p.st, x: Math.round(p.x), y: Math.round(p.y), hp: Math.round(p.hp), face: p.face, intent: p.ai ? p.intent : brain(p, 0), t: (botMem.get(p) || {}).t ? [(botMem.get(p)).t.b.x, (botMem.get(p)).t.n, (botMem.get(p)).t.b.cols] : null, fy: Math.round(fist(p).y) })), blds: blds.map(b => `${b.x}:${b.broken}/${b.cells.length}${b.falling ? 'F' : ''}`), foes: foes.length, titan: titan && [Math.round(titan.x), titan.hp] }); // for testing
+if (/[?&]debug/.test(location.search)) window.__smashStory = (stage, mode = 'story', ai = true) => { S.run = { stage, hard: false, mode }; A.hideOverlay(); storyGame(S.run); players[0].ai = ai; players[0].intent = {}; return titan && titan.hp; };
+A.loop(dt => { if (state === 'between') { if (msgT > 0) msgT -= dt; return; } update(dt); }, render);
+
+/*
+ * The brain, for the attract demo and the CPU friend: punch whatever's in reach, eat when hungry, otherwise climb the
+ * nearest standing building and work through its windows from the bottom up.
+ */
+function brain(p, dt) {
+  const o = {}; if (p.ko || state !== 'play') return o;
+  const mem = botMem.get(p) || { stuck: 0, lx: 0, ly: 0 }; botMem.set(p, mem);
+  const f = fist(p), hit = () => { if (p.cool <= 0) o.P = true; };
+  const near = foes.find(e => !e.dead && Math.abs(e.y - e.h / 2 - f.y) < 40 && Math.abs(e.x - p.x) < 50);
+  if (near) { if (Math.sign(near.x - p.x) !== p.face) o[near.x < p.x ? 'L' : 'R'] = true; else hit(); return o; }
+  if (titan && titan.hp > 0) {
+    const tb = blds.reduce((a, b) => !b.falling && !b.gone && (!a || b.x > a.x) ? b : a, null);
+    if (!tb) { if (Math.abs(titan.x - p.x) > 30) o[titan.x < p.x ? 'L' : 'R'] = true; else hit(); return o; }
+    if (p.st === 'roof' && p.b === tb) { if (p.x < tb.x + tb.w - 12) o.R = true; else if (Math.abs(f.x - titan.x) < 32) hit(); return o; }
+    if (p.st === 'roof') o[tb.x > p.x ? 'R' : 'L'] = true; else if (p.st !== 'climb' && !inside(tb, p.x)) o[tb.x + tb.w / 2 < p.x ? 'L' : 'R'] = true; else o.U = true;
+    return o;
+  }
+  const wanted = (b, c) => !b.falling && !b.gone && (c.hp > 0 || (c.item && (c.item !== 'snack' || p.hp < p.max - 15)));
+  let target = null, best = 1e9;
+  if (mem.t && wanted(mem.t.b, mem.t.b.cells[mem.t.n])) target = { b: mem.t.b, r: cellRect(mem.t.b, mem.t.n % mem.t.b.cols, Math.floor(mem.t.n / mem.t.b.cols)) }; // stick with a window until it's done
+  else for (const b of blds) { if (b.falling || b.gone) continue; b.cells.forEach((c, n) => { if (!wanted(b, c)) return; const r = cellRect(b, n % b.cols, Math.floor(n / b.cols)), d = Math.abs(r.x + 11 - p.x) + Math.abs(r.y + 12 - f.y) * 0.6 + (p.b === b ? 0 : 200) - (c.item ? 120 : 0) + Math.floor(n / b.cols) * 6; if (d < best) { best = d; target = { b, r }; mem.t = { b, n }; } }); }
+  if (!target) return o;
+  const { b, r } = target, cx = r.x + 11, cy = r.y + 12, low = cy > GROUND - 30; // bottom-row windows are punched from the street
+  const aim = climbing => { // stand beside the window (climbing: on whichever side keeps you on the building), face it, punch
+    const okL = !climbing || cx - 22 > b.x + 8, okR = !climbing || cx + 22 < b.x + b.w - 8, side = !okL ? -1 : !okR ? 1 : cx >= p.x ? 1 : -1, wantX = cx - side * 22;
+    if (Math.abs(p.x - wantX) > (p.face === side ? 9 : 2)) o[wantX < p.x ? 'L' : 'R'] = true; // turning round steps a pixel back, so walk right in first
+    else if (p.face !== side) o[side < 0 ? 'L' : 'R'] = true;
+    else if (Math.abs(f.y - cy) < 12) hit();
+  };
+  if (p.st === 'air') return o;
+  if (p.st === 'ground') { if (low) aim(false); else if (!inside(b, p.x)) o[b.x + b.w / 2 < p.x ? 'L' : 'R'] = true; else o.U = true; }
+  else if (p.st === 'roof') { if (p.b !== b) o[b.x + b.w / 2 < p.x ? 'L' : 'R'] = true; else o.D = true; }
+  else if (p.b !== b || low) o.D = true;
+  else { if (f.y < cy - 8) o.D = true; else if (f.y > cy + 8) o.U = true; aim(true); }
+  mem.stuck = Math.hypot(p.x - mem.lx, p.y - mem.ly) < 0.3 && !o.P ? mem.stuck + dt : 0; mem.lx = p.x; mem.ly = p.y;
+  if (mem.stuck > 1.2) { mem.stuck = 0; o.J = true; }
+  return o;
+}
+// the CPU friend (a story upgrade) acts on its brain directly
+setInterval(() => { for (const p of players) if (p.ai && state === 'play') { if (p.intent.P) punch(p); if (p.intent.J) jump(p); } }, 60);
+
+/* Attract demo: the same brain, pressing the 1-player keys. */
+A.attract({
+  start: () => newGame(false, 'claw'),
+  stop: () => { state = 'title'; foes = []; shots = []; players = []; if (S) S.run = null; derby = false; titan = null; },
+  bot: dt => {
+    const p = players[0]; if (!p || state !== 'play') return [];
+    const o = brain(p, dt), keys = [];
+    if (o.L) keys.push('ArrowLeft'); if (o.R) keys.push('ArrowRight'); if (o.U) keys.push('ArrowUp'); if (o.D) keys.push('ArrowDown');
+    if (o.P) keys.push('!Space'); if (o.J) keys.push('!KeyK');
+    return keys;
+  }
+});
+
+/* ---------- story: The Big Stomp ---------- */
+function storyGame(run) {
+  two = false; derby = run.mode === 'derby'; smashed = 0; derbyT = 90; level = derby ? 3 : run.stage + 1; score = 0; swats = 0; A.setScore(0); lost = false;
+  const kind = pick(); players = [mkMon(0, kind)];
+  if (up('buddy')) players.push(Object.assign(mkMon(1, kind === 'bolt' ? 'mole' : 'bolt', true), { max: 90, hp: 90 }));
+  newCity(); state = 'play';
+}
+S = Story({
+  title: 'THE BIG STOMP', coin: 'SNACKS', coinColor: '#ff9a3d',
+  stages: [
+    { name: 'Harbor Town', sub: 'A sleepy fishing town, three buildings and a very surprised harbour patrol.' },
+    { name: 'Sunnyvale', sub: 'Tidy streets and the first helicopters. They buzz. Swat them.' },
+    { name: 'Neon Downtown', sub: 'Tall towers, bright signs, and a soldier in every other window.' },
+    { name: 'Dusty Gulch', sub: 'Dr. Gearwright tests her tanks out here. Three punches each.' },
+    { name: 'Snowpeak City', sub: 'Everything at once, in the snow. Eat well: the factory is next.' },
+    { name: 'Gearwright Tower', sub: 'Titan-X guards the factory. Climb a tower and punch it in the head.' }],
+  upgrades: [
+    { id: 'hide', name: 'Thick Hide', desc: '25 more health a level.', cost: [60, 140] },
+    { id: 'fist', name: 'Mega Punch', desc: 'Every punch hits one harder.', cost: [120] },
+    { id: 'climb', name: 'Quick Feet', desc: 'Walk and climb 25% faster a level.', cost: [50, 110] },
+    { id: 'belly', name: 'Big Appetite', desc: 'Snacks heal twice as much.', cost: [70] },
+    { id: 'buddy', name: 'Call a Friend', desc: 'A CPU monster stomps along with you.', cost: [160] }],
+  mode: { id: 'derby', name: 'DEMOLITION DERBY', desc: 'Ninety seconds. The buildings keep coming. How many can you flatten?' },
+  intro: [
+    'For a thousand years, three giant monsters napped under Monster Island.',
+    'Then Dr. Gloria Gearwright paved the whole island for her robot factory.',
+    'Clawdia, Burrowbo and Rustbolt wake up very cranky, and very hungry.',
+    'Next stop: every city with a Gearwright sign on it. Time to stomp.'],
+  ending: [
+    'Titan-X wobbles, sparks, and topples into the harbour with an enormous splash.',
+    'Dr. Gearwright hands back Monster Island, and promises to build somewhere else.',
+    'Three full, happy monsters stomp home for a very long nap.',
+    'Somewhere, a construction crew quietly starts rebuilding. Again.'],
+  cast: [['THE MONSTERS', 'CLAWDIA · BURROWBO · RUSTBOLT'], ['THE INVENTOR', 'DR. GLORIA GEARWRIGHT'], ['THE MACHINE', 'TITAN-X']],
+  play: storyGame,
+  stop: () => { state = 'title'; foes = []; shots = []; players = []; derby = false; titan = null; }
+});
+city = CITIES[0]; drawBg(); level = 1; blds = [mkBuilding(60, 4, 6, 0), mkBuilding(250, 3, 8, 1), mkBuilding(430, 5, 5, 2)];
+// pick your monster on the title screen (it's remembered, and story mode uses it too)
+const monChips = () => `<span class="mons">${Object.entries(MON).map(([k, m]) => `<button type="button" data-mon="${k}" style="--mc:${m.c}" class="${pick() === k ? 'on' : ''}">${m.name}</button>`).join('')}</span>`;
+document.getElementById('ov').addEventListener('click', e => {
+  const b = e.target.closest('[data-mon]'); if (!b) return; e.stopPropagation();
+  A.store.set('arcade:skyline:mon', b.dataset.mon); A.sfx('select');
+  document.querySelectorAll('.mons [data-mon]').forEach(x => x.classList.toggle('on', x === b));
+}, true);
+S.title({ title: 'SKYLINE SMASH', sub: 'You\'re a giant monster. Climb the buildings, punch out the windows until they come down, and swat the army. Eat the snacks you find: smashing is hungry work.' + monChips(), btn: '1 player', scores: true, onGo: () => newGame(false), alt2: { btn: '2 players', onGo: () => newGame(true) } });
+})();
+</script>
+</body>
+</html>

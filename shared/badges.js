@@ -152,6 +152,10 @@ window.BADGES = {
     { id: 'stage5', name: 'Demolition Expert', desc: 'Clear adventure stage 5' },
     { id: 'champ', name: 'Last Squad Standing', desc: 'Win a battle match' },
     { id: 'blast', name: 'Big Bang', desc: 'Power your blast up to six' }],
+  'skyline-smash': [
+    { id: 'flatten', name: 'City Flattener', desc: 'Flatten every building in a city' },
+    { id: 'city5', name: 'World Tour', desc: 'Flatten city 5' },
+    { id: 'swatter', name: 'Fly Swatter', desc: 'Swat 10 helicopters in one game' }],
   'paper-route': [
     { id: 'perfect', name: 'Perfect Delivery', desc: 'Deliver to every subscriber in a day' },
     { id: 'mailbox', name: 'Sharpshooter', desc: 'Land eight papers in mailboxes in one day' },
@@ -211,7 +215,7 @@ window.WEEKLY = (() => {
     'scaffold-scramble', 'back-alley-brawl', 'swarm-strike', 'highrise-handyman', 'volley-duel', 'turbo-tour', 'raptor-ridge', 'marsh-marksman',
     'pixel-peaks', 'pop-lagoon', 'neon-steps', 'twin-blast', 'stackdown', 'hedge-hop', 'wing-duel', 'neon-noodle', 'sky-shield', 'mole-patrol',
     'star-siege', 'nitro-lane', 'cube-hopper', 'blast-brigade', 'dungeon-delve', 'lucky-line', 'rampart-rush', 'sky-squadron', 'street-sweepers', 'gem-cascade', 'knockout-kings',
-    'tank-tactics', 'bomb-squad', 'paper-route', 'soda-slinger', 'pipe-panic', 'boulder-bash', 'ten-pin-blitz', 'field-day', 'comet-courier', 'fence-line', 'crate-crew', 'hilo-hustle'];
+    'tank-tactics', 'bomb-squad', 'paper-route', 'soda-slinger', 'pipe-panic', 'boulder-bash', 'ten-pin-blitz', 'field-day', 'comet-courier', 'fence-line', 'crate-crew', 'hilo-hustle', 'skyline-smash'];
   const DAY = 864e5, EPOCH = Date.UTC(2024, 0, 1), FIRST = 145; // EPOCH is a Monday; week 145 is the one starting 2026-10-12
   const index = (now = Date.now()) => Math.floor((now - EPOCH) / (7 * DAY));
   const start = (now = Date.now()) => EPOCH + index(now) * 7 * DAY;
@@ -307,7 +311,7 @@ window.MISSIONS = (() => {
     'pixel-peaks': 3000, 'pop-lagoon': 3000, 'neon-steps': 25000,
     'blast-brigade': 3000, 'dungeon-delve': 800, 'lucky-line': 300, 'rampart-rush': 2500,
     'sky-squadron': 12000, 'street-sweepers': 2500, 'gem-cascade': 3500, 'knockout-kings': 4000,
-    'tank-tactics': 2000, 'bomb-squad': 1000, 'paper-route': 5000, 'soda-slinger': 6000, 'pipe-panic': 1500, 'boulder-bash': 3000, 'ten-pin-blitz': 120, 'field-day': 4000, 'comet-courier': 6000, 'fence-line': 6000, 'crate-crew': 8000, 'hilo-hustle': 12000
+    'tank-tactics': 2000, 'bomb-squad': 1000, 'paper-route': 5000, 'soda-slinger': 6000, 'pipe-panic': 1500, 'boulder-bash': 3000, 'ten-pin-blitz': 120, 'field-day': 4000, 'comet-courier': 6000, 'fence-line': 6000, 'crate-crew': 8000, 'hilo-hustle': 12000, 'skyline-smash': 15000
   };
   const AREAS = { RACEWAY: ['turbo-tour', 'nitro-lane', 'light-trail'], 'SHOOTING GALLERY': ['raptor-ridge', 'marsh-marksman'] };
   const DAILY = ['stackdown', 'wallbuster', 'twin-blast', 'mole-patrol', 'wing-duel', 'gem-cascade', 'pipe-panic', 'hilo-hustle'];

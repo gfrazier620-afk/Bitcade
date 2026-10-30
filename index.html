@@ -783,7 +783,7 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
     <main class="floor" id="floor"></main>
   </section>
   <footer>
-    <p class="tag">FORTY-EIGHT CLASSIC-STYLE GAMES · NO QUARTERS REQUIRED</p>
+    <p class="tag">FORTY-NINE CLASSIC-STYLE GAMES · NO QUARTERS REQUIRED</p>
     <p class="privacy">Bitcade logs anonymous play activity (which games are played, for how long, and scores) to help improve the games. Turn it off in ⚙ Settings.</p>
     <p>Works with a keyboard or touch, and most games with a game controller. High scores are saved in this browser.</p>
     <button class="install" id="install" hidden>Install Bitcade · plays offline</button>
@@ -948,12 +948,15 @@ const GAMES = [
   { slug: 'hilo-hustle', daily: true, genre: 'puzzle strategy', added: '2026-10-27', name: 'Hi-Lo Hustle', kind: 'Card chain solitaire', c: '#3dff8f', blurb: 'One up, one down. Chain the cards and clear the table.',
     px: ['............', '.WWWW..WWWW.', '.WR.W..WK.W.', '.WRRW..WKKW.', '.W.RW..W.KW.', '.WWWW..WWWW.', '............', 'GGGGGGGGGGGG'],
     px2: ['............', '.WWWW...WWWW', '.WR.W...WK.W', '.WRRW...WKKW', '.W.RW...W.KW', '.WWWW...WWWW', '............', 'GGGGGGGGGGGG'] },
+  { slug: 'skyline-smash', genre: 'action 2p', added: '2026-10-29', name: 'Skyline Smash', kind: 'Monster smash · 2P', c: '#ff5a4a', blurb: 'Climb the towers, punch them down, swat the helicopters.',
+    px: ['.AAA........', '.AYA.....R.R', '.AAA....RRRR', '.AYA...RWRWR', '.AAA..RRRRRR', '.AYA...RRRR.', '.AAA...R..R.', 'GGGGGGGGGGGG'],
+    px2: ['.AAA........', '.AY......R.R', '.AA.R..RRRRR', '.A..RRRRWRWR', '.AA...RRRRRR', '.A.A...RRRR.', '.AAA...R..R.', 'GGGGGGGGGGGG'] },
   { slug: 'blip-sports', genre: 'sports', added: '2026-10-11', name: 'Blip Sports', kind: 'LED football + baseball', c: '#ff3a22', blurb: 'The 1978 handheld feel. Pick your team, beat the CPU.', label: 'WINS',
     px: ['............', '.RR..RR..RR.', '............', '.RR..WW..RR.', '............', '.RR..RR..RR.', '............', '............'],
     px2: ['............', '.RR..RR..RR.', '............', '.RR..RWW.RR.', '............', '.RR..RR..RR.', '............', '............'] }
 ];
 // the nine cabinets with a story mode (shared/story.js): a ★ STORY tag on their tiles
-const STORY_GAMES = ['dungeon-delve', 'blast-brigade', 'pixel-peaks', 'turbo-tour', 'sky-squadron', 'knockout-kings', 'bomb-squad', 'tank-tactics', 'field-day'];
+const STORY_GAMES = ['dungeon-delve', 'blast-brigade', 'pixel-peaks', 'turbo-tour', 'sky-squadron', 'knockout-kings', 'bomb-squad', 'tank-tactics', 'field-day', 'skyline-smash'];
 const PAL = { G: '#3dff8f', W: '#ffffff', P: '#ff4fa3', R: '#ff4f6d', O: '#ff8a3d', Y: '#ffd23d', C: '#5ee7ff', L: '#c6ff3d', V: '#b48cff', B: '#3d7bff', S: '#e2a978', K: '#222', N: '#4f6bff', A: '#8a92a8', y: '#ffa23d', M: '#ff7bf0', E: '#9fb4ff', T: '#7a4a24', H: '#ffb27a', Q: '#6fb7ff', Z: '#22e0ff', X: '#ff4fd1', D: '#c4803e', d: '#140a0e' };
 const get = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 const floor = document.getElementById('floor');
