@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Depth Charge</title>
+<link rel="manifest" href="../../manifest.json">
+<meta name="theme-color" content="#0f0c1f">
+<link rel="icon" type="image/png" href="../../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../../icons/apple-touch-icon.png">
+<link rel="preload" href="../../shared/fonts/bungee-400.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="../../shared/fonts/silkscreen-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../../shared/fonts.css">
+<link rel="stylesheet" href="../../shared/arcade.css">
+</head>
+<body data-game="depth-charge" data-pad="0:Space 1:KeyK 2:KeyC 3:KeyC" style="--game:#22c8e0">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>DEPTH CHARGE</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <div class="pad">
+    <div class="dp"><button class="u" data-k="ArrowUp" aria-label="Up">▲</button><button class="l" data-k="ArrowLeft" aria-label="Left">◀</button><button class="r" data-k="ArrowRight" aria-label="Right">▶</button><button class="d" data-k="ArrowDown" aria-label="Down">▼</button></div>
+    <div class="ab"><button class="sm" data-k="KeyC">PING</button><button class="sm" data-k="KeyK">CHARGE</button><button data-k="Space">FIRE</button></div>
+  </div>
+  <p class="help">arrows or WASD steer · hold <kbd>Space</kbd>/<kbd>J</kbd> for torpedoes · <kbd>K</kbd>/<kbd>X</kbd> drop a depth charge · <kbd>C</kbd>/<kbd>Shift</kbd> sonar ping (lights up the dark) · <kbd>P</kbd> pause · gamepad: d-pad, A fire, B charge, X ping</p>
+</main>
+<script src="../../shared/chip.js"></script>
+<script src="../../shared/badges.js"></script>
+<script src="../../shared/arcade.js"></script>
+<script>
+(() => {
+/*
+ * Depth Charge: a little yellow submarine, the Minnow, against the Iron Tide navy. The sea scrolls by; steer anywhere
+ * on screen. Torpedoes go forward (hold to keep firing), depth charges sink below you, and a sonar ping lights up the
+ * dark for a moment. Every stage is deeper and darker: the shallows, the kelp forest, the trench, the abyss (where
+ * your headlight and the ping are all you've got), and the sunken fortress. Air runs down; grab the bubbles. Supply
+ * pods carry torpedo upgrades (T), a shield (S) and air (A). Each stage ends with a boss: the Iron Whale, the
+ * Mecha-Angler (its lure is the only light down there) and the fortress's guns and core. Then it starts again, harder.
+ */
+const A = Arcade, cv = document.getElementById('cv');
+const W = 640, H = 400, ctx = A.canvas(cv, W, H), OUT = '#0a0612';
+function shade(hex, k) {
+  let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join('');
+  const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+function paint(x, list) {
+  x.fillStyle = OUT; for (const q of list) x.fillRect(q[0] - 2, q[1] - 2, q[2] + 4, q[3] + 4);
+  for (const [px, py, w, h, c] of list) { x.fillStyle = c; x.fillRect(px, py, w, h); if (w > 3 && h > 3) { x.fillStyle = shade(c, 0.3); x.fillRect(px, py, w, Math.max(1, h * 0.25)); x.fillStyle = shade(c, -0.3); x.fillRect(px, py + h - Math.max(1, h * 0.25), w, Math.max(1, h * 0.25)); } }
+}
+
+/* ---------- the stages ---------- */
+const ZONES = [
+  { name: 'THE SHALLOWS', top: ['#3aa8e0', '#1a5a9a'], rock: '#c8a868', dark: 0, surface: true, boss: 'whale' },
+  { name: 'KELP FOREST', top: ['#1a7a8a', '#0a3a5a'], rock: '#6a8a5a', dark: 0.3, surface: true, kelp: true, boss: 'whale' },
+  { name: 'THE TRENCH', top: ['#0a3050', '#04101e'], rock: '#4a5a6a', dark: 0.62, cave: true, boss: 'angler' },
+  { name: 'THE ABYSS', top: ['#04121e', '#010409'], rock: '#3a3a5a', dark: 0.86, cave: true, glow: true, boss: 'angler' },
+  { name: 'SUNKEN FORTRESS', top: ['#0a2030', '#040a12'], rock: '#5a5060', dark: 0.7, cave: true, boss: 'fort' }
+];
+const LEN = 70; // seconds of sea before the boss
+let state = 'title', stage = 1, zone = ZONES[0], score = 0, lives = 3, sub = null, cam = 0, speed = 46, clock = 0, boss = null, lost = false, missed = false;
+let shots = [], foes = [], items = [], bubbles = [], pings = [], lights = [], seed = 1, msg = '', msgT = 0, bg = null, darkCv = null;
+const say = (t, s = 2) => { msg = t; msgT = s; };
+const add = (n, x, y, c = '#ffd23d') => { score += n; A.setScore(score); if (x !== undefined) A.pop(x, y, '+' + n, c); };
+const lvl = () => 1 + (stage - 1) * 0.18; // difficulty creeps up every stage
+// the sea floor and the cave roof, as heights along the world
+function noise(x, k) { return Math.sin(x * 0.011 + k) * 0.5 + Math.sin(x * 0.027 + k * 2.3) * 0.3 + Math.sin(x * 0.063 + k * 5.1) * 0.2; }
+const floorY = x => H - 46 - (noise(x, seed) + 1) * (zone.cave ? 34 : 26);
+const roofY = x => zone.cave ? 26 + (noise(x, seed + 9) + 1) * 30 : 30;
+
+function drawBg() {
+  bg = document.createElement('canvas'); bg.width = W; bg.height = H; const b = bg.getContext('2d'), z = zone, r = A.seeded('depth:bg:' + z.name);
+  const g = b.createLinearGradient(0, 0, 0, H); g.addColorStop(0, z.top[0]); g.addColorStop(1, z.top[1]); b.fillStyle = g; b.fillRect(0, 0, W, H);
+  if (z.surface) { for (let k = 0; k < 7; k++) { b.fillStyle = 'rgba(255,255,255,.07)'; b.beginPath(); b.moveTo(60 + k * 90, 0); b.lineTo(20 + k * 90, H); b.lineTo(70 + k * 90, H); b.lineTo(90 + k * 90, 0); b.fill(); } }
+  b.fillStyle = 'rgba(255,255,255,.12)'; for (let k = 0; k < 50; k++) b.fillRect(Math.floor(r() * W), Math.floor(r() * H), 1, 1);
+  darkCv = document.createElement('canvas'); darkCv.width = W; darkCv.height = H;
+}
+
+/* ---------- the sub ---------- */
+function newSub() { return { x: 110, y: 190, vx: 0, vy: 0, tor: sub ? Math.max(1, sub.tor - 1) : 1, shield: 0, air: 100, cool: 0, charge: 0, ping: 0, inv: 2, dead: 0, prop: 0 }; }
+const keys = { L: ['ArrowLeft', 'KeyA'], R: ['ArrowRight', 'KeyD'], U: ['ArrowUp', 'KeyW'], D: ['ArrowDown', 'KeyS'], F: ['Space', 'KeyJ', 'KeyZ'], C: ['KeyK', 'KeyX'], P: ['KeyC', 'ShiftLeft', 'ShiftRight'] };
+function torpedo() {
+  const s = sub; s.cool = 0.22; A.tone(330, 0.06, 'triangle', 0.03, 0, 160);
+  const spread = s.tor >= 3 ? [-0.16, 0, 0.16] : s.tor === 2 ? [-0.07, 0.07] : [0];
+  for (const a of spread) shots.push({ k: 'tor', x: s.x + 26, y: s.y + 4 + a * 40, vx: 360 * Math.cos(a), vy: 360 * Math.sin(a), mine: true, dmg: 1, t: 2 });
+}
+function charge() { const s = sub; if (s.charge > 0 || s.dead) return; s.charge = 0.7; shots.push({ k: 'chg', x: s.x, y: s.y + 14, vx: 30, vy: 40, g: 160, mine: true, dmg: 4, t: 3 }); A.tone(160, 0.1, 'square', 0.03); }
+function ping() { const s = sub; if (s.ping > 0 || s.dead) return; s.ping = 3.5; pings.push({ x: s.x, y: s.y, r: 10, t: 0 }); A.tone(1500, 0.5, 'sine', 0.04, 0, 1400); A.tone(1500, 0.3, 'sine', 0.015, 0.45, 1300); }
+function hurt(why) {
+  const s = sub; if (s.inv > 0 || s.dead || state !== 'play') return;
+  if (s.shield > 0) { s.shield = 0; s.inv = 1; A.sfx('hurt'); A.ring(s.x, s.y, '#5ee7ff', 40); return; }
+  s.dead = 1.6; lives--; missed = true; A.sfx('boom'); A.shake(8, 0.5); A.flash('#ff8a3d', 0.15); A.hitstop(0.08);
+  A.burst(s.x, s.y, { n: 30, colors: ['#ffd23d', '#ff8a3d', '#fff'], speed: 200, life: 0.7 }); lights.push({ x: s.x, y: s.y, r: 140, t: 0.6 });
+  say(why || 'SUNK!', 1.4);
+  if (lives <= 0) setTimeout(gameOver, 1500);
+}
+
+/* ---------- the navy ---------- */
+const FOES = {
+  minisub: { hp: 2, pts: 150, r: 14 }, mine: { hp: 1, pts: 50, r: 10 }, diver: { hp: 1, pts: 100, r: 10 }, eel: { hp: 2, pts: 200, r: 12 },
+  jelly: { hp: 2, pts: 150, r: 12 }, ship: { hp: 6, pts: 500, r: 26 }, turret: { hp: 3, pts: 250, r: 12 }, pod: { hp: 1, pts: 50, r: 12 }
+};
+const POOL = [
+  ['minisub', 'mine', 'diver', 'diver', 'ship', 'pod'],
+  ['minisub', 'mine', 'diver', 'eel', 'ship', 'turret', 'pod'],
+  ['minisub', 'mine', 'eel', 'eel', 'jelly', 'turret', 'pod'],
+  ['minisub', 'eel', 'jelly', 'jelly', 'mine', 'pod'],
+  ['minisub', 'mine', 'turret', 'turret', 'eel', 'jelly', 'pod']
+];
+function addFoe(k) {
+  const x = W + 30, fy = floorY(cam + x), ry = roofY(cam + x);
+  const y = k === 'ship' ? 24 : k === 'turret' ? fy - 8 : k === 'mine' ? ry + 40 + Math.random() * (fy - ry - 80) : ry + 30 + Math.random() * (fy - ry - 60);
+  if (k === 'ship' && !zone.surface) return;
+  foes.push({ k, ...FOES[k], hp: Math.ceil(FOES[k].hp * (k === 'pod' ? 1 : Math.min(2, lvl()))), x, y, y0: y, t: Math.random() * 6, shoot: 1.5 + Math.random() * 2, hit: 0, dead: false, anchor: k === 'mine' ? fy : 0 });
+}
+function enemyShot(x, y, vx, vy, c = '#ff6a5a', k = 'bolt') { shots.push({ k, x, y, vx, vy, mine: false, t: 5, c }); }
+function aimShot(x, y, sp, c) { const d = Math.hypot(sub.x - x, sub.y - y) || 1; enemyShot(x, y, (sub.x - x) / d * sp, (sub.y - y) / d * sp, c); }
+function kill(e) {
+  e.dead = true; add(e.pts, e.x, e.y - 10);
+  A.burst(e.x, e.y, { n: e.k === 'ship' ? 30 : 14, colors: ['#ffd23d', '#ff8a3d', '#bfe8ff'], speed: 160, life: 0.5 }); lights.push({ x: e.x, y: e.y, r: 90, t: 0.4 });
+  A.sfx(e.k === 'pod' ? 'select' : 'boom');
+  if (e.k === 'ship' || e.k === 'turret') A.shake(4, 0.2);
+  if (e.k === 'mine') { A.ring(e.x, e.y, '#ff8a3d', 50); if (Math.hypot(e.x - sub.x, e.y - sub.y) < 38) hurt('CAUGHT IN THE BLAST'); }
+  if (e.k === 'pod') items.push({ k: ['T', 'S', 'A', 'T'][Math.floor(Math.random() * 4)], x: e.x, y: e.y, t: 8 });
+  else if (Math.random() < 0.08) items.push({ k: 'A', x: e.x, y: e.y, t: 8 });
+}
+
+/* ---------- bosses ---------- */
+function makeBoss() {
+  const hp = Math.round(({ whale: 40, angler: 55, fort: 30 })[zone.boss] * lvl());
+  if (zone.boss === 'whale') return { k: 'whale', x: W + 120, y: 200, tx: 500, hp, max: hp, t: 0, shoot: 2, mine: 4, hit: 0 };
+  if (zone.boss === 'angler') return { k: 'angler', x: W + 120, y: 200, tx: 480, hp, max: hp, t: 0, lunge: 0, cool: 4, shoot: 2.5, hit: 0, open: 0 };
+  return { k: 'fort', x: W + 60, tx: 560, hp, max: hp, t: 0, guns: [{ y: 90, hp: 12 }, { y: 200, hp: 12 }, { y: 310, hp: 12 }].map(g => ({ ...g, hp: Math.round(g.hp * lvl()), shoot: 1 + Math.random() * 2, hit: 0 })), hit: 0 };
+}
+function bossBoxes() {
+  const b = boss; if (!b || b.dying) return [];
+  if (b.k === 'whale') return [{ x: b.x - 70, y: b.y - 26, w: 140, h: 52, part: 'hull' }];
+  if (b.k === 'angler') return [{ x: b.x - 60, y: b.y - 40, w: 120, h: 80, part: 'body' }];
+  const out = b.guns.filter(g => g.hp > 0).map((g, i) => ({ x: b.x - 40, y: g.y - 16, w: 40, h: 32, part: 'gun', g }));
+  if (!out.length) out.push({ x: b.x - 30, y: 170, w: 50, h: 60, part: 'core' });
+  return out;
+}
+function hitBoss(box, dmg, x, y) {
+  const b = boss; b.hit = 0.1; A.tone(200, 0.05, 'square', 0.03); A.burst(x, y, { n: 6, colors: ['#ffd23d', '#fff'], speed: 120, life: 0.3 });
+  if (box.part === 'gun') { box.g.hp -= dmg; box.g.hit = 0.1; add(20); if (box.g.hp <= 0) { add(1500, x, y); A.sfx('boom'); A.shake(6, 0.3); A.burst(x, y, { n: 24, colors: ['#ffd23d', '#ff8a3d'], speed: 180, life: 0.6 }); lights.push({ x, y, r: 110, t: 0.5 }); if (b.guns.every(g => g.hp <= 0)) say('THE CORE IS OPEN!', 1.6); } return; }
+  b.hp -= dmg * (box.part === 'body' && b.open > 0 ? 2 : 1); add(20);
+  if (b.hp > 0) return;
+  b.dying = 2.5; add(10000, b.x, b.y - 40, '#ffd23d'); A.flash('#fff', 0.3); A.shake(12, 1.2); A.noise(1.4, 0.1); say(`${{ whale: 'THE IRON WHALE', angler: 'THE MECHA-ANGLER', fort: 'THE FORTRESS' }[b.k]} IS DOWN!`, 2.4);
+  if (b.k === 'angler') A.badge('angler');
+  for (let k = 0; k < 9; k++) setTimeout(() => { if (!boss) return; const px = (b.k === 'fort' ? b.x - 20 : b.x) + (Math.random() - 0.5) * 120, py = (b.k === 'fort' ? 200 : b.y) + (Math.random() - 0.5) * 100; A.burst(px, py, { n: 20, colors: ['#ffd23d', '#ff8a3d', '#fff'], speed: 200, life: 0.6 }); lights.push({ x: px, y: py, r: 120, t: 0.5 }); }, k * 220);
+}
+function updBoss(dt) {
+  const b = boss; b.t += dt; b.hit -= dt;
+  if (b.dying) { b.dying -= dt; b.y = (b.y || 200) + dt * 30; if (b.dying <= 0) { boss = null; stageClear(); } return; }
+  if (b.x > b.tx) b.x -= 60 * dt;
+  if (b.k === 'whale') {
+    b.y = 200 + Math.sin(b.t * 0.7) * 90;
+    if ((b.shoot -= dt) <= 0) { b.shoot = 2.2 / lvl(); for (const a of [-0.25, 0, 0.25]) enemyShot(b.x - 70, b.y, -180 * Math.cos(a), 180 * Math.sin(a), '#ff6a5a', 'tor'); A.tone(260, 0.1, 'triangle', 0.03); }
+    if ((b.mine -= dt) <= 0) { b.mine = 4; foes.push({ k: 'mine', ...FOES.mine, x: b.x - 30, y: b.y + 30, y0: b.y + 30, t: 0, shoot: 99, hit: 0, dead: false, anchor: 0, drift: true }); }
+  } else if (b.k === 'angler') {
+    b.open -= dt;
+    if (b.lunge > 0) { b.lunge -= dt; b.x -= 280 * dt; b.y += (sub.y - b.y) * dt * 2; if (b.lunge <= 0) b.back = true; }
+    else if (b.back) { b.x += 160 * dt; if (b.x >= b.tx) { b.back = false; b.x = b.tx; } }
+    else { b.y += (sub.y - b.y) * dt * 0.8; b.y = A.clamp(b.y, 90, 310); if ((b.cool -= dt) <= 0) { b.cool = 5 / lvl(); b.lunge = 1.2; b.open = 2.2; A.tone(120, 0.6, 'sawtooth', 0.04, 0, 60); } if ((b.shoot -= dt) <= 0) { b.shoot = 2 / lvl(); aimShot(b.x - 60, b.y, 170, '#c8ff5a'); aimShot(b.x - 60, b.y - 10, 140, '#c8ff5a'); } }
+    if (!sub.dead && Math.abs(sub.x - (b.x - 40)) < 50 && Math.abs(sub.y - b.y) < 40) hurt('SWALLOWED!');
+  } else {
+    for (const g of b.guns) { if (g.hp <= 0) continue; g.hit -= dt; if ((g.shoot -= dt) <= 0) { g.shoot = 1.8 / lvl() + Math.random(); aimShot(b.x - 40, g.y, 190); A.tone(500, 0.04, 'square', 0.02); } }
+    if (b.guns.every(g => g.hp <= 0) && Math.random() < dt * 1.5) { for (let k = 0; k < 6; k++) { const a = Math.PI * (0.6 + k * 0.16); enemyShot(b.x - 20, 200, Math.cos(a) * 140, Math.sin(a) * 140, '#ff8a3d'); } }
+  }
+}
+
+/* ---------- the game ---------- */
+function newStage() {
+  zone = ZONES[(stage - 1) % ZONES.length]; seed = stage * 3.7; drawBg();
+  cam = 0; clock = 0; boss = null; shots = []; foes = []; items = []; pings = []; lights = []; missed = false;
+  speed = 46 + Math.min(30, (stage - 1) * 4);
+  sub = newSub(); sub.inv = 2;
+  say(`STAGE ${stage} · ${zone.name}`, 2.4); A.jingle([392, 523, 659, 784], 0.08, 'triangle');
+  if (stage === 4) A.badge('abyss');
+}
+function newGame() { stage = 1; score = 0; lives = A.easy ? 5 : 3; A.setScore(0); lost = false; sub = null; newStage(); state = 'play'; }
+function stageClear() {
+  const bonus = 3000 * stage; add(bonus); say(`STAGE CLEAR! +${bonus}`, 2.4); A.jingle([523, 659, 784, 1047, 1319], 0.09, 'triangle');
+  if (!missed) A.badge('nomiss');
+  state = 'between'; setTimeout(() => { if (state !== 'between') return; stage++; const t = sub.tor; newStage(); sub.tor = t; state = 'play'; }, 2600);
+}
+function gameOver() {
+  if (lost) return; lost = true; state = 'over';
+  const rec = A.submit(score);
+  A.overlay({ title: 'GAME OVER', big: `SCORE ${score.toLocaleString()} · STAGE ${stage}`, sub: `${zone.name}${rec ? ' · New high score!' : ''}`, btn: 'Dive again', onGo: newGame });
+}
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+A.onHide(pause);
+A.onPress(c => {
+  if (c === 'KeyP' || c === 'Escape') return pause();
+  if (state !== 'play' || !sub || sub.dead) return;
+  if (keys.C.includes(c)) charge();
+  if (keys.P.includes(c)) ping();
+});
+
+function update(dt) {
+  if (msgT > 0) msgT -= dt;
+  if (state !== 'play') return;
+  const s = sub;
+  clock += dt; if (!boss) cam += speed * dt;
+  if (clock > LEN && !boss) { boss = makeBoss(); say('BOSS!', 1.6); A.jingle([196, 185, 175, 165], 0.18, 'sawtooth'); }
+  // the sub
+  s.inv -= dt; s.cool -= dt; s.charge -= dt; s.ping -= dt; s.prop += dt;
+  if (s.dead) { s.dead -= dt; if (s.dead <= 0 && lives > 0) { const t = s.tor; sub = newSub(); sub.tor = Math.max(1, t - 1); sub.inv = 2.5; } }
+  else {
+    const mx = (A.held(...keys.R) ? 1 : 0) - (A.held(...keys.L) ? 1 : 0), my = (A.held(...keys.D) ? 1 : 0) - (A.held(...keys.U) ? 1 : 0);
+    s.vx += (mx * 260 - s.vx) * Math.min(1, dt * 6); s.vy += (my * 220 - s.vy) * Math.min(1, dt * 6);
+    s.x = A.clamp(s.x + s.vx * dt, 30, W - 40); s.y = A.clamp(s.y + s.vy * dt, 40, H - 20);
+    if (A.held(...keys.F) && s.cool <= 0) torpedo();
+    s.air -= dt * (1.3 + stage * 0.08);
+    if (s.air <= 0) { s.air = 0; hurt('OUT OF AIR!'); }
+    if (Math.random() < dt * 3) bubbles.push({ x: s.x - 26, y: s.y, t: 1.5 });
+    // the rocks
+    const fy = floorY(cam + s.x), ry = roofY(cam + s.x);
+    if (s.y + 12 > fy || (zone.cave && s.y - 12 < ry)) hurt('CRASHED INTO THE ROCKS');
+    if (zone.surface && s.y < 44) s.y = 44;
+  }
+  // the navy shows up
+  if (!boss) {
+    const pool = POOL[(stage - 1) % POOL.length], rate = (stage === 1 ? 0.6 : 0.85) * lvl();
+    if (Math.random() < dt * rate) addFoe(pool[Math.floor(Math.random() * pool.length)]);
+    if (Math.random() < dt * 0.25) items.push({ k: 'bubble', x: W + 10, y: roofY(cam + W) + 40 + Math.random() * (floorY(cam + W) - roofY(cam + W) - 80), t: 20 });
+  }
+  for (const e of foes) {
+    if (e.dead) continue; e.t += dt; e.hit -= dt;
+    const dx = speed * dt;
+    if (e.k === 'minisub') { e.x -= dx + 50 * dt; e.y = e.y0 + Math.sin(e.t) * 20; if ((e.shoot -= dt) <= 0) { e.shoot = 2.6 / lvl(); enemyShot(e.x - 16, e.y, -200, 0, '#ff6a5a', 'tor'); } }
+    else if (e.k === 'mine') { e.x -= e.drift ? dx + 40 * dt : dx; e.y = e.y0 + Math.sin(e.t * 1.5) * 6; }
+    else if (e.k === 'diver') { e.x -= dx + 30 * dt; e.y += Math.sin(e.t * 2) * 0.6; if ((e.shoot -= dt) <= 0 && e.x < W - 40) { e.shoot = 3 / lvl(); aimShot(e.x - 8, e.y, 160, '#c8c8d8'); } }
+    else if (e.k === 'eel') { e.x -= dx + 110 * dt; e.y = e.y0 + Math.sin(e.t * 4) * 34; }
+    else if (e.k === 'jelly') { e.x -= dx + 10 * dt; e.y = e.y0 + Math.sin(e.t * 0.9) * 50; }
+    else if (e.k === 'ship') { e.x -= dx + 20 * dt; if ((e.shoot -= dt) <= 0 && e.x < W) { e.shoot = 2.4 / lvl(); shots.push({ k: 'drop', x: e.x, y: e.y + 16, vx: -speed, vy: 60, mine: false, t: 6, c: '#3a3a4a' }); } }
+    else if (e.k === 'turret') { e.x -= dx; e.y = floorY(cam + e.x) - 8; if ((e.shoot -= dt) <= 0 && e.x < W - 20) { e.shoot = 2.2 / lvl(); aimShot(e.x, e.y - 12, 170); } }
+    else if (e.k === 'pod') { e.x -= dx + 20 * dt; e.y = e.y0 + Math.sin(e.t * 2) * 10; }
+    if (!s.dead && e.k !== 'pod' && e.k !== 'ship' && Math.hypot(e.x - s.x, e.y - s.y) < e.r + 14) { if (e.k === 'mine') kill(e); else { e.hp = 0; kill(e); hurt('RAMMED!'); } }
+  }
+  foes = foes.filter(e => !e.dead && e.x > -60);
+  if (boss) updBoss(dt);
+  // shots
+  for (const b of shots) {
+    if (b.g) b.vy += b.g * dt; b.x += b.vx * dt; b.y += b.vy * dt; b.t -= dt;
+    if (b.k === 'drop' && b.y > 140) { b.vy = Math.min(b.vy + 30 * dt, 90); }
+    if (b.mine) {
+      for (const e of foes) if (!e.dead && Math.hypot(e.x - b.x, e.y - b.y) < e.r + 4) { e.hp -= b.dmg; e.hit = 0.1; b.t = 0; if (e.hp <= 0) kill(e); else A.tone(400, 0.03, 'square', 0.02); break; }
+      if (b.t > 0) for (const box of bossBoxes()) if (b.x > box.x && b.x < box.x + box.w && b.y > box.y && b.y < box.y + box.h) { hitBoss(box, b.dmg, b.x, b.y); b.t = 0; break; }
+      if (b.t <= 0 && b.k === 'chg') { A.burst(b.x, b.y, { n: 18, colors: ['#fff', '#bfe8ff'], speed: 150, life: 0.4 }); A.ring(b.x, b.y, '#bfe8ff', 46); lights.push({ x: b.x, y: b.y, r: 80, t: 0.3 }); A.noise(0.2, 0.05); for (const e of foes) if (!e.dead && Math.hypot(e.x - b.x, e.y - b.y) < 46) { e.hp -= 2; if (e.hp <= 0) kill(e); } }
+    } else if (!s.dead && Math.abs(b.x - s.x) < 22 && Math.abs(b.y - s.y) < 11) { b.t = 0; hurt(); }
+    if (b.y > floorY(cam + b.x) || (zone.cave && b.y < roofY(cam + b.x))) { if (b.k === 'chg' && b.t > 0) { b.t = 0; A.burst(b.x, b.y, { n: 14, color: zone.rock, speed: 100, life: 0.4, kind: 'debris' }); A.ring(b.x, b.y, '#bfe8ff', 40); for (const e of foes) if (!e.dead && Math.hypot(e.x - b.x, e.y - b.y) < 46) { e.hp -= 3; if (e.hp <= 0) kill(e); } } else b.t = 0; }
+  }
+  shots = shots.filter(b => b.t > 0 && b.x > -30 && b.x < W + 30 && b.y > -10 && b.y < H + 10);
+  // pickups
+  for (const it of items) {
+    it.t -= dt; it.x -= (it.k === 'bubble' ? speed + 10 : speed) * dt; if (it.k === 'bubble') it.y -= 12 * dt;
+    if (!s.dead && Math.hypot(it.x - s.x, it.y - s.y) < 22) {
+      it.t = 0;
+      if (it.k === 'bubble' || it.k === 'A') { s.air = Math.min(100, s.air + (it.k === 'A' ? 60 : 30)); add(50, it.x, it.y - 8, '#bfe8ff'); A.tone(900, 0.08, 'sine', 0.03, 0, 1300); }
+      if (it.k === 'T') { s.tor = Math.min(3, s.tor + 1); add(300, it.x, it.y - 8); A.sfx('powerup'); }
+      if (it.k === 'S') { s.shield = 1; add(300, it.x, it.y - 8); A.sfx('powerup'); }
+    }
+  }
+  items = items.filter(it => it.t > 0 && it.x > -20);
+  for (const p of bubbles) { p.t -= dt; p.y -= 30 * dt; p.x -= speed * dt * 0.4; }
+  bubbles = bubbles.filter(p => p.t > 0);
+  for (const p of pings) { p.t += dt; p.r += 380 * dt; }
+  pings = pings.filter(p => p.t < 1.6);
+  for (const l of lights) l.t -= dt;
+  lights = lights.filter(l => l.t > 0);
+}
+
+/* ---------- drawing ---------- */
+function drawRocks(t) {
+  ctx.fillStyle = OUT; ctx.beginPath(); ctx.moveTo(0, H);
+  for (let x = 0; x <= W; x += 8) ctx.lineTo(x, floorY(cam + x) - 2); ctx.lineTo(W, H); ctx.fill();
+  ctx.fillStyle = zone.rock; ctx.beginPath(); ctx.moveTo(0, H);
+  for (let x = 0; x <= W; x += 8) ctx.lineTo(x, floorY(cam + x)); ctx.lineTo(W, H); ctx.fill();
+  ctx.fillStyle = shade(zone.rock, 0.25); for (let x = -((cam) % 8); x <= W; x += 8) ctx.fillRect(x, floorY(cam + x), 8, 3);
+  ctx.fillStyle = shade(zone.rock, -0.25); for (let x = -(cam % 40); x < W; x += 40) ctx.fillRect(x + 10, floorY(cam + x + 10) + 14, 12, 4);
+  if (zone.cave) {
+    ctx.fillStyle = OUT; ctx.beginPath(); ctx.moveTo(0, 0); for (let x = 0; x <= W; x += 8) ctx.lineTo(x, roofY(cam + x) + 2); ctx.lineTo(W, 0); ctx.fill();
+    ctx.fillStyle = shade(zone.rock, -0.15); ctx.beginPath(); ctx.moveTo(0, 0); for (let x = 0; x <= W; x += 8) ctx.lineTo(x, roofY(cam + x)); ctx.lineTo(W, 0); ctx.fill();
+  }
+  if (zone.surface) { ctx.fillStyle = 'rgba(200,240,255,.5)'; for (let x = 0; x < W; x += 4) ctx.fillRect(x, 30 + Math.sin((x + cam) * 0.05 + t / 300) * 2, 4, 2); }
+  if (zone.kelp) for (let k = 0; k < 9; k++) { const x = ((k * 97 - cam * 0.9) % (W + 60) + W + 60) % (W + 60) - 30, base = floorY(cam + x); ctx.strokeStyle = '#2a6a3a'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(x, base); for (let y = 0; y < 140 + (k % 3) * 30; y += 10) ctx.lineTo(x + Math.sin(y * 0.05 + t / 600 + k) * 8, base - y); ctx.stroke(); }
+  if (zone.glow) for (let k = 0; k < 6; k++) { const x = ((k * 131 - cam) % (W + 40) + W + 40) % (W + 40) - 20; ctx.fillStyle = 'rgba(120,255,220,.6)'; ctx.fillRect(x, floorY(cam + x) - 6, 3, 6); }
+}
+function drawSub(s, t) {
+  if (s.dead || (s.inv > 0 && Math.floor(t / 80) % 2)) return;
+  const x = Math.round(s.x), y = Math.round(s.y);
+  paint(ctx, [[x - 26, y - 9, 50, 18, '#ffd23d'], [x - 6, y - 19, 18, 10, '#ffd23d'], [x + 2, y - 27, 3, 8, '#8a8a9a'], [x + 2, y - 27, 8, 3, '#8a8a9a'], [x - 32, y - 6, 6, 12, '#c8a020']]);
+  ctx.fillStyle = OUT; ctx.fillRect(x - 36, y - 1 - (Math.floor(s.prop * 20) % 2 ? 5 : 0), 3, 7);
+  for (const k of [-12, 0, 12]) { ctx.fillStyle = OUT; ctx.beginPath(); ctx.arc(x + k, y, 4, 0, 6.29); ctx.fill(); ctx.fillStyle = '#5ee7ff'; ctx.beginPath(); ctx.arc(x + k, y, 3, 0, 6.29); ctx.fill(); ctx.fillStyle = '#fff'; ctx.fillRect(x + k - 1, y - 2, 1, 1); }
+  ctx.fillStyle = '#fff6c2'; ctx.fillRect(x + 22, y - 3, 3, 4);
+  if (s.shield) { ctx.strokeStyle = `rgba(94,231,255,${0.5 + 0.3 * Math.sin(t / 100)})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(x - 2, y - 4, 38, 26, 0, 0, 6.29); ctx.stroke(); }
+}
+function drawFoe(e, t) {
+  const x = Math.round(e.x), y = Math.round(e.y), w = e.hit > 0 ? '#fff' : null;
+  if (e.k === 'minisub') { paint(ctx, [[x - 16, y - 7, 32, 14, w || '#5a6a8a'], [x - 4, y - 14, 10, 7, w || '#4a5a7a'], [x + 16, y - 4, 5, 8, '#3a4a6a']]); ctx.fillStyle = '#ff6a5a'; ctx.fillRect(x - 12, y - 2, 4, 3); }
+  else if (e.k === 'mine') { if (e.anchor) { ctx.strokeStyle = '#2a2a32'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, y + 10); ctx.lineTo(x, floorY(cam + x)); ctx.stroke(); } ctx.fillStyle = OUT; ctx.beginPath(); ctx.arc(x, y, 11, 0, 6.29); ctx.fill(); ctx.fillStyle = w || '#4a4a5a'; ctx.beginPath(); ctx.arc(x, y, 9, 0, 6.29); ctx.fill(); ctx.fillStyle = OUT; for (let a = 0; a < 6.28; a += 1.05) ctx.fillRect(x + Math.cos(a) * 11 - 2, y + Math.sin(a) * 11 - 2, 4, 4); ctx.fillStyle = Math.floor(t / 300) % 2 ? '#ff4f6d' : '#5a1a2a'; ctx.fillRect(x - 2, y - 2, 4, 4); }
+  else if (e.k === 'diver') { const k = Math.floor(e.t * 6) % 2; paint(ctx, [[x - 10, y - 4, 16, 8, w || '#2a2a3a'], [x - 16, y - 2 + k * 2, 6, 3, '#3a6a3a'], [x + 4, y - 9, 8, 8, '#e8b890'], [x + 4, y - 8, 8, 4, '#5ee7ff'], [x - 6, y - 8, 6, 4, '#ffd23d']]); }
+  else if (e.k === 'eel') { ctx.strokeStyle = OUT; ctx.lineWidth = 9; ctx.beginPath(); for (let k = 0; k < 5; k++) ctx.lineTo(x + k * 8, y + Math.sin(e.t * 4 - k * 0.8) * 6); ctx.stroke(); ctx.strokeStyle = w || '#7a5aa8'; ctx.lineWidth = 6; ctx.stroke(); ctx.fillStyle = '#ffd23d'; ctx.fillRect(x - 2, y - 3, 3, 3); }
+  else if (e.k === 'jelly') { const p = Math.sin(e.t * 3) * 2; ctx.fillStyle = OUT; ctx.beginPath(); ctx.ellipse(x, y, 14, 11 + p, 0, Math.PI, 0); ctx.fill(); ctx.fillStyle = w || 'rgba(255,120,220,.85)'; ctx.beginPath(); ctx.ellipse(x, y, 12, 9 + p, 0, Math.PI, 0); ctx.fill(); ctx.strokeStyle = 'rgba(255,160,230,.7)'; ctx.lineWidth = 2; for (let k = -8; k <= 8; k += 5) { ctx.beginPath(); ctx.moveTo(x + k, y); ctx.lineTo(x + k + Math.sin(e.t * 3 + k) * 3, y + 16); ctx.stroke(); } }
+  else if (e.k === 'ship') { paint(ctx, [[x - 30, y - 10, 60, 14, w || '#6a6a7a'], [x - 10, y - 22, 22, 12, w || '#8a8a9a'], [x + 4, y - 30, 4, 8, '#4a4a5a']]); ctx.fillStyle = '#ff4f6d'; ctx.fillRect(x - 30, y + 2, 60, 2); }
+  else if (e.k === 'turret') { paint(ctx, [[x - 12, y - 8, 24, 10, w || '#6a6a7a'], [x - 6, y - 16, 12, 9, w || '#7a7a8a']]); ctx.fillStyle = OUT; ctx.fillRect(x - 2, y - 24, 4, 9); }
+  else if (e.k === 'pod') { paint(ctx, [[x - 10, y - 9, 20, 18, w || '#3dff8f']]); ctx.fillStyle = OUT; ctx.font = '10px Silkscreen, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('?', x, y + 1); }
+}
+function drawBoss(t) {
+  const b = boss, w = b.hit > 0;
+  if (b.k === 'whale') {
+    const x = Math.round(b.x), y = Math.round(b.y);
+    paint(ctx, [[x - 70, y - 26, 140, 52, w ? '#fff' : '#5a6478'], [x - 20, y - 46, 50, 20, w ? '#fff' : '#4a5468'], [x + 70, y - 18, 16, 36, '#3a4458'], [x - 78, y - 8, 10, 16, '#3a4458']]);
+    ctx.fillStyle = '#ff4f6d'; for (let k = -50; k < 60; k += 24) ctx.fillRect(x + k, y - 6, 8, 6);
+    ctx.fillStyle = OUT; ctx.fillRect(x - 70, y + 8, 140, 3);
+  } else if (b.k === 'angler') {
+    const x = Math.round(b.x), y = Math.round(b.y), open = b.open > 0 ? 1 : 0;
+    ctx.strokeStyle = OUT; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(x - 10, y - 40); ctx.quadraticCurveTo(x - 40, y - 90, x - 80, y - 60); ctx.stroke();
+    paint(ctx, [[x - 50, y - 40, 110, 70, w ? '#fff' : '#4a3a5a'], [x + 60, y - 30, 26, 50, '#3a2a4a'], [x - 20, y - 52, 40, 14, '#5a4a6a']]);
+    ctx.fillStyle = OUT; ctx.fillRect(x - 62, y - 10 - open * 14, 64, 8 + open * 30);
+    ctx.fillStyle = open ? '#ff6a5a' : '#2a1a2a'; ctx.fillRect(x - 58, y - 6 - open * 12, 56, open * 26 + 2);
+    ctx.fillStyle = '#fff'; for (let k = -58; k < 0; k += 9) { ctx.fillRect(x + k, y - 10 - open * 14, 4, 6); ctx.fillRect(x + k + 4, y + 2 + open * 14, 4, 6); }
+    ctx.fillStyle = '#c8ff5a'; ctx.beginPath(); ctx.arc(x - 18, y - 24, 6, 0, 6.29); ctx.fill(); ctx.fillStyle = OUT; ctx.fillRect(x - 20, y - 26, 3, 4);
+    ctx.fillStyle = `rgba(255,250,170,${0.8 + 0.2 * Math.sin(t / 120)})`; ctx.beginPath(); ctx.arc(x - 80, y - 60, 7, 0, 6.29); ctx.fill();
+  } else {
+    const x = Math.round(b.x);
+    paint(ctx, [[x - 30, 20, 120, H - 40, w ? '#fff' : '#4a4450']]);
+    ctx.fillStyle = shade('#4a4450', -0.3); for (let y = 40; y < H - 30; y += 30) ctx.fillRect(x - 30, y, 120, 3);
+    for (const g of b.guns) { if (g.hp <= 0) { ctx.fillStyle = '#1a1018'; ctx.fillRect(x - 40, g.y - 12, 30, 24); continue; } paint(ctx, [[x - 40, g.y - 14, 34, 28, g.hit > 0 ? '#fff' : '#6a6070'], [x - 58, g.y - 4, 20, 8, '#3a3440']]); ctx.fillStyle = '#ff4f6d'; ctx.fillRect(x - 30, g.y - 4, 6, 6); }
+    const open = b.guns.every(g => g.hp <= 0);
+    paint(ctx, [[x - 30, 170, 50, 60, open ? (w ? '#fff' : '#ff4f6d') : '#3a3440']]); if (open) { ctx.fillStyle = `rgba(255,255,255,${0.4 + 0.4 * Math.sin(t / 80)})`; ctx.fillRect(x - 18, 186, 26, 28); }
+  }
+}
+function drawDark(t) {
+  const d = zone.dark; if (!d) return;
+  const x = darkCv.getContext('2d'); x.globalCompositeOperation = 'source-over'; x.clearRect(0, 0, W, H);
+  x.fillStyle = `rgba(1,3,10,${d})`; x.fillRect(0, 0, W, H);
+  x.globalCompositeOperation = 'destination-out';
+  const hole = (cx, cy, r, a = 1) => { const g = x.createRadialGradient(cx, cy, 0, cx, cy, r); g.addColorStop(0, `rgba(0,0,0,${a})`); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.beginPath(); x.arc(cx, cy, r, 0, 6.29); x.fill(); };
+  if (sub && !sub.dead) {
+    hole(sub.x, sub.y, 70);
+    const g = x.createRadialGradient(sub.x + 30, sub.y, 0, sub.x + 30, sub.y, 190); g.addColorStop(0, 'rgba(0,0,0,.95)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+    x.fillStyle = g; x.beginPath(); x.moveTo(sub.x + 24, sub.y); x.lineTo(sub.x + 220, sub.y - 70); x.lineTo(sub.x + 220, sub.y + 70); x.fill();
+  }
+  for (const p of pings) { const a = Math.max(0, 1 - p.t / 1.6); x.globalAlpha = a; hole(p.x, p.y, p.r, 1); x.globalAlpha = 1; }
+  for (const l of lights) hole(l.x, l.y, l.r, Math.min(1, l.t * 2));
+  if (boss && boss.k === 'angler' && !boss.dying) hole(boss.x - 80, boss.y - 60, 90 + Math.sin(t / 150) * 8);
+  for (const b of shots) if (b.mine && b.k === 'tor') hole(b.x, b.y, 22, 0.7);
+  ctx.drawImage(darkCv, 0, 0);
+  // things that glow in the dark show through
+  for (const e of foes) if (e.k === 'jelly' || e.k === 'eel' || e.k === 'mine') { ctx.fillStyle = e.k === 'mine' ? (Math.floor(t / 300) % 2 ? '#ff4f6d' : '#5a1a2a') : e.k === 'eel' ? '#ffd23d' : 'rgba(255,140,230,.7)'; ctx.fillRect(e.x - 2, e.y - 2, e.k === 'jelly' ? 5 : 3, 3); }
+  for (const p of pings) { ctx.strokeStyle = `rgba(94,231,255,${Math.max(0, 0.6 - p.t * 0.4)})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.29); ctx.stroke(); }
+}
+function render(t) {
+  if (bg) ctx.drawImage(bg, 0, 0); else { ctx.fillStyle = '#0a2a4a'; ctx.fillRect(0, 0, W, H); }
+  drawRocks(t);
+  for (const it of items) {
+    if (it.k === 'bubble') { ctx.strokeStyle = 'rgba(220,250,255,.9)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(it.x, it.y, 8, 0, 6.29); ctx.stroke(); ctx.fillStyle = 'rgba(255,255,255,.8)'; ctx.fillRect(it.x - 3, it.y - 4, 2, 2); }
+    else if (it.t > 2 || Math.floor(t / 100) % 2) { paint(ctx, [[it.x - 9, it.y - 9, 18, 18, it.k === 'T' ? '#ff8a3d' : it.k === 'S' ? '#5ee7ff' : '#bfe8ff']]); ctx.fillStyle = OUT; ctx.font = '11px Silkscreen, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(it.k, it.x, it.y + 1); }
+  }
+  for (const e of foes) drawFoe(e, t);
+  if (boss) drawBoss(t);
+  for (const p of bubbles) { ctx.fillStyle = `rgba(220,250,255,${p.t / 1.5 * 0.7})`; ctx.fillRect(p.x, p.y, 3, 3); }
+  for (const b of shots) {
+    if (b.k === 'tor') { ctx.fillStyle = OUT; ctx.fillRect(b.x - 8, b.y - 3, 16, 6); ctx.fillStyle = b.mine ? '#e8e8f0' : b.c; ctx.fillRect(b.x - 7, b.y - 2, 14, 4); ctx.fillStyle = b.mine ? '#ff8a3d' : '#fff'; ctx.fillRect(b.mine ? b.x + 4 : b.x - 7, b.y - 2, 3, 4); }
+    else if (b.k === 'chg' || b.k === 'drop') { ctx.fillStyle = OUT; ctx.fillRect(b.x - 6, b.y - 6, 12, 12); ctx.fillStyle = b.k === 'chg' ? '#ffd23d' : '#5a5a6a'; ctx.fillRect(b.x - 5, b.y - 5, 10, 10); ctx.fillStyle = OUT; ctx.fillRect(b.x - 5, b.y - 1, 10, 2); }
+    else { ctx.fillStyle = OUT; ctx.fillRect(b.x - 4, b.y - 4, 8, 8); ctx.fillStyle = b.c; ctx.fillRect(b.x - 3, b.y - 3, 6, 6); }
+  }
+  drawDark(t);
+  if (sub) drawSub(sub, t); // your own sub always shows, even in the abyss
+  if (state === 'title') return;
+  // the HUD
+  ctx.fillStyle = 'rgba(4,10,20,.7)'; ctx.fillRect(0, H - 20, W, 20);
+  ctx.font = '10px Silkscreen, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  ctx.fillStyle = '#ffd23d'; ctx.fillText(`SUBS ${Math.max(0, lives)}`, 8, H - 10);
+  ctx.fillStyle = '#bfe8ff'; ctx.fillText('AIR', 80, H - 10); ctx.fillStyle = '#1a2a3a'; ctx.fillRect(106, H - 15, 100, 10);
+  ctx.fillStyle = sub && sub.air < 25 && Math.floor(t / 200) % 2 ? '#ff4f6d' : '#5ee7ff'; ctx.fillRect(106, H - 15, sub ? sub.air : 0, 10);
+  ctx.fillStyle = '#ff8a3d'; ctx.fillText('T'.repeat(sub ? sub.tor : 1), 216, H - 10);
+  ctx.fillStyle = sub && sub.ping <= 0 ? '#5ee7ff' : '#3a5a6a'; ctx.fillText('PING', 250, H - 10);
+  ctx.textAlign = 'right'; ctx.fillStyle = '#fff'; ctx.fillText(`${stage} · ${zone.name}`, W - 8, H - 10);
+  if (!boss) { ctx.fillStyle = '#1a2a3a'; ctx.fillRect(W / 2 - 50, 6, 100, 4); ctx.fillStyle = '#5ee7ff'; ctx.fillRect(W / 2 - 50, 6, 100 * Math.min(1, clock / LEN), 4); }
+  else if (!boss.dying) { const hp = boss.k === 'fort' ? boss.guns.reduce((a, g) => a + Math.max(0, g.hp), 0) + boss.hp : boss.hp, max = boss.k === 'fort' ? boss.guns.length * Math.round(12 * lvl()) + boss.max : boss.max; ctx.fillStyle = '#2a1a2a'; ctx.fillRect(W / 2 - 90, 6, 180, 7); ctx.fillStyle = '#ff4f6d'; ctx.fillRect(W / 2 - 90, 6, 180 * hp / max, 7); }
+  if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '22px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = OUT; ctx.fillText(msg, W / 2 + 2, H / 2 - 28); ctx.fillStyle = '#22c8e0'; ctx.fillText(msg, W / 2, H / 2 - 30); ctx.globalAlpha = 1; }
+}
+A.loop(dt => { if (state === 'between') { if (msgT > 0) msgT -= dt; for (const l of lights) l.t -= dt; return; } update(dt); }, render);
+if (/[?&]debug/.test(location.search)) window.__depth = (jump) => { if (jump) { stage = jump; newStage(); clock = LEN - 1; } return { state, stage, lives, clock: Math.round(clock), sub: sub && { x: Math.round(sub.x), y: Math.round(sub.y), air: Math.round(sub.air), tor: sub.tor, dead: sub.dead > 0 }, foes: foes.length, boss: boss && [boss.k, boss.hp] }; }; // for testing
+
+/*
+ * Attract demo: keep to the left third, line up with the nearest thing ahead and fire, slip away from shots and the
+ * rocks, drop charges on things below, ping in the dark, and go for bubbles when the air's low.
+ */
+let botY = 190;
+A.attract({
+  start: newGame,
+  stop: () => { state = 'title'; foes = []; shots = []; items = []; boss = null; sub = null; },
+  bot: () => {
+    const s = sub; if (state !== 'play' || !s || s.dead) return [];
+    const out = [], fy = floorY(cam + s.x + 40), ry = roofY(cam + s.x + 40);
+    const ahead = foes.filter(e => !e.dead && e.x > s.x && e.k !== 'pod').sort((a, b) => a.x - b.x)[0];
+    const box = bossBoxes()[0];
+    let ty = box ? box.y + box.h / 2 : ahead ? ahead.y : (fy + ry) / 2;
+    const want = items.filter(it => it.x > s.x - 20 && (it.k !== 'bubble' || s.air < 60)).sort((a, b) => a.x - b.x)[0];
+    if (want && (s.air < 45 || want.k !== 'bubble')) ty = want.y;
+    // anything that will be on top of us in a moment (shots, sinking charges, things swimming at us): slip away from it
+    const soon = (x, y, vx, vy) => [0.15, 0.3, 0.5].some(k => Math.abs(x + vx * k - s.x) < 34 && Math.abs(y + vy * k - s.y) < 26);
+    const threat = shots.find(b => !b.mine && soon(b.x, b.y, b.vx, b.vy)) || foes.find(e => !e.dead && e.k !== 'pod' && e.x > s.x && soon(e.x, e.y, -speed - (e.k === 'eel' ? 110 : 50), 0) && (e.k === 'mine' || e.k === 'jelly' || e.k === 'eel'));
+    if (threat) ty = s.y + (threat.y > s.y ? -70 : 70);
+    ty = A.clamp(ty, (zone.cave ? ry : 44) + 26, fy - 26); botY += (ty - botY) * 0.2;
+    if (botY < s.y - 6) out.push('ArrowUp'); else if (botY > s.y + 6) out.push('ArrowDown');
+    const tx = boss ? 150 : 130; if (s.x < tx - 10) out.push('ArrowRight'); else if (s.x > tx + 10) out.push('ArrowLeft');
+    out.push('Space');
+    if (foes.some(e => !e.dead && e.y > s.y + 20 && Math.abs(e.x - s.x - 30) < 40)) out.push('!KeyK');
+    if (zone.dark > 0.4 && s.ping <= 0) out.push('!KeyC');
+    return out;
+  }
+});
+zone = ZONES[0]; seed = 1; drawBg();
+A.overlay({ title: 'DEPTH CHARGE', sub: 'Steer the Minnow through the deep. Torpedoes forward, depth charges below, and a sonar ping to light up the dark. Watch your air, and grab the bubbles.', btn: 'Dive', scores: true, onGo: newGame });
+})();
+</script>
+</body>
+</html>

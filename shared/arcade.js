@@ -723,7 +723,7 @@
     'pixel-peaks': ['block'], 'pop-lagoon': ['retro'], 'neon-steps': ['neon', -0.1],
     'blast-brigade': ['block', -0.14], 'dungeon-delve': ['pixel'], 'lucky-line': ['retro'], 'rampart-rush': ['chrome'],
     'sky-squadron': ['chrome', -0.14], 'street-sweepers': ['block', -0.12], 'gem-cascade': ['neon'], 'knockout-kings': ['block', -0.1],
-    'tank-tactics': ['block', -0.1], 'skyline-smash': ['block', -0.08], 'bomb-squad': ['chrome'], 'paper-route': ['retro'], 'soda-slinger': ['neon'], 'pipe-panic': ['pixel'], 'boulder-bash': ['block'], 'ten-pin-blitz': ['retro', -0.12], 'field-day': ['chrome', -0.14]
+    'tank-tactics': ['block', -0.1], 'skyline-smash': ['block', -0.08], 'depth-charge': ['neon'], 'bomb-squad': ['chrome'], 'paper-route': ['retro'], 'soda-slinger': ['neon'], 'pipe-panic': ['pixel'], 'boulder-bash': ['block'], 'ten-pin-blitz': ['retro', -0.12], 'field-day': ['chrome', -0.14]
   };
   const tint = (hex, k) => {
     let h = hex.replace('#', ''); if (h.length === 3) h = [...h].map(c => c + c).join('');
