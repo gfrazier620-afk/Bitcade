@@ -115,7 +115,8 @@ window.BADGES = {
   'blast-brigade': [
     { id: 'pow5', name: 'Liberator', desc: 'Free 5 hostages in one run' },
     { id: 'boss', name: 'Tank Buster', desc: 'Destroy a heavy tank' },
-    { id: 'stage3', name: 'Front Line', desc: 'Clear the third stage' }],
+    { id: 'stage3', name: 'Front Line', desc: 'Clear the third stage' },
+    { id: 'rider', name: 'Mounted Up', desc: 'Clear a stage in the MULE or the STRIDER' }],
   'dungeon-delve': [
     { id: 'boss', name: 'Slime Slayer', desc: 'Defeat a dungeon guardian' },
     { id: 'floor3', name: 'Deep Delver', desc: 'Reach floor 3' },
