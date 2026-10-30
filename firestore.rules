@@ -25,7 +25,8 @@ service cloud.firestore {
         'sky-squadron': 5000000, 'street-sweepers': 2000000, 'gem-cascade': 2000000, 'knockout-kings': 2000000,
         'tank-tactics': 2000000, 'bomb-squad': 2000000, 'paper-route': 3000000, 'soda-slinger': 3000000,
         'pipe-panic': 2000000, 'boulder-bash': 2000000, 'ten-pin-blitz': 300, 'field-day': 2000000,
-        'comet-courier': 3000000, 'fence-line': 1000000, 'crate-crew': 200000, 'hilo-hustle': 500000
+        'comet-courier': 3000000, 'fence-line': 1000000, 'crate-crew': 200000, 'hilo-hustle': 500000,
+        'skyline-smash': 3000000, 'depth-charge': 3000000, 'jungle-drop': 3000000
       };
     }
 
