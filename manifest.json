@@ -1,7 +1,7 @@
 {
   "name": "Bitcade",
   "short_name": "Bitcade",
-  "description": "Fifty classic-style arcade games. Plays offline once installed.",
+  "description": "Fifty-one classic-style arcade games. Plays offline once installed.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

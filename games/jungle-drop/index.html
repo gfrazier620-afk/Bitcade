@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Jungle Drop</title>
+<link rel="manifest" href="../../manifest.json">
+<meta name="theme-color" content="#0f0c1f">
+<link rel="icon" type="image/png" href="../../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../../icons/apple-touch-icon.png">
+<link rel="preload" href="../../shared/fonts/bungee-400.woff2" as="font" type="font/woff2" crossorigin><link rel="preload" href="../../shared/fonts/silkscreen-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../../shared/fonts.css">
+<link rel="stylesheet" href="../../shared/arcade.css">
+</head>
+<body data-game="jungle-drop" data-pad="0:Space 1:KeyK 2:KeyK" style="--game:#7ad83d">
+<header class="bar"><a class="back" href="../../">◀ BITCADE</a><h1>JUNGLE DROP</h1>
+  <div class="sc"><span>SCORE<b id="score">0</b></span><span>BEST<b id="best">0</b></span></div>
+  <button class="mute" id="mute">SOUND ON</button></header>
+<main class="stage">
+  <div class="screen"><canvas id="cv"></canvas><div class="overlay" id="ov"></div></div>
+  <div class="pad">
+    <div class="dp"><button class="u" data-k="ArrowUp" aria-label="Up">▲</button><button class="l" data-k="ArrowLeft" aria-label="Left">◀</button><button class="r" data-k="ArrowRight" aria-label="Right">▶</button><button class="d" data-k="ArrowDown" aria-label="Down">▼</button></div>
+    <div class="ab"><button class="sm" data-k="KeyK">GRENADE</button><button data-k="Space">FIRE</button></div>
+  </div>
+  <p class="help">arrows or WASD run (and aim) · hold <kbd>Space</kbd>/<kbd>J</kbd> to fire · hold <kbd>Shift</kbd> to keep aiming one way while you move · <kbd>K</kbd>/<kbd>X</kbd> grenade (over walls) · <kbd>P</kbd> pause · on touch screens your shots aim themselves · gamepad: d-pad, A fire, B grenade</p>
+</main>
+<script src="../../shared/chip.js"></script>
+<script src="../../shared/badges.js"></script>
+<script src="../../shared/arcade.js"></script>
+<script>
+(() => {
+/*
+ * Jungle Drop: Corporal Kit Ranger is dropped at the bottom of a long map and fights to the top. The view scrolls up
+ * as you go and never back. Shoot in eight directions (you aim where you run; hold Shift to keep the aim), throw
+ * grenades over sandbags and trees, shoot open the bamboo cages and walk into the prisoners to rescue them (they
+ * leave weapons behind: a spread gun, a rapid gun, more grenades). Huts keep sending soldiers until a grenade flattens
+ * them. Some stages park a jeep: drive it, its gun fires straight ahead. At the top waits each zone's gate: knock out
+ * its guns, then the gate. Jungle, river, desert base, then the fortress, then round again, harder. On touch screens
+ * shots aim at the nearest enemy, so one thumb is enough.
+ */
+const A = Arcade, cv = document.getElementById('cv');
+const W = 360, H = 540, T = 20, COLS = W / T, ROWS = 160, MH = ROWS * T, ctx = A.canvas(cv, W, H), OUT = '#0a0612';
+const touch = matchMedia('(pointer: coarse)').matches;
+function shade(hex, k) {
+  let h = hex.slice(1); if (h.length === 3) h = [...h].map(c => c + c).join('');
+  const n = parseInt(h, 16), f = c => Math.round(k > 0 ? c + (255 - c) * k : c * (1 + k));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+function paint(x, list) {
+  x.fillStyle = OUT; for (const q of list) x.fillRect(q[0] - 1, q[1] - 1, q[2] + 2, q[3] + 2);
+  for (const [px, py, w, h, c] of list) { x.fillStyle = c; x.fillRect(px, py, w, h); if (w > 2 && h > 2) { x.fillStyle = shade(c, 0.3); x.fillRect(px, py, w, 1); x.fillStyle = shade(c, -0.3); x.fillRect(px, py + h - 1, w, 1); } }
+}
+
+/* ---------- the map: 18 × 160 tiles; 0 ground, 1 tree, 2 sandbags, 3 water, 4 bridge, 5 hut, 6 rubble, 7 rock ---------- */
+const ZONES = [
+  { name: 'GREEN HELL JUNGLE', g: '#3a7a2a', g2: '#4a8a32', tree: 0.1, water: 1, bags: 3, huts: 4, jeep: true },
+  { name: 'MUDDY RIVER', g: '#5a7a3a', g2: '#6a8a42', tree: 0.05, water: 4, bags: 3, huts: 4 },
+  { name: 'DUSTBOWL BASE', g: '#c8a868', g2: '#d8b878', tree: 0.015, water: 0, bags: 7, huts: 6, rock: 0.05, jeep: true },
+  { name: 'IRON FORTRESS', g: '#7a7a82', g2: '#8a8a92', tree: 0, water: 1, bags: 9, huts: 7, rock: 0.04 }
+];
+const SOLID = new Set([1, 2, 5, 7]), STOPS_SHOTS = new Set([1, 2, 5, 7]), STOPS_FEET = new Set([1, 2, 3, 5, 7]);
+let map = [], mapCv = null, zone = ZONES[0], stage = 1, cages = [], huts = [], nests = [], jeepAt = null;
+const tile = (i, j) => i < 0 || i >= COLS ? 7 : j < 0 || j >= ROWS ? 0 : map[j * COLS + i];
+const tileAt = (x, y) => tile(Math.floor(x / T), Math.floor(y / T));
+function buildMap() {
+  const r = A.seeded('jungle:' + stage), z = zone; map = new Array(COLS * ROWS).fill(0); cages = []; huts = []; nests = []; jeepAt = null;
+  const put = (i, j, v) => { if (i >= 0 && i < COLS && j >= 4 && j < ROWS - 8) map[j * COLS + i] = v; };
+  // trees and rocks
+  for (let j = 6; j < ROWS - 10; j++) for (let i = 0; i < COLS; i++) { if (r() < z.tree * (i < 2 || i > COLS - 3 ? 4 : 1)) put(i, j, 1); else if (z.rock && r() < z.rock) put(i, j, 7); }
+  // rivers with a bridge (or two)
+  for (let k = 0; k < z.water; k++) { const j = 20 + Math.floor(r() * (ROWS - 50)), b = 3 + Math.floor(r() * (COLS - 8)); for (let jj = j; jj < j + 3; jj++) for (let i = 0; i < COLS; i++) put(i, jj, i >= b && i < b + 3 ? 4 : 3); if (r() < 0.5) { const b2 = (b + 8) % (COLS - 4); for (let jj = j; jj < j + 3; jj++) for (let i = b2; i < b2 + 2; i++) put(i, jj, 4); } }
+  // lines of sandbags with gaps, a machine-gun nest behind some
+  for (let k = 0; k < z.bags; k++) { const j = 14 + Math.floor(r() * (ROWS - 30)); if (tile(5, j) === 3 || tile(5, j) === 4) continue; const a = Math.floor(r() * (COLS - 8)), len = 4 + Math.floor(r() * 6); for (let i = a; i < a + len; i++) put(i, j, 2); if (r() < 0.6) nests.push({ x: (a + 2) * T + 10, y: (j - 1) * T + 10, hp: 4, shoot: 2, dead: false }); }
+  // huts that send soldiers
+  for (let k = 0; k < z.huts; k++) { const i = 1 + Math.floor(r() * (COLS - 4)), j = 12 + Math.floor(r() * (ROWS - 30)); if ([3, 4].includes(tile(i, j))) continue; for (let a = 0; a < 2; a++) for (let b = 0; b < 2; b++) put(i + a, j + b, 5); huts.push({ i, j, x: i * T + T, y: j * T + T, hp: 1, t: 2 + r() * 3, dead: false }); }
+  // prisoners in bamboo cages
+  for (let k = 0; k < 4; k++) { const i = 2 + Math.floor(r() * (COLS - 4)), j = 16 + Math.floor((k + r()) * (ROWS - 40) / 4); if (map[j * COLS + i]) continue; cages.push({ x: i * T + 10, y: j * T + 10, hp: 2, open: false, saved: false, gift: ['S', 'R', 'G', 'S', 'R'][Math.floor(r() * 5)] }); }
+  if (z.jeep) { const j = ROWS - 40; for (let i = 6; i < 12; i++) for (let jj = j - 1; jj < j + 3; jj++) map[jj * COLS + i] = 0; jeepAt = { x: 9 * T, y: j * T + 10 }; }
+  // a winding way from the bottom to the top that's always open (bridged where it crosses water); huts it cuts through go
+  let cx = Math.floor(COLS / 2);
+  for (let j = ROWS - 1; j >= 0; j--) {
+    if (r() < 0.3) cx = Math.max(2, Math.min(COLS - 3, cx + (r() < 0.5 ? -1 : 1)));
+    for (let i = cx - 1; i <= cx + 1; i++) { const v = map[j * COLS + i]; map[j * COLS + i] = v === 3 || v === 4 ? 4 : 0; }
+  }
+  const whole = h => [0, 1].every(a => [0, 1].every(b => map[(h.j + b) * COLS + h.i + a] === 5));
+  for (const h of huts) if (!whole(h)) for (let a = 0; a < 2; a++) for (let b = 0; b < 2; b++) if (map[(h.j + b) * COLS + h.i + a] === 5) map[(h.j + b) * COLS + h.i + a] = 0;
+  huts = huts.filter(h => map[h.j * COLS + h.i] === 5);
+  for (const c of cages) map[Math.floor(c.y / T) * COLS + Math.floor(c.x / T)] = 0;
+  // the gate band at the top is open ground; the gate itself is drawn by the boss
+  for (let j = 0; j < 8; j++) for (let i = 0; i < COLS; i++) map[j * COLS + i] = 0;
+  for (let j = ROWS - 8; j < ROWS; j++) for (let i = 0; i < COLS; i++) map[j * COLS + i] = 0;
+  drawMap();
+}
+function drawMap() {
+  mapCv = document.createElement('canvas'); mapCv.width = W; mapCv.height = MH; const b = mapCv.getContext('2d'), z = zone, r = A.seeded('jungle:paint:' + stage);
+  b.fillStyle = z.g; b.fillRect(0, 0, W, MH);
+  for (let k = 0; k < 900; k++) { b.fillStyle = r() < 0.5 ? z.g2 : shade(z.g, -0.12); b.fillRect(Math.floor(r() * W), Math.floor(r() * MH), 2 + Math.floor(r() * 4), 2); }
+  for (let j = 0; j < ROWS; j++) for (let i = 0; i < COLS; i++) paintTile(b, i, j);
+}
+function paintTile(b, i, j) {
+  const v = map[j * COLS + i], x = i * T, y = j * T;
+  if (v === 3) { b.fillStyle = '#2a6aaa'; b.fillRect(x, y, T, T); b.fillStyle = 'rgba(255,255,255,.25)'; b.fillRect(x + ((i * 7 + j * 3) % 12), y + 6, 6, 2); b.fillRect(x + ((i * 5 + j) % 10), y + 14, 5, 2); }
+  if (v === 4) { b.fillStyle = OUT; b.fillRect(x, y, T, T); b.fillStyle = '#9a6a3a'; b.fillRect(x, y + 1, T, T - 2); b.fillStyle = '#7a4a24'; for (let k = 0; k < T; k += 5) b.fillRect(x + k, y + 1, 1, T - 2); }
+  if (v === 1) { b.fillStyle = OUT; b.beginPath(); b.arc(x + 10, y + 10, 12, 0, 6.29); b.fill(); b.fillStyle = '#1e5a1e'; b.beginPath(); b.arc(x + 10, y + 10, 11, 0, 6.29); b.fill(); b.fillStyle = '#2e7a2a'; b.beginPath(); b.arc(x + 8, y + 8, 7, 0, 6.29); b.fill(); b.fillStyle = 'rgba(255,255,255,.18)'; b.fillRect(x + 5, y + 5, 3, 2); }
+  if (v === 2) paint(b, [[x + 1, y + 3, 8, 7, '#c8b078'], [x + 11, y + 3, 8, 7, '#c8b078'], [x + 5, y + 10, 10, 7, '#b8a068']]);
+  if (v === 7) paint(b, [[x + 2, y + 3, 16, 14, '#8a8478']]);
+  if (v === 6) { b.fillStyle = '#4a3a2a'; b.fillRect(x + 2, y + 4, 6, 4); b.fillRect(x + 11, y + 11, 6, 5); b.fillStyle = 'rgba(0,0,0,.25)'; b.fillRect(x, y, T, T); }
+  if (v === 5 && (i === 0 || map[j * COLS + i - 1] !== 5) && (j === 0 || map[(j - 1) * COLS + i] !== 5)) { paint(b, [[x + 1, y + 1, 2 * T - 2, 2 * T - 2, '#8a5a2a']]); b.fillStyle = '#6a4220'; for (let k = 4; k < 2 * T - 4; k += 6) b.fillRect(x + 2, y + k, 2 * T - 4, 2); b.fillStyle = OUT; b.fillRect(x + 15, y + 26, 10, 13); }
+}
+function flatten(h) {
+  h.dead = true; for (let a = 0; a < 2; a++) for (let c = 0; c < 2; c++) { map[(h.j + c) * COLS + h.i + a] = 6; }
+  const b = mapCv.getContext('2d'); b.fillStyle = zone.g; b.fillRect(h.i * T, h.j * T, 2 * T, 2 * T); for (let a = 0; a < 2; a++) for (let c = 0; c < 2; c++) paintTile(b, h.i + a, h.j + c);
+  add(500, h.x, h.y - camY); A.burst(h.x, h.y - camY, { n: 26, colors: ['#8a5a2a', '#ffd23d', '#555'], speed: 170, life: 0.6, kind: 'debris' }); A.shake(5, 0.3); A.sfx('boom');
+}
+
+/* ---------- you ---------- */
+let state = 'title', score = 0, lives = 3, me = null, camY = 0, foes = [], shots = [], nades = [], items = [], fx = [], gate = null, msg = '', msgT = 0, lost = false, saved = 0, spawnT = 0, missed = false;
+const say = (t, s = 2) => { msg = t; msgT = s; };
+const add = (n, x, y, c = '#ffd23d') => { score += n; A.setScore(score); if (x !== undefined) A.pop(x, y, '+' + n, c); };
+const lvl = () => 1 + (stage - 1) * 0.15;
+const DIRS = [[0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1]];
+function newMe(x, y) { return { x, y, aim: 0, gun: me && !me.dead ? me.gun : 'rifle', nades: 3, cool: 0, ncool: 0, inv: 2, dead: 0, step: 0, jeep: null }; }
+const KEYS = { L: ['ArrowLeft', 'KeyA'], R: ['ArrowRight', 'KeyD'], U: ['ArrowUp', 'KeyW'], D: ['ArrowDown', 'KeyS'], F: ['Space', 'KeyJ', 'KeyZ'], G: ['KeyK', 'KeyX'], H: ['ShiftLeft', 'ShiftRight'] };
+function blockedFeet(x, y, r = 6) { return [[-r, -r], [r, -r], [-r, r], [r, r]].some(([a, b]) => STOPS_FEET.has(tileAt(x + a, y + b))) || cages.some(c => !c.open && Math.abs(c.x - x) < 14 && Math.abs(c.y - y) < 14); }
+function fire() {
+  const p = me, g = p.gun; p.cool = g === 'rapid' ? 0.09 : g === 'spread' ? 0.24 : 0.17;
+  let a = Math.atan2(DIRS[p.aim][1], DIRS[p.aim][0]);
+  if (touch || p.jeep) { const t = foes.concat(nests.filter(n => !n.dead)).filter(e => !e.dead && Math.hypot(e.x - p.x, e.y - p.y) < 220 && (!p.jeep || e.y < p.y)).sort((u, v) => Math.hypot(u.x - p.x, u.y - p.y) - Math.hypot(v.x - p.x, v.y - p.y))[0]; if (t) a = Math.atan2(t.y - p.y, t.x - p.x); else if (p.jeep) a = -Math.PI / 2; }
+  const spread = g === 'spread' ? [-0.22, 0, 0.22] : p.jeep ? [-0.05, 0.05] : [0];
+  for (const d of spread) shots.push({ x: p.x + Math.cos(a) * 10, y: p.y + Math.sin(a) * 10, vx: Math.cos(a + d) * 330, vy: Math.sin(a + d) * 330, mine: true, t: 0.75 });
+  A.tone(g === 'rapid' ? 900 : 700, 0.03, 'square', 0.02, 0, 300);
+}
+function grenade() {
+  const p = me; if (p.ncool > 0 || p.nades <= 0) return; p.ncool = 0.5; p.nades--;
+  const [dx, dy] = p.jeep ? [0, -1] : DIRS[p.aim], d = Math.hypot(dx, dy);
+  nades.push({ x: p.x, y: p.y, vx: dx / d * 140, vy: dy / d * 140, t: 0.9, mine: true }); A.tone(300, 0.1, 'triangle', 0.03, 0, 500);
+}
+function boom(x, y, r, mine) {
+  A.burst(x, y - camY, { n: 22, colors: ['#ffd23d', '#ff8a3d', '#fff', '#555'], speed: 170, life: 0.5 }); A.ring(x, y - camY, '#ff8a3d', r); A.shake(4, 0.2); A.noise(0.3, 0.06);
+  if (!mine) { if (!me.dead && Math.hypot(me.x - x, me.y - y) < r * 0.8) hurt(); return; }
+  for (const e of foes) if (!e.dead && Math.hypot(e.x - x, e.y - y) < r) killFoe(e);
+  for (const n of nests) if (!n.dead && Math.hypot(n.x - x, n.y - y) < r + 6) { n.hp -= 4; if (n.hp <= 0) killNest(n); }
+  for (const h of huts) if (!h.dead && Math.hypot(h.x - x, h.y - y) < r + 10) flatten(h);
+  for (const c of cages) if (!c.open && Math.hypot(c.x - x, c.y - y) < r) openCage(c);
+  if (gate) for (const g of gateParts()) if (Math.hypot(g.x - x, g.y - y) < r + 16) hitGate(g, 5);
+}
+function hurt() {
+  const p = me; if (p.inv > 0 || p.dead || state !== 'play') return;
+  if (p.jeep) { p.jeep.hp--; A.tone(200, 0.06, 'square', 0.03); A.shake(3, 0.1); if (p.jeep.hp <= 0) { boom(p.x, p.y, 40, true); A.sfx('boom'); say('JEEP DOWN!', 1.2); p.jeep = null; p.inv = 1.5; } return; }
+  p.dead = 1.6; lives--; missed = true; A.sfx('hurt'); A.shake(6, 0.4); A.flash('#ff4f6d', 0.15);
+  A.burst(p.x, p.y - camY, { n: 18, colors: ['#3a7a3a', '#ff4f6d', '#fff'], speed: 140, life: 0.5 });
+  if (lives <= 0) setTimeout(gameOver, 1400);
+}
+
+/* ---------- the enemy ---------- */
+function addFoe(x, y, k = Math.random() < 0.18 * lvl() ? 'nade' : 'sold') { foes.push({ k, x, y, hp: 1, t: Math.random() * 2, shoot: 1 + Math.random() * 1.5, dir: 4, dead: false, run: 1 + Math.random() * 0.6 }); }
+function killFoe(e) { if (e.dead) return; e.dead = true; add(e.k === 'nade' ? 150 : 100, e.x, e.y - camY - 8); A.burst(e.x, e.y - camY, { n: 10, colors: ['#8a5a4a', '#ff4f6d', '#fff'], speed: 110, life: 0.35 }); A.tone(180, 0.06, 'square', 0.025, 0, 90); fx.push({ x: e.x, y: e.y, t: 3 }); }
+function killNest(n) { n.dead = true; add(400, n.x, n.y - camY - 10); A.burst(n.x, n.y - camY, { n: 20, colors: ['#ffd23d', '#ff8a3d', '#555'], speed: 150, life: 0.5 }); A.sfx('boom'); A.shake(4, 0.2); }
+function openCage(c) { if (c.open) return; c.open = true; A.burst(c.x, c.y - camY, { n: 12, color: '#c8a050', speed: 100, life: 0.4, kind: 'debris' }); A.tone(600, 0.1, 'triangle', 0.03, 0, 900); }
+function eShot(x, y, sp = 150) { const d = Math.hypot(me.x - x, me.y - y) || 1, a = (Math.random() - 0.5) * 0.12; shots.push({ x, y, vx: ((me.x - x) / d) * sp + a * sp, vy: ((me.y - y) / d) * sp, mine: false, t: 3 }); }
+
+/* ---------- the gate at the top ---------- */
+function makeGate() { const hp = Math.round(30 * lvl()), gun = Math.round(10 * lvl()); return { y: 3 * T, hp, max: hp, guns: [{ x: 50, hp: gun, shoot: 1.5 }, { x: W - 50, hp: gun, shoot: 2.2 }], t: 0, spawn: 2, hit: 0, dying: 0 }; }
+function gateParts() { if (!gate || gate.dying) return []; const g = gate, out = g.guns.filter(u => u.hp > 0).map(u => ({ x: u.x, y: g.y + 20, part: u })); if (!out.length) out.push({ x: W / 2, y: g.y + 22, part: 'door' }); return out; }
+function hitGate(p, n) {
+  const g = gate; g.hit = 0.1; A.tone(240, 0.04, 'square', 0.025);
+  if (p.part !== 'door') { p.part.hp -= n; if (p.part.hp <= 0) { add(2000, p.x, p.y - camY); A.sfx('boom'); A.shake(6, 0.3); A.burst(p.x, p.y - camY, { n: 26, colors: ['#ffd23d', '#ff8a3d', '#555'], speed: 180, life: 0.6 }); if (g.guns.every(u => u.hp <= 0)) say('THE GATE IS OPEN TO FIRE!', 1.6); } return; }
+  g.hp -= n; if (g.hp > 0) return;
+  g.dying = 2.4; add(10000, W / 2, g.y + 20 - camY, '#ffd23d'); A.flash('#fff', 0.3); A.shake(12, 1); A.noise(1.2, 0.1); say('THE GATE FALLS!', 2.2);
+  if (stage % 4 === 0) A.badge('fortress');
+  for (let k = 0; k < 8; k++) setTimeout(() => A.burst(40 + Math.random() * (W - 80), g.y + Math.random() * 40 - camY, { n: 20, colors: ['#ffd23d', '#ff8a3d', '#555'], speed: 200, life: 0.6 }), k * 200);
+}
+
+/* ---------- the game ---------- */
+function newStage() {
+  zone = ZONES[(stage - 1) % ZONES.length]; buildMap();
+  foes = []; shots = []; nades = []; items = []; fx = []; gate = null; spawnT = 2; missed = false;
+  camY = MH - H; me = newMe(W / 2, MH - 40); me.inv = 2;
+  if (jeepAt) jeepAt.taken = false;
+  say(`STAGE ${stage} · ${zone.name}`, 2.4); A.jingle([392, 523, 659, 523, 784], 0.08, 'square');
+}
+function newGame() { stage = 1; score = 0; lives = A.easy ? 5 : 3; saved = 0; A.setScore(0); lost = false; me = null; newStage(); state = 'play'; }
+function stageClear() {
+  const bonus = 3000 * stage; add(bonus); say(`STAGE CLEAR! +${bonus}`, 2.4); A.jingle([523, 659, 784, 1047, 1319], 0.09, 'square');
+  if (!missed) A.badge('clean');
+  state = 'between'; setTimeout(() => { if (state !== 'between') return; const keep = { gun: me.gun, nades: me.nades }; stage++; newStage(); Object.assign(me, keep); state = 'play'; }, 2600);
+}
+function gameOver() {
+  if (lost) return; lost = true; state = 'over';
+  const rec = A.submit(score);
+  A.overlay({ title: 'GAME OVER', big: `SCORE ${score.toLocaleString()} · STAGE ${stage}`, sub: `${zone.name} · ${saved} prisoner${saved === 1 ? '' : 's'} rescued${rec ? ' · New high score!' : ''}`, btn: 'Drop in again', onGo: newGame });
+}
+function pause() { if (state !== 'play') return; state = 'paused'; A.overlay({ title: 'PAUSED', btn: 'Resume', onGo: () => state = 'play' }); }
+A.onHide(pause);
+A.onPress(c => {
+  if (c === 'KeyP' || c === 'Escape') return pause();
+  if (state === 'play' && me && !me.dead && KEYS.G.includes(c)) grenade();
+});
+
+function update(dt) {
+  if (msgT > 0) msgT -= dt;
+  if (state !== 'play') return;
+  const p = me;
+  p.inv -= dt; p.cool -= dt; p.ncool -= dt;
+  if (p.dead) { p.dead -= dt; if (p.dead <= 0 && lives > 0) { const y = Math.min(MH - 30, camY + H - 50); let x = W / 2; for (let k = 0; k < COLS && blockedFeet(x, y); k++) x = (k + 1) * T; me = newMe(x, y); me.gun = 'rifle'; me.inv = 2.5; } }
+  else {
+    const mx = (A.held(...KEYS.R) ? 1 : 0) - (A.held(...KEYS.L) ? 1 : 0), my = (A.held(...KEYS.D) ? 1 : 0) - (A.held(...KEYS.U) ? 1 : 0);
+    if ((mx || my) && !A.held(...KEYS.H)) p.aim = DIRS.findIndex(d => d[0] === mx && d[1] === my);
+    const sp = p.jeep ? 140 : 92, d = Math.hypot(mx, my) || 1, nx = p.x + mx / d * sp * dt, ny = p.y + my / d * sp * dt;
+    if (!blockedFeet(nx, p.y, p.jeep ? 9 : 6)) p.x = A.clamp(nx, 8, W - 8);
+    if (!blockedFeet(p.x, ny, p.jeep ? 9 : 6)) p.y = A.clamp(ny, camY + 16, camY + H - 12);
+    if (mx || my) p.step += dt;
+    if ((A.held(...KEYS.F) || p.jeep) && p.cool <= 0) fire();
+    // the view follows you up, never back down
+    const want = p.y - H * 0.55; if (want < camY) camY = Math.max(0, want);
+    if (jeepAt && !jeepAt.taken && Math.hypot(jeepAt.x - p.x, jeepAt.y - p.y) < 18) { jeepAt.taken = true; p.jeep = { hp: 8 }; say('JEEP!', 1.2); A.sfx('powerup'); }
+    for (const c of cages) if (c.open && !c.saved && Math.hypot(c.x - p.x, c.y - p.y) < (p.jeep ? 26 : 18)) { c.saved = true; saved++; add(1000, c.x, c.y - camY - 10, '#3dff8f'); A.jingle([659, 784, 1047], 0.08, 'square'); items.push({ k: c.gift, x: c.x, y: c.y + 14, t: 12 }); if (saved >= 10) A.badge('rescue'); }
+    for (const it of items) if (Math.hypot(it.x - p.x, it.y - p.y) < 16) { it.t = 0; A.sfx('powerup'); if (it.k === 'G') { p.nades = Math.min(9, p.nades + 3); add(200, it.x, it.y - camY); } else { p.gun = it.k === 'S' ? 'spread' : 'rapid'; add(300, it.x, it.y - camY); say(it.k === 'S' ? 'SPREAD GUN!' : 'RAPID GUN!', 1.2); } }
+  }
+  items = items.filter(it => (it.t -= dt) > 0);
+  // reach the top: the gate
+  if (!gate && camY <= 0) { gate = makeGate(); say('TAKE THE GATE!', 1.8); }
+  // soldiers keep coming from the top, and from huts on screen
+  if (!gate || !gate.dying) {
+    if ((spawnT -= dt) <= 0) { spawnT = Math.max(0.7, 2.2 - stage * 0.15) / lvl(); const x = 20 + Math.random() * (W - 40), y = camY - 10; if (!blockedFeet(x, y + 20) && foes.length < 5 + stage * 2) addFoe(x, y); }
+    for (const h of huts) if (!h.dead && h.y > camY && h.y < camY + H) { h.t -= dt; if (h.t <= 0) { h.t = 3.2 / lvl(); if (foes.length < 7 + stage * 2) addFoe(h.x, h.y + 26); } }
+  }
+  for (const e of foes) {
+    if (e.dead) continue; e.t += dt;
+    const dx = p.x - e.x, dy = p.y - e.y, dd = Math.hypot(dx, dy) || 1;
+    const sp = 52 * e.run * (dd > 120 ? 1 : dd < 70 ? -0.6 : 0.2);
+    const nx = e.x + dx / dd * sp * dt + Math.sin(e.t * 2) * 20 * dt, ny = e.y + dy / dd * sp * dt;
+    if (!blockedFeet(nx, e.y, 5)) e.x = nx; if (!blockedFeet(e.x, ny, 5)) e.y = ny;
+    e.dir = Math.round(((Math.atan2(dy, dx) + Math.PI / 2) / (Math.PI / 4)) + 8) % 8;
+    if (e.y > camY - 30 && e.y < camY + H && !p.dead && (e.shoot -= dt) <= 0) {
+      e.shoot = (e.k === 'nade' ? 3.2 : 2.2) / lvl() + Math.random();
+      if (e.k === 'nade') nades.push({ x: e.x, y: e.y, vx: dx / dd * Math.min(150, dd / 0.9), vy: dy / dd * Math.min(150, dd / 0.9), t: 0.9, mine: false });
+      else eShot(e.x, e.y);
+    }
+    if (!p.dead && dd < 12) { if (p.jeep) killFoe(e); else hurt(); }
+  }
+  foes = foes.filter(e => !e.dead && e.y < camY + H + 40);
+  for (const n of nests) { if (n.dead || n.y < camY - 20 || n.y > camY + H) continue; if ((n.shoot -= dt) <= 0) { n.shoot = 2.4 / lvl(); for (let k = 0; k < 3; k++) setTimeout(() => { if (!n.dead && state === 'play') eShot(n.x, n.y, 180); }, k * 120); } }
+  // the gate
+  if (gate) {
+    const g = gate; g.t += dt; g.hit -= dt;
+    if (g.dying) { g.dying -= dt; if (g.dying <= 0) { gate = null; camY = 0; stageClear(); return; } }
+    else {
+      for (const u of g.guns) if (u.hp > 0 && (u.shoot -= dt) <= 0) { u.shoot = 1.6 / lvl() + Math.random() * 0.6; for (const a of [-0.2, 0, 0.2]) { const d = Math.hypot(p.x - u.x, p.y - g.y) || 1; shots.push({ x: u.x, y: g.y + 30, vx: ((p.x - u.x) / d) * 170 + a * 170, vy: ((p.y - g.y) / d) * 170, mine: false, t: 3 }); } }
+      if ((g.spawn -= dt) <= 0) { g.spawn = 2.8 / lvl(); addFoe(W / 2 + (Math.random() - 0.5) * 40, g.y + 50); }
+    }
+  }
+  // bullets
+  for (const s of shots) {
+    s.x += s.vx * dt; s.y += s.vy * dt; s.t -= dt;
+    if (STOPS_SHOTS.has(tileAt(s.x, s.y)) && !(s.mine && tileAt(s.x, s.y) === 5 && false)) { s.t = 0; A.burst(s.x, s.y - camY, { n: 3, color: '#ddd', speed: 50, life: 0.15, size: 2 }); continue; }
+    if (s.mine) {
+      for (const e of foes) if (!e.dead && Math.abs(e.x - s.x) < 8 && Math.abs(e.y - s.y) < 9) { s.t = 0; killFoe(e); break; }
+      if (s.t > 0) for (const n of nests) if (!n.dead && Math.abs(n.x - s.x) < 10 && Math.abs(n.y - s.y) < 10) { s.t = 0; n.hp--; A.tone(400, 0.03, 'square', 0.02); if (n.hp <= 0) killNest(n); break; }
+      if (s.t > 0) for (const c of cages) if (!c.open && Math.abs(c.x - s.x) < 10 && Math.abs(c.y - s.y) < 10) { s.t = 0; if (--c.hp <= 0) openCage(c); break; }
+      if (s.t > 0) for (const g of gateParts()) if (Math.abs(g.x - s.x) < (g.part === 'door' ? 40 : 16) && Math.abs(g.y - s.y) < 18) { s.t = 0; hitGate(g, 1); break; }
+    } else if (!p.dead && Math.abs(p.x - s.x) < (p.jeep ? 11 : 6) && Math.abs(p.y - s.y) < (p.jeep ? 13 : 8)) { s.t = 0; hurt(); }
+  }
+  shots = shots.filter(s => s.t > 0 && s.y > camY - 20 && s.y < camY + H + 20);
+  for (const n of nades) { n.x += n.vx * dt; n.y += n.vy * dt; n.t -= dt; if (n.t <= 0) boom(n.x, n.y, 40, n.mine); }
+  nades = nades.filter(n => n.t > 0);
+  for (const f of fx) f.t -= dt; fx = fx.filter(f => f.t > 0);
+}
+
+/* ---------- drawing ---------- */
+function drawMan(x, y, dir, c, helm, step, gun) {
+  const [dx, dy] = DIRS[dir], k = Math.floor(step * 9) % 2;
+  ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(x, y + 7, 7, 3, 0, 0, 6.29); ctx.fill();
+  paint(ctx, [[x - 6 + (k ? -1 : 1), y + 2, 4, 5, shade(c, -0.3)], [x + 2 + (k ? 1 : -1), y + 2, 4, 5, shade(c, -0.3)], [x - 6, y - 5, 12, 9, c]]);
+  ctx.fillStyle = OUT; ctx.fillRect(x + dx * 6 - 2, y + dy * 6 - 2, 4, 4); ctx.fillStyle = gun || '#2a2a32'; ctx.fillRect(x + dx * 9 - 1, y + dy * 9 - 1, 3, 3); ctx.fillRect(x + dx * 5 - 1, y + dy * 5 - 1, 3, 3);
+  ctx.fillStyle = OUT; ctx.beginPath(); ctx.arc(x, y - 4, 6, 0, 6.29); ctx.fill(); ctx.fillStyle = helm; ctx.beginPath(); ctx.arc(x, y - 4, 5, 0, 6.29); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,.3)'; ctx.fillRect(x - 3, y - 7, 3, 2);
+}
+function render(t) {
+  ctx.drawImage(mapCv || cv, 0, Math.max(0, camY), W, H, 0, 0, W, H);
+  const sy = y => Math.round(y - camY);
+  for (const f of fx) { ctx.fillStyle = `rgba(90,20,20,${Math.min(0.5, f.t / 4)})`; ctx.fillRect(f.x - 4, sy(f.y) - 2, 8, 5); }
+  for (const c of cages) { const y = sy(c.y); if (y < -20 || y > H + 20 || c.saved) continue; if (!c.open) { paint(ctx, [[c.x - 10, y - 10, 20, 20, '#c8a050']]); ctx.fillStyle = OUT; for (let k = -6; k <= 6; k += 4) ctx.fillRect(c.x + k, y - 9, 2, 18); } drawMan(c.x, y + (c.open ? Math.sin(t / 150) * 2 : 0), 4, '#d8d0c0', '#e8b890', 0); if (c.open && Math.floor(t / 300) % 2) { ctx.fillStyle = '#3dff8f'; ctx.font = '9px Silkscreen, monospace'; ctx.textAlign = 'center'; ctx.fillText('HELP!', c.x, y - 16); } }
+  for (const it of items) { const y = sy(it.y); if (it.t < 2 && Math.floor(t / 100) % 2) continue; paint(ctx, [[it.x - 8, y - 8, 16, 16, it.k === 'S' ? '#ff8a3d' : it.k === 'R' ? '#5ee7ff' : '#7ad83d']]); ctx.fillStyle = OUT; ctx.font = '10px Silkscreen, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(it.k, it.x, y + 1); }
+  if (jeepAt && !jeepAt.taken) { const y = sy(jeepAt.y); paint(ctx, [[jeepAt.x - 11, y - 15, 22, 30, '#5a6a3a'], [jeepAt.x - 9, y - 12, 18, 9, '#4a5a2a']]); ctx.fillStyle = OUT; ctx.fillRect(jeepAt.x - 14, y - 12, 3, 8); ctx.fillRect(jeepAt.x + 11, y - 12, 3, 8); ctx.fillRect(jeepAt.x - 14, y + 5, 3, 8); ctx.fillRect(jeepAt.x + 11, y + 5, 3, 8); if (Math.floor(t / 300) % 2) { ctx.fillStyle = '#ffd23d'; ctx.font = '9px Silkscreen, monospace'; ctx.textAlign = 'center'; ctx.fillText('JEEP', jeepAt.x, y - 20); } }
+  for (const n of nests) { const y = sy(n.y); if (y < -20 || y > H + 20) continue; if (n.dead) { ctx.fillStyle = '#2a2420'; ctx.fillRect(n.x - 8, y - 6, 16, 12); continue; } paint(ctx, [[n.x - 9, y - 7, 18, 14, '#5a5a4a']]); const a = Math.atan2(me.y - n.y, me.x - n.x); ctx.fillStyle = OUT; ctx.fillRect(n.x + Math.cos(a) * 10 - 2, y + Math.sin(a) * 10 - 2, 5, 5); ctx.fillStyle = '#ff4f6d'; ctx.fillRect(n.x - 2, y - 2, 4, 4); }
+  if (gate) {
+    const g = gate, y = sy(g.y);
+    paint(ctx, [[0, y - 40, W, 70, '#6a6470']]); ctx.fillStyle = shade('#6a6470', -0.3); for (let x = 0; x < W; x += 24) ctx.fillRect(x, y - 40, 2, 70);
+    ctx.fillStyle = OUT; ctx.fillRect(0, y - 46, W, 6); for (let x = 0; x < W; x += 20) { ctx.fillStyle = OUT; ctx.fillRect(x, y - 54, 12, 10); ctx.fillStyle = '#7a7480'; ctx.fillRect(x + 1, y - 53, 10, 8); }
+    const open = g.guns.every(u => u.hp <= 0);
+    paint(ctx, [[W / 2 - 36, y - 20, 72, 50, g.hit > 0 && open ? '#fff' : '#5a3a2a']]); ctx.fillStyle = OUT; ctx.fillRect(W / 2 - 1, y - 20, 2, 50); ctx.fillStyle = '#ffd23d'; ctx.fillRect(W / 2 - 30, y + 2, 60, 3);
+    for (const u of g.guns) { if (u.hp <= 0) { ctx.fillStyle = '#2a2024'; ctx.fillRect(u.x - 14, y + 4, 28, 26); continue; } paint(ctx, [[u.x - 15, y + 2, 30, 28, '#4a4450'], [u.x - 4, y + 26, 8, 14, '#2a2a32']]); ctx.fillStyle = '#ff4f6d'; ctx.fillRect(u.x - 3, y + 10, 6, 6); }
+  }
+  for (const e of foes) { const y = sy(e.y); if (y < -20 || y > H + 20) continue; drawMan(e.x, y, e.dir, e.k === 'nade' ? '#8a4a3a' : '#9a8a6a', e.k === 'nade' ? '#5a2a20' : '#6a5a3a', e.t); }
+  if (me && !me.dead && !(me.inv > 0 && Math.floor(t / 80) % 2)) {
+    const y = sy(me.y);
+    if (me.jeep) { paint(ctx, [[me.x - 11, y - 15, 22, 30, '#6a7a3a'], [me.x - 9, y - 4, 18, 9, '#4a5a2a']]); ctx.fillStyle = OUT; for (const [a, b] of [[-14, -12], [11, -12], [-14, 5], [11, 5]]) ctx.fillRect(me.x + a, y + b, 3, 8); ctx.fillStyle = '#2a2a32'; ctx.fillRect(me.x - 2, y - 22, 4, 10); ctx.fillStyle = OUT; ctx.beginPath(); ctx.arc(me.x, y - 2, 5, 0, 6.29); ctx.fill(); ctx.fillStyle = '#3a8a3a'; ctx.beginPath(); ctx.arc(me.x, y - 2, 4, 0, 6.29); ctx.fill(); }
+    else drawMan(me.x, y, me.aim, '#3a8a3a', '#2a6a2a', me.step, me.gun === 'spread' ? '#ff8a3d' : me.gun === 'rapid' ? '#5ee7ff' : null);
+  }
+  for (const n of nades) { const h = Math.sin((1 - n.t / 0.9) * Math.PI) * 14, y = sy(n.y); ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.fillRect(n.x - 3, y + 2, 6, 3); ctx.fillStyle = OUT; ctx.fillRect(n.x - 4, y - h - 4, 8, 8); ctx.fillStyle = n.mine ? '#5a7a3a' : '#7a3a2a'; ctx.fillRect(n.x - 3, y - h - 3, 6, 6); }
+  for (const s of shots) { const y = sy(s.y); ctx.fillStyle = OUT; ctx.fillRect(s.x - 3, y - 3, 6, 6); ctx.fillStyle = s.mine ? '#fff6a0' : '#ff6a5a'; ctx.fillRect(s.x - 2, y - 2, 4, 4); }
+  if (state === 'title') return;
+  // the HUD
+  ctx.fillStyle = 'rgba(10,6,18,.72)'; ctx.fillRect(0, H - 22, W, 22);
+  ctx.font = '10px Silkscreen, monospace'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  ctx.fillStyle = '#7ad83d'; ctx.fillText(`♥${Math.max(0, lives)}`, 6, H - 11);
+  ctx.fillStyle = '#ffd23d'; ctx.fillText(`GRENADES ${me ? me.nades : 0}`, 40, H - 11);
+  ctx.fillStyle = me && me.gun !== 'rifle' ? (me.gun === 'spread' ? '#ff8a3d' : '#5ee7ff') : '#a39bc4'; ctx.fillText(me ? me.gun.toUpperCase() : '', 140, H - 11);
+  if (me && me.jeep) { ctx.fillStyle = 'rgba(10,6,18,.72)'; ctx.fillRect(0, H - 38, 96, 16); ctx.fillStyle = '#c8d870'; ctx.fillText(`JEEP ${'▮'.repeat(me.jeep.hp)}`, 6, H - 30); }
+  ctx.textAlign = 'right'; ctx.fillStyle = '#fff'; ctx.fillText(`STAGE ${stage}`, W - 6, H - 11);
+  // how far to the top
+  ctx.fillStyle = 'rgba(10,6,18,.6)'; ctx.fillRect(W - 8, 30, 4, 120); ctx.fillStyle = '#7ad83d'; const prog = 1 - camY / (MH - H); ctx.fillRect(W - 8, 30 + 120 * (1 - prog), 4, 120 * prog);
+  if (gate && !gate.dying) { const hp = gate.guns.reduce((a, u) => a + Math.max(0, u.hp), 0) + gate.hp, max = gate.guns.length * Math.round(10 * lvl()) + gate.max; ctx.fillStyle = '#2a1a2a'; ctx.fillRect(W / 2 - 70, 6, 140, 6); ctx.fillStyle = '#ff4f6d'; ctx.fillRect(W / 2 - 70, 6, 140 * hp / max, 6); }
+  if (msgT > 0) { ctx.globalAlpha = Math.min(1, msgT * 2); ctx.font = '18px Bungee, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = OUT; ctx.fillText(msg, W / 2 + 2, H / 2 + 2); ctx.fillStyle = '#7ad83d'; ctx.fillText(msg, W / 2, H / 2); ctx.globalAlpha = 1; }
+}
+A.loop(dt => { if (state === 'between') { if (msgT > 0) msgT -= dt; return; } update(dt); }, render);
+if (/[?&]debug/.test(location.search)) window.__jungle = (jump, x, y) => { if (jump) { stage = jump; newStage(); camY = 0; me.y = 420; me.x = W / 2; } if (x) { me.x = x; me.y = y; for (let j = Math.floor(80 / T); j < Math.floor(y / T) + 1; j++) map[j * COLS + Math.floor(x / T)] = 0; } return { state, stage, lives, camY: Math.round(camY), me: me && { x: Math.round(me.x), y: Math.round(me.y), gun: me.gun, nades: me.nades, jeep: !!me.jeep, dead: me.dead > 0 }, foes: foes.length, saved, gate: gate && [gate.hp, gate.guns.map(u => u.hp)] }; }; // for testing
+
+/*
+ * Attract demo: keep pushing up the map, sidestepping round anything in the way; aim at the nearest enemy (or cage, or
+ * the gate's guns) and fire; throw a grenade at huts, nests and crowds; pick up what the prisoners leave.
+ */
+let botSide = 0, botT = 0, botX = 0, botY = 0, botStill = 0, botSkip = new Set();
+A.attract({
+  start: newGame,
+  stop: () => { state = 'title'; foes = []; shots = []; nades = []; gate = null; botSkip.clear(); },
+  bot: dt => {
+    const p = me; if (state !== 'play' || !p || p.dead) return [];
+    const out = [], targets = [...foes.filter(e => !e.dead), ...nests.filter(n => !n.dead), ...cages.filter(c => !c.open), ...gateParts()].filter(e => e.y > camY - 10 && e.y < camY + H);
+    const tgt = targets.sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y))[0];
+    let mx = 0, my = -1;
+    // stuck for a couple of seconds? give up on whatever we were heading for
+    botStill = Math.hypot(p.x - botX, p.y - botY) < 1 ? botStill + dt : 0; botX = p.x; botY = p.y;
+    const goal = [...items, ...cages.filter(c => c.open && !c.saved && c.y > camY && c.y < camY + H), ...(jeepAt && !jeepAt.taken && jeepAt.y > camY && jeepAt.y < camY + H ? [jeepAt] : [])].find(g => !botSkip.has(g));
+    if (goal && botStill > 2) { botSkip.add(goal); botStill = 0; }
+    if (goal) { mx = Math.sign(Math.round((goal.x - p.x) / 6)); my = Math.sign(Math.round((goal.y - p.y) / 6)); }
+    else if (gate) { my = p.y > gate.y + 140 ? -1 : 0; mx = Math.sign(Math.round(((gateParts()[0] || { x: W / 2 }).x - p.x) / 30)); }
+    const rad = p.jeep ? 9 : 6;
+    if (blockedFeet(p.x + mx * 10, p.y + my * 12, rad) || botStill > 1) { botT -= dt; if (botT <= 0 || botStill > 1) { botT = 0.8; botSide = Math.random() < 0.5 ? -1 : 1; botStill = 0; } mx = botSide; if (blockedFeet(p.x + mx * 10, p.y, rad)) mx = -mx; }
+    // a shot about to land on us: step out of its path, across the way it's flying
+    const threat = shots.find(s => !s.mine && [0.1, 0.25, 0.4].some(k => Math.hypot(s.x + s.vx * k - p.x, s.y + s.vy * k - p.y) < 15)) || nades.find(n => !n.mine && Math.hypot(n.x + n.vx * n.t - p.x, n.y + n.vy * n.t - p.y) < 40);
+    if (threat) { const side = Math.sign((p.x - threat.x) * threat.vy - (p.y - threat.y) * threat.vx) || 1; mx = Math.sign(Math.round(-threat.vy * side)); my = Math.sign(Math.round(threat.vx * side)); }
+    if (mx > 0) out.push('ArrowRight'); if (mx < 0) out.push('ArrowLeft'); if (my < 0) out.push('ArrowUp'); if (my > 0) out.push('ArrowDown');
+    if (tgt) {
+      const a = Math.atan2(tgt.y - p.y, tgt.x - p.x), dir = Math.round((a + Math.PI / 2) / (Math.PI / 4) + 8) % 8, [dx, dy] = DIRS[dir];
+      if (dir !== p.aim) { out.length = 0; out.push(...[dx > 0 ? 'ArrowRight' : dx < 0 ? 'ArrowLeft' : null, dy > 0 ? 'ArrowDown' : dy < 0 ? 'ArrowUp' : null].filter(Boolean)); }
+      out.push('Space');
+      const d = Math.hypot(tgt.x - p.x, tgt.y - p.y);
+      if (p.nades > 0 && d > 70 && d < 140 && (tgt.hp > 1 || huts.some(h => !h.dead && Math.hypot(h.x - p.x, h.y - p.y) < 140))) out.push('!KeyK');
+    }
+    return out;
+  }
+});
+zone = ZONES[0]; stage = 1; buildMap(); camY = MH - H;
+A.overlay({ title: 'JUNGLE DROP', sub: 'Fight your way to the top of the map. Shoot where you run, throw grenades over the cover, free the prisoners for better guns, and take the gate at the end.', btn: 'Drop in', scores: true, onGo: newGame });
+})();
+</script>
+</body>
+</html>
