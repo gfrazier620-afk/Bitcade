@@ -7,6 +7,8 @@
  * - pet and trail: a pet that follows you on the floor, and a trail behind your feet (one of each worn)
  * - emote: moves for the floor's emote picker (E); owning one is enough
  * - decor: things for the arcade floor; everything bought is on show
+ * - perk: useful for good once bought (more tickets, more XP, mission swaps, more goes on the floor; window.PERKS)
+ * - boost: used up as you go, bought again and again (counts in arcade:boosts; qty is how many one purchase gives)
  *
  * arcade:prizes holds the ids bought, arcade:equip the one worn per slot: { tint, skin, outfit, carpet }.
  * Prizes with pass: '<season>' come only from the Arcade Pass (window.PASS in shared/badges.js), free: true on its free track.
@@ -14,6 +16,23 @@
  */
 window.Prizes = (() => {
   const LIST = [
+    // perks: bought once, useful for good
+    { id: 'magnet', slot: 'perk', icon: '🧲', name: 'Ticket Magnet', price: 450, desc: 'One more ticket from every scoring game, for good.' },
+    { id: 'xpamp', slot: 'perk', icon: '📈', name: 'XP Amplifier', price: 600, desc: '10% more XP from everything: games, badges, missions, the floor.' },
+    { id: 'mboost', slot: 'perk', icon: '🎯', name: 'Mission Bonus', price: 500, desc: 'Missions pay half as much again: 15 tickets a daily, 75 a weekly.' },
+    { id: 'planner', slot: 'perk', icon: '🗓️', name: 'Mission Planner', price: 350, desc: 'Swap one daily mission a day you don\'t fancy, free.' },
+    { id: 'pockets', slot: 'perk', icon: '👖', name: 'Big Pockets', price: 400, desc: 'The arcade floor\'s games pay up to 50 tickets a day instead of 30.' },
+    { id: 'wheel2', slot: 'perk', icon: '🎡', name: 'Lucky Wheel', price: 300, desc: 'A second free spin of the ticket wheel every day.' },
+    { id: 'clawpro', slot: 'perk', icon: '🦾', name: 'Claw Credits', price: 280, desc: 'One more free go on the Mega Claw every day.' },
+    { id: 'purse', slot: 'perk', icon: '👛', name: 'Coin Purse', price: 250, desc: 'Ten more free coins for Ticket Tide every day.' },
+    { id: 'stickers', slot: 'perk', icon: '💬', name: 'Sticker Pack', price: 150, desc: 'Twelve more quick-chat stickers for your messages.' },
+    // boosts: used up as you go
+    { id: 'dbl', slot: 'boost', qty: 3, icon: '🎟️', name: 'Ticket Doubler', price: 80, desc: 'Your next 3 scoring games pay double tickets.' },
+    { id: 'surge', slot: 'boost', qty: 5, icon: '⚡', name: 'XP Surge', price: 60, desc: 'Your next 5 scoring games give 50% more XP.' },
+    { id: 'swap', slot: 'boost', qty: 1, icon: '🔀', name: 'Mission Swap', price: 25, desc: 'Swap one daily mission for a new one (tap ↻ on its card).' },
+    { id: 'wswap', slot: 'boost', qty: 1, icon: '🔁', name: 'Weekly Swap', price: 80, desc: 'Swap one weekly mission for a new one.' },
+    { id: 'clawtok', slot: 'boost', qty: 1, icon: '🪙', name: 'Claw Token', price: 20, desc: 'One extra go on the Mega Claw, any day.' },
+    { id: 'coins', slot: 'boost', qty: 10, icon: '💰', name: 'Coin Bag', price: 30, desc: 'Ten extra coins for Ticket Tide, any day.' },
     { id: 'amber', slot: 'tint', name: 'Amber Phosphor', price: 60, desc: 'Every game screen in warm one-colour amber.', sw: ['#ffb02e', '#3a1e00'] },
     { id: 'green', slot: 'tint', name: 'Green Phosphor', price: 60, desc: 'The classic green terminal glow.', sw: ['#5aff6a', '#002a08'] },
     { id: 'ice', slot: 'tint', name: 'Ice Monitor', price: 60, desc: 'Cool blue, like an old radar screen.', sw: ['#7ad8ff', '#001a2e'] },
@@ -96,7 +115,7 @@ window.Prizes = (() => {
     { id: 'redeem', slot: 'decor', name: 'Ticket Machine', price: 130, desc: 'A redemption machine that eats tickets.' },
     { id: 'trophies', slot: 'decor', name: 'Trophy Case', price: 220, desc: 'Gold cups for every cabinet you master.' }
   ];
-  const SLOTS = [['tint', 'SCREEN TINTS · every game'], ['skin', 'CABINET FINISHES · every game'], ['outfit', 'OUTFITS · arcade floor'], ['pet', 'PETS · they follow you round the arcade floor'], ['trail', 'FOOTSTEP TRAILS · arcade floor'], ['emote', 'EMOTES · press E on the arcade floor (wave and cheer are free)'], ['carpet', 'CARPETS · arcade floor'], ['decor', 'DECORATIONS · arcade floor']];
+  const SLOTS = [['perk', '★ PERKS · buy once, useful for good'], ['boost', '⚡ BOOSTS · used up as you go, buy as many as you like'], ['tint', 'SCREEN TINTS · every game'], ['skin', 'CABINET FINISHES · every game'], ['outfit', 'OUTFITS · arcade floor'], ['pet', 'PETS · they follow you round the arcade floor'], ['trail', 'FOOTSTEP TRAILS · arcade floor'], ['emote', 'EMOTES · press E on the arcade floor (wave and cheer are free)'], ['carpet', 'CARPETS · arcade floor'], ['decor', 'DECORATIONS · arcade floor']];
   const get = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
   const set = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
   const json = (k, d) => { try { const v = JSON.parse(get(k)); return v && typeof v === 'object' ? v : d; } catch (e) { return d; } };
@@ -107,14 +126,19 @@ window.Prizes = (() => {
   const changed = () => fns.forEach(f => f());
   function buy(id) {
     const p = LIST.find(x => x.id === id);
+    if (p && p.slot === 'boost') { // each purchase is logged (arcade:boostbuys) so cloud save counts the tickets spent on it
+      if (!TICKETS.spend(p.price)) return false; PERKS.give(p.id, p.qty);
+      const log = json('arcade:boostbuys', []); set('arcade:boostbuys', JSON.stringify([...(Array.isArray(log) ? log : []), { id: p.id, p: p.price, k: Date.now().toString(36) + Math.random().toString(36).slice(2, 6) }]));
+      changed(); return true;
+    }
     if (!p || has(id) || p.level || p.pass || (p.event && !(window.EVENT && EVENT.on(p.event))) || (p.vip && !(window.VIP && VIP.unlocked())) || !TICKETS.spend(p.price)) return false;
     set('arcade:prizes', JSON.stringify([...owned(), id]));
-    if (p.slot !== 'decor' && p.slot !== 'emote') wear(id);
+    if (!['decor', 'emote', 'perk'].includes(p.slot)) wear(id);
     changed(); return true;
   }
   /** Wear a prize in its slot, or take it off if it's already worn. */
   function wear(id) {
-    const p = LIST.find(x => x.id === id); if (!p || p.slot === 'decor' || p.slot === 'emote' || !has(id)) return;
+    const p = LIST.find(x => x.id === id); if (!p || ['decor', 'emote', 'perk', 'boost'].includes(p.slot) || !has(id)) return;
     const eq = equipped(); eq[p.slot] = eq[p.slot] === id ? null : id;
     set('arcade:equip', JSON.stringify(eq)); changed();
   }
@@ -132,6 +156,7 @@ window.Prizes = (() => {
   }
   function preview(p, c) {
     const x = c.getContext('2d'); x.imageSmoothingEnabled = false; x.clearRect(0, 0, c.width, c.height);
+    if (p.icon) { const g = x.createLinearGradient(0, 0, 0, c.height); g.addColorStop(0, p.slot === 'perk' ? '#3a2a6a' : '#1a4a5a'); g.addColorStop(1, '#0a0716'); x.fillStyle = g; x.fillRect(0, 0, c.width, c.height); x.font = '34px system-ui, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(p.icon, c.width / 2, c.height / 2 + 2); if (p.qty > 1) { x.font = '12px Silkscreen, monospace'; x.fillStyle = '#ffd23d'; x.fillText('×' + p.qty, c.width - 14, c.height - 10); } return; }
     if (window.Floor && Floor.preview(p, x, c.width, c.height)) return;
     if (!p.sw) return; // outfits and carpets are drawn by the floor (shared/floor.js)
     const g = x.createLinearGradient(0, 0, c.width, c.height); g.addColorStop(0, p.sw[0]); g.addColorStop(1, p.sw[1]);
@@ -153,6 +178,7 @@ window.Prizes = (() => {
       const p = LIST.find(x => x.id === el.dataset.id), own = has(p.id), on = eq[p.slot] === p.id, btn = el.querySelector('button');
       el.classList.toggle('own', own); el.classList.toggle('on', on);
       const locked = p.vip && !(window.VIP && VIP.unlocked());
+      if (p.slot === 'boost') { const n = PERKS.left(p.id); el.classList.toggle('own', n > 0); btn.textContent = `BUY · ${p.price}${n ? ` · HAVE ${n}` : ''}`; btn.disabled = bal < p.price; return; }
       if (!own && p.level) { btn.textContent = `LEVEL ${p.level}`; btn.disabled = true; }
       else if (!own && p.pass) { const t = passTier(p); btn.textContent = `${p.free ? 'FREE' : 'PASS'} · TIER ${t}`; btn.disabled = true; }
       else if (!own && locked) { btn.textContent = 'VIP ONLY'; btn.disabled = true; }
@@ -160,6 +186,7 @@ window.Prizes = (() => {
       else if (!own) { btn.textContent = bal >= p.price ? `BUY · ${p.price}` : `NEED ${p.price}`; btn.disabled = bal < p.price; }
       else if (p.slot === 'decor') { btn.textContent = 'ON THE FLOOR'; btn.disabled = true; }
       else if (p.slot === 'emote') { btn.textContent = 'YOURS · PRESS E'; btn.disabled = true; }
+      else if (p.slot === 'perk') { btn.textContent = 'YOURS ✓ · ALWAYS ON'; btn.disabled = true; }
       else { btn.textContent = on ? 'WEARING ✓' : 'WEAR'; btn.disabled = false; }
     });
   }
@@ -180,7 +207,7 @@ window.Prizes = (() => {
         el.querySelector('b').textContent = p.name; el.querySelector('small').textContent = p.desc;
         preview(p, el.querySelector('canvas'));
         el.querySelector('button').addEventListener('click', () => {
-          if (!has(p.id)) { if (buy(p.id)) sound([784, 988, 1319, 1568]); else sound([220]); }
+          if (p.slot === 'boost' || !has(p.id)) { if (buy(p.id)) sound([784, 988, 1319, 1568]); else sound([220]); }
           else { wear(p.id); sound([659]); }
           render();
         });

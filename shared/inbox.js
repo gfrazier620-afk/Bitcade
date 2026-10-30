@@ -9,7 +9,10 @@
  * conversation checks for new messages every few seconds. The data and rules: shared/world.js, firestore.rules.
  */
 window.Inbox = (() => {
-  const QUICK = ['GG!', 'Nice score!', 'Rematch?', 'Beat that! 😎', 'So close!', 'Too easy 😏', 'You’re on! ⚔', 'Good luck!', 'Thanks!', '👍', '😂', '🔥'];
+  const QUICK = ['GG!', 'Nice score!', 'Rematch?', 'Beat that! 😎', 'So close!', 'Too easy 😏', 'You’re on! ⚔', 'Good luck!', 'Thanks!', '👍', '😂', '🔥',
+    // the Sticker Pack prize: anyone can see these, only owners can send them
+    '👾 GAME ON', '🏆 CHAMP', '💯', '🚀 TO THE MOON', '😤 ONE MORE GO', '🤝 RESPECT', '🎯 BULLSEYE', '😱 NO WAY', '🍕 PIZZA BREAK', '🕹️ PLAY ME', '👑 BOW DOWN', '💤 TOO EASY'];
+  const quickN = () => window.PERKS && PERKS.own('stickers') ? QUICK.length : 12;
   // a short list of words that never belong in a kids' arcade; anything containing one is starred out
   const BAD = ['fuck', 'shit', 'bitch', 'cunt', 'dick', 'pussy', 'fag', 'nigg', 'slut', 'whore', 'asshole', 'bastard', 'retard', 'rape', 'cock', 'wank', 'twat', 'kys'];
   const clean = s => String(s).replace(/[\p{L}\p{N}]+/gu, w => BAD.some(b => w.toLowerCase().includes(b)) ? '*'.repeat(w.length) : w);
@@ -206,7 +209,7 @@ window.Inbox = (() => {
     const c = cur; if (!c) return;
     if (blockedList.includes(other(c))) { foot('<p class="ib-note">You’ve blocked this player. Unblock them to send messages.</p>'); return; }
     const keep = box.querySelector('.ib-text'), val = keep ? keep.value : '';
-    foot(`<div class="ib-quick">${QUICK.map((t, i) => `<button data-q="${i}">${esc(t)}</button>`).join('')}</div>` +
+    foot(`<div class="ib-quick">${QUICK.slice(0, quickN()).map((t, i) => `<button data-q="${i}"${i >= 12 ? ' class="stk"' : ''}>${esc(t)}</button>`).join('')}</div>` +
       (friends(c) ? `<div class="ib-type"><input class="ib-text" maxlength="200" placeholder="Message ${esc(them(c))}…" autocomplete="off"><button class="ib-send">SEND</button></div>`
         : `<p class="ib-note small">Free chat unlocks once you’re friends: ${c.acc[me] ? `waiting for ${esc(them(c))} to add you back.` : 'tap ＋ FRIEND above, and they add you back.'}</p>`));
     const t = box.querySelector('.ib-text'); if (t && val) { t.value = val; }

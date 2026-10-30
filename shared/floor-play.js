@@ -228,8 +228,10 @@ window.FloorPlay = kit => {
   }
 
   /* ---------- the Mega Claw ---------- */
-  const goesToday = () => { let s = null; try { s = JSON.parse(get('bitcade:claw') || 'null'); } catch (e) {} const limit = 3 + (kit.owns('claw') ? 1 : 0); return Math.max(0, limit - (s && s.d === today() ? s.n : 0)); };
-  const useGo = () => { let s = null; try { s = JSON.parse(get('bitcade:claw') || 'null'); } catch (e) {} const n = s && s.d === today() ? s.n + 1 : 1; set('bitcade:claw', JSON.stringify({ d: today(), n })); };
+  const perk = id => !!(window.PERKS && PERKS.own(id)), stash = id => window.PERKS ? PERKS.left(id) : 0; // useful prizes (window.PERKS in shared/badges.js)
+  const freeGoes = () => { let s = null; try { s = JSON.parse(get('bitcade:claw') || 'null'); } catch (e) {} const limit = 3 + (kit.owns('claw') ? 1 : 0) + (perk('clawpro') ? 1 : 0); return Math.max(0, limit - (s && s.d === today() ? s.n : 0)); };
+  const goesToday = () => freeGoes() + stash('clawtok');
+  const useGo = () => { if (!freeGoes()) { PERKS.use('clawtok'); return; } let s = null; try { s = JSON.parse(get('bitcade:claw') || 'null'); } catch (e) {} const n = s && s.d === today() ? s.n + 1 : 1; set('bitcade:claw', JSON.stringify({ d: today(), n })); };
   const PRIZES = [[2, '#3dd6ff', 35], [5, '#3dff8f', 30], [10, '#b86bff', 20], [25, '#ff4f6d', 11], [50, '#ffd23d', 4]];
   function claw() {
     const BX = VW / 2 - 230, BY = 96, BW = 460, BH = 310, FLOOR = BY + BH - 14, CHUTE = BX + 80, gold = kit.owns('claw');
@@ -322,7 +324,7 @@ window.FloorPlay = kit => {
           hint(x, '← → MOVE · ENTER DROP · TAP THE GLASS TO AIM · ESC LEAVE', BY + BH + 100);
         } else if (st === 'out') {
           kit.neon(x, 'COME BACK TOMORROW', VW / 2, BY + BH / 2 - 60, 22, '#ffd23d');
-          hint(x, `${3 + (gold ? 1 : 0)} FREE GOES EVERY DAY · ESC TO LEAVE`, BY + BH + 62);
+          hint(x, `${3 + (gold ? 1 : 0) + (perk('clawpro') ? 1 : 0)} FREE GOES EVERY DAY${stash('clawtok') ? ` · ${stash('clawtok')} TOKEN${stash('clawtok') === 1 ? '' : 'S'}` : ''} · ESC TO LEAVE`, BY + BH + 62);
         } else if (st === 'won') kit.neon(x, `+${won} TICKETS!`, VW / 2, BY + 90, 34, '#ffd23d');
         else if (st === 'miss') kit.neon(x, 'MISSED!', VW / 2, BY + 90, 28, '#ff4f6d');
       },
@@ -343,7 +345,7 @@ window.FloorPlay = kit => {
   }
 
   /* ---------- tickets from skee-ball and pinball: a few per game, at most 30 a day between them ---------- */
-  const FLOOR_CAP = 30;
+  const FLOOR_CAP = window.PERKS && PERKS.own('pockets') ? 50 : 30; // the Big Pockets perk
   function award(n) {
     let s = null; try { s = JSON.parse(get('bitcade:floortix') || 'null'); } catch (e) {}
     const used = s && s.d === today() ? s.n : 0, give = Math.max(0, Math.min(n, FLOOR_CAP - used));
@@ -965,7 +967,8 @@ window.FloorPlay = kit => {
 
   /* ---------- the ticket wheel: one free spin a day, 5 to 100 tickets ---------- */
   const WHEEL = [5, 10, 5, 20, 5, 10, 15, 5, 50, 10, 5, 25, 10, 5, 15, 100];
-  const spunToday = () => get('bitcade:wheel') === today();
+  const spinsToday = () => { const v = get('bitcade:wheel') || ''; return v === today() ? 1 : v === today() + '#2' ? 2 : 0; };
+  const spunToday = () => spinsToday() >= (window.PERKS && PERKS.own('wheel2') ? 2 : 1);
   function wheel() {
     const CX = VW / 2, CY = 300, R = 200, N = WHEEL.length, cols = ['#ff4f6d', '#5ee7ff', '#ffd23d', '#b86bff', '#3dff8f', '#ff7a3d', '#ff4fd1', '#3d7bff'];
     let ang = Math.random() * 6.28, vel = 0, st = spunToday() ? 'done' : 'ready', won = 0, wonT = 0, lastSeg = -1;
@@ -973,7 +976,7 @@ window.FloorPlay = kit => {
     function spin() {
       if (st === 'done' || st === 'won') return kit.close();
       if (st !== 'ready') return;
-      st = 'spin'; vel = 13 + Math.random() * 7; set('bitcade:wheel', today()); sound.enter('#ffd23d');
+      st = 'spin'; vel = 13 + Math.random() * 7; set('bitcade:wheel', spinsToday() ? today() + '#2' : today()); sound.enter('#ffd23d');
     }
     return {
       name: 'wheel',
@@ -1107,8 +1110,9 @@ window.FloorPlay = kit => {
 
   /* ---------- Ticket Tide, the Loft's coin pusher: 15 free coins a day; coins pushed off the front edge pay tickets ---------- */
   const PUSH_DAY = 15;
-  const coinsToday = () => { let s = null; try { s = JSON.parse(get('bitcade:pusher') || 'null'); } catch (e) {} return PUSH_DAY - (s && s.d === today() ? s.n : 0); };
-  const spendCoin = () => { let s = null; try { s = JSON.parse(get('bitcade:pusher') || 'null'); } catch (e) {} set('bitcade:pusher', JSON.stringify({ d: today(), n: (s && s.d === today() ? s.n : 0) + 1 })); };
+  const freeCoins = () => { let s = null; try { s = JSON.parse(get('bitcade:pusher') || 'null'); } catch (e) {} return Math.max(0, PUSH_DAY + (window.PERKS && PERKS.own('purse') ? 10 : 0) - (s && s.d === today() ? s.n : 0)); };
+  const coinsToday = () => freeCoins() + (window.PERKS ? PERKS.left('coins') : 0);
+  const spendCoin = () => { if (!freeCoins()) { PERKS.use('coins'); return; } let s = null; try { s = JSON.parse(get('bitcade:pusher') || 'null'); } catch (e) {} set('bitcade:pusher', JSON.stringify({ d: today(), n: (s && s.d === today() ? s.n : 0) + 1 })); };
   let pusherBed = null; // the coins on the bed stay there between goes, like a real machine
   function pusher() {
     const L = 250, Rt = 710, TOP = 150, EDGE = 468, CR = 15, SHELF = 70;

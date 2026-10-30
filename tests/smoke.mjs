@@ -968,6 +968,27 @@ console.log('\nProfile setup');
   await g.close();
 }
 
+/* ---------- useful prizes: perks and boosts (window.PERKS in shared/badges.js) ---------- */
+console.log('\nPerks and boosts');
+{
+  const { page, errors, close } = await open('/?feature=none');
+  await skipBoot(page);
+  await page.evaluate(() => TICKETS.add(3000)); await page.click('#vPrize'); await page.waitForSelector('.pc-item[data-id="magnet"]');
+  check(await page.isVisible('.pc-item[data-id="magnet"]') && await page.isVisible('.pc-item[data-id="dbl"]'), 'the prize counter sells perks and boosts');
+  await page.click('.pc-item[data-id="magnet"] button'); await page.click('.pc-item[data-id="dbl"] button'); await page.click('.pc-item[data-id="dbl"] button'); await page.click('.pc-item[data-id="swap"] button');
+  check(await page.evaluate(() => PERKS.own('magnet') && PERKS.left('dbl') === 6 && PERKS.left('swap') === 1 && JSON.parse(localStorage.getItem('arcade:boostbuys')).length === 3) && /HAVE 6/.test(await page.textContent('.pc-item[data-id="dbl"] button')), 'a perk is bought once; boosts stack up, and each purchase is logged for cloud save');
+  await page.keyboard.press('Escape'); await page.click('#vRewards');
+  const before = await page.evaluate(() => JSON.stringify(MISSIONS.list()[0]));
+  await page.click('#missions .ms-col:not(.wk) .ms .ms-swap');
+  check(await page.evaluate(b => JSON.stringify(MISSIONS.list()[0]) !== b && PERKS.left('swap') === 0, before) && !(await page.isVisible('#missions .ms-col:not(.wk) .ms-swap')), 'a Mission Swap trades a daily mission for a new one');
+  check(!errors.length, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
+  await close();
+  const g = await open('/games/rock-rift/');
+  const tix = await g.page.evaluate(() => { localStorage.setItem('arcade:prizes', JSON.stringify(['magnet'])); localStorage.setItem('arcade:boosts', JSON.stringify({ dbl: 1 })); const t0 = TICKETS.balance(); Arcade.submit(10); return [TICKETS.balance() - t0, PERKS.left('dbl')]; });
+  check(tix[0] === (4 * (await g.page.evaluate(() => Arcade.featured() ? 2 : 1)) + 1) * 2 && tix[1] === 0, `the Ticket Magnet adds one and the Ticket Doubler doubles a game's tickets (got ${tix[0]})`);
+  await g.close();
+}
+
 /* ---------- seasonal events: Halloween ---------- */
 console.log('\nHalloween');
 {

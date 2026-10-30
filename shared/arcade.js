@@ -237,16 +237,18 @@
     }
     // Tickets for the prize counter: 1 for a scoring game, +3 for the top 10 (+2 more for a new #1), +5 for beating
     // an earlier record, +2 for a daily run, all doubled on the weekly tournament game.
-    let tix = 0;
+    let tix = 0; const boosted = [];
     if (s > 0) {
       tix = 1 + (rank >= 0 ? 3 : 0) + (rank === 0 && top.length ? 2 : 0) + (rec && prevBest > 0 ? 5 : 0) + (daily ? 2 : 0);
       if (A.featured()) tix *= 2;
+      if (window.PERKS) { if (PERKS.own('magnet')) tix += 1; if (PERKS.use('dbl')) { tix *= 2; boosted.push(`TICKET DOUBLER ×2 · ${PERKS.left('dbl')} LEFT`); } } // useful prizes
       if (window.TICKETS) TICKETS.add(tix); else tix = 0;
     }
     gather = []; // level-ups, pass tiers and missions from this run go on the game-over screen, not in toasts
     let xp = null;
-    if (window.XP) { let n = 10 + (rank >= 0 ? 10 : 0) + (rec && prevBest > 0 ? 15 : 0) + (daily ? 5 : 0); if (A.featured()) n *= 2; xp = A.gainXP(n, 'run', true); }
+    if (window.XP) { let n = 10 + (rank >= 0 ? 10 : 0) + (rec && prevBest > 0 ? 15 : 0) + (daily ? 5 : 0); if (A.featured()) n *= 2; if (s > 0 && window.PERKS && PERKS.use('surge')) { n = Math.round(n * 1.5); boosted.push(`XP SURGE +50% · ${PERKS.left('surge')} LEFT`); } xp = A.gainXP(n, 'run', true); }
     lastResult = { s, rank, top, day, week, tix, xp };
+    boosted.forEach((t, i) => noteOne('boost' + i, '⚡ ' + t));
     try { A.mission({ type: 'run', slug: A.id, score: s, daily: !!daily }); } finally { lastResult.notes = gather; gather = null; }
     setTimeout(msgCheck, 3500); // game over: a good moment to mention new messages
     if (A.chal && !A.chal.mine) { lastResult.chal = { an: A.chal.who || A.chal.an, vs: A.chal.s }; chalSend(lastResult); }

@@ -325,7 +325,9 @@ window.MISSIONS = (() => {
   const AREAS = { RACEWAY: ['turbo-tour', 'nitro-lane', 'light-trail'], 'SHOOTING GALLERY': ['raptor-ridge', 'marsh-marksman'] };
   const DAILY = ['stackdown', 'wallbuster', 'twin-blast', 'mole-patrol', 'wing-duel', 'gem-cascade', 'pipe-panic', 'hilo-hustle'];
   const name = slug => slug.split('-').map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
-  const REWARD = 10, BONUS = 20, WREWARD = 50, WBONUS = 100;
+  const BONUS = 20, WBONUS = 100;
+  const boosted = () => window.PERKS && PERKS.own('mboost'); // the Mission Bonus perk: half as much again
+  const reward = () => boosted() ? 15 : 10, wreward = () => boosted() ? 75 : 50;
   const FLOOR = ['skee', 'pinball', 'hoops', 'bop', 'claw']; // floor games that count as a play for weekly missions
   function rng(seed) { let h = 2166136261; for (const ch of seed) h = Math.imul(h ^ ch.charCodeAt(0), 16777619); return () => { h += 0x6d2b79f5; let t = h; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
   function make(d) {
@@ -417,7 +419,7 @@ window.MISSIONS = (() => {
       x.prog = p;
       if (p >= x.n) { x.done = true; done.push(x); }
     }
-    let tickets = done.length * WREWARD, wall = false;
+    let tickets = done.length * wreward(), wall = false;
     if (!m.bonus && m.list.every(x => x.done)) { m.bonus = true; wall = true; tickets += WBONUS; }
     set('bitcade:wmissions', JSON.stringify(m));
     return { wdone: done, wtickets: tickets, wall };
@@ -449,7 +451,7 @@ window.MISSIONS = (() => {
       x.prog = p;
       if (p >= x.n) { x.done = true; done.push(x); }
     }
-    let tickets = done.length * REWARD, all = false;
+    let tickets = done.length * reward(), all = false;
     if (!m.bonus && m.list.every(x => x.done)) { m.bonus = true; all = true; tickets += BONUS; }
     set('bitcade:missions', JSON.stringify(m));
     const wk = recordWeek(ev, done.length, all);
@@ -463,7 +465,27 @@ window.MISSIONS = (() => {
   function left() { const n = new Date(), mid = new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1), m = Math.max(0, Math.floor((mid - n) / 6e4)); return `${Math.floor(m / 60)}H ${String(m % 60).padStart(2, '0')}M`; }
   /** Time left until new weekly missions (Monday 00:00 UTC, with the tournament), like 3D 4H. */
   function wleft() { const end = Date.parse(weekKey() + 'T00:00:00Z') + 7 * 864e5, m = Math.max(0, Math.floor((end - Date.now()) / 6e4)); return m >= 1440 ? `${Math.floor(m / 1440)}D ${Math.floor(m % 1440 / 60)}H` : `${Math.floor(m / 60)}H ${String(m % 60).padStart(2, '0')}M`; }
-  return { list: () => load().list, bonus: () => load().bonus, week: () => loadWeek().list, wbonus: () => loadWeek().bonus, record, xpFor, text, where, left, wleft, REWARD, BONUS, WREWARD, WBONUS, TARGETS };
+  /*
+   * Swap a mission that isn't done for a new one of the same sort (the score, the kind of play or the floor one; any
+   * other weekly one). The Mission Planner perk swaps one daily mission a day for free (bitcade:mswap); otherwise a
+   * Mission Swap (or Weekly Swap) boost is used. Returns false if it can't.
+   */
+  const freeSwap = () => window.PERKS && PERKS.own('planner') && localStorage.getItem('bitcade:mswap') !== today();
+  const canSwap = weekly => weekly ? !!(window.PERKS && PERKS.left('wswap')) : freeSwap() || !!(window.PERKS && PERKS.left('swap'));
+  function swap(i, weekly) {
+    const m = weekly ? loadWeek() : load(), x = m.list[i]; if (!x || x.done || !canSwap(weekly)) return false;
+    let fresh = null;
+    for (let k = 0; k < 20 && !fresh; k++) {
+      const c = weekly ? makeWeek(m.w + ':' + Math.random()).list.find(n => !m.list.some(o => o.kind === n.kind)) : make(m.d + ':' + Math.random()).list[i];
+      if (c && (c.kind !== x.kind || c.game !== x.game || c.n !== x.n)) fresh = c;
+    }
+    if (!fresh) return false;
+    if (weekly) PERKS.use('wswap'); else if (freeSwap()) localStorage.setItem('bitcade:mswap', today()); else PERKS.use('swap');
+    m.list[i] = { ...fresh, id: i }; localStorage.setItem(weekly ? 'bitcade:wmissions' : 'bitcade:missions', JSON.stringify(m));
+    return true;
+  }
+  return { list: () => load().list, bonus: () => load().bonus, week: () => loadWeek().list, wbonus: () => loadWeek().bonus, record, xpFor, text, where, left, wleft, swap, canSwap, freeSwap,
+    get REWARD() { return reward(); }, BONUS, get WREWARD() { return wreward(); }, WBONUS, TARGETS };
 })();
 
 /*
@@ -529,6 +551,7 @@ window.XP = (() => {
   const fns = [];
   /** Add XP; returns { gained, level, up (levels gained), unlocked (prize ids), title }. */
   function add(n, why) {
+    if (window.PERKS && PERKS.own('xpamp')) n *= 1.1; // the XP Amplifier perk
     n = Math.max(0, Math.round(n)); const before = info();
     set('arcade:xp', before.xp + n);
     if (window.PASS) PASS.gain(n); // the same XP climbs the Arcade Pass
@@ -598,4 +621,21 @@ window.PASS = (() => {
   const claimAll = () => ready().map(r => claim(r.key) && r).filter(Boolean);
   const left = (se = season()) => se ? Math.max(0, day(se.end) - Date.now()) : 0;
   return { TIERS, STEP, SEASONS, season, next, xp, tier, owned, got, gain, ready, claim, claimAll, left, onChange: fn => fns.push(fn) };
+})();
+
+/*
+ * Useful prizes (window.PERKS): perks bought once at the prize counter (they're in arcade:prizes like any prize) and
+ * boosts, used up as you go (counts in arcade:boosts, like { dbl: 3, surge: 5, swap: 1, wswap: 0, clawtok: 2, coins: 10 }).
+ * Nothing here touches scores: only tickets, XP, missions and the arcade floor's daily limits.
+ */
+window.PERKS = (() => {
+  const read = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v && typeof v === 'object' ? v : d; } catch (e) { return d; } };
+  const own = id => { const o = read('arcade:prizes', []); return Array.isArray(o) && o.includes(id); };
+  const bag = () => read('arcade:boosts', {});
+  const left = id => Math.max(0, +bag()[id] || 0);
+  const save = b => { try { localStorage.setItem('arcade:boosts', JSON.stringify(b)); } catch (e) {} };
+  /** Use n of a boost; false (and nothing used) if there aren't enough. */
+  const use = (id, n = 1) => { const b = bag(); if ((+b[id] || 0) < n) return false; b[id] = (+b[id] || 0) - n; save(b); return true; };
+  const give = (id, n) => { const b = bag(); b[id] = (+b[id] || 0) + n; save(b); };
+  return { own, left, use, give };
 })();

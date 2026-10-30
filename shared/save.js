@@ -80,6 +80,7 @@ export function merge(a, b, prices, joining) {
         .filter(e => { const id = e.n + ':' + e.s; if (seen.has(id)) return false; seen.add(id); return true; });
       out[k] = JSON.stringify(all.slice(0, 10));
     } else if (/^arcade:(badges|pass:got):/.test(k) || k === 'arcade:prizes') out[k] = JSON.stringify([...new Set([...json(x, []), ...json(y, [])])]);
+    else if (k === 'arcade:boostbuys') { const seen = new Set(); out[k] = JSON.stringify([...json(x, []), ...json(y, [])].filter(e => e && e.k && !seen.has(e.k) && seen.add(e.k))); } // every boost bought, on any device
     else if (/^arcade:(daily|week):/.test(k)) {
       const p = json(x, {}), q = json(y, {}), f = k.includes(':daily:') ? 'd' : 'w';
       out[k] = JSON.stringify(p[f] === q[f] ? (p.s >= q.s ? p : q) : (String(p[f]) > String(q[f]) ? p : q));
@@ -88,7 +89,7 @@ export function merge(a, b, prices, joining) {
     else if (joining && /^arcade:(name|namekey|initials|avatar)$/.test(k) && b['arcade:name'] && b['arcade:namekey']) out[k] = y; // the save's player (above)
     // anything else (initials, the cached ticket balance): this device's value
   }
-  if (prices) out['arcade:tickets:spent'] = String(json(out['arcade:prizes'], []).reduce((t, id) => t + (prices[id] || 0), 0));
+  if (prices) out['arcade:tickets:spent'] = String(json(out['arcade:prizes'], []).reduce((t, id) => t + (prices[id] || 0), 0) + json(out['arcade:boostbuys'], []).reduce((t, e) => t + (+e.p || 0), 0));
   if (out['arcade:tickets:earned'] != null) out['arcade:tickets'] = String(Math.max(0, (+out['arcade:tickets:earned'] || 0) - (+out['arcade:tickets:spent'] || 0)));
   return out;
 }
