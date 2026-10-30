@@ -839,7 +839,9 @@ window.Floor = (() => {
     if (o.cape) { const flap = moving ? Math.sin(walk * 2) * 2 : 0; x.fillStyle = OUT; x.beginPath(); x.moveTo(-8, -26); x.lineTo(8, -26); x.lineTo(10 + flap, dir === 'up' ? -4 : -8); x.lineTo(-10 - flap, dir === 'up' ? -4 : -8); x.fill(); x.fillStyle = o.cape; x.beginPath(); x.moveTo(-7, -25); x.lineTo(7, -25); x.lineTo(9 + flap, dir === 'up' ? -5 : -9); x.lineTo(-9 - flap, dir === 'up' ? -5 : -9); x.fill(); }
     if (o.long && dir !== 'up') parts.splice(side ? -2 : -1, 0, ...(side ? [[-8, -38, 4, 13, o.hair, true]] : [[-8, -38, 3, 13, o.hair, true], [5, -38, 3, 13, o.hair, true]]));
     else if (o.long) parts.push([-7, -38, 14, 12, o.hair, true]);
+    else if (o.fem && dir !== 'up' && o.hat !== 'mohawk') parts.push(...(side ? [[-8, -38, 4, 7, o.hair, true]] : [[-8, -38, 3, 7, o.hair, true], [5, -38, 3, 7, o.hair, true]])); // a short bob
     paint(x, parts);
+    if (o.fem && dir === 'down') { x.fillStyle = OUT; x.fillRect(-5, -34, 1, 1); x.fillRect(4, -34, 1, 1); } // lashes
     if (dir === 'down') { x.fillStyle = OUT; x.fillRect(-4, -33, 2, 3); x.fillRect(2, -33, 2, 3); if (o.glasses) { x.fillStyle = '#111'; x.fillRect(-5, -34, 10, 3); } x.fillStyle = pose === 'cheer' ? OUT : '#c0604a'; x.fillRect(-1, -29, 3, pose === 'cheer' ? 2 : 1); }
     if (side) { x.fillStyle = OUT; x.fillRect(3, -33, 2, 3); if (o.glasses) { x.fillStyle = '#111'; x.fillRect(1, -34, 6, 3); } }
     if (o.hat === 'cap') paint(x, [[-7, -44, 14, 6, o.capC || '#ffd23d'], side ? [5, -40, 6, 2, shade(o.capC || '#ffd23d', -0.15), true] : [-6, -39, 12, 2, shade(o.capC || '#ffd23d', -0.15), true]]);
