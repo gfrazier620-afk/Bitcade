@@ -272,7 +272,9 @@ window.TICKETS = (() => {
  * play (different games, an area, the tournament, a daily challenge) and something on the arcade floor. Each pays
  * 10 tickets, and all three pay 20 more. Progress comes from MISSIONS.record(event): arcade.js sends
  * { type: 'run', slug, score, daily } after every game that counts (not easy mode, not demos); the floor sends
- * skee, pinball, claw and photo events; Blip Sports sends blip-win. Kept per device in bitcade:missions.
+ * skee, pinball, claw and photo events; Blip Sports sends blip-win. Kept per device in bitcade:missions. Weekly
+ * missions (week(): three bigger ones, new each Monday with the tournament) count the same events, plus badges
+ * ({ type: 'badge' } from A.badge) and daily missions finished.
  */
 /*
  * Seasonal events (window.EVENT): each runs between two dates every year, by the local calendar. While Halloween is
@@ -310,7 +312,8 @@ window.MISSIONS = (() => {
   const AREAS = { RACEWAY: ['turbo-tour', 'nitro-lane', 'light-trail'], 'SHOOTING GALLERY': ['raptor-ridge', 'marsh-marksman'] };
   const DAILY = ['stackdown', 'wallbuster', 'twin-blast', 'mole-patrol', 'wing-duel', 'gem-cascade', 'pipe-panic', 'hilo-hustle'];
   const name = slug => slug.split('-').map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
-  const REWARD = 10, BONUS = 20;
+  const REWARD = 10, BONUS = 20, WREWARD = 50, WBONUS = 100;
+  const FLOOR = ['skee', 'pinball', 'hoops', 'bop', 'claw']; // floor games that count as a play for weekly missions
   function rng(seed) { let h = 2166136261; for (const ch of seed) h = Math.imul(h ^ ch.charCodeAt(0), 16777619); return () => { h += 0x6d2b79f5; let t = h; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
   function make(d) {
     const r = rng('missions:' + d), pick = a => a[Math.floor(r() * a.length)];
@@ -331,6 +334,31 @@ window.MISSIONS = (() => {
     if (!m || m.d !== today() || !Array.isArray(m.list)) { m = make(today()); set('bitcade:missions', JSON.stringify(m)); }
     return m;
   }
+  /*
+   * Weekly missions: three bigger ones a week, the same for everyone, starting over with the tournament on Monday
+   * (WEEKLY.key(), UTC). 50 tickets each and 100 more for all three. Kept per device in bitcade:wmissions.
+   */
+  const weekKey = () => window.WEEKLY && WEEKLY.key ? WEEKLY.key() : today();
+  function makeWeek(w) {
+    const r = rng('weekly:' + w), feat = window.WEEKLY && WEEKLY.game ? WEEKLY.game() : null;
+    const pool = [
+      [{ kind: 'wvariety', n: 8 }, { kind: 'wvariety', n: 12 }],
+      [{ kind: 'wplays', n: 25 }, { kind: 'wplays', n: 40 }],
+      [{ kind: 'wdailies', n: 9 }, { kind: 'wallday', n: 3 }],
+      [{ kind: 'wbadges', n: 3 }, { kind: 'wbadges', n: 5 }],
+      [{ kind: 'wfloor', n: 6 }, { kind: 'wfloor', n: 10 }],
+      [{ kind: 'wdaily', n: 5 }, { kind: 'wdaily', n: 7 }]
+    ];
+    if (feat && TARGETS[feat]) pool.push([{ kind: 'wtour', game: feat, n: TARGETS[feat] * 3 }]);
+    const out = [];
+    while (out.length < 3 && pool.length) { const g = pool.splice(Math.floor(r() * pool.length), 1)[0]; out.push(g[Math.floor(r() * g.length)]); }
+    return { w, list: out.map((m, i) => ({ id: i, prog: 0, done: false, seen: [], ...m })), bonus: false };
+  }
+  function loadWeek() {
+    let m = null; try { m = JSON.parse(get('bitcade:wmissions')); } catch (e) {}
+    if (!m || m.w !== weekKey() || !Array.isArray(m.list)) { m = makeWeek(weekKey()); set('bitcade:wmissions', JSON.stringify(m)); }
+    return m;
+  }
   const text = m => ({
     score: () => `Score ${m.n.toLocaleString()} in ${name(m.game)}`,
     variety: () => `Play ${m.n} different games`,
@@ -338,6 +366,14 @@ window.MISSIONS = (() => {
     area: () => `Play ${m.n} ${m.area === 'RACEWAY' ? 'Raceway' : 'Shooting Gallery'} games`,
     daily: () => `Play today's ${name(m.game)} daily challenge`,
     tour: () => `Play this week's tournament: ${name(m.game)}`,
+    wvariety: () => `Play ${m.n} different games`,
+    wplays: () => `Play ${m.n} games`,
+    wdailies: () => `Finish ${m.n} daily missions`,
+    wallday: () => `Finish all three daily missions on ${m.n} days`,
+    wbadges: () => `Earn ${m.n} badges`,
+    wfloor: () => `Play ${m.n} games on the arcade floor`,
+    wdaily: () => `Play ${m.n} daily challenges`,
+    wtour: () => `Score ${m.n.toLocaleString()} in this week's tournament: ${name(m.game)}`,
     skee: () => `Roll ${m.n} or more in skee-ball`,
     pinball: () => `Score ${m.n.toLocaleString()} in pinball`,
     claw: () => 'Win tickets at the Mega Claw',
@@ -348,8 +384,35 @@ window.MISSIONS = (() => {
     ghost: () => `Find ${m.n} ghosts on the arcade floor`
   }[m.kind] || (() => 'Mission'))();
   /** Where you go to do it: a game page, or the arcade floor. */
-  const where = m => m.game ? `games/${m.game}/` : ['skee', 'pinball', 'claw', 'photo', 'hoops', 'bop', 'ghost'].includes(m.kind) ? 'floor' : m.kind === 'blip' ? 'games/blip-sports/' : null;
-  /** Count an event; returns { done: [missions just finished], tickets, all }. */
+  const where = m => m.game ? `games/${m.game}/` : ['skee', 'pinball', 'claw', 'photo', 'hoops', 'bop', 'ghost', 'wfloor'].includes(m.kind) ? 'floor' : m.kind === 'blip' ? 'games/blip-sports/' : null;
+  /** Weekly progress from an event (and from daily missions just finished: n of them, all three when all). */
+  function recordWeek(ev, n, all) {
+    const m = loadWeek(), done = [];
+    for (const x of m.list) {
+      if (x.done) continue;
+      let p = x.prog;
+      if (ev.type === 'run') {
+        if (x.kind === 'wplays') p++;
+        if (x.kind === 'wvariety' && !x.seen.includes(ev.slug)) { x.seen.push(ev.slug); p = x.seen.length; }
+        if (x.kind === 'wdaily' && ev.daily) p++;
+        if (x.kind === 'wtour' && ev.slug === x.game) p = Math.max(p, ev.score);
+      }
+      if (x.kind === 'wfloor' && FLOOR.includes(ev.type)) p++;
+      if (x.kind === 'wbadges' && ev.type === 'badge') p++;
+      if (x.kind === 'wdailies') p += n;
+      if (x.kind === 'wallday' && all) p++;
+      x.prog = p;
+      if (p >= x.n) { x.done = true; done.push(x); }
+    }
+    let tickets = done.length * WREWARD, wall = false;
+    if (!m.bonus && m.list.every(x => x.done)) { m.bonus = true; wall = true; tickets += WBONUS; }
+    set('bitcade:wmissions', JSON.stringify(m));
+    return { wdone: done, wtickets: tickets, wall };
+  }
+  /**
+   * Count an event; returns { done: [daily missions just finished], all, wdone: [weekly ones], wall, tickets } (tickets
+   * already added).
+   */
   function record(ev) {
     const m = load(), done = [];
     for (const x of m.list) {
@@ -376,12 +439,18 @@ window.MISSIONS = (() => {
     let tickets = done.length * REWARD, all = false;
     if (!m.bonus && m.list.every(x => x.done)) { m.bonus = true; all = true; tickets += BONUS; }
     set('bitcade:missions', JSON.stringify(m));
+    const wk = recordWeek(ev, done.length, all);
+    tickets += wk.wtickets;
     if (tickets && window.TICKETS) TICKETS.add(tickets);
-    return { done, tickets, all };
+    return { done, all, ...wk, tickets };
   }
+  /** XP for what record() just finished: 30 a daily mission (+50 for all three), 100 a weekly one (+150 for all three). */
+  const xpFor = r => r.done.length * 30 + (r.all ? 50 : 0) + (r.wdone ? r.wdone.length * 100 + (r.wall ? 150 : 0) : 0);
   /** Time left until new missions (local midnight), like 5H 12M. */
   function left() { const n = new Date(), mid = new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1), m = Math.max(0, Math.floor((mid - n) / 6e4)); return `${Math.floor(m / 60)}H ${String(m % 60).padStart(2, '0')}M`; }
-  return { list: () => load().list, bonus: () => load().bonus, record, text, where, left, REWARD, BONUS, TARGETS };
+  /** Time left until new weekly missions (Monday 00:00 UTC, with the tournament), like 3D 4H. */
+  function wleft() { const end = Date.parse(weekKey() + 'T00:00:00Z') + 7 * 864e5, m = Math.max(0, Math.floor((end - Date.now()) / 6e4)); return m >= 1440 ? `${Math.floor(m / 1440)}D ${Math.floor(m % 1440 / 60)}H` : `${Math.floor(m / 60)}H ${String(m % 60).padStart(2, '0')}M`; }
+  return { list: () => load().list, bonus: () => load().bonus, week: () => loadWeek().list, wbonus: () => loadWeek().bonus, record, xpFor, text, where, left, wleft, REWARD, BONUS, WREWARD, WBONUS, TARGETS };
 })();
 
 /*

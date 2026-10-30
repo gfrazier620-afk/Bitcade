@@ -356,8 +356,9 @@ window.FloorPlay = kit => {
   function xp(n) { if (!window.XP) return; const r = XP.add(n); if (r.up) setTimeout(() => { kit.say(`LEVEL ${r.after.level}!${r.newTitle ? ' ' + r.newTitle : ''}`, 3.2, true); sound.fanfare(); kit.opt.onLevel && kit.opt.onLevel(r); }, 600); }
   function mission(ev) {
     if (!window.MISSIONS) return; const r = MISSIONS.record(ev); if (!r.tickets) return;
-    xp(r.done.length * 30 + (r.all ? 50 : 0));
-    setTimeout(() => { kit.say(r.all ? `ALL 3 MISSIONS! +${r.tickets} TICKETS` : `MISSION DONE! +${r.tickets} TICKETS`, 3, true); sound.fanfare(); }, 900);
+    xp(MISSIONS.xpFor(r));
+    const wk = r.wdone && r.wdone.length;
+    setTimeout(() => { kit.say(r.wall ? `ALL 3 WEEKLY MISSIONS! +${r.tickets} TICKETS` : wk ? `WEEKLY MISSION DONE! +${r.tickets} TICKETS` : r.all ? `ALL 3 MISSIONS! +${r.tickets} TICKETS` : `MISSION DONE! +${r.tickets} TICKETS`, 3, true); sound.fanfare(); }, 900);
     kit.opt.onTickets && kit.opt.onTickets(); kit.opt.onMissions && kit.opt.onMissions();
   }
   function gameOver(x, score, best, res, c) {

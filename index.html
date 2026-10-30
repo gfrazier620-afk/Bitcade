@@ -20,7 +20,7 @@ body{display:block;overflow-x:hidden;
     radial-gradient(ellipse at 90% 10%,#0e3350 0%,transparent 45%),
     var(--bg)}
 .lobby{max-width:1120px;margin:0 auto;padding-inline:16px;padding-block:18px 64px}
-@media (min-width:1500px){.lobby{max-width:min(1680px,94vw)}.hero,.todaycard,.scores,.rewards{max-width:1240px!important}.today,.missions,.lvl,.pstrip,.finder,.rw-prize{max-width:1140px!important}} /* big monitors: more cabinets across, a bigger floor */
+@media (min-width:1500px){.lobby{max-width:min(1680px,94vw)}.hero,.quests,.scores,.rewards{max-width:1240px!important}.today,.missions,.lvl,.pstrip,.finder,.rw-prize{max-width:1140px!important}} /* big monitors: more cabinets across, a bigger floor */
 .marquee{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;margin-bottom:36px}
 .logo{font-family:"Bungee Shade","Bungee",system-ui,sans-serif;font-weight:400;font-size:clamp(52px,13vw,112px);line-height:.95;margin:0;letter-spacing:.02em;
   background:linear-gradient(180deg,#ffe36a 0%,#ff7a3d 45%,#ff3d9a 100%);-webkit-background-clip:text;background-clip:text;color:transparent;
@@ -247,13 +247,18 @@ body{display:block;overflow-x:hidden;
 .pf-level{font-family:var(--f-pixel);font-size:12px;color:#5ee7ff;letter-spacing:.06em}.pf-level b{color:#fff;font-weight:400}
 .pf-xp{display:flex;align-items:center;gap:8px;margin:4px 0 8px;font-family:var(--f-pixel);font-size:10px;color:var(--muted)}
 .pf-xp i{display:block;width:160px;height:8px;border-radius:4px;background:rgba(255,255,255,.08);overflow:hidden}.pf-xp b{display:block;height:100%;background:linear-gradient(90deg,#3dd6ff,#b86bff)}
-.missions{--c:#3dff8f;max-width:900px;margin:0 auto 22px;padding:12px 14px 14px;border-radius:14px;background:var(--bg2);border:1px solid var(--line)}
-.missions header{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:10px;font-family:var(--f-pixel);font-size:11px;color:var(--muted)}
-.missions header b{font-family:var(--f-marquee);font-weight:400;font-size:17px;color:var(--c);letter-spacing:.04em}
-.ms-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
-.ms{display:flex;flex-direction:column;gap:7px;padding:10px 12px;border-radius:10px;background:var(--panel);border:1px solid var(--line);color:var(--ink);text-align:left;font:inherit;cursor:pointer}
-.ms:hover{border-color:var(--c)}
+.missions{max-width:1000px;margin:0 auto 22px;padding:12px 14px 14px;border-radius:14px;background:var(--bg2);border:1px solid var(--line);display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px}
+.ms-col{--c:#3dff8f;min-width:0;display:flex;flex-direction:column}.ms-col.wk{--c:#c88bff}
+.ms-col header{display:flex;justify-content:space-between;align-items:baseline;gap:6px 10px;flex-wrap:wrap;margin-bottom:8px;font-family:var(--f-pixel);font-size:10.5px;color:var(--muted)}
+.ms-col header b{font-family:var(--f-marquee);font-weight:400;font-size:17px;color:var(--c);letter-spacing:.04em}
+.ms-list{display:flex;flex-direction:column;gap:7px}
+.ms{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:6px 10px;padding:9px 12px;border-radius:10px;background:var(--panel);border:1px solid var(--line);color:var(--ink);text-align:left;font:inherit;cursor:pointer;transition:border-color .15s,transform .15s}
+.ms:hover{border-color:var(--c);transform:translateY(-1px)}
 .ms span{font-size:13.5px;line-height:1.3}
+.ms .ms-bar{grid-column:1}
+.ms small{grid-column:2;gap:10px}
+.ms .ms-go{justify-self:end;font-family:var(--f-pixel);font-size:10px;color:var(--c);white-space:nowrap}
+.ms.done .ms-go{color:#ffd23d}
 .ms small{display:flex;justify-content:space-between;font-family:var(--f-pixel);font-size:10px;color:var(--muted)}
 .ms small i{font-style:normal;color:#ffd23d}
 .ms-bar{height:6px;border-radius:3px;background:rgba(255,255,255,.08);overflow:hidden}
@@ -261,9 +266,9 @@ body{display:block;overflow-x:hidden;
 .ms.done{border-color:#ffd23d;background:color-mix(in srgb,#ffd23d 10%,var(--panel))}
 .ms.done span::before{content:"✓ ";color:#ffd23d}
 .ms.done .ms-bar b{background:#ffd23d}
-.ms-bonus{margin-top:9px;font-family:var(--f-pixel);font-size:10px;color:var(--muted);text-align:center}
+.ms-bonus{margin-top:8px;font-family:var(--f-pixel);font-size:10px;color:var(--muted);text-align:center}
 .ms-bonus.on{color:#ffd23d}
-@media (max-width:640px){.ms-list{grid-template-columns:1fr}.ms{flex-direction:row;flex-wrap:wrap;align-items:center}.ms span{flex:1 1 60%}.ms small{flex:1 1 100%}.ms-bar{flex:1 1 100%}}
+@media (max-width:640px){.missions{grid-template-columns:1fr}}
 .viewbar{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin:0 auto 22px}
 .viewbar button{font-family:var(--f-pixel);font-size:12px;letter-spacing:.06em;color:var(--muted);background:var(--bg2);border:1px solid var(--line);border-radius:999px;padding:8px 14px;cursor:pointer}
 .viewbar button[aria-pressed="true"]{color:#120a1c;background:#5ee7ff;border-color:#5ee7ff}
@@ -536,10 +541,24 @@ body.ev-halloween .topbar .logo{background:linear-gradient(180deg,#ffb04a 0%,#ff
 .hero-slide.halloween .hs-art::after{content:"🎃 👻";position:absolute;right:9%;top:50%;transform:translateY(-50%);font-size:84px;letter-spacing:.1em;filter:drop-shadow(0 0 26px rgba(255,138,42,.7))}
 @media (max-width:640px){.hero-slide.halloween .hs-art::after{top:30%;right:50%;transform:translate(50%,-50%);font-size:64px}}
 .todaycard .tc-ghost b{color:#ff9a3d}
-/* the Today card on PLAY: level, pass and missions in one line; it opens REWARDS */
-.todaycard{--c:#5ee7ff;display:flex;align-items:center;gap:10px 18px;flex-wrap:wrap;width:100%;max-width:1000px;margin:0 auto 18px;padding:10px 16px;border-radius:14px;cursor:pointer;
-  background:var(--bg2);border:1px solid var(--line);color:var(--ink);font-family:var(--f-pixel);font-size:11px;letter-spacing:.04em;text-align:left}
-.todaycard:hover,.todaycard:focus-visible{border-color:#5ee7ff;outline:none}
+/* the missions board on PLAY: a header line (level, pass, anything to claim; it opens REWARDS), then today's and this
+   week's missions side by side (tabs on phones) */
+.quests{max-width:1100px;margin:0 auto 22px;border-radius:16px;background:linear-gradient(180deg,color-mix(in srgb,#3dff8f 5%,var(--bg2)),var(--bg2));border:1px solid var(--line);overflow:hidden}
+.q-cols{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 18px;padding:12px 16px 14px}
+.q-tabs{display:none}
+@media (max-width:640px){
+  .q-cols{grid-template-columns:1fr;padding:10px 12px 12px}
+  .q-tabs{display:flex;gap:6px;padding:10px 12px 0}
+  .q-tabs button{flex:1;font-family:var(--f-pixel);font-size:11px;letter-spacing:.08em;color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px;cursor:pointer}
+  .q-tabs button[aria-selected="true"]{color:#120a1c;background:#3dff8f;border-color:#3dff8f}
+  .q-tabs button.wk[aria-selected="true"]{background:#c88bff;border-color:#c88bff}
+  .q-tabs i{font-style:normal;opacity:.75;margin-left:4px}
+  .quests[data-q="d"] .q-cols .ms-col.wk,.quests[data-q="w"] .q-cols .ms-col:not(.wk){display:none}
+  .q-cols .ms-col header b{display:none}
+}
+.todaycard{--c:#5ee7ff;display:flex;align-items:center;gap:10px 18px;flex-wrap:wrap;width:100%;margin:0;padding:10px 16px;border:0;border-bottom:1px solid var(--line);cursor:pointer;
+  background:rgba(0,0,0,.18);color:var(--ink);font-family:var(--f-pixel);font-size:11px;letter-spacing:.04em;text-align:left}
+.todaycard:hover,.todaycard:focus-visible{background:rgba(94,231,255,.07);outline:none}
 .todaycard .tc{display:flex;align-items:center;gap:8px;color:var(--muted)}
 .todaycard .tc b{font-weight:400;color:var(--ink)}
 .todaycard .tc-lv b{font-family:var(--f-marquee);font-size:18px;color:#5ee7ff}
@@ -721,14 +740,18 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
     <button type="button" class="hero-nav prev" aria-label="Previous">‹</button><button type="button" class="hero-nav next" aria-label="Next">›</button>
     <div class="hero-dots" role="tablist" aria-label="Featured slides"></div>
   </section>
-  <button class="todaycard" id="todayCard" type="button" aria-label="Your level, pass and missions: open Rewards"></button>
+  <section class="quests" id="quests" aria-label="Missions" data-q="d">
+    <button class="todaycard" id="todayCard" type="button" aria-label="Your level and pass: open Rewards"></button>
+    <div class="q-tabs" role="tablist" aria-label="Missions"><button type="button" role="tab" data-qt="d" aria-selected="true">DAILY<i id="qtD"></i></button><button type="button" role="tab" class="wk" data-qt="w" aria-selected="false">WEEKLY<i id="qtW"></i></button></div>
+    <div class="q-cols" id="qCols"></div>
+  </section>
   <section class="rewards" id="rewardsView" aria-label="Rewards" hidden>
     <h2 class="vh">REWARDS</h2>
     <div class="today">
     <section class="lvl" id="lvl" aria-label="Your level"></section>
     <section class="pstrip" id="passStrip" role="button" tabindex="0" aria-label="Arcade Pass" hidden></section>
     </div>
-    <section class="missions" id="missions" aria-label="Daily missions"></section>
+    <section class="missions" id="missions" aria-label="Daily and weekly missions"></section>
     <button class="rw-prize" id="rwPrize" type="button"><span class="ic" aria-hidden="true">◈</span><div><b>PRIZE COUNTER</b><small>Spend tickets on outfits, pets, emotes, carpets, screen tints and cabinet finishes.</small></div><em id="rwTix">0 TICKETS</em></button>
   </section>
   <section class="scores" id="scoresView" aria-label="High scores" hidden></section>
@@ -1150,32 +1173,50 @@ Profile.init({ el: profileView, games: GAMES, paint, prices, onSynced: changed =
   else setTimeout(() => Setup.check(), 3000);
   addEventListener('bitcade:profile', () => { if (!profileView.hidden) Profile.render(); });
 }
-/* Daily missions (MISSIONS in shared/badges.js): three cards with progress, a countdown, and a tap goes to do it. */
-const missionsEl = document.getElementById('missions');
-function renderMissions() {
-  if (!window.MISSIONS) { missionsEl.hidden = true; return; }
-  const list = MISSIONS.list(), done = list.filter(m => m.done).length;
-  missionsEl.innerHTML = `<header><b>DAILY MISSIONS</b><span>${done}/3 DONE · NEW MISSIONS IN ${MISSIONS.left()}</span></header><div class="ms-list"></div><div class="ms-bonus${MISSIONS.bonus() ? ' on' : ''}">${MISSIONS.bonus() ? '★ ALL THREE DONE · BONUS COLLECTED' : `FINISH ALL THREE FOR +${MISSIONS.BONUS} BONUS TICKETS`}</div>`;
-  const box = missionsEl.querySelector('.ms-list');
+/*
+ * Missions (MISSIONS in shared/badges.js): today's three and this week's three, as cards with progress and a countdown;
+ * a tap goes to do it. They're on the PLAY board (#quests, tabs on phones) and in REWARDS.
+ */
+const missionsEl = document.getElementById('missions'), questsEl = document.getElementById('quests');
+function goMission(m) {
+  const w = MISSIONS.where(m);
+  if (w === 'floor') { setView('floor'); loadFloor().then(() => { if (!['ghost', 'wfloor'].includes(m.kind)) Floor.goTo({ photo: 'booth' }[m.kind] || m.kind); document.getElementById('floorCv').focus({ preventScroll: true }); }, () => {}); }
+  else if (w) enterGame(w);
+  else { setView('grid'); document.getElementById('cabs').scrollIntoView({ behavior: 'smooth' }); }
+}
+function missionCol(weekly) {
+  const list = weekly ? MISSIONS.week() : MISSIONS.list(), done = list.filter(m => m.done).length, bonus = weekly ? MISSIONS.wbonus() : MISSIONS.bonus();
+  const col = document.createElement('div'); col.className = 'ms-col' + (weekly ? ' wk' : '');
+  col.innerHTML = `<header><b>${weekly ? 'WEEKLY' : 'DAILY'} MISSIONS</b><span>${done}/${list.length} DONE · ${weekly ? 'NEW ONES IN ' + MISSIONS.wleft() : 'NEW ONES IN ' + MISSIONS.left()}</span></header><div class="ms-list"></div>` +
+    `<div class="ms-bonus${bonus ? ' on' : ''}">${bonus ? '★ ALL THREE DONE · BONUS COLLECTED' : `ALL THREE: +${weekly ? MISSIONS.WBONUS : MISSIONS.BONUS} BONUS TICKETS`}</div>`;
+  const box = col.querySelector('.ms-list');
   list.forEach(m => {
     const b = document.createElement('button'), big = m.n >= 100, pct = Math.min(100, m.prog / m.n * 100);
-    b.className = 'ms' + (m.done ? ' done' : '');
-    b.innerHTML = '<span></span><div class="ms-bar"><b></b></div><small><em></em><i></i></small>';
+    b.type = 'button'; b.className = 'ms' + (m.done ? ' done' : '');
+    b.innerHTML = '<span></span><em class="ms-go"></em><div class="ms-bar"><b></b></div><small><em></em><i></i></small>';
     b.querySelector('span').textContent = MISSIONS.text(m);
+    b.querySelector('.ms-go').textContent = m.done ? '✓' : 'GO ›';
     b.querySelector('.ms-bar b').style.width = pct + '%';
-    b.querySelector('em').textContent = m.done ? 'DONE' : big ? `${Math.min(m.prog, m.n).toLocaleString()} / ${m.n.toLocaleString()}` : `${Math.min(m.prog, m.n)} / ${m.n}`;
-    b.querySelector('em').style.fontStyle = 'normal';
-    b.querySelector('i').textContent = `+${MISSIONS.REWARD} TICKETS`;
-    b.addEventListener('click', () => {
-      const w = MISSIONS.where(m);
-      if (w === 'floor') { setView('floor'); loadFloor().then(() => { if (m.kind !== 'ghost') Floor.goTo({ photo: 'booth' }[m.kind] || m.kind); document.getElementById('floorCv').focus({ preventScroll: true }); }, () => {}); }
-      else if (w) enterGame(w);
-      else setView('grid');
-    });
+    const em = b.querySelector('small em'); em.style.fontStyle = 'normal';
+    em.textContent = m.done ? 'DONE' : big ? `${Math.min(m.prog, m.n).toLocaleString()} / ${m.n.toLocaleString()}` : `${Math.min(m.prog, m.n)} / ${m.n}`;
+    b.querySelector('i').textContent = `+${weekly ? MISSIONS.WREWARD : MISSIONS.REWARD} TICKETS`;
+    b.addEventListener('click', () => goMission(m));
     box.append(b);
   });
+  return col;
+}
+function renderMissions() {
+  if (!window.MISSIONS) { missionsEl.hidden = true; questsEl.querySelector('.q-tabs').hidden = true; return; }
+  missionsEl.replaceChildren(missionCol(false), missionCol(true));
+  document.getElementById('qCols').replaceChildren(missionCol(false), missionCol(true));
+  const cnt = l => ` ${l.filter(m => m.done).length}/${l.length}`;
+  document.getElementById('qtD').textContent = cnt(MISSIONS.list()); document.getElementById('qtW').textContent = cnt(MISSIONS.week());
   renderToday();
 }
+questsEl.querySelector('.q-tabs').addEventListener('click', e => {
+  const b = e.target.closest('[data-qt]'); if (!b) return;
+  questsEl.dataset.q = b.dataset.qt; questsEl.querySelectorAll('[data-qt]').forEach(x => x.setAttribute('aria-selected', String(x === b)));
+});
 renderMissions(); setInterval(renderMissions, 60000);
 /* Your level (XP in shared/badges.js): the bar, your title and the next level reward. */
 const lvlEl = document.getElementById('lvl');
@@ -1193,10 +1234,9 @@ function renderLevel() {
 function renderToday() {
   const todayEl = document.getElementById('todayCard'), rwDot = document.getElementById('rwDot');
   const v = window.XP ? XP.info() : null, se = window.PASS && PASS.season(), claim = se ? PASS.ready().length : 0;
-  const ms = window.MISSIONS ? MISSIONS.list() : [], done = ms.filter(m => m.done).length;
   todayEl.innerHTML = (v ? `<span class="tc tc-lv">LV <b>${v.level}</b> <span class="tc-bar"><i style="width:${Math.round(v.pct * 100)}%"></i></span></span>` : '') +
     (se ? `<span class="tc tc-pass">PASS TIER <b>${PASS.tier()}</b>/${PASS.TIERS}</span>` : '') +
-    (ms.length ? `<span class="tc tc-ms">MISSIONS <b>${done}/${ms.length}</b></span>` : '') +
+
     (window.EVENT && EVENT.on('halloween') ? `<span class="tc tc-ghost">👻 GHOSTS <b>${(() => { try { const g = JSON.parse(localStorage.getItem('bitcade:ghosts')), d = new Date(); return g && g.d === d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate() ? g.f.length : 0; } catch (e) { return 0; } })()}/5</b></span>` : '') +
     (claim ? `<span class="tc-claim">${claim} TO CLAIM</span>` : '') + '<span class="tc tc-go">REWARDS ›</span>';
   if (v) document.getElementById('tbLvN').textContent = v.level;
@@ -1222,7 +1262,7 @@ function setView(v) {
   floorView.hidden = !walk; document.getElementById('cabs').hidden = !play; profileView.hidden = !prof; rewardsView.hidden = !rw; scoresView.hidden = !sc;
   missionsEl.hidden = !window.MISSIONS; lvlEl.hidden = !window.XP; passEl.hidden = !(window.PASS && PASS.season());
   if (rw) { renderMissions(); renderLevel(); PassView.render(); } else renderToday();
-  document.getElementById('hero').hidden = !play || !heroCount; document.getElementById('todayCard').hidden = !play;
+  document.getElementById('hero').hidden = !play || !heroCount; questsEl.hidden = !play;
   [[vGrid, play], [vFloor, walk], [vScores, sc], [vRewards, rw], [vProfile, prof]].forEach(([b, on]) => b.setAttribute('aria-pressed', String(on)));
   if (walk) loadFloor().then(() => { if (!floorView.hidden) Floor.start(); }, () => {}); else if (window.Floor && floorP) floorP.then(() => { if (floorView.hidden) Floor.stop(); }, () => {});
   if (prof) Profile.render();

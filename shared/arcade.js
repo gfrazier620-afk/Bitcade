@@ -94,6 +94,7 @@
     const def = A.badgeList().find(b => b.id === id);
     if (!def) return;
     gotCache = [...got, id]; store.set(badgeKey, JSON.stringify(gotCache));
+    setTimeout(() => A.mission({ type: 'badge', id }), 0); // weekly missions count badges
     if (window.TICKETS) TICKETS.add(10);
     A.gainXP(50, 'badge');
     toast(`★ BADGE · ${def.name} · +10 TICKETS`); A.jingle([659, 880, 1175, 1568], 0.07, 'triangle');
@@ -274,10 +275,16 @@
   A.mission = ev => {
     if (!window.MISSIONS || A.demo || runEasy) return;
     const r = MISSIONS.record(ev);
-    if (r.done.length) A.gainXP(r.done.length * 30 + (r.all ? 50 : 0), 'mission');
-    if (gather) { if (r.done.length) noteOne('ms', `✓ ${r.done.length > 1 ? r.done.length + ' MISSIONS' : 'MISSION'} DONE · +${r.done.length * MISSIONS.REWARD} TICKETS`); if (r.all) noteOne('all', `★ ALL 3 MISSIONS · +${MISSIONS.BONUS} BONUS`); return; }
-    r.done.forEach((m, i) => setTimeout(() => { toast(`✓ MISSION · ${MISSIONS.text(m)} · +${MISSIONS.REWARD} TICKETS`); A.jingle([784, 988, 1319], 0.07, 'square'); }, 400 + i * 900));
-    if (r.all) setTimeout(() => { toast(`★ ALL 3 DAILY MISSIONS · +${MISSIONS.BONUS} BONUS TICKETS`); A.jingle([523, 659, 784, 1047, 1319, 1568], 0.08, 'square'); }, 400 + r.done.length * 900);
+    const wd = r.wdone || [], xp = MISSIONS.xpFor ? MISSIONS.xpFor(r) : r.done.length * 30 + (r.all ? 50 : 0);
+    if (xp) A.gainXP(xp, 'mission');
+    if (gather) {
+      if (r.done.length) noteOne('ms', `✓ ${r.done.length > 1 ? r.done.length + ' MISSIONS' : 'MISSION'} DONE · +${r.done.length * MISSIONS.REWARD} TICKETS`); if (r.all) noteOne('all', `★ ALL 3 MISSIONS · +${MISSIONS.BONUS} BONUS`);
+      if (wd.length) noteOne('wms', `✓ WEEKLY MISSION${wd.length > 1 ? 'S' : ''} DONE · +${wd.length * MISSIONS.WREWARD} TICKETS`); if (r.wall) noteOne('wall', `★ ALL 3 WEEKLY · +${MISSIONS.WBONUS} BONUS`);
+      return;
+    }
+    const say = [...r.done.map(m => [`✓ MISSION · ${MISSIONS.text(m)} · +${MISSIONS.REWARD} TICKETS`, 0]), ...(r.all ? [[`★ ALL 3 DAILY MISSIONS · +${MISSIONS.BONUS} BONUS TICKETS`, 1]] : []),
+      ...wd.map(m => [`✓ WEEKLY MISSION · ${MISSIONS.text(m)} · +${MISSIONS.WREWARD} TICKETS`, 1]), ...(r.wall ? [[`★ ALL 3 WEEKLY MISSIONS · +${MISSIONS.WBONUS} BONUS TICKETS`, 1]] : [])];
+    say.forEach(([t, big], i) => setTimeout(() => { toast(t); A.jingle(big ? [523, 659, 784, 1047, 1319, 1568] : [784, 988, 1319], big ? 0.08 : 0.07, 'square'); }, 400 + i * 900));
   };
 
   /* ---------- sound ---------- */
