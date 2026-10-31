@@ -98,6 +98,7 @@ All names, characters and art are original. Keep it that way: no trademarked gam
 - A new kit game needs an `A.attract` demo bot (the tests check) and `A.easy` extra lives if it has lives.
 - Initialise arrays used by draw/update at declaration. The loop runs on the title screen before a game starts.
 - Play locally by running `python3 -m http.server` in the repo root and opening http://localhost:8000. Pick another port, such as 5173, if 8000 is blocked, which it is on Windows here.
+- `node tests/scan.mjs [slug,slug] [parallel]` (with the local server on port 5180, not part of `npm test`) scans every game and the lobby on desktop, phone (upright and sideways), tablet and a small phone: errors while the demo plays, sideways scrolling, cut-off screens, start buttons, touch pads and lobby panels. Keep parallel low (2–3): Python's server drops connections under load, which shows up as false 'Arcade is not defined' errors. 'Game screen small' on tall games and 'overlay wider' from the 1-px screen-reader label are expected.
 - Run the smoke tests with `npm install` then `npm test`. `tests/smoke.mjs` serves the repo and opens the lobby and every game in headless Chromium. It checks cabinets and folders match, start, pause and resume, that the canvas draws, the top-10 table, the phone layout, and that there are no errors. New games are picked up automatically from `games/`. Locally it uses installed Chrome or Edge. `package.json` is dev tooling only; the site still has no dependencies.
 
 ## Deploy
