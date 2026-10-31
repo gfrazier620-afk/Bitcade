@@ -61,6 +61,23 @@ function deepMax(p, q) {
 }
 const RESET = 'arcade:scores:reset', SCORES = /^arcade:(best|plays|top|daily|week):/;
 const dropScores = o => Object.fromEntries(Object.entries(o).filter(([k]) => !SCORES.test(k)));
+/*
+ * Daily or weekly missions from two devices (f: the date or week field). The newer day or week wins; on the same one,
+ * each mission keeps the furthest progress from either side and counts as done if it's done on either (one swapped on
+ * one device only: the side that's further along), and the all-three bonus is collected if either collected it.
+ */
+function mergeMissions(x, y, f) {
+  const p = json(x, {}), q = json(y, {});
+  if (!Array.isArray(p.list)) return y; if (!Array.isArray(q.list)) return x;
+  if (p[f] !== q[f]) return String(p[f]) > String(q[f]) ? x : y;
+  const list = p.list.map((a, i) => {
+    const b = q.list[i]; if (!b) return a;
+    if (a.kind !== b.kind || a.game !== b.game || a.n !== b.n) return b.done && !a.done || (!a.done && (b.prog || 0) > (a.prog || 0)) ? b : a;
+    const seen = [...new Set([...(a.seen || []), ...(b.seen || [])])];
+    return { ...a, seen, prog: Math.max(a.prog || 0, b.prog || 0, /variety/.test(a.kind) ? seen.length : 0), done: !!(a.done || b.done) };
+  });
+  return JSON.stringify({ ...p, list, bonus: !!(p.bonus || q.bonus) });
+}
 export function merge(a, b, prices, joining) {
   // a high-score reset: the side that hasn't seen the newest one loses its scores (not when a device first joins:
   // its scores are its own history, not ones from before that reset)
@@ -86,6 +103,7 @@ export function merge(a, b, prices, joining) {
       out[k] = JSON.stringify(p[f] === q[f] ? (p.s >= q.s ? p : q) : (String(p[f]) > String(q[f]) ? p : q));
     }
     else if (/^arcade:story:/.test(k)) out[k] = JSON.stringify(deepMax(json(x, {}), json(y, {}))); // story progress: the furthest of each
+    else if (k === 'arcade:missions' || k === 'arcade:wmissions') out[k] = mergeMissions(x, y, k === 'arcade:missions' ? 'd' : 'w');
     else if (joining && /^arcade:(name|namekey|initials|avatar)$/.test(k) && b['arcade:name'] && b['arcade:namekey']) out[k] = y; // the save's player (above)
     // anything else (initials, the cached ticket balance): this device's value
   }

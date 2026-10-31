@@ -285,7 +285,8 @@ window.TICKETS = (() => {
  * play (different games, an area, the tournament, a daily challenge) and something on the arcade floor. Each pays
  * 10 tickets, and all three pay 20 more. Progress comes from MISSIONS.record(event): arcade.js sends
  * { type: 'run', slug, score, daily } after every game that counts (not easy mode, not demos); the floor sends
- * skee, pinball, claw and photo events; Blip Sports sends blip-win. Kept per device in bitcade:missions. Weekly
+ * skee, pinball, claw and photo events; Blip Sports sends blip-win. Kept in arcade:missions (cloud save merges it, so
+ * a mission done on one device is done on the others). Weekly
  * missions (week(): three bigger ones, new each Monday with the tournament) count the same events, plus badges
  * ({ type: 'badge' } from A.badge) and daily missions finished.
  */
@@ -345,13 +346,13 @@ window.MISSIONS = (() => {
     return { d, list: [{ kind: 'score', game: g, n: t }, pick(plays), pick(floor)].map((m, i) => ({ id: i, prog: 0, done: false, seen: [], ...m })), bonus: false };
   }
   function load() {
-    let m = null; try { m = JSON.parse(get('bitcade:missions')); } catch (e) {}
-    if (!m || m.d !== today() || !Array.isArray(m.list)) { m = make(today()); set('bitcade:missions', JSON.stringify(m)); }
+    let m = null; try { m = JSON.parse((get('arcade:missions') || get('bitcade:missions'))); } catch (e) {}
+    if (!m || m.d !== today() || !Array.isArray(m.list)) { m = make(today()); set('arcade:missions', JSON.stringify(m)); }
     return m;
   }
   /*
    * Weekly missions: three bigger ones a week, the same for everyone, starting over with the tournament on Monday
-   * (WEEKLY.key(), UTC). 50 tickets each and 100 more for all three. Kept per device in bitcade:wmissions.
+   * (WEEKLY.key(), UTC). 50 tickets each and 100 more for all three. Kept in arcade:wmissions (merged by cloud save).
    */
   const weekKey = () => window.WEEKLY && WEEKLY.key ? WEEKLY.key() : today();
   function makeWeek(w) {
@@ -370,8 +371,8 @@ window.MISSIONS = (() => {
     return { w, list: out.map((m, i) => ({ id: i, prog: 0, done: false, seen: [], ...m })), bonus: false };
   }
   function loadWeek() {
-    let m = null; try { m = JSON.parse(get('bitcade:wmissions')); } catch (e) {}
-    if (!m || m.w !== weekKey() || !Array.isArray(m.list)) { m = makeWeek(weekKey()); set('bitcade:wmissions', JSON.stringify(m)); }
+    let m = null; try { m = JSON.parse((get('arcade:wmissions') || get('bitcade:wmissions'))); } catch (e) {}
+    if (!m || m.w !== weekKey() || !Array.isArray(m.list)) { m = makeWeek(weekKey()); set('arcade:wmissions', JSON.stringify(m)); }
     return m;
   }
   const text = m => ({
@@ -421,7 +422,7 @@ window.MISSIONS = (() => {
     }
     let tickets = done.length * wreward(), wall = false;
     if (!m.bonus && m.list.every(x => x.done)) { m.bonus = true; wall = true; tickets += WBONUS; }
-    set('bitcade:wmissions', JSON.stringify(m));
+    set('arcade:wmissions', JSON.stringify(m));
     return { wdone: done, wtickets: tickets, wall };
   }
   /**
@@ -453,7 +454,7 @@ window.MISSIONS = (() => {
     }
     let tickets = done.length * reward(), all = false;
     if (!m.bonus && m.list.every(x => x.done)) { m.bonus = true; all = true; tickets += BONUS; }
-    set('bitcade:missions', JSON.stringify(m));
+    set('arcade:missions', JSON.stringify(m));
     const wk = recordWeek(ev, done.length, all);
     tickets += wk.wtickets;
     if (tickets && window.TICKETS) TICKETS.add(tickets);
@@ -481,7 +482,7 @@ window.MISSIONS = (() => {
     }
     if (!fresh) return false;
     if (weekly) PERKS.use('wswap'); else if (freeSwap()) localStorage.setItem('bitcade:mswap', today()); else PERKS.use('swap');
-    m.list[i] = { ...fresh, id: i }; localStorage.setItem(weekly ? 'bitcade:wmissions' : 'bitcade:missions', JSON.stringify(m));
+    m.list[i] = { ...fresh, id: i }; localStorage.setItem(weekly ? 'arcade:wmissions' : 'arcade:missions', JSON.stringify(m));
     return true;
   }
   return { list: () => load().list, bonus: () => load().bonus, week: () => loadWeek().list, wbonus: () => loadWeek().bonus, record, xpFor, text, where, left, wleft, swap, canSwap, freeSwap,

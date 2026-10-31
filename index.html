@@ -1310,7 +1310,7 @@ addEventListener('keydown', e => { if (e.key === 'Escape' && !filterPop.hidden) 
 window.Lobby = { openSearch };
 vProfile.addEventListener('click', () => setView('profile'));
 // Cloud save: sync quietly on every visit; anything new from another device shows on the next visit (or right away on the profile).
-Profile.autoSync().then(r => { if (r.state === 'ok' && r.changed) { tixShow(); if (!profileView.hidden) Profile.render(); } });
+Profile.autoSync().then(r => { if (r.state === 'ok' && r.changed) { tixShow(); renderMissions(); renderLevel(); if (!profileView.hidden) Profile.render(); } }); // what another device did shows here too
 vGrid.addEventListener('click', () => setView('grid'));
 // Full screen for the floor: browser full screen where there is one, and the section fills the window either way (iPhones have none)
 const flFull = document.getElementById('flFull');
