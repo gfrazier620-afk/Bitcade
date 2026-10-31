@@ -359,7 +359,7 @@ const CFG = { apiKey: 'AIzaSyAPy1xQoxSHA64Efns07QCNw7ASNIWQpOQ', authDomain: 'bi
 const app = SDK_OK ? initializeApp(CFG, 'admin') : null;
 const auth = app && getAuth(app), db = app && getFirestore(app);
 const gameAuth = app && getAuth(initializeApp(CFG));
-const here = !app ? Promise.resolve(null) : new Promise(ok => { const off = onAuthStateChanged(gameAuth, u => { off(); ok(u && u.isAnonymous ? u.uid : null); }); }); // this browser's player, if it has played
+const here = !app ? Promise.resolve(null) : new Promise(ok => { const off = onAuthStateChanged(gameAuth, u => { off(); ok(u ? u.uid : null); }); }); // this browser's player, if it has played
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const name = g => !g ? '—' : g === 'lobby' ? 'Lobby' : String(g).split('-').map(w => w[0].toUpperCase() + w.slice(1)).join(' ');

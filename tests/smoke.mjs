@@ -45,6 +45,7 @@ async function open(path, opts = {}) {
   // Seasonal events (window.EVENT) follow the calendar; tests run without one unless the URL asks (?event=halloween).
   await page.addInitScript(() => { try { if (!/[?&]event=/.test(location.search)) sessionStorage.setItem('bitcade:event', 'none'); } catch (e) {} });
   // New players make a profile first (shared/setup.js); tests skip it unless the URL says ?newplayer.
+  await page.addInitScript(() => { try { if (!/[?&]happy=/.test(location.search)) sessionStorage.setItem('bitcade:happy', '0'); } catch (e) {} }); // happy hour (8–9 pm) off unless a test asks
   await page.addInitScript(() => { try { if (!/[?&]newplayer/.test(location.search)) sessionStorage.setItem('bitcade:nosetup', '1'); else sessionStorage.removeItem('bitcade:nosetup'); } catch (e) {} });
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));

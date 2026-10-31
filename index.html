@@ -1159,6 +1159,8 @@ const leaderRow = (g, label, e, unit = '') => {
   g.el.querySelector('.cab-foot').before(row);
 };
 const worldP = import('./shared/world.js');
+// back from Google (Link with Google on the profile, shared/world.js): finish it, and reload if this device became another device's player
+try { if (sessionStorage.getItem('bitcade:linking')) { sessionStorage.removeItem('bitcade:linking'); worldP.then(w => w.finishLink()).then(r => { if (r.switched) location.reload(); }, () => {}); } } catch (e) {}
 const seen = (g, e) => { worldSeen[g.slug] = e && /^[A-Z]{3}$/.test(e.n) ? e : null; ScoresView.world(g.slug); };
 worldP.then(w => {
   GAMES.forEach(g => {
@@ -1214,7 +1216,7 @@ function initFloor() { Floor.init({
 // The player profile and cloud save (shared/profile.js, shared/save.js).
 const profileView = document.getElementById('profileView'), vProfile = document.getElementById('vProfile');
 const prices = Object.fromEntries(Prizes.LIST.map(p => [p.id, p.price]));
-Profile.init({ el: profileView, games: GAMES, paint, prices, onSynced: changed => { if (changed) location.replace('?view=profile'); } });
+Profile.init({ el: profileView, games: GAMES, paint, prices, world: () => worldP, onSynced: changed => { if (changed) location.replace('?view=profile'); } });
 /* ---------- the player profile (shared/setup.js): a new player makes one as the doors open; later visits only check it's published ---------- */
 {
   const lobbyReady = () => new Promise(r => { const t = setInterval(() => { if (!document.documentElement.classList.contains('booting')) { clearInterval(t); r(); } }, 250); });

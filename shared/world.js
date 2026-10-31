@@ -33,14 +33,45 @@ const app = initializeApp({
 });
 const db = getFirestore(app);
 
-let user = null;
-/** Anonymous sign-in, only when posting. Firebase keeps the same anonymous player across visits. */
+let user = null, authLib = null;
+const lib = () => authLib || (authLib = import('https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js'));
+/**
+ * Sign in, only when needed. Whoever is signed in on this device stays signed in: an anonymous player (each device its
+ * own), or a player linked to Google, the same on every device that signs in with that Google account.
+ */
 async function signIn() {
   if (user) return user;
-  const { getAuth, signInAnonymously } = await import('https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js');
-  user = (await signInAnonymously(getAuth(app))).user;
+  const { getAuth, signInAnonymously } = await lib(), auth = getAuth(app);
+  await auth.authStateReady();
+  user = auth.currentUser || (await signInAnonymously(auth)).user;
   return user;
 }
+/*
+ * Google, for one player on every device (messages, friends, presence and challenges belong to the signed-in player).
+ * Link on the device that has your friends; on another device the same Google account then signs in as that player.
+ * Returns { state: 'ok', switched } (switched: this device became another device's player), or 'redirect' (the page is
+ * going to Google and back; finishLink() completes it).
+ */
+export async function account() { const u = await signIn(), g = u.providerData.find(p => p.providerId === 'google.com'); return { google: !!g, email: g ? g.email || '' : '', uid: u.uid }; }
+export async function linkGoogle() {
+  const A = await lib(), auth = A.getAuth(app), u = await signIn(), p = new A.GoogleAuthProvider(), was = u.uid;
+  try { await A.linkWithPopup(u, p); }
+  catch (e) {
+    if (e.code === 'auth/credential-already-in-use') await A.signInWithCredential(auth, A.GoogleAuthProvider.credentialFromError(e));
+    else if (/popup-blocked|operation-not-supported|web-storage-unsupported/.test(e.code || '')) { try { sessionStorage.setItem('bitcade:linking', '1'); } catch (x) {} await A.linkWithRedirect(u, p); return { state: 'redirect' }; }
+    else if (e.code !== 'auth/provider-already-linked') throw e;
+  }
+  user = auth.currentUser; return { state: 'ok', switched: user.uid !== was };
+}
+/** After coming back from Google (linkWithRedirect): finish linking, or sign in as the player that Google account has. */
+export async function finishLink() {
+  const A = await lib(), auth = A.getAuth(app); await auth.authStateReady(); const was = auth.currentUser && auth.currentUser.uid;
+  try { await A.getRedirectResult(auth); }
+  catch (e) { if (e.code === 'auth/credential-already-in-use') await A.signInWithCredential(auth, A.GoogleAuthProvider.credentialFromError(e)); else throw e; }
+  user = auth.currentUser; return { switched: !!user && user.uid !== was };
+}
+/** Sign out on this device (a shared computer): the next visit is a new anonymous player here. */
+export async function signOutHere() { const A = await lib(); await A.signOut(A.getAuth(app)); user = null; }
 
 const board = (game, day, week) => week ? collection(db, 'weekly', game, 'weeks', week, 'scores')
   : day ? collection(db, 'daily', game, 'days', day, 'scores') : collection(db, 'boards', game, 'scores');

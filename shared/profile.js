@@ -46,6 +46,7 @@ window.Profile = (() => {
         </div>
       </div>
       <div class="pf-cloud" id="pfCloud"></div>
+      <div class="pf-cloud" id="pfLink"></div>
       <h3 class="pf-h">TROPHY CASE</h3>
       <div class="pf-grid">${st.rows.map((r, i) => `
         <a class="pf-game${r.badges.length && r.badges.every(b => b.got) ? ' gold' : ''}" href="games/${r.g.slug}/" style="--c:${r.g.c}">
@@ -62,7 +63,36 @@ window.Profile = (() => {
     if (window.Avatar) Avatar.fill(el.querySelector('.pf-me'));
     el.querySelector('#pfEdit').addEventListener('click', () => window.Setup && Setup.open({ onDone: render })); // name, initials and look (shared/setup.js)
     el.querySelector('#pfCounter').addEventListener('click', () => window.Prizes && Prizes.open());
-    cloud();
+    cloud(); link();
+  }
+
+  /*
+   * Friends on every device (shared/world.js linkGoogle): messages, friends, who's online and challenges belong to the
+   * player signed in on a device, and each device starts as its own anonymous player. Linking Google makes them one.
+   */
+  let linking = false;
+  async function link(msg) {
+    const box = opt.el.querySelector('#pfLink'); if (!box) return;
+    const w = await opt.world().catch(() => null), a = w && await w.account().catch(() => null);
+    if (!a) { box.innerHTML = '<b>FRIENDS ON EVERY DEVICE</b><p>Needs the internet. Try again when you’re online.</p>'; return; }
+    const mask = e => e.replace(/^(.{2}).*(@.*)$/, '$1•••$2');
+    if (a.google) {
+      box.innerHTML = `<b>FRIENDS ON EVERY DEVICE · LINKED ✓</b><p>Linked to Google (${esc(mask(a.email))}). Your messages, friends and challenges follow you: on another phone or computer, open PROFILE here and choose LINK WITH GOOGLE with this account.</p>
+        <div class="pf-row"><button class="pf-btn" id="pfOut">SIGN OUT ON THIS DEVICE</button></div>${msg ? `<p class="pf-msg">${msg}</p>` : ''}`;
+      box.querySelector('#pfOut').addEventListener('click', async () => { if (!confirm('Sign out on this device? Your messages and friends stay with your Google account; this device goes back to being a new player until you link again.')) return; await w.signOutHere(); location.reload(); });
+      return;
+    }
+    box.innerHTML = `<b>FRIENDS ON EVERY DEVICE</b><p>Your messages, friends and challenges belong to this device. Link Google to have them on all your devices: <b>link first on the device that already has your friends</b>, then choose LINK WITH GOOGLE on your other devices with the same account. (Cloud save carries your scores and prizes; this carries your friends.)</p>
+      <div class="pf-row"><button class="pf-btn hot" id="pfLinkG" ${linking ? 'disabled' : ''}>${linking ? 'LINKING…' : '🔗 LINK WITH GOOGLE'}</button></div>${msg ? `<p class="pf-msg">${msg}</p>` : ''}`;
+    box.querySelector('#pfLinkG').addEventListener('click', async () => {
+      linking = true; link();
+      try {
+        const r = await w.linkGoogle(); linking = false;
+        if (r.state === 'redirect') return;
+        if (r.switched) { link('Signed in. Bringing over your messages and friends…'); setTimeout(() => location.reload(), 900); }
+        else link('Linked! Now choose LINK WITH GOOGLE on your other devices.');
+      } catch (e) { linking = false; link(e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request' ? 'Linking was cancelled.' : 'Couldn’t link just now. Try again in a moment.'); }
+    });
   }
 
   /* ---------- cloud save panel ---------- */
