@@ -681,3 +681,14 @@ window.STREAK = (() => {
   return { DAYS, day, claimed, claim, reward };
 })();
 
+/*
+ * Age and Safe mode (window.SAFE): the profile setup asks for a birth year once and keeps only the band, 'u13' or
+ * '13+' (arcade:age, never the year). Under 13, or not answered yet, the social side is locked down: no typing in
+ * messages (free text never unlocks: they don't accept challenges or add friends), no finding or adding friends by
+ * name, no public profile (so nobody finds them by name), not on the ticker, and not shown as online.
+ */
+window.SAFE = (() => {
+  const band = () => { try { return localStorage.getItem('arcade:age') || ''; } catch (e) { return ''; } };
+  return { on: () => band() !== '13+', band, answered: () => !!band(), set: v => { try { localStorage.setItem('arcade:age', v); } catch (e) {} } };
+})();
+

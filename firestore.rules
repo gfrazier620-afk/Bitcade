@@ -90,7 +90,7 @@ service cloud.firestore {
       allow update: if request.auth != null && request.auth.uid == uid && validWin()
         && request.resource.data.s == resource.data.s + 1
         && request.time > resource.data.t + duration.value(60, 's');
-      allow delete: if false;
+      allow delete: if isAdmin();
     }
 
     // Cloud saves (shared/save.js): one per sync code, at the SHA-256 of the code. Anyone with the id (so, the code)
@@ -102,7 +102,7 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['d', 't']) && request.resource.data.keys().hasAll(['d', 't'])
         && request.resource.data.d is string && request.resource.data.d.size() < 200000
         && request.resource.data.t == request.time;
-      allow delete: if false;
+      allow delete: if isAdmin() || (request.auth != null && id.matches('^[0-9a-f]{64}$')); // with the account (only someone with the code knows the id)
     }
 
     // Cooldown stamp: one score post every 10 seconds per player.
@@ -126,7 +126,7 @@ service cloud.firestore {
         && (!('on' in request.resource.data) || (request.resource.data.on is string && request.resource.data.on.size() <= 40))
         && (!('n' in request.resource.data) || request.resource.data.n.matches('^[A-Z]{3}$'))
         && (!('dev' in request.resource.data) || request.resource.data.dev in ['phone', 'tablet', 'desktop']);
-      allow delete: if false;
+      allow delete: if isAdmin();
       match /ev/{id} {
         allow read: if isAdmin();
         allow create: if request.auth != null && request.auth.uid == uid
@@ -135,7 +135,8 @@ service cloud.firestore {
           && request.resource.data.k in ['run', 'page']
           && request.resource.data.g is string && request.resource.data.g.size() <= 40
           && request.resource.data.t == request.time;
-        allow update, delete: if false;
+        allow update: if false;
+        allow delete: if isAdmin();
       }
     }
 
@@ -162,7 +163,8 @@ service cloud.firestore {
       allow delete: if (request.auth != null && resource.data.u == [request.auth.uid]) || isAdmin();
     }
     match /nameproof/{uid} {
-      allow read, delete: if false;
+      allow read: if false;
+      allow delete: if isAdmin() || (request.auth != null && request.auth.uid == uid);
       allow create, update: if request.auth != null && request.auth.uid == uid
         && request.resource.data.keys().hasOnly(['name', 'k'])
         && request.resource.data.name is string && request.resource.data.k is string && request.resource.data.k.size() <= 64;
@@ -177,7 +179,7 @@ service cloud.firestore {
         && request.resource.data.av is string && request.resource.data.av.matches('^[0-9]{1,2}(-[0-9]{1,2}){5}$')
         && request.resource.data.t == request.time
         && request.auth.uid in getAfter(/databases/$(database)/documents/names/$(request.resource.data.name)).data.u;
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || (request.auth != null && request.auth.uid == uid); // Safe mode takes it down; so does deleting the account
     }
 
     // The admin page's own settings (admin.html): the players to leave out of the numbers (the admin's own devices).
@@ -219,7 +221,8 @@ service cloud.firestore {
         && request.resource.data.g is string && request.resource.data.g.size() <= 40
         && request.resource.data.s is int && request.resource.data.s >= 0
         && request.resource.data.t == request.time;
-      allow update, delete: if false;
+      allow update: if false;
+      allow delete: if isAdmin();
       match /res/{uid} {
         allow read: if true;
         allow create, update: if request.auth != null && request.auth.uid == uid
@@ -227,7 +230,7 @@ service cloud.firestore {
           && request.resource.data.n.matches('^[A-Z]{3}$')
           && request.resource.data.s is int && request.resource.data.s >= 0
           && request.resource.data.t == request.time;
-        allow delete: if false;
+        allow delete: if isAdmin();
       }
     }
 
@@ -238,8 +241,8 @@ service cloud.firestore {
     // each other's challenge), up to 200 characters. A player someone has blocked (bl/{uid}) can't send them anything.
     function other(pair) { let ids = pair.split('_'); return ids[0] == request.auth.uid ? ids[1] : ids[0]; }
     match /dm/{pair} {
-      allow get: if request.auth != null && (resource == null || request.auth.uid in resource.data.m);
-      allow list: if request.auth != null && request.auth.uid in resource.data.m;
+      allow get: if isAdmin() || (request.auth != null && (resource == null || request.auth.uid in resource.data.m));
+      allow list: if isAdmin() || (request.auth != null && request.auth.uid in resource.data.m);
       allow create: if request.auth != null
         && request.resource.data.keys().hasOnly(['m', 'n', 'acc', 'seen', 'last'])
         && request.resource.data.m is list && request.resource.data.m.size() == 2
@@ -257,9 +260,9 @@ service cloud.firestore {
         && request.resource.data.seen.diff(resource.data.seen).affectedKeys().hasOnly([request.auth.uid])
         && (request.resource.data.last == resource.data.last
           || (request.resource.data.last == request.time && request.time > resource.data.last + duration.value(1, 's')));
-      allow delete: if false;
+      allow delete: if isAdmin(); // erasing a deleted account
       match /m/{id} {
-        allow read: if request.auth != null && request.auth.uid in get(/databases/$(database)/documents/dm/$(pair)).data.m;
+        allow read: if isAdmin() || (request.auth != null && request.auth.uid in get(/databases/$(database)/documents/dm/$(pair)).data.m);
         allow create: if request.auth != null
           && request.auth.uid in getAfter(/databases/$(database)/documents/dm/$(pair)).data.m
           && getAfter(/databases/$(database)/documents/dm/$(pair)).data.last == request.time
@@ -271,12 +274,23 @@ service cloud.firestore {
             && getAfter(/databases/$(database)/documents/dm/$(pair)).data.acc.get(other(pair), false) == true))
           && !(exists(/databases/$(database)/documents/bl/$(other(pair)))
             && request.auth.uid in get(/databases/$(database)/documents/bl/$(other(pair))).data.u);
-        allow update, delete: if false;
+        allow update: if false;
+        allow delete: if isAdmin();
       }
     }
     // Each player's block list, theirs alone.
     match /bl/{uid} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
+      allow delete: if isAdmin();
+    }
+    // Deletion requests (Settings → Delete my account): the admin page erases what the player's device couldn't.
+    match /delreq/{uid} {
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['t', 'name', 'save'])
+        && request.resource.data.name is string && request.resource.data.name.size() <= 12
+        && request.resource.data.save is string && request.resource.data.save.size() <= 64
+        && request.resource.data.t == request.time;
+      allow read, delete: if isAdmin();
     }
     // Reports from the messages: the last messages of a conversation, for the admin page.
     match /rep/{id} {

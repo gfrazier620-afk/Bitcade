@@ -826,7 +826,7 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
   </section>
   <footer>
     <p class="tag">FIFTY-ONE CLASSIC-STYLE GAMES · NO QUARTERS REQUIRED</p>
-    <p class="privacy">Bitcade logs anonymous play activity (which games are played, for how long, and scores) to help improve the games. Turn it off in ⚙ Settings.</p>
+    <p class="privacy">Bitcade logs anonymous play activity (which games are played, for how long, and scores) to help improve the games. Turn it off in ⚙ Settings. <a href="privacy.html">Privacy policy</a> · <a href="terms.html">Terms</a></p>
     <p>Works with a keyboard or touch, and most games with a game controller. High scores are saved in this browser.</p>
     <button class="install" id="install" hidden>Install Bitcade · plays offline</button>
     <p class="ios-hint" id="iosHint" hidden>On iPhone or iPad: tap Share, then <b>Add to Home Screen</b> to install. It plays offline.</p>
@@ -1460,7 +1460,16 @@ async function resetScores() {
   if (get('bitcade:sync')) { try { const S = await import('./shared/save.js'); await S.sync({ prices }); } catch (e) {} }
   location.reload();
 }
-const openSettings = () => Settings.open({ onResetScores: resetScores });
+/* Delete my account (Settings → DATA): the server side in world.js deleteAccount, then everything on this device. */
+async function deleteAccount() {
+  const w = await worldP; let save = '';
+  if (get('bitcade:sync')) { try { save = await (await import('./shared/save.js')).saveId(); } catch (e) {} }
+  await w.deleteAccount({ name: get('arcade:name') || '', save });
+  try { Object.keys(localStorage).filter(k => /^(arcade|bitcade):/.test(k)).forEach(k => localStorage.removeItem(k)); sessionStorage.clear(); } catch (e) {}
+  location.replace('./?deleted=1');
+}
+const openSettings = () => Settings.open({ onResetScores: resetScores, onDeleteAccount: deleteAccount });
+if (/[?&]deleted=1/.test(location.search)) setTimeout(() => alert('Your Bitcade account has been deleted. Thanks for playing.'), 800);
 /* Play activity for admin.html (shared/activity.js): time in the lobby, and how much of it was on the walkable floor. */
 if (get('arcade:track') !== '0') import('./shared/activity.js').then(m => {
   let floorMs = 0, f0 = 0; const onFloor = () => !floorView.hidden && !document.hidden;

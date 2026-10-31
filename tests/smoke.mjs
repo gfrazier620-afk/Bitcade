@@ -417,7 +417,7 @@ console.log('\nArcade floor');
   check(!(await page.isVisible('#cabQ')), 'Escape closes the search');
   await page.evaluate(() => { localStorage.setItem('arcade:best:wallbuster', '777'); localStorage.setItem('arcade:badges:wallbuster', '["clear"]'); });
   await page.click('#setBtn');
-  check(await page.isVisible('.set-wipe') && !/cloud save/.test(await page.textContent('.set-panel')), 'the lobby settings have a high-score reset (this device only, with no cloud save)');
+  check(await page.isVisible('.set-wipe') && !/cloud save/.test(await page.evaluate(() => document.querySelector('.set-wipe').closest('.set-row').textContent)), 'the lobby settings have a high-score reset (this device only, with no cloud save)');
   await page.click('.set-wipe');
   check(/TAP AGAIN/.test(await page.textContent('.set-wipe')) && await page.evaluate(() => localStorage.getItem('arcade:best:wallbuster')) === '777', 'it asks for a second tap first');
   await Promise.all([page.waitForEvent('load'), page.click('.set-wipe')]); await skipBoot(page);
@@ -957,7 +957,14 @@ console.log('\nProfile setup');
   await page.click('[data-part="0"] [data-d="1"]');
   check(/BODY: (MALE|FEMALE)/.test(body) && body !== await page.textContent('[data-part="0"] span') && await page.evaluate(() => Avatar.valid(Avatar.str(Avatar.parse('13-2-0-0-0-0'))) && Avatar.parse('13-2-0-0-0-0')[0] === 1 && Avatar.parse('3-2-0-0-0-0')[0] === 0), 'a character can be male or female (kept in the skin number, so older characters still read)');
   await page.click('.su-go');
+  check(await page.isVisible('.su') && /birth year/i.test(await page.textContent('.su-err')), 'it asks for a birth year before saving');
+  await page.selectOption('#suAge', String(new Date().getFullYear() - 10));
+  await page.click('.su-go');
   check(await page.waitForSelector('.su', { state: 'detached', timeout: 8000 }).then(() => true, () => false), 'ENTER THE ARCADE saves it, offline too');
+  check(await page.evaluate(() => localStorage.getItem('arcade:age') === 'u13' && SAFE.on() && !Object.keys(localStorage).some(k => /^20\d\d$|^19\d\d$/.test(localStorage.getItem(k) || ''))), 'a player under 13 gets Safe mode, and only the band is kept (never the year)');
+  await page.click('#setBtn').catch(() => {}); await page.waitForSelector('.set-panel', { timeout: 5000 }).catch(() => {});
+  check(await page.isVisible('.set-delacct') && await page.isVisible('.set-legal a[href$="privacy.html"]'), 'Settings has Delete my account and links to the privacy policy and terms');
+  await page.keyboard.press('Escape');
   check(await page.evaluate(() => localStorage.getItem('arcade:name') === 'PIXELPAT9' && localStorage.getItem('arcade:initials') === 'PIX' && Avatar.valid(localStorage.getItem('arcade:avatar')) && !localStorage.getItem('arcade:name:ok')), 'the name, initials and character are kept, and the name waits to be claimed online');
   await page.click('#vProfile');
   check(/PIXELPAT9/.test(await page.textContent('.pf-name')) && /PIX/.test(await page.textContent('.pf-name small')), 'the profile card shows the player name and initials');
@@ -967,6 +974,14 @@ console.log('\nProfile setup');
   check(await g.page.waitForSelector('.su', { timeout: 6000 }).then(() => true, () => false), 'a game page asks a new player too');
   check(!g.errors.length, `no errors${g.errors.length ? ': ' + g.errors.join(' | ') : ''}`);
   await g.close();
+}
+
+/* ---------- the privacy policy and terms pages ---------- */
+console.log('\nLegal pages');
+for (const path of ['/privacy.html', '/terms.html']) {
+  const { page, errors, close } = await open(path);
+  check(/Delete my account|delete your account/i.test(await page.textContent('main')) && !errors.length, `${path} loads and explains deleting your account`);
+  await close();
 }
 
 /* ---------- happy hour, the daily streak, the live ticker, the FRIENDS tab, floor games on phones ---------- */

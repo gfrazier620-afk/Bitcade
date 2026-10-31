@@ -48,7 +48,9 @@ window.Settings = (() => {
       (acts.length ? `<h3>CONTROLS <button type="button" class="set-reset">RESET</button></h3><p class="set-note">Give any button a key of your own. Its usual key keeps working too. Controllers work as they are.</p>
       <div class="set-keys">${acts.map(a => { const mine = Object.keys(map).find(k => map[k] === a.code); return `<div class="set-key"><span>${a.label}</span><kbd>${keyName(a.code)}</kbd><button type="button" data-bind="${a.code}" class="${waiting === a.code ? 'wait' : ''}">${waiting === a.code ? 'PRESS A KEY…' : mine ? keyName(mine) : '+ ADD KEY'}</button></div>`; }).join('')}</div>` : '') +
       (opts.onResetScores ? `<h3>DATA</h3><div class="set-row"><label>Reset high scores<small>Clears your bests, top 10s, play counts and daily and weekly bests ${get('bitcade:sync') ? 'on this device <b>and in your cloud save</b> (your other devices too, when they next sync)' : 'on this device'}. World leaderboards, badges, tickets, levels and prizes stay.</small></label>` +
-        `<button type="button" class="set-wipe${armed ? ' armed' : ''}"${wiping ? ' disabled' : ''}>${wiping ? 'RESETTING…' : armed ? 'TAP AGAIN TO ERASE' : 'RESET'}</button></div>` : '') +
+        `<button type="button" class="set-wipe${armed ? ' armed' : ''}"${wiping ? ' disabled' : ''}>${wiping ? 'RESETTING…' : armed ? 'TAP AGAIN TO ERASE' : 'RESET'}</button></div>` +
+        (opts.onDeleteAccount ? `<div class="set-row"><label>Delete my account<small>Deletes your player for good: your name and character, scores on the world boards, messages, friends, challenges, cloud save and play history, and everything on this device. It can't be undone.</small></label><button type="button" class="set-delacct">DELETE</button></div>` : '') : '') +
+      `<p class="set-legal"><a href="${new URL('../privacy.html', BASE).href}" target="_blank" rel="noopener">Privacy policy</a> · <a href="${new URL('../terms.html', BASE).href}" target="_blank" rel="noopener">Terms</a></p>` +
       `<p class="set-note">Settings are saved on this device and apply to every game.</p>`;
   }
   // its own styles, so the lobby (which doesn't load arcade.css) gets the same panel
@@ -79,6 +81,8 @@ window.Settings = (() => {
 .set-wipe,.set-fb-open{font-family:Silkscreen,monospace;font-size:11px;letter-spacing:.06em;color:#ff8a9a;background:none;border:1px solid #6a2a3a;border-radius:9px;padding:8px 12px;cursor:pointer}
 .set-wipe.armed{color:#120a1c;background:#ff4f6d;border-color:#ff4f6d}
 .set-row label small b{color:#ff8a9a;font-weight:500}
+.set-delacct{font-family:Silkscreen,monospace;font-size:10px;letter-spacing:.06em;color:#fff;background:#8a1a2a;border:1px solid #ff4f6d;border-radius:8px;padding:6px 10px;cursor:pointer}
+.set-legal{margin:14px 0 0;font-size:12px;text-align:center;color:#a39bc4}.set-legal a{color:#5ee7ff}
 .set-reset{font-family:Silkscreen,monospace;font-size:10px;letter-spacing:.06em;color:#ff8a9a;background:none;border:1px solid #6a2a3a;border-radius:7px;padding:3px 8px;cursor:pointer}
 .set-keys{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:6px;margin-top:4px}
 .set-key{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:10px;background:rgba(255,255,255,.03);border:1px solid #2c2552}
@@ -119,6 +123,11 @@ window.Settings = (() => {
         import(new URL('world.js', BASE).href).then(w => w.sendFeedback({ x: fbText.trim(), g: opts.slug || 'lobby', n: ini, dev }))
           .then(() => { fbText = ''; fbOpen = false; fbMsg = '✓ THANKS! YOUR FEEDBACK WAS SENT.'; }, () => { fbMsg = 'COULDN\u2019T SEND. CHECK YOUR CONNECTION AND TRY AGAIN.'; })
           .finally(() => { fbBusy = false; if (!box.hidden) refocus(fbOpen ? '.set-fb-send' : '.set-fb-open'); });
+        return;
+      }
+      if (e.target.closest('.set-delacct') && opts.onDeleteAccount) {
+        const t = prompt('This deletes your Bitcade player and everything with it, for good.\n\nType DELETE to confirm.');
+        if (t && t.trim().toUpperCase() === 'DELETE') { e.target.closest('.set-delacct').textContent = 'DELETING…'; e.target.closest('.set-delacct').disabled = true; Promise.resolve(opts.onDeleteAccount()).catch(() => { alert('Couldn\u2019t reach the server. Check your connection and try again.'); close(); }); }
         return;
       }
       if (e.target.closest('.set-wipe') && opts.onResetScores && !wiping) {

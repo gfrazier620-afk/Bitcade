@@ -26,6 +26,7 @@ window.Inbox = (() => {
   const other = c => c.m.find(x => x !== me);
   const friends = c => !!(c && c.acc[c.m[0]] && c.acc[c.m[1]]);
   const unread = c => c.last > (c.seen[me] || 0) + 1000;
+  const safe = () => !!(window.SAFE && SAFE.on()); // under 13 (or not answered): quick chat only, no friends by name
   const asked = c => !!(c.acc[other(c)] && !c.acc[me]); // they've added you; you haven't added them back
   const set = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
   // other players' profiles (profiles/{uid}: player name and character), so two players with the same initials differ
@@ -131,8 +132,8 @@ window.Inbox = (() => {
     const inc = shown.filter(asked), fr = shown.filter(friends), out = shown.filter(c => c.acc[me] && !c.acc[other(c)]);
     const sec = (title, l, extra) => l.length ? `<h4>${title}</h4>${l.map(c => row(c, extra(c))).join('')}` : '';
     body(tabs(shown) +
-      '<div class="ib-find"><input class="ib-name" maxlength="12" placeholder="PLAYER NAME" aria-label="Player name" autocomplete="off" autocapitalize="characters" spellcheck="false"><button class="ib-findgo">FIND</button></div><div class="ib-found"></div>' +
-      (inc.length ? `<h4>WANT TO BE FRIENDS</h4>${inc.map(c => `<div class="ib-frow">${row(c, '<em class="ask">ADDED YOU</em>')}<button class="ib-add" data-addc="${esc(c.id)}">ADD BACK</button></div>`).join('')}` : '') +
+      (safe() ? '<p class="ib-note">Finding and adding friends by name is for players 13 and up. You can still play challenges and send quick chat.</p>' : '<div class="ib-find"><input class="ib-name" maxlength="12" placeholder="PLAYER NAME" aria-label="Player name" autocomplete="off" autocapitalize="characters" spellcheck="false"><button class="ib-findgo">FIND</button></div><div class="ib-found"></div>') +
+      (inc.length && !safe() ? `<h4>WANT TO BE FRIENDS</h4>${inc.map(c => `<div class="ib-frow">${row(c, '<em class="ask">ADDED YOU</em>')}<button class="ib-add" data-addc="${esc(c.id)}">ADD BACK</button></div>`).join('')}` : '') +
       sec(`FRIENDS · ${fr.length}${fr.some(c => online(other(c))) ? ` · ${fr.filter(c => online(other(c))).length} ONLINE` : ''}`, fr.sort((a, b) => !!online(other(b)) - !!online(other(a))), c => online(other(c)) ? `<em class="on">● ${where(online(other(c)))}</em>` : '<em class="fr">★ FRIENDS</em>') +
       sec('REQUESTS SENT', out, () => '<em>WAITING FOR THEM</em>') +
       (inc.length || fr.length || out.length ? '' : '<p class="ib-note">Add friends by their player name. Once you’ve added each other you can chat freely.</p>'));
@@ -158,7 +159,7 @@ window.Inbox = (() => {
   }
   /** Add a friend: a friend request message, and your side of the conversation accepted. */
   async function addFriend(uid, theirN, btn) {
-    if (busy || !uid || uid === me) return;
+    if (busy || !uid || uid === me || safe()) return;
     const my = ini(); if (!my) { if (btn) btn.textContent = 'SET YOUR INITIALS FIRST'; return; }
     busy = true; if (btn) { btn.disabled = true; btn.textContent = 'ADDING…'; }
     try {
@@ -186,7 +187,7 @@ window.Inbox = (() => {
   async function talk(c) {
     if (!c) return;
     cur = c; const who = them(c);
-    head(who, true, (c.acc[me] ? '<button class="ib-tool ib-unf">UNFRIEND</button>' : `<button class="ib-tool ib-add2" data-addc="${esc(c.id)}">＋ FRIEND</button>`) + `<button class="ib-tool ib-block">${blockedList.includes(other(c)) ? 'UNBLOCK' : 'BLOCK'}</button><button class="ib-tool ib-report">REPORT</button>`);
+    head(who, true, (safe() ? '' : c.acc[me] ? '<button class="ib-tool ib-unf">UNFRIEND</button>' : `<button class="ib-tool ib-add2" data-addc="${esc(c.id)}">＋ FRIEND</button>`) + `<button class="ib-tool ib-block">${blockedList.includes(other(c)) ? 'UNBLOCK' : 'BLOCK'}</button><button class="ib-tool ib-report">REPORT</button>`);
     body('<p class="ib-note">Loading…</p>'); drawFoot();
     await load();
     clearInterval(poll); poll = setInterval(() => { if (!document.hidden && cur === c) load(); }, 5000);
@@ -207,7 +208,7 @@ window.Inbox = (() => {
       if (m.k === 'f') { // a friend request; the second one, from the other side, makes them friends
         const both = fFrom.has(mine ? other(c) : me); fFrom.add(m.u);
         if (both) return `<div class="ib-card fr ${mine ? 'me' : ''}"><b>★ ${mine ? 'YOU ADDED ' + esc(who) + ' BACK' : esc(who) + ' ADDED YOU BACK'}</b><span>You’re friends now. Free chat is unlocked.</span></div>`;
-        return `<div class="ib-card fr ${mine ? 'me' : ''}"><b>★ ${mine ? 'YOU SENT ' + esc(who) + ' A FRIEND REQUEST' : esc(who) + ' WANTS TO BE FRIENDS'}</b>${!mine && asked(c) ? `<button class="ib-play" data-addc="${esc(c.id)}">ADD BACK</button>` : ''}</div>`;
+        return `<div class="ib-card fr ${mine ? 'me' : ''}"><b>★ ${mine ? 'YOU SENT ' + esc(who) + ' A FRIEND REQUEST' : esc(who) + ' WANTS TO BE FRIENDS'}</b>${!mine && asked(c) && !safe() ? `<button class="ib-play" data-addc="${esc(c.id)}">ADD BACK</button>` : ''}</div>`;
       }
       if (m.k === 'ch') return `<div class="ib-card ${mine ? 'me' : ''}"><b>⚔ ${mine ? 'YOU CHALLENGED ' + esc(who) : esc(who) + ' CHALLENGES YOU'}</b><span>${esc(name(m.g))} · ${(+m.s || 0).toLocaleString()} TO BEAT</span>${mine ? '' : `<button class="ib-play" data-play="games/${esc(m.g)}/?ch=${esc(m.c)}">PLAY IT ▶</button>`}</div>`;
       if (m.k === 'res') { const win = m.s > m.vs; return `<div class="ib-card res ${mine ? 'me' : ''}${win ? ' win' : ''}"><b>${mine ? 'YOU' : esc(who)} SCORED ${(+m.s || 0).toLocaleString()}</b><span>${esc(name(m.g))} · against ${(+m.vs || 0).toLocaleString()} · ${win ? (mine ? 'YOU WON ★' : esc(who) + ' WON') : (mine ? 'NOT YET' : 'YOU’RE STILL AHEAD')}</span>${mine ? '' : `<button class="ib-play" data-play="games/${esc(m.g)}/">PLAY ${esc(name(m.g).toUpperCase())} ▶</button>`}</div>`; }
@@ -223,8 +224,8 @@ window.Inbox = (() => {
     if (blockedList.includes(other(c))) { foot('<p class="ib-note">You’ve blocked this player. Unblock them to send messages.</p>'); return; }
     const keep = box.querySelector('.ib-text'), val = keep ? keep.value : '';
     foot(`<div class="ib-quick">${QUICK.slice(0, quickN()).map((t, i) => `<button data-q="${i}"${i >= 12 ? ' class="stk"' : ''}>${esc(t)}</button>`).join('')}</div>` +
-      (friends(c) ? `<div class="ib-type"><input class="ib-text" maxlength="200" placeholder="Message ${esc(them(c))}…" autocomplete="off"><button class="ib-send">SEND</button></div>`
-        : `<p class="ib-note small">Free chat unlocks once you’re friends: ${c.acc[me] ? `waiting for ${esc(them(c))} to add you back.` : 'tap ＋ FRIEND above, and they add you back.'}</p>`));
+      (friends(c) && !safe() ? `<div class="ib-type"><input class="ib-text" maxlength="200" placeholder="Message ${esc(them(c))}…" autocomplete="off"><button class="ib-send">SEND</button></div>`
+        : safe() ? '<p class="ib-note small">Quick chat only. Typing messages is for players 13 and up.</p>' : `<p class="ib-note small">Free chat unlocks once you’re friends: ${c.acc[me] ? `waiting for ${esc(them(c))} to add you back.` : 'tap ＋ FRIEND above, and they add you back.'}</p>`));
     const t = box.querySelector('.ib-text'); if (t && val) { t.value = val; }
   }
   async function send(msg) {

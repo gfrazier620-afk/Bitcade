@@ -84,6 +84,20 @@ export async function finishLink() {
   user = auth.currentUser; const switched = !!user && user.uid !== was; if (switched) try { localStorage.removeItem('arcade:name:ok'); } catch (e) {}
   return { switched };
 }
+/*
+ * Delete my account (Settings → DATA): leaves a deletion request (delreq/{uid}) for the admin page to erase the rest
+ * (scores, activity, messages, challenges, feedback, ticker items), deletes what the player can (presence, profile,
+ * block list, their name, the cloud save), then deletes the sign-in itself (or signs out, if Google wants a recent
+ * sign-in first). The lobby then clears this device.
+ */
+export async function deleteAccount({ name = '', save = '' } = {}) {
+  const u = await signIn(), uid = u.uid;
+  await setDoc(doc(db, 'delreq', uid), { t: serverTimestamp(), name: String(name).slice(0, 12), save: String(save).slice(0, 64) });
+  await Promise.all([deleteDoc(doc(db, 'presence', uid)), deleteDoc(doc(db, 'profiles', uid)), deleteDoc(doc(db, 'bl', uid)),
+    name ? releaseName(name) : null, save ? deleteDoc(doc(db, 'saves', save)) : null].filter(Boolean).map(p => p.catch(() => {})));
+  const A = await lib(); try { await A.deleteUser(u); } catch (e) { await A.signOut(A.getAuth(app)).catch(() => {}); }
+  user = null;
+}
 /** Sign out on this device (a shared computer): the next visit is a new anonymous player here. */
 export async function signOutHere() { const A = await lib(); await A.signOut(A.getAuth(app)); user = null; }
 
@@ -163,7 +177,7 @@ export async function claimName(name, key, h, profile) {
     b.set(doc(db, 'nameproof', u.uid), { name, k: key });
     b.update(ref, { u: arrayUnion(u.uid) });
   }
-  b.set(doc(db, 'profiles', u.uid), prof);
+  if (profile.hidden) b.delete(doc(db, 'profiles', u.uid)); else b.set(doc(db, 'profiles', u.uid), prof); // Safe mode (under 13): nobody can look them up
   await b.commit();
   return 'ok';
 }
@@ -194,6 +208,7 @@ export async function findPlayer(name) {
  * players who have friends; only mutual friends can read it (firestore.rules).
  */
 export async function beat(on) {
+  if (window.SAFE && SAFE.on()) return; // Safe mode: never shown as online
   const g = k => { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } };
   const name = g('arcade:name'), n = g('arcade:initials'), av = g('arcade:avatar');
   if (!/^[A-Z0-9]{3,12}$/.test(name) || !/^[A-Z]{3}$/.test(n) || !/^\d{1,2}(-\d{1,2}){5}$/.test(av)) return;
@@ -216,6 +231,7 @@ export async function friendsTop(game, uids) {
  * 'level' (every fifth level), g, n, name, s, r, lv, uid, t }. Only set kinds and fields, so nothing free-form shows.
  */
 export async function feedPost(item) {
+  if (window.SAFE && SAFE.on()) return; // Safe mode: not on the ticker
   const g = k => { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } };
   const name = g('arcade:name'), n = g('arcade:initials'); if (!/^[A-Z0-9]{3,12}$/.test(name) || !/^[A-Z]{3}$/.test(n)) return;
   const u = await signIn();

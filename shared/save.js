@@ -136,6 +136,8 @@ export function sync({ prices, joining } = {}) {
   })();
   return running;
 }
+/** This save's id in Firestore (for deleting it with the account), or '' when cloud save is off. */
+export async function saveId() { const c = code(); return c ? idFor(c) : ''; }
 /** Turn cloud save on with a new code (and upload this device's progress). */
 export async function enable(opts) { const c = newCode(); store.set(CODE_KEY, c); const r = await sync(opts); return { code: c, ...r }; }
 /** Join an existing save from another device; the two are merged. */

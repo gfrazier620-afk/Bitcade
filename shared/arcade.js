@@ -159,7 +159,7 @@
     const c = A.chal, n = ini(); if (!c || c.mine || !r || r.easy || !n) return;
     const key = 'bitcade:chalbest:' + c.id, prev = store.get(key);
     if (prev != null && r.s <= +prev) return; store.set(key, String(r.s));
-    world().then(w => w.postResult(c.id, n, r.s).then(() => w.sendMsg(c.a, c.an, n, { k: 'res', c: c.id, g: A.id, s: r.s, vs: c.s }, { accept: true })).then(() => store.set('bitcade:dm', '1'))).catch(() => {});
+    world().then(w => w.postResult(c.id, n, r.s).then(() => w.sendMsg(c.a, c.an, n, { k: 'res', c: c.id, g: A.id, s: r.s, vs: c.s }, { accept: !(window.SAFE && SAFE.on()) })).then(() => store.set('bitcade:dm', '1'))).catch(() => {});
   }
   /** A new challenge with this score: a link to send (share sheet or clipboard), or straight to someone as a message. */
   async function chalMake(s, btn, to) {

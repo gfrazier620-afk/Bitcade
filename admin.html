@@ -734,6 +734,7 @@ function openMod() {
         <div class="mtools"><select class="chip" id="mGame" aria-label="Game">${GAMES.map(g => `<option value="${esc(g)}">${esc(name(g))}</option>`).join('')}</select><button class="btn" id="mTop">TOP 100</button></div>
         <div class="mtools"><input id="mIni" value="TST TSU" aria-label="Initials to find" maxlength="40"><button class="btn" id="mFind">FIND IN EVERY GAME</button></div>
         <div id="mList"><p class="empty">Pick a game, or find initials across every board.</p></div></section>
+      <section class="pn" style="padding:12px 0 0"><h2 style="padding:0 14px">DELETION REQUESTS<small>PLAYERS WHO DELETED THEIR ACCOUNT</small></h2><div id="mDel"><p class="empty">Loading…</p></div></section>
       <section class="pn" style="padding:12px 0 0"><h2 style="padding:0 14px">TICKER FEED<small>THE LOBBY'S LIVE TICKER</small></h2><div id="mFeed"><p class="empty">Loading…</p></div></section>
       <section class="pn" style="padding:12px 0 0"><h2 style="padding:0 14px">PLAYER PROFILES<small id="mPn"></small></h2><div id="mProf"><p class="empty">Loading…</p></div></section>
       <p class="idl">Removing a score takes it off the world board for good (players keep their own device's table). Removing a profile hides that player's name and character from others and frees the name if it's on one device; their scores stay.</p>
@@ -742,7 +743,7 @@ function openMod() {
   $('mTop').addEventListener('click', () => boardRows([$('mGame').value], null));
   $('mFind').addEventListener('click', () => { const ini = [...new Set($('mIni').value.toUpperCase().match(/[A-Z]{3}/g) || [])].slice(0, 10); if (ini.length) boardRows(GAMES, ini); });
   $('drawer').onclick = modClick;
-  profRows(); feedRows();
+  profRows(); feedRows(); delRows();
 }
 async function boardRows(games, ini) {
   const out = $('mList'); out.innerHTML = '<p class="empty">Loading…</p>';
@@ -767,6 +768,36 @@ async function profRows() {
   out.innerHTML = list.map(([id, p]) => { const orph = !DEMO && !own[id];
     return `<div class="mrow${orph ? ' orph' : ''}">${p.av && window.Avatar ? `<canvas class="av" data-av="${esc(p.av)}"></canvas>` : '<span></span>'}<b>${esc(p.name)}</b><span class="dim">${esc(p.n || '')}${orph ? ' · LEFT OVER' : ''}${players.has(id) ? '' : ' · not tracked'} · #${esc(id.slice(0, 5))}</span><button class="btn bad" data-delpr="${esc(id)}">✕ REMOVE</button></div>`; }).join('');
   if (window.Avatar) Avatar.fill(out);
+}
+/*
+ * Deletion requests (Settings → Delete my account in the lobby): the player's device already removed what it could;
+ * ERASE removes the rest: world-board scores, activity, ticker items, challenges, feedback, errors, conversations and
+ * their messages, wins, and anything left of the profile, name, block list and cloud save.
+ */
+async function delRows() {
+  const out = $('mDel'); let rows = [];
+  if (DEMO) rows = [{ id: 'demo9' + 'x'.repeat(20), name: 'TOMMYGUN', t: Date.now() - 36e5 }];
+  else try { rows = (await getDocs(collection(db, 'delreq'))).docs.map(d => ({ id: d.id, ...d.data(), t: ms(d.get('t')) })); } catch (e) { out.innerHTML = `<p class="empty">Couldn't load: ${esc(e.code || e.message)}</p>`; return; }
+  out.innerHTML = rows.length ? rows.map(r => `<div class="mrow"><span class="rk"></span><b>${esc(r.name || '#' + r.id.slice(0, 5))}</b><span class="dim">asked ${ago(r.t)} · #${esc(r.id.slice(0, 5))}</span><button class="btn bad" data-erase="${esc(r.id)}">ERASE ALL</button></div>`).join('') : '<p class="empty">No requests. (Players delete their account in Settings → DATA.)</p>';
+  out.onclick = async e => {
+    const b = e.target.closest('[data-erase]'); if (!b || !armed(b)) return;
+    const r = rows.find(x => x.id === b.dataset.erase); b.disabled = true;
+    try { if (!DEMO) await eraseUser(r, t => { b.textContent = t; }); b.closest('.mrow').remove(); toast('ok', 'ERASED', `${r.name || r.id.slice(0, 5)} and everything they left.`); }
+    catch (err) { b.disabled = false; b.textContent = err.code === 'permission-denied' ? 'RULES?' : 'FAILED'; }
+  };
+}
+async function eraseUser(r, say) {
+  const uid = r.id, gone = async q => { const s = await getDocs(q); for (let i = 0; i < s.docs.length; i += 400) { const wb = writeBatch(db); s.docs.slice(i, i + 400).forEach(d => wb.delete(d.ref)); await wb.commit(); } return s.size; };
+  say('SCORES…'); for (const g of GAMES) await gone(query(collection(db, 'boards', g, 'scores'), where('uid', '==', uid)));
+  say('ACTIVITY…'); await gone(collection(db, 'act', uid, 'ev'));
+  say('MESSAGES…');
+  for (const c of (await getDocs(query(collection(db, 'dm'), where('m', 'array-contains', uid)))).docs) { await gone(collection(db, 'dm', c.id, 'm')); await deleteDoc(c.ref); }
+  say('THE REST…');
+  for (const [c, f] of [['feed', 'uid'], ['ch', 'a'], ['fb', 'uid'], ['err', 'uid']]) await gone(query(collection(db, c), where(f, '==', uid)));
+  for (const p of [['act', uid], ['presence', uid], ['profiles', uid], ['wins', uid], ['bl', uid], ['nameproof', uid], ...(r.save ? [['saves', r.save]] : [])]) await deleteDoc(doc(db, ...p)).catch(() => {});
+  if (r.name) { const n = await getDoc(doc(db, 'names', r.name)).catch(() => null); if (n && n.exists() && (n.get('u') || []).includes(uid)) await deleteDoc(n.ref).catch(() => {}); }
+  players.delete(uid); profs.delete(uid);
+  await deleteDoc(doc(db, 'delreq', uid));
 }
 async function feedRows() {
   const out = $('mFeed'); let rows = [];

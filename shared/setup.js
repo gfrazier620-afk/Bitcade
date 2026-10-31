@@ -37,7 +37,7 @@ window.Setup = (() => {
 
   /** Does this player still need to make a profile? */
   const skip = () => { try { return sessionStorage.getItem('bitcade:nosetup') === '1'; } catch (e) { return false; } };
-  const need = () => !skip() && (!name() || !INI.test(get('arcade:initials') || '') || !(window.Avatar ? Avatar.valid(get('arcade:avatar')) : /^\d/.test(get('arcade:avatar') || '')));
+  const need = () => !skip() && (!(window.SAFE && SAFE.answered()) || !name() || !INI.test(get('arcade:initials') || '') || !(window.Avatar ? Avatar.valid(get('arcade:avatar')) : /^\d/.test(get('arcade:avatar') || '')));
 
   /** Why a name can't be used, or ''. */
   function nameProblem(n) {
@@ -57,12 +57,12 @@ window.Setup = (() => {
     if (checking) return checking;
     const n = name(), ini = get('arcade:initials'), av = get('arcade:avatar');
     if (!n || !INI.test(ini || '') || !av) return Promise.resolve('none');
-    const sig = `${n}|${ini}|${av}`, done = get('arcade:name:ok') || '';
+    const kid = !!(window.SAFE && SAFE.on()), sig = `${n}|${ini}|${av}${kid ? '|safe' : ''}`, done = get('arcade:name:ok') || '';
     if (sig === done) return Promise.resolve('same');
     checking = (async () => {
       try {
         let key = get('arcade:namekey'); if (!key) { key = newKey(); set('arcade:namekey', key); }
-        const m = await world(), r = await m.claimName(n, key, await sha(key), { n: ini, av });
+        const m = await world(), r = await m.claimName(n, key, await sha(key), { n: ini, av, hidden: kid });
         if (r === 'ok') {
           const old = done.split('|')[0]; set('arcade:name:ok', sig);
           if (old && old !== n) m.releaseName(old).catch(() => {});
@@ -102,6 +102,7 @@ window.Setup = (() => {
 .su-field input.ini{width:120px;text-align:center;letter-spacing:.3em}
 .su-hint{margin:6px 0 0;font-size:13px;color:#a39bc4;min-height:18px}
 .su-hint.ok{color:#3dff8f}.su-hint.bad{color:#ff6a8a}.su-hint.wait{color:#ffd23d}
+.su-age{width:100%;height:46px;padding:0 12px;border-radius:12px;border:2px solid #3a2f5a;background:#120e26;color:#f4effd;font:16px Rubik,sans-serif}
 .su-go{height:54px;border-radius:12px;border:0;background:linear-gradient(180deg,#ffe36a,#ff7a3d);color:#2a0f10;font:400 18px "Bungee",sans-serif;letter-spacing:.04em;cursor:pointer;box-shadow:0 4px 0 #a8401a,0 10px 24px rgba(255,122,61,.3)}
 .su-go:disabled{filter:grayscale(.7) brightness(.7);cursor:default}
 .su-go:not(:disabled):active{transform:translateY(2px);box-shadow:0 2px 0 #a8401a}
@@ -136,7 +137,7 @@ window.Setup = (() => {
     box = document.createElement('div'); box.className = 'su'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true'); box.setAttribute('aria-label', 'Your player profile');
     box.setAttribute('data-keys-native', '');
     box.innerHTML = `<form class="su-box" novalidate>
-      <div class="su-head"><h2>${editing ? 'EDIT PROFILE' : 'WELCOME TO BITCADE'}</h2><p>${editing ? 'Change your look, name or initials.' : 'Make your player before you play: a look, a name that’s only yours, and initials for the score boards.'}</p></div>
+      <div class="su-head"><h2>${editing ? 'EDIT PROFILE' : name() && !(window.SAFE && SAFE.answered()) ? 'ONE QUICK QUESTION' : 'WELCOME TO BITCADE'}</h2><p>${editing ? 'Change your look, name or initials.' : name() && !(window.SAFE && SAFE.answered()) ? 'What year were you born? It keeps chat safe for younger players. Everything else is already filled in.' : 'Make your player before you play: a look, a name that’s only yours, and initials for the score boards.'}</p></div>
       <div class="su-me"><canvas class="su-stage" width="200" height="230" aria-hidden="true"></canvas><div class="su-tag"></div>
         <div class="su-parts">${(window.Avatar ? Avatar.PARTS : []).map((p, i) => `<div class="su-row" data-part="${i}"><button type="button" data-d="-1" aria-label="Previous ${p[0].toLowerCase()}">◀</button><span></span><button type="button" data-d="1" aria-label="Next ${p[0].toLowerCase()}">▶</button></div>`).join('')}
         <button type="button" class="su-rand">🎲 SURPRISE ME</button></div></div>
@@ -144,6 +145,7 @@ window.Setup = (() => {
         <div class="su-field"><label for="suName">PLAYER NAME</label><input id="suName" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="NAME" value="${esc(name() || '')}"><p class="su-hint" id="suNameHint">3–12 letters or numbers. Only you can have it.</p></div>
         <div class="su-field"><label for="suIni">INITIALS</label><input id="suIni" class="ini" maxlength="3" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="AAA" value="${esc(INI.test(get('arcade:initials') || '') ? get('arcade:initials') : '')}"><p class="su-hint">For the score boards, arcade style. Other players can have the same ones.</p></div>
         ${o.taken ? `<p class="su-err">Someone else got the name ${esc(o.taken)} first. Please pick another.</p>` : '<p class="su-err" id="suErr" hidden></p>'}
+        ${window.SAFE && SAFE.answered() ? '' : `<div class="su-field"><label for="suAge">BIRTH YEAR</label><select id="suAge" class="su-age"><option value="">Choose…</option>${Array.from({ length: 90 }, (_, i) => new Date().getFullYear() - 3 - i).map(y => `<option value="${y}">${y}</option>`).join('')}</select><p class="su-hint">So we can keep chat safe. We only keep whether you're under 13, never the year.</p></div>`}
         <button class="su-go" type="submit">${editing ? 'SAVE' : 'ENTER THE ARCADE ▶'}</button>
         ${o.required || !editing ? '' : '<button type="button" class="su-cancel">CANCEL</button>'}
       </div></form>`;
@@ -218,6 +220,8 @@ window.Setup = (() => {
     if (!INI.test(ini)) { $('#suIni').focus(); return say('Initials are three letters.'); }
     if (rude(ini)) { $('#suIni').focus(); return say('Pick different initials.'); }
     if (status.name === n && status.state === 'taken') { $('#suName').focus(); return say(`${n} is taken. Try another.`); }
+    const ageEl = $('#suAge'); if (ageEl && !ageEl.value) { ageEl.focus(); return say('Pick your birth year.'); }
+    if (ageEl) SAFE.set(new Date().getFullYear() - +ageEl.value >= 14 ? '13+' : 'u13'); // only the band is kept; born 13 years ago might still be 12, so that's Safe mode too
     const go = $('.su-go'); go.disabled = true; go.textContent = 'SAVING…';
     const prev = ['arcade:name', 'arcade:initials', 'arcade:avatar', 'arcade:namekey'].map(k => [k, get(k)]);
     if (n !== name()) set('arcade:namekey', newKey()); // a new name gets a new key

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Terms of Use · Bitcade</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0f0c1f">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="stylesheet" href="shared/fonts.css">
+<style>
+:root{--bg:#0f0c1f;--panel:#17122e;--ink:#f4effd;--muted:#a39bc4;--line:#2d2556;--hot:#ff5a8a;--cy:#5ee7ff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.65 Rubik,system-ui,sans-serif}
+main{max-width:760px;margin:0 auto;padding:28px 18px 60px}
+a{color:var(--cy)}
+.top{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:18px}
+.logo{font:400 26px Bungee,sans-serif;background:linear-gradient(180deg,#ffe36a,#ff7a3d 55%,#ff3d9a);-webkit-background-clip:text;background-clip:text;color:transparent;text-decoration:none}
+h1{font:400 30px Bungee,sans-serif;margin:8px 0 4px;color:#fff}
+h2{font:400 18px Bungee,sans-serif;margin:30px 0 8px;color:var(--hot)}
+.date{color:var(--muted);font-size:14px;margin:0 0 18px}
+ul{padding-left:20px}li{margin:4px 0}
+b{color:#fff}
+</style>
+</head>
+<body>
+<main>
+  <div class="top"><a class="logo" href="./">BITCADE</a><a href="privacy.html">Privacy</a></div>
+  <h1>Terms of Use</h1>
+  <p class="date">Last updated: October 31, 2026</p>
+  <p>By playing Bitcade you agree to these terms. If you're under 18, please read them with a parent or guardian.</p>
+
+  <h2>Playing</h2>
+  <p>Bitcade is free to play. We may add, change or retire games and features at any time.</p>
+
+  <h2>Tickets, prizes and the Arcade Pass</h2>
+  <p>Tickets, XP, prizes, boosts and other in-game items are part of the game. They have no cash value, can't be
+  exchanged for money, and can't be sold or transferred outside Bitcade. If an optional paid Arcade Pass is offered, it
+  unlocks that season's pass rewards for your account; purchases made through an app store follow that store's refund
+  rules.</p>
+
+  <h2>Be a good player</h2>
+  <ul>
+    <li>No bullying, threats, hate, or sharing personal details (yours or anyone else's) in messages or names.</li>
+    <li>No cheating: no faking scores, tampering with the game or its servers, or using bugs to get ahead.</li>
+    <li>No impersonating other players or Bitcade staff.</li>
+  </ul>
+  <p>We may remove names, scores, messages or accounts that break these rules, and we can block players from messaging.
+  You can block or report any player from a conversation.</p>
+
+  <h2>Your content</h2>
+  <p>Your player name, initials, character and messages are yours. You let us store and show them inside Bitcade so the
+  game works (for example, on score boards and in conversations).</p>
+
+  <h2>Our content</h2>
+  <p>The games, characters, art, music and code of Bitcade belong to us. Please don't copy or redistribute them.</p>
+
+  <h2>No warranty</h2>
+  <p>Bitcade is provided "as is". We work to keep it running and your progress safe, but we can't promise it will
+  always be available or free of bugs, and we're not responsible for lost progress. To the fullest extent the law
+  allows, our liability is limited to the amount you paid us in the past 12 months.</p>
+
+  <h2>Your account</h2>
+  <p>You can delete your account at any time in Settings → DATA → Delete my account. See the
+  <a href="privacy.html">Privacy Policy</a> for what that removes.</p>
+
+  <h2>Changes</h2>
+  <p>We may update these terms. We'll change the date at the top, and announce big changes in the app. Playing after a
+  change means you accept it.</p>
+
+  <h2>Contact</h2>
+  <p id="contact">Send us a message with <b>⚙ Settings → Feedback</b> in the app.</p>
+</main>
+<script>
+// The support email: set it here and it shows on both legal pages.
+const SUPPORT = '';
+if (SUPPORT) document.getElementById('contact').innerHTML = `Email <a href="mailto:${SUPPORT}">${SUPPORT}</a>, or use <b>⚙ Settings → Feedback</b> in the app.`;
+</script>
+</body>
+</html>
