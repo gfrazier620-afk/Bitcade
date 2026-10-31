@@ -57,8 +57,13 @@ window.Inbox = (() => {
     box = document.createElement('div'); box.className = 'ib'; box.hidden = true;
     box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true'); box.setAttribute('aria-label', 'Messages');
     box.innerHTML = '<div class="ib-panel"><div class="ib-head"><button class="ib-back" aria-label="Back" hidden>‹</button><b class="ib-title">✉ MESSAGES</b><span class="ib-tools"></span><button class="ib-x" aria-label="Close">✕</button></div><div class="ib-body"></div><div class="ib-foot"></div></div>';
+    // On a phone, tapping a button by the keyboard closes the keyboard first; the panel jumps and the click lands on the
+    // backdrop. So the backdrop only closes the panel for a tap that started on it; otherwise the button pressed wins.
+    let downOn = null;
+    box.addEventListener('pointerdown', e => { downOn = e.target; }, true);
     box.addEventListener('click', e => {
-      if (e.target === box || e.target.closest('.ib-x')) return close();
+      if (e.target === box) { const inside = downOn && downOn !== box && box.contains(downOn), b = inside && downOn.isConnected && downOn.closest('button'); downOn = null; if (b) b.click(); else if (!inside) close(); return; }
+      if (e.target.closest('.ib-x')) return close();
       if (e.target.closest('.ib-back')) return list();
       const tb = e.target.closest('[data-tab]'); if (tb) { tab = tb.dataset.tab; return list(); }
       if (e.target.closest('.ib-findgo')) return find();
