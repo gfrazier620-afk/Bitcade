@@ -311,7 +311,7 @@
   const out = node => { node.connect(bus); node.connect(echo); };
   A.unlock = () => {
     if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); buildBus(); } catch (e) {} }
-    if (ac && ac.state === 'suspended') ac.resume();
+    if (ac && ac.state === 'suspended') ac.resume().catch(() => {}); // iOS can refuse (a call, another app's audio): no sound for now
   };
   A.tone = (f, d = 0.06, type = 'square', v = 0.04, when = 0, slideTo) => {
     if (A.muted || !ac || A.demo) return;

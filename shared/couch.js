@@ -11,7 +11,7 @@ window.Couch = (() => {
   const muted = () => { try { return localStorage.getItem('arcade:muted') === '1'; } catch (e) { return false; } };
   function blip(f, d = 0.04, v = 0.03) {
     if (muted()) return;
-    try { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === 'suspended') ac.resume();
+    try { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === 'suspended') ac.resume().catch(() => {});
       const t = ac.currentTime, o = ac.createOscillator(), g = ac.createGain(); o.type = 'square'; o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f * 1.5, t + d);
       g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.03); o.connect(g).connect(ac.destination); o.start(t); o.stop(t + d + 0.05);
     } catch (e) {}

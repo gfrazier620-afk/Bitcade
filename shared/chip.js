@@ -65,7 +65,7 @@
   }
   // browsers start sound on a tap or key; pick up a waiting tune then
   ['pointerdown', 'keydown', 'touchstart'].forEach(ev => addEventListener(ev, () => { if (song && on()) { ensure(); start(); } }, { capture: true, passive: true }));
-  document.addEventListener('visibilitychange', () => { if (!ac) return; if (document.hidden) ac.suspend(); else if (song && on()) ac.resume(); });
+  document.addEventListener('visibilitychange', () => { if (!ac) return; if (document.hidden) ac.suspend().catch(() => {}); else if (song && on()) ac.resume().catch(() => {}); });
 
   /* ---------- composing ---------- */
   const NOTE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };

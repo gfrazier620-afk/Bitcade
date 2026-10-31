@@ -276,7 +276,7 @@ const run=fn=>fn().catch(e=>{if(e!=='cancel')console.error(e)});
 
 /* ---------- sound ---------- */
 let AC=null;
-function audio(){ if(!AC){try{AC=new (window.AudioContext||window.webkitAudioContext)()}catch(e){}} if(AC&&AC.state==='suspended')AC.resume(); }
+function audio(){ if(!AC){try{AC=new (window.AudioContext||window.webkitAudioContext)()}catch(e){}} if(AC&&AC.state==='suspended')AC.resume().catch(()=>{}); }
 function beep(f,d=0.05,type='square',vol=0.045,when=0){ if(!S.sound||!AC)return; const t=AC.currentTime+when;
   const o=AC.createOscillator(),g=AC.createGain(); o.type=type;o.frequency.value=f; g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.0001,t+d);
   o.connect(g).connect(AC.destination); o.start(t); o.stop(t+d+0.02); }

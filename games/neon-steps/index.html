@@ -120,7 +120,7 @@ function start(i) {
   songIdx = i; song = SONGS[i]; track = compose(song); notes = track.notes.map(n => ({ ...n, done: false }));
   score = 0; combo = 0; maxCombo = 0; life = 0.5; counts = { perfect: 0, great: 0, good: 0, miss: 0 }; failed = false; judge = null; A.setScore(0);
   if (window.Chip) Chip.stop(0.3);
-  audio(); if (ac && ac.state === 'suspended') ac.resume();
+  audio(); if (ac && ac.state === 'suspended') ac.resume().catch(() => {});
   if (master) master.gain.value = A.muted || A.demo ? 0 : 0.8;
   schedS = 0; schedIdx = 0; pausedAt = null; clockStart = performance.now() / 1000 + 1.2; state = 'play';
 }
