@@ -1164,7 +1164,7 @@ const leaderRow = (g, label, e, unit = '') => {
 };
 const worldP = import('./shared/world.js');
 // back from Google (Link with Google on the profile, shared/world.js): finish it, and reload if this device became another device's player
-try { if (sessionStorage.getItem('bitcade:linking')) { sessionStorage.removeItem('bitcade:linking'); worldP.then(w => w.finishLink()).then(r => { if (r.switched) location.reload(); }, () => {}); } } catch (e) {}
+try { if (sessionStorage.getItem('bitcade:linking')) { sessionStorage.removeItem('bitcade:linking'); worldP.then(w => w.finishLink()).then(r => { if (r.switched) location.reload(); else if (r.state === 'taken') setView('profile'); }, () => {}); } } catch (e) {}
 const seen = (g, e) => { worldSeen[g.slug] = e && /^[A-Z]{3}$/.test(e.n) ? e : null; ScoresView.world(g.slug); };
 worldP.then(w => {
   GAMES.forEach(g => {

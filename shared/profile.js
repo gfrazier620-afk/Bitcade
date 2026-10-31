@@ -82,6 +82,13 @@ window.Profile = (() => {
       box.querySelector('#pfOut').addEventListener('click', async () => { if (!confirm('Sign out on this device? Your messages and friends stay with your Google account; this device goes back to being a new player until you link again.')) return; await w.signOutHere(); location.reload(); });
       return;
     }
+    if (w.pendingSwitch()) { // that Google account already has a player: ask before switching this device to it
+      box.innerHTML = `<b>THAT GOOGLE ACCOUNT ALREADY HAS A PLAYER</b><p>It was linked on another device, or used to sign in to the admin page. You can switch this device to that player (its messages and friends come here), but <b>the messages and friends made on this device stay behind</b> with this device's old player. To keep them, link a different Google account here instead.</p>
+        <div class="pf-row"><button class="pf-btn hot" id="pfSwitch">SWITCH TO THAT PLAYER</button><button class="pf-btn" id="pfOther">USE A DIFFERENT GOOGLE ACCOUNT</button></div>${msg ? `<p class="pf-msg">${msg}</p>` : ''}`;
+      box.querySelector('#pfSwitch').addEventListener('click', async () => { try { await w.switchToGoogle(); link('Signed in. Bringing over your messages and friends…'); setTimeout(() => location.reload(), 900); } catch (e) { link(`Couldn’t switch (${esc(e.code || e.message)}). Try again.`); } });
+      box.querySelector('#pfOther').addEventListener('click', () => { location.reload(); });
+      return;
+    }
     box.innerHTML = `<b>FRIENDS ON EVERY DEVICE</b><p>Your messages, friends and challenges belong to this device. Link Google to have them on all your devices: <b>link first on the device that already has your friends</b>, then choose LINK WITH GOOGLE on your other devices with the same account. (Cloud save carries your scores and prizes; this carries your friends.)</p>
       <div class="pf-row"><button class="pf-btn hot" id="pfLinkG" ${linking ? 'disabled' : ''}>${linking ? 'LINKING…' : '🔗 LINK WITH GOOGLE'}</button></div>${msg ? `<p class="pf-msg">${msg}</p>` : ''}`;
     box.querySelector('#pfLinkG').addEventListener('click', async () => {
@@ -89,9 +96,10 @@ window.Profile = (() => {
       try {
         const r = await w.linkGoogle(); linking = false;
         if (r.state === 'redirect') return;
+        if (r.state === 'taken') return link();
         if (r.switched) { link('Signed in. Bringing over your messages and friends…'); setTimeout(() => location.reload(), 900); }
         else link('Linked! Now choose LINK WITH GOOGLE on your other devices.');
-      } catch (e) { linking = false; link(e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request' ? 'Linking was cancelled.' : 'Couldn’t link just now. Try again in a moment.'); }
+      } catch (e) { linking = false; link(e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request' ? 'Linking was cancelled.' : `Couldn’t link (${esc(e.code || e.message || 'unknown error')}). Try again in a moment, and tell us that code if it keeps happening.`); }
     });
   }
 

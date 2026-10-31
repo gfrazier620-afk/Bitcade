@@ -53,21 +53,32 @@ async function signIn() {
  * going to Google and back; finishLink() completes it).
  */
 export async function account() { const u = await signIn(), g = u.providerData.find(p => p.providerId === 'google.com'); return { google: !!g, email: g ? g.email || '' : '', uid: u.uid }; }
+// a Google account that already has a player (another device's, or one made by signing in to the admin page):
+// Firebase names it one of these ways depending on the project's settings
+const IN_USE = /credential-already-in-use|email-already-in-use|account-exists-with-different-credential/;
+let pending = null; // that Google account's sign-in, kept until the player says to switch
+const taken = (A, e) => { pending = A.GoogleAuthProvider.credentialFromError(e); if (!pending) throw e; return { state: 'taken', email: (e.customData && e.customData.email) || '' }; };
 export async function linkGoogle() {
-  const A = await lib(), auth = A.getAuth(app), u = await signIn(), p = new A.GoogleAuthProvider(), was = u.uid;
+  const A = await lib(), auth = A.getAuth(app), u = await signIn(), p = new A.GoogleAuthProvider();
   try { await A.linkWithPopup(u, p); }
   catch (e) {
-    if (e.code === 'auth/credential-already-in-use') await A.signInWithCredential(auth, A.GoogleAuthProvider.credentialFromError(e));
-    else if (/popup-blocked|operation-not-supported|web-storage-unsupported/.test(e.code || '')) { try { sessionStorage.setItem('bitcade:linking', '1'); } catch (x) {} await A.linkWithRedirect(u, p); return { state: 'redirect' }; }
-    else if (e.code !== 'auth/provider-already-linked') throw e;
+    if (IN_USE.test(e.code || '')) return taken(A, e);
+    if (/popup-blocked|operation-not-supported|web-storage-unsupported/.test(e.code || '')) { try { sessionStorage.setItem('bitcade:linking', '1'); } catch (x) {} await A.linkWithRedirect(u, p); return { state: 'redirect' }; }
+    if (e.code !== 'auth/provider-already-linked') throw e;
   }
-  user = auth.currentUser; return { state: 'ok', switched: user.uid !== was };
+  user = auth.currentUser; return { state: 'ok', switched: false };
 }
+/** That Google account already had a player: make this device that player (what was only on this device stays behind). */
+export async function switchToGoogle() {
+  const A = await lib(), auth = A.getAuth(app); if (!pending) throw new Error('nothing to switch to');
+  await A.signInWithCredential(auth, pending); pending = null; user = auth.currentUser; return { state: 'ok', switched: true };
+}
+export const pendingSwitch = () => !!pending;
 /** After coming back from Google (linkWithRedirect): finish linking, or sign in as the player that Google account has. */
 export async function finishLink() {
   const A = await lib(), auth = A.getAuth(app); await auth.authStateReady(); const was = auth.currentUser && auth.currentUser.uid;
   try { await A.getRedirectResult(auth); }
-  catch (e) { if (e.code === 'auth/credential-already-in-use') await A.signInWithCredential(auth, A.GoogleAuthProvider.credentialFromError(e)); else throw e; }
+  catch (e) { if (IN_USE.test(e.code || '')) return taken(A, e); throw e; }
   user = auth.currentUser; return { switched: !!user && user.uid !== was };
 }
 /** Sign out on this device (a shared computer): the next visit is a new anonymous player here. */
