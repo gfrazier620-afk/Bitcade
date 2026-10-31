@@ -71,7 +71,9 @@ export async function linkGoogle() {
 /** That Google account already had a player: make this device that player (what was only on this device stays behind). */
 export async function switchToGoogle() {
   const A = await lib(), auth = A.getAuth(app); if (!pending) throw new Error('nothing to switch to');
-  await A.signInWithCredential(auth, pending); pending = null; user = auth.currentUser; return { state: 'ok', switched: true };
+  await A.signInWithCredential(auth, pending); pending = null; user = auth.currentUser;
+  try { localStorage.removeItem('arcade:name:ok'); } catch (e) {} // the new player puts itself on your player name (shared/setup.js check)
+  return { state: 'ok', switched: true };
 }
 export const pendingSwitch = () => !!pending;
 /** After coming back from Google (linkWithRedirect): finish linking, or sign in as the player that Google account has. */
@@ -79,7 +81,8 @@ export async function finishLink() {
   const A = await lib(), auth = A.getAuth(app); await auth.authStateReady(); const was = auth.currentUser && auth.currentUser.uid;
   try { await A.getRedirectResult(auth); }
   catch (e) { if (IN_USE.test(e.code || '')) return taken(A, e); throw e; }
-  user = auth.currentUser; return { switched: !!user && user.uid !== was };
+  user = auth.currentUser; const switched = !!user && user.uid !== was; if (switched) try { localStorage.removeItem('arcade:name:ok'); } catch (e) {}
+  return { switched };
 }
 /** Sign out on this device (a shared computer): the next visit is a new anonymous player here. */
 export async function signOutHere() { const A = await lib(); await A.signOut(A.getAuth(app)); user = null; }
