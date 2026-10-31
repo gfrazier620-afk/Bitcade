@@ -4,14 +4,11 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // The admins are matched by a SHA-256 of their email, so the addresses aren't in this public file. (Compared as hex:
-    // the rules' toBase64() is the URL-safe kind, which didn't match a standard Base64 value.) The Bitcade admin account
-    // first, then the owner's personal one while they switch over.
+    // The admin (the Bitcade admin account) is matched by a SHA-256 of their email, so the address isn't in this public
+    // file. (Compared as hex: the rules' toBase64() is the URL-safe kind, which didn't match a standard Base64 value.)
     function isAdmin() {
       return request.auth != null && request.auth.token.email_verified == true
-        && hashing.sha256(request.auth.token.email.lower().toUtf8()).toHexString().lower() in [
-          'd5ec162cc370ba5b45e18b6a8c6b61546450a63de34056b09109c501d32e8656',
-          '67756a129dd548436a572e60a67eb376b20e5477bfc276a6a097d083d62bebf5'];
+        && hashing.sha256(request.auth.token.email.lower().toUtf8()).toHexString().lower() == 'd5ec162cc370ba5b45e18b6a8c6b61546450a63de34056b09109c501d32e8656';
     }
 
     // Highest score each game will accept. Generous, just to stop absurd fakes.
