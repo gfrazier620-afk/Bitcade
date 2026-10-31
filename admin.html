@@ -734,6 +734,7 @@ function openMod() {
         <div class="mtools"><select class="chip" id="mGame" aria-label="Game">${GAMES.map(g => `<option value="${esc(g)}">${esc(name(g))}</option>`).join('')}</select><button class="btn" id="mTop">TOP 100</button></div>
         <div class="mtools"><input id="mIni" value="TST TSU" aria-label="Initials to find" maxlength="40"><button class="btn" id="mFind">FIND IN EVERY GAME</button></div>
         <div id="mList"><p class="empty">Pick a game, or find initials across every board.</p></div></section>
+      <section class="pn" style="padding:12px 0 0"><h2 style="padding:0 14px">TICKER FEED<small>THE LOBBY'S LIVE TICKER</small></h2><div id="mFeed"><p class="empty">Loading…</p></div></section>
       <section class="pn" style="padding:12px 0 0"><h2 style="padding:0 14px">PLAYER PROFILES<small id="mPn"></small></h2><div id="mProf"><p class="empty">Loading…</p></div></section>
       <p class="idl">Removing a score takes it off the world board for good (players keep their own device's table). Removing a profile hides that player's name and character from others and frees the name if it's on one device; their scores stay.</p>
     </div>`;
@@ -741,7 +742,7 @@ function openMod() {
   $('mTop').addEventListener('click', () => boardRows([$('mGame').value], null));
   $('mFind').addEventListener('click', () => { const ini = [...new Set($('mIni').value.toUpperCase().match(/[A-Z]{3}/g) || [])].slice(0, 10); if (ini.length) boardRows(GAMES, ini); });
   $('drawer').onclick = modClick;
-  profRows();
+  profRows(); feedRows();
 }
 async function boardRows(games, ini) {
   const out = $('mList'); out.innerHTML = '<p class="empty">Loading…</p>';
@@ -767,7 +768,15 @@ async function profRows() {
     return `<div class="mrow${orph ? ' orph' : ''}">${p.av && window.Avatar ? `<canvas class="av" data-av="${esc(p.av)}"></canvas>` : '<span></span>'}<b>${esc(p.name)}</b><span class="dim">${esc(p.n || '')}${orph ? ' · LEFT OVER' : ''}${players.has(id) ? '' : ' · not tracked'} · #${esc(id.slice(0, 5))}</span><button class="btn bad" data-delpr="${esc(id)}">✕ REMOVE</button></div>`; }).join('');
   if (window.Avatar) Avatar.fill(out);
 }
+async function feedRows() {
+  const out = $('mFeed'); let rows = [];
+  if (DEMO) rows = [{ id: 'd1', k: 'top', name: 'ACEMAN', g: 'wallbuster', s: 22950, r: 1, t: Date.now() }];
+  else try { rows = (await getDocs(query(collection(db, 'feed'), orderBy('t', 'desc'), limit(40)))).docs.map(d => ({ id: d.id, ...d.data(), t: ms(d.get('t')) })); } catch (e) { out.innerHTML = `<p class="empty">Couldn't load: ${esc(e.code || e.message)}</p>`; return; }
+  const what = f => f.k === 'top' ? `${f.r === 1 ? '#1' : 'top ' + f.r} on ${name(f.g)} · ${num(f.s)}` : f.k === 'master' ? `mastered ${name(f.g)}` : `level ${f.lv}`;
+  out.innerHTML = rows.length ? rows.map(f => `<div class="mrow"><span class="rk"></span><b>${esc(f.name)}</b><span class="dim">${esc(what(f))} · ${ago(f.t)}</span><button class="btn bad" data-delfd="${esc(f.id)}">✕ REMOVE</button></div>`).join('') : '<p class="empty">Nothing on the ticker yet.</p>';
+}
 async function modClick(e) {
+  const fd = e.target.closest('[data-delfd]'); if (fd && armed(fd)) { fd.textContent = '…'; try { if (!DEMO) await deleteDoc(doc(db, 'feed', fd.dataset.delfd)); fd.closest('.mrow').remove(); } catch (err) { fd.textContent = 'FAILED'; } return; }
   const b = e.target.closest('[data-delsc], [data-delpr]'); if (!b || !armed(b)) return;
   b.textContent = '…';
   try {
