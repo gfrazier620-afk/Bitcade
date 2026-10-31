@@ -523,6 +523,16 @@
   // the player's settings (shared/settings.js): how much screens shake and flash, and a buzz on phones for big hits
   const shakeK = () => { const v = store.get('arcade:shake'); return v == null ? 1 : +v; }, flashK = () => { const v = store.get('arcade:flash'); return v == null ? 1 : +v; };
   const coarse = matchMedia('(pointer: coarse)').matches;
+  /*
+   * On phones the page never zooms: a quick second tap that misses a button (iPhone's double-tap zoom ignores
+   * touch-action on the gaps) or a pinch. Buttons, the game screen, inputs and links are left alone.
+   */
+  if (coarse) {
+    const vp = document.querySelector('meta[name=viewport]'); if (vp && !/maximum-scale/.test(vp.content)) vp.content += ',maximum-scale=1,user-scalable=no';
+    let lastTap = 0;
+    document.addEventListener('touchend', e => { const now = e.timeStamp; if (now - lastTap < 350 && !(e.target.closest && e.target.closest('button,input,textarea,select,a,canvas,label'))) e.preventDefault(); lastTap = now; }, { passive: false });
+    ['gesturestart', 'gesturechange'].forEach(ev => document.addEventListener(ev, e => e.preventDefault(), { passive: false }));
+  }
   A.shake = (px = 6, s = 0.3) => {
     if (px >= 5 && ac && performance.now() - thumpAt > 120) { thumpAt = performance.now(); thump(Math.min(0.14, px / 80)); } // big shakes get bass, even with motion reduced
     if (px >= 5 && coarse && !A.demo && store.get('arcade:buzz') !== '0' && navigator.vibrate) try { navigator.vibrate(Math.min(70, px * 5)); } catch (e) {}
