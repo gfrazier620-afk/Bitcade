@@ -63,6 +63,7 @@
     flushing = true; const e = q[0];
     A.world().then(w => e.k === 'win' ? w.addWin(e.n) : w.post(e.g, e.n, e.s, { all: e.all !== false, day: e.d || null, week: e.w || null })).then(() => {
       saveOutbox(outbox().filter(x => x.id !== e.id)); flushing = false;
+      if (e.k !== 'win' && e.all !== false) A.world().then(w => w.top(e.g, 3).then(t => { const r = t.findIndex(x => x.n === e.n && x.s === e.s); if (r >= 0) w.feedPost({ k: 'top', g: e.g, s: e.s, r: r + 1 }); })).catch(() => {}); // the lobby's live ticker
       if (e.g === A.id && shown && overlayOpen()) loadWorld();
       if (outbox().length) setTimeout(flush, 11000);
     }, () => {
@@ -99,6 +100,7 @@
     A.gainXP(50, 'badge');
     toast(`★ BADGE · ${def.name} · +10 TICKETS`); A.jingle([659, 880, 1175, 1568], 0.07, 'triangle');
     if (mastered()) { // the last badge: this cabinet turns gold
+      A.world().then(w => w.feedPost({ k: 'master', g: A.id })).catch(() => {});
       setTimeout(() => { toast('★ CABINET MASTERED · GOLD MARQUEE UNLOCKED'); A.jingle([523, 659, 784, 1047, 1319, 1568], 0.08, 'square'); A.flash('#ffd23d', 0.3); }, 900);
       setMastered();
     }
@@ -185,13 +187,15 @@
 
   // Online boards shown in score tables: all-time ('world'), today's for daily challenges ('today') and this week's
   // when the game is the featured tournament game ('week').
-  const boards = { world: { state: 'idle', list: [] }, today: { state: 'idle', list: [] }, week: { state: 'idle', list: [] } }; // state: idle | loading | ok | off
+  const boards = { world: { state: 'idle', list: [] }, today: { state: 'idle', list: [] }, week: { state: 'idle', list: [] }, friends: { state: 'idle', list: [] } }; // state: idle | loading | ok | off
+  // your mutual friends (kept by the lobby's messages, shared/inbox.js): the FRIENDS tab ranks you against them
+  const myFriends = () => { try { const f = JSON.parse(store.get('bitcade:friends')); return Array.isArray(f) ? f : []; } catch (e) { return []; } };
   let hsTab = 'world', lastSaved = null, dailyDay = null; // dailyDay: date of the TODAY tab, or null when it isn't shown
   function loadWorld() {
     const want = onlineTabs();
     want.forEach(k => { if (boards[k].state !== 'ok' || k !== 'world') boards[k].state = 'loading'; });
     renderHS();
-    A.world().then(w => want.forEach(k => w.top(A.id, 10, k === 'today' ? dailyDay : null, k === 'week' ? A.week() : null)
+    A.world().then(w => want.forEach(k => (k === 'friends' ? w.myId().then(me => w.friendsTop(A.id, [me, ...myFriends().map(f => f.uid)]).then(t => t.map(e => ({ ...e, me: e.uid === me })))) : w.top(A.id, 10, k === 'today' ? dailyDay : null, k === 'week' ? A.week() : null))
       .then(t => { boards[k] = { state: 'ok', list: t }; renderHS(); }, () => { boards[k].state = 'off'; renderHS(); })),
     () => { want.forEach(k => boards[k].state = 'off'); renderHS(); });
   }
@@ -241,6 +245,7 @@
     if (s > 0) {
       tix = 1 + (rank >= 0 ? 3 : 0) + (rank === 0 && top.length ? 2 : 0) + (rec && prevBest > 0 ? 5 : 0) + (daily ? 2 : 0);
       if (A.featured()) tix *= 2;
+      if (window.HAPPY && HAPPY.on()) { tix *= 2; boosted.push('HAPPY HOUR · DOUBLE TICKETS'); }
       if (window.PERKS) { if (PERKS.own('magnet')) tix += 1; if (PERKS.use('dbl')) { tix *= 2; boosted.push(`TICKET DOUBLER ×2 · ${PERKS.left('dbl')} LEFT`); } } // useful prizes
       if (window.TICKETS) TICKETS.add(tix); else tix = 0;
     }
@@ -264,6 +269,7 @@
   A.gainXP = (n, why, quiet) => {
     if (!window.XP || A.demo || runEasy || !n) return null;
     const r = XP.add(n, why);
+    if (r.up && r.after.level % 5 === 0 && !A.demo) A.world().then(w => w.feedPost({ k: 'level', lv: r.after.level })).catch(() => {});
     if (r.up && gather) noteOne('lv', `▲ LEVEL ${r.after.level}${r.newTitle ? ' · ' + r.newTitle : ''}${r.unlocked.length ? ' · NEW PRIZE' : ''}`);
     else if (r.up) setTimeout(() => {
       toast(`▲ LEVEL ${r.after.level}${r.newTitle ? ' · ' + r.newTitle : ''}${r.unlocked.length ? ' · NEW PRIZE UNLOCKED' : ''}`);
@@ -604,7 +610,10 @@
     requestAnimationFrame(() => { b.style.opacity = '1'; b.style.transform = 'translate(-50%,0)'; });
     setTimeout(() => { b.style.opacity = '0'; setTimeout(() => b.remove(), 300); }, 12000);
   }
-  addEventListener('load', () => { setTimeout(msgCheck, 6000); setInterval(msgCheck, 120000); });
+  // presence, so friends see you're on and what you're playing (only for players who have friends: bitcade:dm)
+  const beat = () => { if (A.id === 'game' || A.demo || document.hidden || store.get('bitcade:dm') !== '1') return; world().then(w => w.beat(A.id)).catch(() => {}); };
+  addEventListener('load', () => { setTimeout(beat, 3000); setInterval(beat, 90000); });
+  addEventListener('load', () => { setTimeout(msgCheck, 6000); setInterval(msgCheck, 120000); if (window.HAPPY && HAPPY.on() && A.id !== 'game') setTimeout(() => toast(`🍹 HAPPY HOUR · DOUBLE TICKETS · ${HAPPY.clock(HAPPY.left())} LEFT`), 1500); });
   const saveTime = () => { if (playT >= 1 && A.id !== 'game') { store.set('arcade:time:' + A.id, Math.round((+store.get('arcade:time:' + A.id) || 0) + playT)); playT = 0; } };
   setInterval(saveTime, 10000); addEventListener('pagehide', saveTime);
   const hideFns = [];
@@ -883,7 +892,7 @@
       return;
     }
     if (!shown) { hs.innerHTML = ''; return; }
-    const LABEL = { world: 'WORLD', today: 'TODAY', week: 'THIS WEEK', local: 'THIS DEVICE', badges: `BADGES ${A.badgesGot().length}/${A.badgeList().length}` };
+    const LABEL = { world: 'WORLD', today: 'TODAY', week: 'THIS WEEK', friends: 'FRIENDS', local: 'THIS DEVICE', badges: `BADGES ${A.badgesGot().length}/${A.badgeList().length}` };
     const tab = id => `<button tabindex="-1" data-tab="${id}"${hsTab === id ? ' class="on"' : ''}>${LABEL[id]}</button>`;
     const note = t => `<div class="hs-note">${t}</div>`;
     const local = shown.top.length ? table(shown.top, shown.hi) : note('No scores on this device yet');
@@ -894,19 +903,23 @@
       body = `<div class="hs-badges">${A.badgeList().map(b => `<div class="badge${got.includes(b.id) ? ' got' : ''}">` +
         `<span>${got.includes(b.id) ? '★' : '☆'}</span><b>${b.name}</b><small>${b.desc}</small></div>`).join('')}</div>`;
     } else {
-      const b = boards[hsTab], what = hsTab === 'today' ? `today's daily scores` : hsTab === 'week' ? `tournament scores this week` : 'world scores';
-      if (b.state === 'ok') body = b.list.length ? table(b.list, lastSaved ? b.list.findIndex(e => e.n === lastSaved.n && e.s === lastSaved.s) : -1) : note(`No ${what} yet. Be the first!`);
+      const b = boards[hsTab], what = hsTab === 'today' ? `today's daily scores` : hsTab === 'week' ? `tournament scores this week` : hsTab === 'friends' ? 'scores from your friends' : 'world scores';
+      if (b.state === 'ok' && hsTab === 'friends') { const names = Object.fromEntries(myFriends().map(f => [f.uid, f.name])); body = b.list.length ? friendsTable(b.list, names) : note('No scores from your friends yet. Send them a challenge!'); }
+      else if (b.state === 'ok') body = b.list.length ? table(b.list, lastSaved ? b.list.findIndex(e => e.n === lastSaved.n && e.s === lastSaved.s) : -1) : note(`No ${what} yet. Be the first!`);
       else if (b.state === 'off') body = note(`${what[0].toUpperCase() + what.slice(1)} are offline · showing this device`) + local;
       else body = note(`Loading ${what}…`);
     }
     hs.innerHTML = `<div class="hs-tabs">${tabs().map(tab).join('')}</div>${body}${shown.day ? dayLine(shown.day) : ''}${shown.week ? weekLine(shown.week) : ''}`;
   }
-  const onlineTabs = () => ['world', ...(dailyDay ? ['today'] : []), ...(A.featured() ? ['week'] : [])];
+  const onlineTabs = () => ['world', ...(dailyDay ? ['today'] : []), ...(A.featured() ? ['week'] : []), ...(myFriends().length ? ['friends'] : [])];
   const tabs = () => [...onlineTabs(), 'local', ...(A.badgeList().length ? ['badges'] : [])];
   // Names are checked against 3 capital letters before display: world scores come from other players.
   const ORD = ['1ST', '2ND', '3RD'];
   const table = (list, hi) => `<div class="hs-table">${list.map((e, i) => `<div class="row${i < 3 ? ' r' + (i + 1) : ''}${i === hi ? ' me' : ''}"><span>${ORD[i] || (i + 1) + 'TH'}</span>` +
     `<span>${/^[A-Z?]{3}$/.test(e.n) ? e.n : '???'}</span><span>${(+e.s || 0).toLocaleString()}</span></div>`).join('')}</div>`;
+  // friends: player names where known (initials otherwise), you highlighted
+  const friendsTable = (list, names) => `<div class="hs-table">${list.map((e, i) => `<div class="row${i < 3 ? ' r' + (i + 1) : ''}${e.me ? ' me' : ''}"><span>${ORD[i] || (i + 1) + 'TH'}</span>` +
+    `<span>${e.me ? 'YOU' : /^[A-Z0-9]{3,12}$/.test(names[e.uid] || '') ? names[e.uid] : /^[A-Z]{3}$/.test(e.n) ? e.n : '???'}</span><span>${(+e.s || 0).toLocaleString()}</span></div>`).join('')}</div>`;
   const weekLine = w => `<div class="hs-day">TOURNAMENT · YOUR BEST THIS WEEK ${w.s.toLocaleString()}</div>`;
   const dayLine = d => `<div class="hs-day">DAILY ${d.d} · TODAY'S BEST ${d.s.toLocaleString()}</div>`;
 

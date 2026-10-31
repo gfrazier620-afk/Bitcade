@@ -640,3 +640,44 @@ window.PERKS = (() => {
   const give = (id, n) => { const b = bag(); b[id] = (+b[id] || 0) + n; save(b); };
   return { own, left, use, give };
 })();
+
+/*
+ * Happy hour (window.HAPPY): every day from 8 to 9 pm, by the player's own clock, every game and the arcade floor's
+ * games pay double tickets. ?happy=1 (or 0) forces it on or off for the visit, for testing.
+ */
+window.HAPPY = (() => {
+  const FROM = 20, TO = 21;
+  let force = null; try { const m = /[?&]happy=(\d)/.exec(location.search); if (m) sessionStorage.setItem('bitcade:happy', m[1]); force = sessionStorage.getItem('bitcade:happy'); } catch (e) {}
+  const on = (d = new Date()) => force !== null ? force === '1' : d.getHours() >= FROM && d.getHours() < TO;
+  /** Milliseconds until it ends (when on) or starts (when off). */
+  const left = () => { const n = new Date(), t = new Date(n); if (on(n)) { if (force === '1' && !(n.getHours() >= FROM && n.getHours() < TO)) return 3600e3; t.setHours(TO, 0, 0, 0); } else { t.setHours(FROM, 0, 0, 0); if (t <= n) t.setDate(t.getDate() + 1); } return t - n; };
+  const clock = ms => { const m = Math.max(0, Math.ceil(ms / 6e4)); return m >= 60 ? `${Math.floor(m / 60)}H ${String(m % 60).padStart(2, '0')}M` : `${m}M`; };
+  return { on, left, clock, FROM, TO };
+})();
+
+/*
+ * The daily login streak (window.STREAK): claim a reward once a day in the lobby. Days in a row climb a 7-day
+ * calendar (tickets, an XP Surge on day 4, a Ticket Doubler on day 7), then it starts the week again; miss a day and
+ * it's back to day 1. Kept in arcade:streak { d: the last day claimed, n: days in a row }, which cloud save merges.
+ */
+window.STREAK = (() => {
+  const DAYS = [{ t: 5 }, { t: 10 }, { t: 15 }, { t: 20, boost: 'surge', q: 5 }, { t: 25 }, { t: 30 }, { t: 50, boost: 'dbl', q: 3 }];
+  const key = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const today = () => key(new Date()), yesterday = () => { const d = new Date(); d.setDate(d.getDate() - 1); return key(d); };
+  const read = () => { try { const v = JSON.parse(localStorage.getItem('arcade:streak')); return v && v.d ? v : { d: '', n: 0 }; } catch (e) { return { d: '', n: 0 }; } };
+  const claimed = () => read().d === today();
+  /** The streak day you're on (claimed today) or would claim next. */
+  const day = () => { const s = read(); return s.d === today() ? s.n : s.d === yesterday() ? s.n + 1 : 1; };
+  const reward = n => DAYS[(n - 1) % 7];
+  function claim() {
+    if (claimed()) return null;
+    const n = day(), r = reward(n);
+    try { localStorage.setItem('arcade:streak', JSON.stringify({ d: today(), n })); } catch (e) {}
+    if (window.TICKETS) TICKETS.add(r.t);
+    if (r.boost && window.PERKS) PERKS.give(r.boost, r.q);
+    if (window.XP) XP.add(10, 'streak');
+    return { n, ...r };
+  }
+  return { DAYS, day, claimed, claim, reward };
+})();
+

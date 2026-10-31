@@ -349,7 +349,7 @@ window.FloorPlay = kit => {
   function award(n) {
     let s = null; try { s = JSON.parse(get('bitcade:floortix') || 'null'); } catch (e) {}
     const used = s && s.d === today() ? s.n : 0, give = Math.max(0, Math.min(n, FLOOR_CAP - used));
-    if (give) { set('bitcade:floortix', JSON.stringify({ d: today(), n: used + give })); TICKETS.add(give); kit.opt.onTickets && kit.opt.onTickets(); }
+    if (give) { set('bitcade:floortix', JSON.stringify({ d: today(), n: used + give })); TICKETS.add(window.HAPPY && HAPPY.on() ? give * 2 : give); kit.opt.onTickets && kit.opt.onTickets(); } // happy hour doubles what's paid; the cap counts the plain amount
     xp(8);
     return { give, capped: give < n };
   }

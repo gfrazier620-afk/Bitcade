@@ -653,6 +653,8 @@ body.ev-halloween .topbar .logo{background:linear-gradient(180deg,#ffb04a 0%,#ff
 .ib-row:hover{border-color:#ff8a9a}.ib-row.new{border-color:#ffd23d}
 .ib-ini{font-family:var(--f-pixel);font-size:16px;color:#ffd23d;min-width:3.4ch}
 .ib-ini small{font-size:10px;color:#a39bc4;letter-spacing:.1em}
+.ib-face{position:relative;flex:none;display:block}.ib-on{position:absolute;right:-3px;bottom:-3px;width:11px;height:11px;border-radius:50%;background:#3dff8f;border:2px solid var(--bg2);box-shadow:0 0 8px #3dff8f}
+.ib-sub em.on{color:#3dff8f}
 .ib-av{width:30px;height:30px;flex:none;border-radius:8px;background:#0a0716;border:1px solid #2d2556;display:block}
 .ib-sub{flex:1;font-family:var(--f-pixel);font-size:10px;color:var(--muted)}.ib-sub em{font-style:normal}.ib-sub em.fr{color:#3dff8f}
 .ib-when{font-family:var(--f-pixel);font-size:10px;color:var(--muted)}
@@ -677,6 +679,37 @@ body.ev-halloween .topbar .logo{background:linear-gradient(180deg,#ffb04a 0%,#ff
 .ib-text:focus{outline:2px solid #ff8a9a}
 .ib-send{font-family:var(--f-pixel);font-size:12px;color:#120a1c;background:#ff8a9a;border:0;border-radius:10px;padding:0 16px;cursor:pointer}
 html.ib-open body{overflow:hidden}
+/* the daily login streak (STREAK in shared/badges.js): a 7-day calendar in REWARDS, and a pop-up once a day */
+.streak{max-width:1000px;margin:0 auto 18px;padding:12px 14px 14px;border-radius:14px;background:linear-gradient(180deg,rgba(255,138,61,.08),var(--bg2));border:1px solid var(--line)}
+.sk-head{display:flex;justify-content:space-between;text-align:left;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:10px;font-family:var(--f-pixel);font-size:10.5px;color:var(--muted)}
+.sk-head b{font-family:var(--f-marquee);font-weight:400;font-size:17px;color:#ff9a3d}
+.sk-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.sk-day{display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 2px;border-radius:10px;background:var(--panel);border:1px solid var(--line);font-family:var(--f-pixel);font-size:9.5px;color:var(--muted);text-align:center}
+.sk-day em{font-style:normal;font-size:20px;line-height:1.1}.sk-day b{font-weight:400;color:#ffd23d;font-size:11px}
+.sk-day.done{background:color-mix(in srgb,#ff9a3d 14%,var(--panel));border-color:#ff9a3d;color:#ffd8a8}
+.sk-day.now{border-color:#ffd23d;box-shadow:0 0 0 1px #ffd23d,0 0 16px rgba(255,210,61,.35)}
+.sk-claim{display:block;margin:12px auto 0;font-family:var(--f-pixel);font-size:12px;letter-spacing:.06em;color:#1a0f00;background:linear-gradient(90deg,#ffd23d,#ff9a3d);border:0;border-radius:999px;padding:10px 22px;cursor:pointer;animation:ps-pulse 1.4s ease-in-out infinite}
+.sk-claim:disabled{animation:none;opacity:.6;cursor:default}
+.streak-pop{position:fixed;inset:0;z-index:46;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(5,3,12,.78);backdrop-filter:blur(3px)}
+.streak-panel{width:min(520px,100%);padding:18px 16px;border-radius:18px;background:var(--bg2);border:1px solid #ff9a3d;box-shadow:0 20px 60px rgba(0,0,0,.6);text-align:center}
+.streak-panel h3{margin:0 0 4px;font-family:var(--f-marquee);font-weight:400;font-size:24px;color:#ff9a3d}
+.streak-panel p{margin:0 0 12px;color:var(--muted);font-size:13.5px}
+@media (max-width:640px){.sk-day{padding:6px 0;font-size:8.5px}.sk-day em{font-size:16px}}
+/* the live ticker on PLAY: what's happening, scrolling */
+.ticker{display:flex;align-items:center;gap:10px;max-width:1240px;margin:0 auto 12px;padding:0 4px 0 0;height:30px;border-radius:999px;background:rgba(10,6,24,.7);border:1px solid var(--line);overflow:hidden}
+.tk-live{flex:none;display:flex;align-items:center;gap:6px;height:100%;padding:0 12px;font-family:var(--f-pixel);font-weight:400;font-size:10px;letter-spacing:.12em;color:#120a1c;background:#ff4f6d;border-radius:999px 0 0 999px}
+.tk-live i{width:7px;height:7px;border-radius:50%;background:#fff;animation:pulse 1.2s ease-in-out infinite}
+.tk-win{flex:1;min-width:0;overflow:hidden;mask-image:linear-gradient(90deg,transparent,#000 4%,#000 96%,transparent)}
+.tk-track{display:inline-flex;gap:34px;white-space:nowrap;font-family:var(--f-pixel);font-size:11px;letter-spacing:.05em;color:var(--ink);animation:tk-scroll var(--tk-dur,40s) linear infinite;padding-left:100%}
+.ticker:hover .tk-track{animation-play-state:paused}
+.tk-track span{display:inline-flex;gap:6px;align-items:center}.tk-track b{font-weight:400}
+.tk-track .tk-top b{color:#ffd23d}.tk-track .tk-master b{color:#ffd23d}.tk-track .tk-level b{color:#5ee7ff}.tk-track .tk-on b{color:#3dff8f}.tk-track .tk-happy b{color:#ff4fd1}.tk-track .tk-new b{color:#3dff8f}.tk-track .tk-tour b{color:#ff9a3d}
+@keyframes tk-scroll{to{transform:translateX(-100%)}}
+@keyframes pulse{50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.tk-track{animation:none;padding-left:0}}
+.fl-game #floorCard{display:none!important} /* a floor game on a phone: the whole screen is the game */
+.todaycard .tc-happy{color:#120a1c;background:linear-gradient(90deg,#ff4fd1,#ffd23d);border-radius:999px;padding:3px 9px}
+.todaycard .tc-streak b{color:#ff9a3d}
 .ib-tabs{display:flex;gap:6px;margin-bottom:6px}
 .ib-tabs button{flex:1;font-family:var(--f-pixel);font-size:11px;letter-spacing:.1em;color:var(--muted);background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:9px;cursor:pointer}
 .ib-tabs button[aria-selected="true"]{color:#120a1c;background:#ff8a9a;border-color:#ff8a9a}
@@ -737,6 +770,7 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
   </div>
 </header>
 <div class="lobby">
+  <div class="ticker" id="ticker" role="marquee" aria-label="What's happening" hidden><b class="tk-live"><i></i>LIVE</b><div class="tk-win"><div class="tk-track" id="tkTrack"></div></div></div>
   <section class="hero" id="hero" aria-roledescription="carousel" aria-label="Featured">
     <div class="hero-track" id="heroTrack"></div>
     <button type="button" class="hero-nav prev" aria-label="Previous">‹</button><button type="button" class="hero-nav next" aria-label="Next">›</button>
@@ -753,10 +787,12 @@ try { if (sessionStorage.getItem('bitcade:booted') && !/[?&]boot\b/.test(locatio
     <section class="lvl" id="lvl" aria-label="Your level"></section>
     <section class="pstrip" id="passStrip" role="button" tabindex="0" aria-label="Arcade Pass" hidden></section>
     </div>
+    <section class="streak" id="streak" aria-label="Daily streak"></section>
     <section class="missions" id="missions" aria-label="Daily and weekly missions"></section>
     <button class="rw-prize" id="rwPrize" type="button"><span class="ic" aria-hidden="true">◈</span><div><b>PRIZE COUNTER</b><small>Spend tickets on outfits, pets, emotes, carpets, screen tints and cabinet finishes.</small></div><em id="rwTix">0 TICKETS</em></button>
   </section>
   <section class="scores" id="scoresView" aria-label="High scores" hidden></section>
+  <div class="streak-pop" id="streakPop" role="dialog" aria-modal="true" aria-label="Daily streak" hidden><div class="streak-panel"></div></div>
   <a class="tourney hero-slide" id="tourney" hidden>
     <canvas width="12" height="8"></canvas>
     <div><div class="t-head">★ WEEKLY TOURNAMENT</div><h2></h2><div class="t-meta"><span>ENDS IN <b class="t-left"></b></span><span>YOUR BEST <b class="t-mine">—</b></span></div></div>
@@ -1156,7 +1192,7 @@ let floorP = null;
 function loadFloor() {
   if (floorP) return floorP;
   const add = src => new Promise((ok, no) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = no; document.head.append(s); });
-  floorP = add('shared/floor-play.js').then(() => add('shared/floor.js')).then(initFloor).catch(e => { floorP = null; throw e; });
+  floorP = add('shared/floor-play.js').then(() => add('shared/floor.js')).then(initFloor).then(() => { const put = () => Floor.friends && Floor.friends(Inbox.forFloor()); put(); Inbox.onFriends(() => { put(); renderTicker(); }); }).catch(e => { floorP = null; throw e; });
   return floorP;
 }
 addEventListener('load', () => (window.requestIdleCallback || (f => setTimeout(f, 1500)))(() => loadFloor().catch(() => {}), { timeout: 4000 }));
@@ -1168,6 +1204,8 @@ function initFloor() { Floor.init({
   world: slug => worldTop[slug],
   onPlay: g => enterGame(`games/${g.slug}/`),
   onCounter: () => Prizes.open(),
+  // on a phone, a floor game takes the whole screen while it's open (and goes back when it closes)
+  onGame: on => { if (!matchMedia('(pointer: coarse)').matches) return; floorView.classList.toggle('fl-game', on); if (on && !floorView.classList.contains('fl-max')) { autoFull = true; floorFull(true); } else if (!on && autoFull) { autoFull = false; floorFull(false); } },
   onTickets: () => tixShow(),
   onMissions: () => { renderMissions(); renderLevel(); },
   onLevel: () => { renderLevel(); tixShow(); },
@@ -1238,6 +1276,53 @@ questsEl.querySelector('.q-tabs').addEventListener('click', e => {
   questsEl.dataset.q = b.dataset.qt; questsEl.querySelectorAll('[data-qt]').forEach(x => x.setAttribute('aria-selected', String(x === b)));
 });
 renderMissions(); setInterval(renderMissions, 60000);
+/*
+ * The live ticker: happy hour, the tournament, new cabinets, friends online (shared/inbox.js) and the shared feed of
+ * big moments (feed/ in Firestore: world top-3 scores, mastered cabinets, every fifth level). Refreshed every 2 minutes.
+ */
+let feedItems = [];
+function renderTicker() {
+  const el = document.getElementById('ticker'), name = s => (GAMES.find(g => g.slug === s) || { name: s }).name.toUpperCase(), esc2 = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  const items = [];
+  if (window.HAPPY) items.push(HAPPY.on() ? `<span class="tk-happy">🍹 <b>HAPPY HOUR</b> DOUBLE TICKETS ON EVERY GAME · ${HAPPY.clock(HAPPY.left())} LEFT</span>` : `<span class="tk-happy">🍹 <b>HAPPY HOUR</b> EVERY NIGHT 8–9 PM · DOUBLE TICKETS · STARTS IN ${HAPPY.clock(HAPPY.left())}</span>`);
+  if (window.Inbox && Inbox.onlineNow) Inbox.onlineNow().forEach(f => items.push(`<span class="tk-on">● <b>${esc2(f.name || 'A FRIEND')}</b> IS ${esc2(f.where.replace(/^PLAYING /, 'PLAYING ').toUpperCase())}</span>`));
+  for (const f of feedItems) {
+    if (!/^[A-Z0-9]{3,12}$/.test(f.name || '')) continue;
+    if (f.k === 'top' && GAMES.some(g => g.slug === f.g)) items.push(`<span class="tk-top">🏆 <b>${f.name}</b> ${f.r === 1 ? 'TOOK #1' : 'MADE THE TOP ' + f.r} ON ${esc2(name(f.g))} · ${(+f.s || 0).toLocaleString()}</span>`);
+    if (f.k === 'master' && GAMES.some(g => g.slug === f.g)) items.push(`<span class="tk-master">★ <b>${f.name}</b> MASTERED ${esc2(name(f.g))}</span>`);
+    if (f.k === 'level' && f.lv) items.push(`<span class="tk-level">▲ <b>${f.name}</b> HIT LEVEL ${f.lv}</span>`);
+  }
+  if (window.WEEKLY && WEEKLY.game && WEEKLY.game() && GAMES.some(g => g.slug === WEEKLY.game())) items.push(`<span class="tk-tour">★ <b>THIS WEEK'S TOURNAMENT</b> ${esc2(name(WEEKLY.game()))}</span>`);
+  GAMES.filter(g => g.added && Date.now() - Date.parse(g.added) < 14 * 864e5).slice(-4).forEach(g => items.push(`<span class="tk-new">NEW CABINET <b>${esc2(g.name.toUpperCase())}</b></span>`));
+  const tr = document.getElementById('tkTrack'); tr.innerHTML = items.join('');
+  tr.style.setProperty('--tk-dur', Math.max(25, items.length * 7) + 's'); el.hidden = !items.length || vGrid.getAttribute('aria-pressed') !== 'true';
+}
+function loadFeed() { worldP.then(w => w.feed(15)).then(f => { feedItems = f.filter(x => Date.now() - x.t < 3 * 864e5); renderTicker(); }, () => renderTicker()); }
+loadFeed(); setInterval(loadFeed, 120000); setTimeout(renderTicker, 5000); // again once the inbox knows who's online
+/* The daily login streak (STREAK in shared/badges.js): the calendar in REWARDS, and a pop-up once a day to claim it. */
+function streakHTML() {
+  const n = STREAK.day(), done = STREAK.claimed(), week = Math.floor((n - 1) / 7) * 7;
+  return `<header class="sk-head"><b>🔥 ${n}-DAY STREAK</b><span>${done ? 'CLAIMED TODAY · COME BACK TOMORROW FOR DAY ' + (n + 1) : 'MISS A DAY AND IT STARTS AGAIN'}</span></header><div class="sk-days">${STREAK.DAYS.map((r, i) => {
+    const d = week + i + 1, cls = d < n || (d === n && done) ? 'done' : d === n ? 'now' : '';
+    return `<div class="sk-day ${cls}">DAY ${d}<em>${d < n || (d === n && done) ? '✓' : r.boost ? (r.boost === 'dbl' ? '🎟️' : '⚡') : '🎫'}</em><b>+${r.t}</b>${r.boost ? (r.boost === 'dbl' ? 'DOUBLER ×3' : 'XP SURGE ×5') : 'TICKETS'}</div>`; }).join('')}</div>` +
+    (done ? '' : `<button class="sk-claim" type="button">CLAIM DAY ${n} ▸</button>`);
+}
+function claimStreak() {
+  const r = STREAK.claim(); if (!r) return;
+  tixShow(); renderStreak(); renderLevel();
+  const pop = document.getElementById('streakPop'); if (!pop.hidden) { pop.querySelector('.streak-panel').innerHTML = `<h3>DAY ${r.n} CLAIMED!</h3><p>+${r.t} tickets${r.boost ? ` and ${r.boost === 'dbl' ? 'a Ticket Doubler ×3' : 'an XP Surge ×5'}` : ''}. See you tomorrow.</p>` + streakHTML(); setTimeout(() => { pop.hidden = true; }, 1600); }
+}
+function renderStreak() { if (!window.STREAK) return; const el = document.getElementById('streak'); el.innerHTML = streakHTML(); const b = el.querySelector('.sk-claim'); if (b) b.addEventListener('click', claimStreak); renderToday(); }
+renderStreak();
+{ // the pop-up: once a day, when the lobby's ready (after the boot and any profile setup)
+  const pop = document.getElementById('streakPop');
+  pop.addEventListener('click', e => { if (e.target === pop) pop.hidden = true; if (e.target.closest('.sk-claim')) claimStreak(); });
+  pop.addEventListener('keydown', e => { if (e.key === 'Escape') pop.hidden = true; });
+  const ready = () => !document.documentElement.classList.contains('booting') && !document.querySelector('.su:not([hidden])') && !document.querySelector('.ib:not([hidden]),.pc:not([hidden]),.set:not([hidden])');
+  let skip = false; try { skip = sessionStorage.getItem('bitcade:nosetup') === '1' && !/[?&]streak/.test(location.search); } catch (e) {}
+  const t = setInterval(() => { if (!window.STREAK || STREAK.claimed() || skip) return clearInterval(t); if (!ready()) return; clearInterval(t);
+    pop.querySelector('.streak-panel').innerHTML = `<h3>WELCOME BACK!</h3><p>Your daily reward is waiting.</p>` + streakHTML(); pop.hidden = false; const b = pop.querySelector('.sk-claim'); if (b) b.focus(); }, 700);
+}
 /* Your level (XP in shared/badges.js): the bar, your title and the next level reward. */
 const lvlEl = document.getElementById('lvl');
 function renderLevel() {
@@ -1258,9 +1343,11 @@ function renderToday() {
     (se ? `<span class="tc tc-pass">PASS TIER <b>${PASS.tier()}</b>/${PASS.TIERS}</span>` : '') +
 
     (window.EVENT && EVENT.on('halloween') ? `<span class="tc tc-ghost">👻 GHOSTS <b>${(() => { try { const g = JSON.parse(localStorage.getItem('bitcade:ghosts')), d = new Date(); return g && g.d === d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate() ? g.f.length : 0; } catch (e) { return 0; } })()}/5</b></span>` : '') +
-    (claim ? `<span class="tc-claim">${claim} TO CLAIM</span>` : '') + '<span class="tc tc-go">REWARDS ›</span>';
+    (window.STREAK ? `<span class="tc tc-streak">🔥 <b>${STREAK.day()}</b>-DAY STREAK</span>` : '') +
+    (window.HAPPY && HAPPY.on() ? `<span class="tc-happy">🍹 HAPPY HOUR · 2× TICKETS · ${HAPPY.clock(HAPPY.left())} LEFT</span>` : '') +
+    (claim || (window.STREAK && !STREAK.claimed()) ? `<span class="tc-claim">${claim + (window.STREAK && !STREAK.claimed() ? 1 : 0)} TO CLAIM</span>` : '') + '<span class="tc tc-go">REWARDS ›</span>';
   if (v) document.getElementById('tbLvN').textContent = v.level;
-  rwDot.hidden = !claim;
+  rwDot.hidden = !claim && !(window.STREAK && !STREAK.claimed());
 }
 renderLevel();
 const passEl = document.getElementById('passStrip');
@@ -1282,7 +1369,7 @@ function setView(v) {
   floorView.hidden = !walk; document.getElementById('cabs').hidden = !play; profileView.hidden = !prof; rewardsView.hidden = !rw; scoresView.hidden = !sc;
   missionsEl.hidden = !window.MISSIONS; lvlEl.hidden = !window.XP; passEl.hidden = !(window.PASS && PASS.season());
   if (rw) { renderMissions(); renderLevel(); PassView.render(); } else renderToday();
-  document.getElementById('hero').hidden = !play || !heroCount; questsEl.hidden = !play;
+  document.getElementById('hero').hidden = !play || !heroCount; questsEl.hidden = !play; document.getElementById('ticker').hidden = !play || !document.getElementById('tkTrack').children.length;
   [[vGrid, play], [vFloor, walk], [vScores, sc], [vRewards, rw], [vProfile, prof]].forEach(([b, on]) => b.setAttribute('aria-pressed', String(on)));
   if (walk) loadFloor().then(() => { if (!floorView.hidden) Floor.start(); }, () => {}); else if (window.Floor && floorP) floorP.then(() => { if (floorView.hidden) Floor.stop(); }, () => {});
   if (prof) Profile.render();
@@ -1314,6 +1401,7 @@ Profile.autoSync().then(r => { if (r.state === 'ok' && r.changed) { tixShow(); r
 vGrid.addEventListener('click', () => setView('grid'));
 // Full screen for the floor: browser full screen where there is one, and the section fills the window either way (iPhones have none)
 const flFull = document.getElementById('flFull');
+let autoFull = false; // the floor went full screen by itself for a game
 function floorFull(on) {
   floorView.classList.toggle('fl-max', on); flFull.textContent = on ? '✕ EXIT' : '⛶ FULL SCREEN'; flFull.setAttribute('aria-pressed', String(on));
   try {
@@ -1375,7 +1463,7 @@ if (get('arcade:track') !== '0') import('./shared/activity.js').then(m => {
 }).catch(() => {});
 window.Lobby.settings = openSettings;
 /* Messages (shared/inbox.js): the ✉ button; ?chat=<uid>&cn=<initials> (from a game over) opens that conversation. */
-Inbox.init({ btn: document.getElementById('tbMsg'), dot: document.getElementById('msgDot'), play: href => enterGame(href) });
+Inbox.init({ btn: document.getElementById('tbMsg'), dot: document.getElementById('msgDot'), play: href => enterGame(href), where: () => floorView.hidden ? 'lobby' : 'floor' });
 { const p = new URLSearchParams(location.search), who = p.get('chat'); if (who && /^[A-Za-z0-9]{10,40}$/.test(who)) setTimeout(() => Inbox.open(who, p.get('cn')), 300); }
 })();
 </script>

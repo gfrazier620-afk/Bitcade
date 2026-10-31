@@ -288,6 +288,47 @@ service cloud.firestore {
         && request.resource.data.t == request.time;
     }
 
+    // Presence (friends online, and friends on the arcade floor): each player writes their own; only mutual friends
+    // (a conversation where both have accepted) can read it.
+    function pairId(a, b) { return a < b ? a + '_' + b : b + '_' + a; }
+    function friendsWith(uid) {
+      return exists(/databases/$(database)/documents/dm/$(pairId(request.auth.uid, uid)))
+        && get(/databases/$(database)/documents/dm/$(pairId(request.auth.uid, uid))).data.acc.get(request.auth.uid, false) == true
+        && get(/databases/$(database)/documents/dm/$(pairId(request.auth.uid, uid))).data.acc.get(uid, false) == true;
+    }
+    match /presence/{uid} {
+      allow get: if request.auth != null && (request.auth.uid == uid || friendsWith(uid));
+      allow list: if false;
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['t', 'on', 'fav', 'name', 'n', 'av'])
+        && request.resource.data.t == request.time
+        && request.resource.data.on is string && request.resource.data.on.size() <= 40
+        && request.resource.data.fav is string && request.resource.data.fav.size() <= 40
+        && request.resource.data.name is string && request.resource.data.name.matches('^[A-Z0-9]{3,12}$')
+        && request.resource.data.n is string && request.resource.data.n.matches('^[A-Z]{3}$')
+        && request.resource.data.av is string && request.resource.data.av.matches('^[0-9]{1,2}(-[0-9]{1,2}){5}$');
+      allow delete: if request.auth != null && (request.auth.uid == uid || isAdmin());
+    }
+
+    // The live feed (the lobby's ticker): world top-3 scores, mastered cabinets, every fifth level. Set kinds and fields
+    // only, so nothing free-form shows; anyone can read it, and the admin can remove items.
+    match /feed/{id} {
+      allow read: if true;
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['k', 'g', 'n', 'name', 's', 'r', 'lv', 'uid', 't'])
+        && request.resource.data.k in ['top', 'master', 'level']
+        && request.resource.data.g is string && request.resource.data.g.size() <= 40
+        && request.resource.data.n is string && request.resource.data.n.matches('^[A-Z]{3}$')
+        && request.resource.data.name is string && request.resource.data.name.matches('^[A-Z0-9]{3,12}$')
+        && request.resource.data.s is int && request.resource.data.s >= 0 && request.resource.data.s <= 5000000
+        && request.resource.data.r is int && request.resource.data.r >= 0 && request.resource.data.r <= 3
+        && request.resource.data.lv is int && request.resource.data.lv >= 0 && request.resource.data.lv <= 50
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.t == request.time;
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
     // Everything else stays locked.
     match /{document=**} {
       allow read, write: if false;

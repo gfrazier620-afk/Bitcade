@@ -143,6 +143,49 @@ export async function findPlayer(name) {
   const p = await profiles(o.u), best = o.u.filter(u => p[u] && p[u].name === name).sort((a, b) => p[b].t - p[a].t)[0];
   return best ? { uid: best, ...p[best] } : null;
 }
+/*
+ * Presence (friends online, and friends on the arcade floor): presence/{uid} = { t, on (the page: a game's slug,
+ * 'lobby' or 'floor'), fav (the game played most), name, n, av }. Written every 90 s while a page is showing, by
+ * players who have friends; only mutual friends can read it (firestore.rules).
+ */
+export async function beat(on) {
+  const g = k => { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } };
+  const name = g('arcade:name'), n = g('arcade:initials'), av = g('arcade:avatar');
+  if (!/^[A-Z0-9]{3,12}$/.test(name) || !/^[A-Z]{3}$/.test(n) || !/^\d{1,2}(-\d{1,2}){5}$/.test(av)) return;
+  let fav = '', most = 0; try { for (const k of Object.keys(localStorage)) if (k.startsWith('arcade:plays:') && +g(k) > most) { most = +g(k); fav = k.slice(13); } } catch (e) {}
+  const u = await signIn();
+  await setDoc(doc(db, 'presence', u.uid), { t: serverTimestamp(), on: String(on || 'lobby').slice(0, 40), fav: fav.slice(0, 40), name, n, av });
+}
+/**
+ * The friends board for a game: the best score of each of these players (your friends and you) on the all-time board,
+ * best first: [{ n, s, uid }]. Scores carry the uid that posted them, so this is one query (up to 30 players).
+ */
+export async function friendsTop(game, uids) {
+  const ids = [...new Set(uids)].filter(Boolean).slice(0, 30); if (!ids.length) return [];
+  const snap = await getDocs(query(collection(db, 'boards', game, 'scores'), where('uid', 'in', ids)));
+  const best = {}; snap.docs.forEach(d => { const x = d.data(); if (!best[x.uid] || x.s > best[x.uid].s) best[x.uid] = { n: x.n, s: x.s, uid: x.uid }; });
+  return Object.values(best).sort((a, b) => b.s - a.s).slice(0, 10);
+}
+/*
+ * The live feed (the lobby's ticker): feed/{id} = { k: 'top' (a world top-3 score) | 'master' (a cabinet mastered) |
+ * 'level' (every fifth level), g, n, name, s, r, lv, uid, t }. Only set kinds and fields, so nothing free-form shows.
+ */
+export async function feedPost(item) {
+  const g = k => { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } };
+  const name = g('arcade:name'), n = g('arcade:initials'); if (!/^[A-Z0-9]{3,12}$/.test(name) || !/^[A-Z]{3}$/.test(n)) return;
+  const u = await signIn();
+  await setDoc(doc(collection(db, 'feed')), { k: item.k, g: String(item.g || '').slice(0, 40), n, name, s: Math.max(0, Math.floor(+item.s || 0)), r: Math.max(0, Math.floor(+item.r || 0)), lv: Math.max(0, Math.floor(+item.lv || 0)), uid: u.uid, t: serverTimestamp() });
+}
+export async function feed(n = 15) {
+  const snap = await getDocs(query(collection(db, 'feed'), orderBy('t', 'desc'), limit(n)));
+  return snap.docs.map(d => { const x = d.data(); return { ...x, t: x.t && x.t.toMillis ? x.t.toMillis() : 0 }; });
+}
+/** Friends' presence: { uid: { t (ms), on, fav, name, n, av } } for the ones that have any (and can be read). */
+export async function presence(uids) {
+  const out = {}; await signIn();
+  await Promise.all([...new Set(uids)].filter(Boolean).slice(0, 40).map(async id => { try { const d = await getDoc(doc(db, 'presence', id)); if (d.exists()) { const x = d.data(); out[id] = { ...x, t: x.t && x.t.toMillis ? x.t.toMillis() : 0 }; } } catch (e) {} }));
+  return out;
+}
 export const pairOf = (a, b) => a < b ? `${a}_${b}` : `${b}_${a}`;
 /** A new challenge on a game: your initials and score. Returns its id (the link is the game's page with ?ch=id). */
 export async function makeChallenge(g, s, an) {

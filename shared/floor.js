@@ -17,6 +17,7 @@
  */
 window.Floor = (() => {
   // VW x VH is the box the panels (claw, skee-ball, emotes…) are drawn in; SW x SH is the whole view, as big as the canvas, at least the box
+  const COARSE = matchMedia('(pointer: coarse)').matches; // a phone or tablet: the floor's games go full screen
   const VW = 960, VH = 600, GW = 2880, GH = 1320, WALL = 170, OUT = '#0a0612', CELL = 16;
   let WW = GW, WH = GH, level = 0; // the floor you're on: 0 the ground floor, 1 the Loft (whose size is LOFT)
   const WALK = 150, RUN = 290;
@@ -908,6 +909,12 @@ window.Floor = (() => {
     const occupied = new Set(npcs.map(o => o.act && o.act.seat && o.act.seat.join()));
     let act = null;
     if (n.vip) return planVip(n);
+    if (n.friend) { // a friend: mostly at the cabinet they play most, otherwise wandering about
+      const fav = cabs.find(c => c.g.slug === n.friend.fav && !c.vip);
+      if (fav && (!fav.user || fav.user === n) && Math.random() < 0.8) { fav.user = n; act = { type: 'play', obj: fav, to: fav.npcSpot || fav.spot, dur: rnd(25, 50) }; }
+      else { const z = pick(MAIN_ZONES); act = { type: 'wander', to: [rnd(z.x + 40, z.x + z.w - 40), rnd(Math.max(WALL + 40, z.y + 40), z.y + z.h - 40)], dur: rnd(2, 5) }; }
+      n.act = act; n.path = findPath(n.x, n.y, act.to[0], act.to[1]); n.t = act.dur; return;
+    }
     if (n.loft) return planLoft(n);
     if (r < 0.5) { const free = [...cabs, ...objs.filter(o => o.npcSpot)].filter(c => !c.vip && !c.user && near !== c && !(me.entering && me.entering.c === c)); const c = free.length && pick(free); if (c) { c.user = n; act = { type: 'play', obj: c, to: c.npcSpot || (c.type === 'racer' ? c.seat : c.spot), dur: rnd(10, 26) }; } }
     else if (r < 0.62 && feat) act = { type: 'watch', obj: feat, to: [feat.spot[0] + pick([-34, 34, -18, 18]), feat.spot[1] + rnd(14, 34)], dur: rnd(8, 16) };
@@ -1852,6 +1859,12 @@ window.Floor = (() => {
       x.font = '9px Silkscreen, monospace'; x.textAlign = 'center'; x.textBaseline = 'middle'; const w = x.measureText(tx).width + 12;
       x.fillStyle = 'rgba(10,6,18,.75)'; x.fillRect(nx - w / 2, ny - 7, w, 14); x.strokeStyle = lv.level >= 30 ? '#ffd23d' : '#5ee7ff'; x.lineWidth = 1; x.strokeRect(nx - w / 2 + .5, ny - 6.5, w - 1, 13);
       x.fillStyle = lv.level >= 30 ? '#ffd23d' : '#fff'; x.fillText(tx, nx, ny + 1); } }
+    for (const n of npcs) if (n.friend && visible(n.x, n.y, 0)) { // friends' names
+      const tx = `${n.friend.online ? '● ' : ''}${n.friend.name}`, nx = (n.x - cam.x) * zoom, ny = (n.y - 60 - cam.y) * zoom - (n.bubble ? 30 : 0);
+      x.font = '9px Silkscreen, monospace'; x.textAlign = 'center'; x.textBaseline = 'middle'; const w = x.measureText(tx).width + 12;
+      x.fillStyle = 'rgba(10,6,18,.75)'; x.fillRect(nx - w / 2, ny - 7, w, 14); x.strokeStyle = '#3dff8f'; x.lineWidth = 1; x.strokeRect(nx - w / 2 + .5, ny - 6.5, w - 1, 13);
+      x.fillStyle = '#3dff8f'; x.fillText(tx, nx, ny + 1);
+    }
     for (const n of [...npcs, ...(level ? [] : STAFF), me]) if (n.bubble && visible(n.x, n.y, 0)) bubble(x, (n.x - cam.x) * zoom, (n.y - 50 - cam.y) * zoom, n.bubble.text, n === me);
     if (me.ride) { const r = me.ride, a = r.t < 0.45 ? r.t / 0.45 : Math.max(0, (0.9 - r.t) / 0.45); x.fillStyle = `rgba(5,2,12,${a})`; x.fillRect(0, 0, SW, SH); x.globalAlpha = a; neon(x, r.to ? 'GOING UP…' : 'GOING DOWN…', SW / 2, SH / 2, 30, '#3dff8f'); x.globalAlpha = 1; }
     if (me.entering) { const k = Math.min(1, me.entering.t / 0.8); x.fillStyle = `rgba(255,255,255,${Math.max(0, k - 0.75) * 2})`; x.fillRect(0, 0, SW, SH); return; }
@@ -1862,7 +1875,16 @@ window.Floor = (() => {
     }
     minimap(x, t);
     if (!mode) drawEmoteButton(x);
-    if (mode) { if (BX || BY) { x.fillStyle = 'rgba(5,2,12,.6)'; x.fillRect(0, 0, SW, SH); } x.translate(BX, BY); mode.draw(x, t, dt); }
+    if (mode) {
+      if (BX || BY) { x.fillStyle = COARSE ? '#05020c' : 'rgba(5,2,12,.6)'; x.fillRect(0, 0, SW, SH); } // on a phone, nothing but the game
+      x.translate(BX, BY); mode.draw(x, t, dt);
+      if (COARSE && SH > VH * 1.35 && mode.name) { // a phone held upright: the games are wide, so ask for sideways
+        x.translate(-BX, -BY); const cy = BY * 0.5, wob = Math.sin(t / 300) * 0.5;
+        x.save(); x.translate(SW / 2, cy - 30); x.rotate(-0.6 + wob * 0.6); x.strokeStyle = '#ffd23d'; x.lineWidth = 6; x.strokeRect(-26, -44, 52, 88); x.fillStyle = '#ffd23d'; x.fillRect(-8, 32, 16, 4); x.restore();
+        neon(x, 'TURN YOUR PHONE SIDEWAYS', SW / 2, cy + 52, 40, '#ffd23d');
+        x.font = '26px Silkscreen, monospace'; x.textAlign = 'center'; x.fillStyle = 'rgba(255,255,255,.7)'; x.fillText('the game fills the screen', SW / 2, cy + 98);
+      }
+    }
   }
   function bubble(x, bx, by, text, mine) {
     x.font = '11px Silkscreen, monospace'; x.textAlign = 'center'; x.textBaseline = 'middle';
@@ -1908,13 +1930,29 @@ window.Floor = (() => {
     get opt() { return opt; }, get me() { return me; }, get cabs() { return cabs; }, get allCabs() { return [...cabs, ...((saved[1 - level] || {}).cabs || [])]; }, get level() { return level; }, get npcs() { return npcs; }, get mastered() { return mastered; },
     look: () => myLook(), initials, booth, held: c => keys.has(c), say: (text, dur, cheer) => { me.bubble = { text, t: dur || 2.4, cheer }; },
     staffSay: (who, text) => { const s = STAFF.find(s => s.name === who); if (s) say(s, text, 2.6); },
-    open: m => { mode = m; keys.clear(); route = []; me.vx = me.vy = 0; showCard(); },
-    close: () => { mode = null; keys.clear(); showCard(); },
+    open: m => { mode = m; keys.clear(); route = []; me.vx = me.vy = 0; showCard(); if (opt.onGame) opt.onGame(true); },
+    close: () => { mode = null; keys.clear(); showCard(); if (opt.onGame) opt.onGame(false); },
     refreshCard: () => { shownNear = undefined; },
     boardRows
   };
 
+  /*
+   * Your friends on the floor (from the lobby: their player name, character, the cabinet they play most, and whether
+   * they're online right now). Not live: they stand in for your crowd, mostly at their favourite cabinet.
+   */
+  function setFriends(list) {
+    const here = level === 0 ? npcs : null; if (!here) return;
+    for (let i = here.length - 1; i >= 0; i--) if (here[i].friend) { const n = here[i]; if (n.act && n.act.obj && n.act.obj.user === n) n.act.obj.user = null; here.splice(i, 1); }
+    for (const f of (list || []).slice(0, 8)) {
+      if (!f || !f.name || !window.Avatar || !Avatar.valid(f.av)) continue;
+      const c = cabs.find(c => c.g.slug === f.fav && !c.vip), z = pick(MAIN_ZONES);
+      let px = c ? c.spot[0] + rnd(-30, 30) : rnd(z.x + 40, z.x + z.w - 40), py = c ? c.spot[1] + rnd(16, 40) : rnd(Math.max(WALL + 40, z.y + 40), z.y + z.h - 40), k = 0;
+      while (hit(px, py) && k++ < 40) { px = rnd(z.x + 40, z.x + z.w - 40); py = rnd(Math.max(WALL + 40, z.y + 40), z.y + z.h - 40); }
+      here.push({ friend: f, x: px, y: py, dir: 'down', walk: 0, moving: false, look: Avatar.look(f.av), path: [], act: null, t: rnd(0, 1), pose: '', bubble: null, greetT: 0, speed: 95 });
+    }
+  }
   return {
+    friends: setFriends,
     init(o) {
       opt = o; cv = o.canvas; PAL = o.pal || {}; layout(o.games);
       ctx = cv.getContext('2d'); fit();

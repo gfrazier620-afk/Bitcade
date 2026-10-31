@@ -103,6 +103,7 @@ export function merge(a, b, prices, joining) {
       out[k] = JSON.stringify(p[f] === q[f] ? (p.s >= q.s ? p : q) : (String(p[f]) > String(q[f]) ? p : q));
     }
     else if (/^arcade:story:/.test(k)) out[k] = JSON.stringify(deepMax(json(x, {}), json(y, {}))); // story progress: the furthest of each
+    else if (k === 'arcade:streak') { const p = json(x, {}), q = json(y, {}); out[k] = JSON.stringify(String(p.d) > String(q.d) || (p.d === q.d && (+p.n || 0) >= (+q.n || 0)) ? p : q); }
     else if (k === 'arcade:missions' || k === 'arcade:wmissions') out[k] = mergeMissions(x, y, k === 'arcade:missions' ? 'd' : 'w');
     else if (joining && /^arcade:(name|namekey|initials|avatar)$/.test(k) && b['arcade:name'] && b['arcade:namekey']) out[k] = y; // the save's player (above)
     // anything else (initials, the cached ticket balance): this device's value

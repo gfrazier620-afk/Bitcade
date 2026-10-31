@@ -11,7 +11,7 @@
   let o = null, el = null, list = null, q = '', open = null, offline = false;
   const cache = {}; // `${slug}|${board}` → Promise<[{ n, s }]>
   const get = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
-  const okName = n => /^[A-Z]{3}$/.test(n || '');
+  const okName = n => /^[A-Z0-9]{3,12}$/.test(n || ''); // initials, or a friend's player name
   const num = s => (+s || 0).toLocaleString();
   const mine = slug => { try { const t = JSON.parse(get('arcade:top:' + slug)); return Array.isArray(t) ? t : []; } catch (e) { return []; } };
   const best = slug => +get('arcade:best:' + slug) || 0;
@@ -78,7 +78,7 @@
     open = on ? row.dataset.slug : null;
     if (!on) return;
     const g = o.games.find(x => x.slug === row.dataset.slug);
-    const boards = [['world', 'WORLD'], ...(g.daily ? [['today', 'TODAY']] : []), ...(isFeat(g) ? [['week', 'THIS WEEK']] : []), ['local', 'THIS DEVICE']];
+    const boards = [['world', 'WORLD'], ...(g.daily ? [['today', 'TODAY']] : []), ...(isFeat(g) ? [['week', 'THIS WEEK']] : []), ...(friends().length && !g.label ? [['friends', 'FRIENDS']] : []), ['local', 'THIS DEVICE']];
     const d = document.createElement('div'); d.className = 'sv-detail';
     d.innerHTML = `<div class="sv-tabs">${boards.map(([k, l]) => `<button type="button" data-board="${k}">${l}</button>`).join('')}</div><div class="sv-table"></div>
       <a class="sv-play" href="games/${g.slug}/">PLAY ${esc(g.name.toUpperCase())} ▶</a>`;
@@ -86,6 +86,7 @@
     showBoard(row, 'world');
   }
 
+  const friends = () => { try { const f = JSON.parse(get('bitcade:friends')); return Array.isArray(f) ? f : []; } catch (e) { return []; } }; // mutual friends, kept by shared/inbox.js
   function showBoard(row, k) {
     const g = o.games.find(x => x.slug === row.dataset.slug), box = row.querySelector('.sv-table'); if (!box) return;
     row.querySelectorAll('[data-board]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.board === k)));
@@ -94,11 +95,11 @@
     if (k === 'local') { const t = mine(g.slug); box.innerHTML = table(t, -1) || '<p class="sv-note">No scores on this device yet. Play to get on the board!</p>'; return; }
     const key = g.slug + '|' + k;
     box.innerHTML = '<p class="sv-note">Loading…</p>';
-    if (!cache[key]) cache[key] = o.world().then(w => g.label ? w.topWins(10) : w.top(g.slug, 10, k === 'today' ? today() : null, k === 'week' ? WEEKLY.key() : null));
+    if (!cache[key]) cache[key] = o.world().then(w => g.label ? w.topWins(10) : k === 'friends' ? w.myId().then(me => w.friendsTop(g.slug, [me, ...friends().map(f => f.uid)]).then(t => t.map(e => ({ ...e, n: e.uid === me ? 'YOU' : (friends().find(f => f.uid === e.uid) || {}).name || e.n, me: e.uid === me })))) : w.top(g.slug, 10, k === 'today' ? today() : null, k === 'week' ? WEEKLY.key() : null));
     cache[key].then(rows => {
       if (!row.contains(box) || row.querySelector(`[data-board="${k}"]`).getAttribute('aria-pressed') !== 'true') return;
       const me = get('arcade:initials');
-      box.innerHTML = table(rows, rows.findIndex(e => okName(me) && e.n === me)) || `<p class="sv-note">No ${k === 'today' ? "scores today" : k === 'week' ? 'tournament scores this week' : 'world scores'} yet. Be the first!</p>`;
+      box.innerHTML = table(rows, k === 'friends' ? rows.findIndex(e => e.me) : rows.findIndex(e => okName(me) && e.n === me)) || `<p class="sv-note">No ${k === 'today' ? "scores today" : k === 'week' ? 'tournament scores this week' : k === 'friends' ? 'scores from your friends' : 'world scores'} yet. ${k === 'friends' ? 'Send them a challenge!' : 'Be the first!'}</p>`;
     }, () => { delete cache[key]; if (row.contains(box)) box.innerHTML = '<p class="sv-note">World scores are offline right now. THIS DEVICE still works.</p>'; });
   }
 

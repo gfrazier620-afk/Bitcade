@@ -968,6 +968,35 @@ console.log('\nProfile setup');
   await g.close();
 }
 
+/* ---------- happy hour, the daily streak, the live ticker, the FRIENDS tab, floor games on phones ---------- */
+console.log('\nHappy hour, streak, ticker');
+{
+  const { page, errors, close } = await open('/?feature=none&happy=1&streak');
+  await skipBoot(page);
+  check(await page.waitForSelector('#streakPop:not([hidden])', { timeout: 6000 }).then(() => true, () => false) && /DAY 1/.test(await page.textContent('#streakPop')), 'the daily streak pops up once a day with its calendar');
+  const t0 = await page.evaluate(() => TICKETS.balance());
+  await page.click('#streakPop .sk-claim'); await page.waitForTimeout(300);
+  check(await page.evaluate(t0 => STREAK.claimed() && TICKETS.balance() === t0 + 5, t0), 'claiming day 1 pays 5 tickets');
+  await page.waitForSelector('#streakPop', { state: 'hidden', timeout: 4000 }).catch(() => {});
+  check(/HAPPY HOUR/.test(await page.textContent('#todayCard')) && /STREAK/.test(await page.textContent('#todayCard')), 'the Today line shows happy hour and the streak');
+  check(await page.waitForFunction(() => !document.getElementById('ticker').hidden && /HAPPY HOUR/.test(document.getElementById('tkTrack').textContent), null, { timeout: 8000 }).then(() => true, () => false), 'the live ticker runs on PLAY');
+  check(!errors.length, `no errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
+  await close();
+  const g = await open('/games/rock-rift/?happy=1');
+  await g.page.evaluate(() => { localStorage.setItem('bitcade:friends', JSON.stringify([{ uid: 'x', n: 'ACE', name: 'ACEMAN', av: '0-0-0-0-0-0' }])); Arcade.overlay({ title: 'TEST', btn: 'Go', scores: true, onGo: () => {} }); });
+  check(await g.page.isVisible('#ov [data-tab="friends"]'), 'score tables get a FRIENDS tab for players with friends');
+  const tix = await g.page.evaluate(() => { const t0 = TICKETS.balance(); Arcade.submit(10); return TICKETS.balance() - t0; });
+  check(tix === 8 * (await g.page.evaluate(() => Arcade.featured() ? 2 : 1)), `happy hour doubles a game's tickets (got ${tix})`);
+  await g.close();
+  const f = await open('/?view=floor&feature=none', { viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true });
+  await skipBoot(f.page); await f.page.waitForFunction(() => window.Floor && Floor.state(), null, { timeout: 15000 }).catch(() => {});
+  await f.page.evaluate(() => Floor.goTo('skee')); await f.page.waitForTimeout(1500); await f.page.keyboard.press('Enter'); await f.page.waitForTimeout(600);
+  check(await f.page.evaluate(() => document.getElementById('arcadeFloor').classList.contains('fl-max') && document.getElementById('arcadeFloor').classList.contains('fl-game')), 'on a phone, a floor game takes the whole screen');
+  await f.page.keyboard.press('Escape'); await f.page.waitForTimeout(400);
+  check(await f.page.evaluate(() => !document.getElementById('arcadeFloor').classList.contains('fl-max')), 'and the floor comes back when it closes');
+  await f.close();
+}
+
 /* ---------- useful prizes: perks and boosts (window.PERKS in shared/badges.js) ---------- */
 console.log('\nPerks and boosts');
 {

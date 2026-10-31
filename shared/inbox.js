@@ -29,7 +29,9 @@ window.Inbox = (() => {
   const asked = c => !!(c.acc[other(c)] && !c.acc[me]); // they've added you; you haven't added them back
   const set = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
   // other players' profiles (profiles/{uid}: player name and character), so two players with the same initials differ
-  const profs = {};
+  const profs = {}, pres = {}; // profiles, and friends' presence (online in the last 3 minutes, and where)
+  const online = uid => { const p = pres[uid]; return p && Date.now() - p.t < 180e3 ? p : null; };
+  const where = p => p.on === 'lobby' ? 'IN THE LOBBY' : p.on === 'floor' ? 'ON THE ARCADE FLOOR' : 'PLAYING ' + String(p.on).split('-').join(' ').toUpperCase();
   const them = c => { const p = profs[other(c)]; return p && p.name ? p.name : c.n[other(c)] || '???'; };
   const face = uid => { const p = profs[uid]; return p && p.av && window.Avatar ? `<canvas class="ib-av" data-av="${esc(p.av)}"></canvas>` : '<i class="ib-av"></i>'; };
   async function learn(uids) {
@@ -43,12 +45,18 @@ window.Inbox = (() => {
     o.btn.addEventListener('click', () => open());
     refresh();
     setInterval(() => { if (!document.hidden && (!box || box.hidden)) refresh(); }, 60000);
+    const beat = () => { if (!document.hidden && get('bitcade:dm') === '1') world().then(m => m.beat(o.where ? o.where() : 'lobby')).catch(() => {}); };
+    setTimeout(beat, 4000); setInterval(beat, 90000);
   }
   /** Look for new messages (the dot on the ✉ button). */
   async function refresh() {
     try { const m = await world(); me = me || await m.myId(); [convos, blockedList] = await Promise.all([m.conversations(), m.blocked()]); await learn(convos.map(other)); }
     catch (e) { return false; }
     if (convos.length) set('bitcade:dm', '1'); // game pages check for new messages only for players who have some
+    // mutual friends: kept for the game pages' FRIENDS score tab and the arcade floor; and who's online
+    const fr = convos.filter(c => friends(c) && !blockedList.includes(other(c)));
+    set('bitcade:friends', JSON.stringify(fr.map(c => { const u = other(c), p = profs[u] || {}; return { uid: u, n: c.n[u] || '', name: p.name || '', av: p.av || '' }; })));
+    if (fr.length) { const got = await w.presence(fr.map(other)).catch(() => ({})); Object.assign(pres, got); if (onFriends) onFriends(); }
     o.dot.hidden = !convos.some(c => !blockedList.includes(other(c)) && unread(c));
     return true;
   }
@@ -106,7 +114,7 @@ window.Inbox = (() => {
 
   const tabs = shown => { const n = shown.filter(asked).length;
     return `<div class="ib-tabs" role="tablist"><button data-tab="msgs" role="tab" aria-selected="${tab === 'msgs'}">MESSAGES</button><button data-tab="fr" role="tab" aria-selected="${tab === 'fr'}">FRIENDS${n ? ` <i>${n}</i>` : ''}</button></div>`; };
-  const row = (c, extra = '') => `<div class="ib-frow"><button class="ib-row${unread(c) ? ' new' : ''}" data-convo="${esc(c.id)}">${face(other(c))}<span class="ib-ini">${esc(them(c))}${profs[other(c)] && c.n[other(c)] ? ` <small>${esc(c.n[other(c)])}</small>` : ''}</span><span class="ib-sub">${extra}</span>${unread(c) ? '<i class="ib-dot"></i>' : ''}</button></div>`;
+  const row = (c, extra = '') => `<div class="ib-frow"><button class="ib-row${unread(c) ? ' new' : ''}" data-convo="${esc(c.id)}"><span class="ib-face">${face(other(c))}${online(other(c)) ? '<i class="ib-on" title="Online now"></i>' : ''}</span><span class="ib-ini">${esc(them(c))}${profs[other(c)] && c.n[other(c)] ? ` <small>${esc(c.n[other(c)])}</small>` : ''}</span><span class="ib-sub">${extra}</span>${unread(c) ? '<i class="ib-dot"></i>' : ''}</button></div>`;
   function list() {
     cur = null; clearInterval(poll); head('✉ MESSAGES', false);
     const shown = convos.filter(c => !blockedList.includes(other(c)));
@@ -125,7 +133,7 @@ window.Inbox = (() => {
     body(tabs(shown) +
       '<div class="ib-find"><input class="ib-name" maxlength="12" placeholder="PLAYER NAME" aria-label="Player name" autocomplete="off" autocapitalize="characters" spellcheck="false"><button class="ib-findgo">FIND</button></div><div class="ib-found"></div>' +
       (inc.length ? `<h4>WANT TO BE FRIENDS</h4>${inc.map(c => `<div class="ib-frow">${row(c, '<em class="ask">ADDED YOU</em>')}<button class="ib-add" data-addc="${esc(c.id)}">ADD BACK</button></div>`).join('')}` : '') +
-      sec(`FRIENDS · ${fr.length}`, fr, () => '<em class="fr">★ FRIENDS</em>') +
+      sec(`FRIENDS · ${fr.length}${fr.some(c => online(other(c))) ? ` · ${fr.filter(c => online(other(c))).length} ONLINE` : ''}`, fr.sort((a, b) => !!online(other(b)) - !!online(other(a))), c => online(other(c)) ? `<em class="on">● ${where(online(other(c)))}</em>` : '<em class="fr">★ FRIENDS</em>') +
       sec('REQUESTS SENT', out, () => '<em>WAITING FOR THEM</em>') +
       (inc.length || fr.length || out.length ? '' : '<p class="ib-note">Add friends by their player name. Once you’ve added each other you can chat freely.</p>'));
     foot('');
@@ -243,5 +251,10 @@ window.Inbox = (() => {
     const log = msgs.slice(-30).map(m => `[${new Date(m.t).toISOString().slice(0, 16)}] ${m.u === me ? 'ME' : who}: ${m.k === 'x' ? m.x : m.k === 'q' ? QUICK[m.q] : m.k + ' ' + m.g + ' ' + m.s}`).join('\n');
     try { await w.report(other(c), c.id, log); btn.textContent = 'REPORTED ✓'; } catch (e) { btn.textContent = 'OFFLINE'; }
   }
-  return { init, open, close, isOpen: () => !!box && !box.hidden, QUICK, clean };
+  /** Friends online right now, for the lobby's ticker: [{ uid, name, on }]. */
+  const onlineNow = () => Object.keys(pres).filter(u => online(u)).map(u => ({ uid: u, name: pres[u].name || (profs[u] || {}).name || '', on: pres[u].on, where: where(pres[u]) }));
+  /** Friends for the arcade floor: [{ uid, name, av, fav, online }] (presence carries the favourite cabinet). */
+  const forFloor = () => { let fr = []; try { fr = JSON.parse(get('bitcade:friends')) || []; } catch (e) {} return fr.map(f => { const p = pres[f.uid] || {}; return { uid: f.uid, name: p.name || f.name, av: p.av || f.av, fav: p.fav || '', online: !!online(f.uid) }; }).filter(f => f.name); };
+  let onFriends = null;
+  return { init, open, close, isOpen: () => !!box && !box.hidden, QUICK, clean, onlineNow, forFloor, onFriends: fn => { onFriends = fn; } };
 })();
